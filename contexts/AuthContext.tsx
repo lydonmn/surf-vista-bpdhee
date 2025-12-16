@@ -41,8 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Initialize Superwall
-        await initializeSuperwall();
+        // Initialize Superwall (non-blocking - failures are logged but don't stop initialization)
+        try {
+          await initializeSuperwall();
+        } catch (superwallError) {
+          console.error('[AuthContext] Superwall initialization failed (non-critical):', superwallError);
+          // Continue with auth initialization even if Superwall fails
+        }
         
         // Get initial session
         const { data: { session: initialSession } } = await supabase.auth.getSession();

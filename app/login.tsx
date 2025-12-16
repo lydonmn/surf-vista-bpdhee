@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import Superwall from 'expo-superwall';
+import { isSuperwallAvailable, presentPaywall } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -15,20 +15,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
-
-  // Initialize Superwall
-  useEffect(() => {
-    const initSuperwall = async () => {
-      try {
-        await Superwall.configure('pk_5f8c8e8e8e8e8e8e8e8e8e8e'); // Replace with your actual Superwall API key
-        console.log('[LoginScreen] Superwall initialized');
-      } catch (error) {
-        console.error('[LoginScreen] Superwall initialization error:', error);
-      }
-    };
-    
-    initSuperwall();
-  }, []);
 
   // Redirect if already logged in with subscription
   useEffect(() => {
@@ -92,62 +78,74 @@ export default function LoginScreen() {
   };
 
   const handleSubscribe = async () => {
+    // Check if Superwall is available
+    if (!isSuperwallAvailable()) {
+      Alert.alert(
+        'Subscription Not Available',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
       console.log('[LoginScreen] Opening Superwall paywall...');
       
-      // Register the paywall
-      await Superwall.register('subscription_paywall');
-      
       // Set user attributes if logged in
       if (user) {
-        await Superwall.setUserAttributes({
-          userId: user.id,
-          email: user.email || '',
-        });
-      }
-      
-      // Present the paywall
-      const result = await Superwall.presentPaywall('subscription_paywall');
-      
-      console.log('[LoginScreen] Paywall result:', result);
-      
-      if (result.state === 'purchased') {
-        Alert.alert(
-          'Success!',
-          'Your subscription is now active. Enjoy exclusive content!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Refresh the profile to get updated subscription status
-                if (user) {
-                  router.replace('/(tabs)/(home)/');
+        const result = await presentPaywall(user.id, user.email || '');
+        
+        console.log('[LoginScreen] Paywall result:', result);
+        
+        if (result.state === 'purchased') {
+          Alert.alert(
+            'Success!',
+            'Your subscription is now active. Enjoy exclusive content!',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Refresh the profile to get updated subscription status
+                  if (user) {
+                    router.replace('/(tabs)/(home)/');
+                  }
                 }
               }
-            }
-          ]
-        );
-      } else if (result.state === 'restored') {
-        Alert.alert(
-          'Subscription Restored',
-          'Your subscription has been restored successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                if (user) {
-                  router.replace('/(tabs)/(home)/');
+            ]
+          );
+        } else if (result.state === 'restored') {
+          Alert.alert(
+            'Subscription Restored',
+            'Your subscription has been restored successfully!',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (user) {
+                    router.replace('/(tabs)/(home)/');
+                  }
                 }
               }
-            }
-          ]
-        );
+            ]
+          );
+        }
+      } else {
+        // User not logged in - show paywall without user context
+        const result = await presentPaywall();
+        
+        if (result.state === 'purchased' || result.state === 'restored') {
+          Alert.alert(
+            'Success!',
+            'Please sign in or create an account to access your subscription.',
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error: any) {
       console.error('[LoginScreen] Superwall error:', error);
       Alert.alert(
-        'Subscription',
-        'Unable to process subscription at this time. Please try again later.'
+        'Subscription Error',
+        error.message || 'Unable to process subscription at this time. Please try again later.'
       );
     }
   };
