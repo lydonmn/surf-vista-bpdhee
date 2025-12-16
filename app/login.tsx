@@ -159,7 +159,7 @@ export default function LoginScreen() {
             disabled={isLoading}
           >
             <Text style={[styles.switchModeText, { color: colors.textSecondary }]}>
-              {isSignUp ? 'Already have an account? ' : 'Don&apos;t have an account? '}
+              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
               <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
                 {isSignUp ? 'Sign In' : 'Sign Up'}
               </Text>
