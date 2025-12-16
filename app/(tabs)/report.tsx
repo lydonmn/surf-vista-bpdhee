@@ -116,6 +116,32 @@ export default function ReportScreen() {
     return { ios: 'location.north.fill', android: 'navigation' };
   };
 
+  const getTideIcon = (tide: string | null) => {
+    if (!tide) return { ios: 'water.waves', android: 'waves' };
+    
+    const lower = tide.toLowerCase();
+    
+    // Check for high tide
+    if (lower.includes('high')) {
+      return { ios: 'arrow.up.circle.fill', android: 'arrow_circle_up' };
+    }
+    // Check for low tide
+    else if (lower.includes('low')) {
+      return { ios: 'arrow.down.circle.fill', android: 'arrow_circle_down' };
+    }
+    // Check for rising/incoming tide
+    else if (lower.includes('rising') || lower.includes('incoming') || lower.includes('flood')) {
+      return { ios: 'arrow.up', android: 'trending_up' };
+    }
+    // Check for falling/outgoing tide
+    else if (lower.includes('falling') || lower.includes('outgoing') || lower.includes('ebb')) {
+      return { ios: 'arrow.down', android: 'trending_down' };
+    }
+    
+    // Default to water waves icon
+    return { ios: 'water.waves', android: 'waves' };
+  };
+
   // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
     return (
@@ -259,6 +285,7 @@ export default function ReportScreen() {
           {surfReports.map((report, index) => {
             const weatherIcon = getWeatherIcon(report.weather_conditions);
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
+            const tideIcon = getTideIcon(report.tide);
             
             return (
               <View 
@@ -393,8 +420,8 @@ export default function ReportScreen() {
 
                   <View style={styles.tideContainer}>
                     <IconSymbol
-                      ios_icon_name="arrow.up.arrow.down"
-                      android_material_icon_name="swap_vert"
+                      ios_icon_name={tideIcon.ios}
+                      android_material_icon_name={tideIcon.android}
                       size={24}
                       color={colors.primary}
                     />
