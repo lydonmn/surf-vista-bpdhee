@@ -296,21 +296,6 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/weather')}
           >
             <IconSymbol
-              ios_icon_name="cloud.sun.fill"
-              android_material_icon_name="cloud"
-              size={32}
-              color={colors.primary}
-            />
-            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-              Weather
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-            onPress={() => router.push('/(tabs)/weather')}
-          >
-            <IconSymbol
               ios_icon_name="water.waves"
               android_material_icon_name="waves"
               size={32}
