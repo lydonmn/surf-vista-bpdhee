@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { mockSurfReports, mockVideos } from "@/data/mockData";
 import { IconSymbol } from "@/components/IconSymbol";
+import SurfVistaLogo from "@/components/SurfVistaLogo";
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -19,7 +20,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
-          <Text style={[styles.logo, { color: theme.colors.text }]}>🏄 SurfVista</Text>
+          <SurfVistaLogo size="large" />
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Exclusive Surf Reports from Folly Beach, SC
           </Text>
@@ -38,7 +39,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
-          <Text style={[styles.logo, { color: theme.colors.text }]}>🏄 SurfVista</Text>
+          <SurfVistaLogo size="large" />
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Subscribe to Access Premium Content
           </Text>
@@ -65,7 +66,7 @@ export default function HomeScreen() {
       contentContainerStyle={styles.scrollContent}
     >
       <View style={styles.header}>
-        <Text style={[styles.logo, { color: theme.colors.text }]}>🏄 SurfVista</Text>
+        <SurfVistaLogo size="medium" />
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Folly Beach, South Carolina
         </Text>
@@ -215,15 +216,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+    gap: 24,
   },
   header: {
     alignItems: 'center',
     marginBottom: 24,
-  },
-  logo: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    gap: 8,
   },
   subtitle: {
     fontSize: 16,
@@ -232,18 +230,15 @@ const styles = StyleSheet.create({
   tagline: {
     fontSize: 18,
     textAlign: 'center',
-    marginBottom: 32,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 16,
   },
   text: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 32,
     lineHeight: 24,
   },
   loginButton: {
