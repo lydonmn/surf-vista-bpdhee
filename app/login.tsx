@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
-import { presentPaywall, isPaymentSystemAvailable } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -30,6 +29,19 @@ export default function LoginScreen() {
       return;
     }
 
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    // Password length validation
+    if (password.length < 6) {
+      Alert.alert('Weak Password', 'Password must be at least 6 characters long');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -45,9 +57,11 @@ export default function LoginScreen() {
               {
                 text: 'OK',
                 onPress: () => {
-                  // Switch to sign in mode
-                  setIsSignUp(false);
-                  setPassword('');
+                  // If email confirmation is required, switch to sign in mode
+                  if (result.message.includes('verify your email')) {
+                    setIsSignUp(false);
+                    setPassword('');
+                  }
                 }
               }
             ]
@@ -61,19 +75,6 @@ export default function LoginScreen() {
         
         if (result.success) {
           console.log('[LoginScreen] Sign in successful, navigating to home');
-          
-          // Show paywall after successful login if payment system is available
-          // This is optional - you can remove this if you don't want to show paywall on login
-          setTimeout(async () => {
-            if (isPaymentSystemAvailable()) {
-              try {
-                await presentPaywall(user?.id, email);
-              } catch (error) {
-                console.log('[LoginScreen] Paywall presentation skipped or cancelled');
-              }
-            }
-          }, 1000);
-          
           router.replace('/(tabs)');
         } else {
           Alert.alert('Sign In Failed', result.message);
@@ -150,6 +151,7 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 editable={!isLoading}
+                autoCorrect={false}
               />
             </View>
 
@@ -162,12 +164,13 @@ export default function LoginScreen() {
               />
               <TextInput
                 style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Password"
+                placeholder="Password (min 6 characters)"
                 placeholderTextColor={colors.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
                 editable={!isLoading}
+                autoCorrect={false}
               />
             </View>
 
@@ -211,9 +214,24 @@ export default function LoginScreen() {
               color={colors.textSecondary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Subscribe for $5/month to access exclusive surf reports and drone footage
+              Subscribe for $10.99/month or $100.99/year to access exclusive surf reports and drone footage
             </Text>
           </View>
+
+          {/* Email Verification Notice */}
+          {isSignUp && (
+            <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
+              <IconSymbol
+                ios_icon_name="envelope.badge.fill"
+                android_material_icon_name="mark_email_read"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={[styles.noticeText, { color: theme.colors.text }]}>
+                After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -307,10 +325,25 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: 'rgba(70, 130, 180, 0.1)',
     borderRadius: 12,
+    marginBottom: 16,
   },
   infoText: {
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  noticeContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(70, 130, 180, 0.3)',
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
   },
 });

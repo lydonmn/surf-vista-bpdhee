@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "SurfVista",
@@ -34,7 +35,13 @@
     "plugins": [
       "expo-font",
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-purchases",
+        {
+          "apiKey": "test_pIbMwlfINrGOjQfGWYzmARWVOvg"
+        }
+      ]
     ],
     "scheme": "natively",
     "experiments": {

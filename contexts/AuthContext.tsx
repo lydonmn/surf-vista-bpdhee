@@ -233,6 +233,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
+      console.log('[AuthContext] Attempting sign up for:', email);
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -246,17 +248,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, message: error.message };
       }
 
+      // Check if email confirmation is required
       if (data.user && !data.session) {
+        console.log('[AuthContext] Email confirmation required');
         return { 
           success: true, 
           message: 'Please check your email to verify your account before signing in.' 
         };
       }
 
+      // If we have a session, the user is automatically signed in
+      if (data.user && data.session) {
+        console.log('[AuthContext] Sign up successful with auto sign-in');
+        return { success: true, message: 'Account created successfully!' };
+      }
+
       return { success: true, message: 'Account created successfully!' };
-    } catch (error) {
-      console.error('[AuthContext] Sign up error:', error);
-      return { success: false, message: 'An unexpected error occurred' };
+    } catch (error: any) {
+      console.error('[AuthContext] Sign up exception:', error);
+      return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
 
@@ -273,6 +283,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.log('[AuthContext] Sign in error:', error);
         setIsLoading(false);
+        
+        // Provide more helpful error messages
+        if (error.message.includes('Email not confirmed')) {
+          return { 
+            success: false, 
+            message: 'Please verify your email address before signing in. Check your inbox for the confirmation link.' 
+          };
+        } else if (error.message.includes('Invalid login credentials')) {
+          return { 
+            success: false, 
+            message: 'Invalid email or password. Please try again.' 
+          };
+        }
+        
         return { success: false, message: error.message };
       }
 
@@ -289,10 +313,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setIsLoading(false);
       return { success: false, message: 'Sign in failed' };
-    } catch (error) {
-      console.error('[AuthContext] Sign in error:', error);
+    } catch (error: any) {
+      console.error('[AuthContext] Sign in exception:', error);
       setIsLoading(false);
-      return { success: false, message: 'An unexpected error occurred' };
+      return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
 

@@ -48,8 +48,14 @@ export const PAYMENT_CONFIG = {
   OFFERING_ID: 'default',
   
   // Entitlement ID - This is what you check to see if user has access
-  // You configured this as "SurfVista Pro" in RevenueCat
+  // You configured this as "premium" in RevenueCat
   ENTITLEMENT_ID: 'premium',
+  
+  // Pricing (for display purposes)
+  PRICING: {
+    MONTHLY: '$10.99',
+    ANNUAL: '$100.99',
+  },
 };
 
 // ============================================
@@ -90,13 +96,17 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         });
       } else {
         console.log('[RevenueCat] ⚠️ No offerings found. Please configure products in RevenueCat dashboard.');
-        console.log('[RevenueCat] 📝 Next steps:');
+        console.log('[RevenueCat] 📝 Setup Checklist:');
         console.log('[RevenueCat]   1. Go to https://app.revenuecat.com/');
         console.log('[RevenueCat]   2. Select your app');
         console.log('[RevenueCat]   3. Go to Products section');
-        console.log('[RevenueCat]   4. Add your subscription products');
+        console.log('[RevenueCat]   4. Add your subscription products:');
+        console.log('[RevenueCat]      - Monthly: surfvista_monthly or monthly');
+        console.log('[RevenueCat]      - Annual: surfvista_annual or yearly');
         console.log('[RevenueCat]   5. Create an Entitlement called: ' + PAYMENT_CONFIG.ENTITLEMENT_ID);
         console.log('[RevenueCat]   6. Create an Offering and attach your products');
+        console.log('[RevenueCat]   7. Configure your Paywall in the Paywalls section');
+        console.log('[RevenueCat]   8. Restart the app');
       }
     } catch (offeringError) {
       console.error('[RevenueCat] ⚠️ Error fetching offerings:', offeringError);
@@ -108,6 +118,11 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Failed to initialize RevenueCat:', error);
     console.error('[RevenueCat] Error details:', error.message);
+    console.log('[RevenueCat] 💡 Troubleshooting:');
+    console.log('[RevenueCat]   - Make sure react-native-purchases is properly installed');
+    console.log('[RevenueCat]   - Check that the plugin is configured in app.json');
+    console.log('[RevenueCat]   - Verify your API key is correct');
+    console.log('[RevenueCat]   - Try rebuilding the app (npx expo prebuild --clean)');
     isPaymentSystemInitialized = false;
     return false;
   }
