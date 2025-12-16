@@ -81,7 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setSession(newSession);
       
-      if (newSession?.user) {
+      if (event === 'SIGNED_OUT') {
+        console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
+        setUser(null);
+        setProfile(null);
+        setSession(null);
+        setIsLoading(false);
+      } else if (newSession?.user) {
         console.log('[AuthContext] Loading profile after auth change...');
         await loadUserProfile(newSession.user, mounted);
       } else {
@@ -249,14 +255,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('[AuthContext] Signing out...');
-      await supabase.auth.signOut();
+      console.log('[AuthContext] Starting sign out process...');
+      
+      // Clear local state immediately
       setUser(null);
       setProfile(null);
       setSession(null);
-      console.log('[AuthContext] Sign out complete');
+      setIsLoading(false);
+      
+      // Sign out from Supabase (this will clear the session from AsyncStorage)
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('[AuthContext] Sign out error:', error);
+        // Even if there's an error, we've already cleared local state
+        // This ensures the UI updates correctly
+      } else {
+        console.log('[AuthContext] Sign out complete - session cleared from storage');
+      }
     } catch (error) {
-      console.error('[AuthContext] Sign out error:', error);
+      console.error('[AuthContext] Sign out exception:', error);
+      // Even if there's an exception, we've already cleared local state
     }
   };
 
