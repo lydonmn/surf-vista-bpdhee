@@ -23,13 +23,14 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               console.log('[ProfileScreen] User confirmed sign out, calling signOut()...');
+              
+              // Call signOut and wait for it to complete
               await signOut();
+              
               console.log('[ProfileScreen] Sign out complete, navigating to login...');
               
-              // Use a small delay to ensure state is cleared
-              setTimeout(() => {
-                router.replace('/login');
-              }, 100);
+              // Navigate to login after sign out is complete
+              router.replace('/login');
             } catch (error) {
               console.error('[ProfileScreen] Error during sign out:', error);
               Alert.alert('Error', 'Failed to sign out. Please try again.');

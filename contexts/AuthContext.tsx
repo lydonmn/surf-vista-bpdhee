@@ -79,21 +79,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('[AuthContext] Auth state changed:', event, newSession?.user?.email || 'No session');
       
-      setSession(newSession);
-      
       if (event === 'SIGNED_OUT') {
         console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
         setUser(null);
         setProfile(null);
         setSession(null);
         setIsLoading(false);
-      } else if (newSession?.user) {
-        console.log('[AuthContext] Loading profile after auth change...');
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        console.log('[AuthContext] SIGNED_IN event detected, loading profile...');
+        setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
-      } else {
-        console.log('[AuthContext] No session, clearing user data');
+      } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+        console.log('[AuthContext] TOKEN_REFRESHED event detected');
+        setSession(newSession);
+        // Don't reload profile on token refresh, just update session
+      } else if (event === 'USER_UPDATED' && newSession?.user) {
+        console.log('[AuthContext] USER_UPDATED event detected');
+        setSession(newSession);
+        await loadUserProfile(newSession.user, mounted);
+      } else if (!newSession) {
+        console.log('[AuthContext] No session in auth change, clearing user data');
         setUser(null);
         setProfile(null);
+        setSession(null);
         setIsLoading(false);
       }
       
@@ -256,26 +264,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       console.log('[AuthContext] Starting sign out process...');
+      console.log('[AuthContext] Current session before sign out:', session?.user?.email);
       
-      // Clear local state immediately
+      // Call Supabase signOut FIRST - this will trigger the SIGNED_OUT event
+      // which will clear the local state via the onAuthStateChange listener
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      
+      if (error) {
+        console.error('[AuthContext] Sign out error from Supabase:', error);
+        // Even if there's an error, clear local state manually
+        setUser(null);
+        setProfile(null);
+        setSession(null);
+        setIsLoading(false);
+        throw error;
+      }
+      
+      console.log('[AuthContext] Supabase sign out successful - session cleared from AsyncStorage');
+      
+      // The onAuthStateChange listener should handle clearing state,
+      // but we'll do it here too to ensure immediate UI update
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
       
-      // Sign out from Supabase (this will clear the session from AsyncStorage)
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('[AuthContext] Sign out error:', error);
-        // Even if there's an error, we've already cleared local state
-        // This ensures the UI updates correctly
-      } else {
-        console.log('[AuthContext] Sign out complete - session cleared from storage');
-      }
+      console.log('[AuthContext] Sign out complete');
     } catch (error) {
       console.error('[AuthContext] Sign out exception:', error);
-      // Even if there's an exception, we've already cleared local state
+      // Ensure state is cleared even on error
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setIsLoading(false);
+      throw error;
     }
   };
 
