@@ -10,95 +10,6 @@ interface WeeklyForecastProps {
   forecast: WeatherForecast[];
 }
 
-// Helper function to get appropriate weather icon based on conditions
-const getWeatherIcon = (conditions: string | null) => {
-  // Default fallback
-  const defaultIcon = { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
-  
-  if (!conditions) {
-    console.log('[WeeklyForecast] No conditions provided, using default icon');
-    return defaultIcon;
-  }
-  
-  const lower = conditions.toLowerCase();
-  console.log('[WeeklyForecast] Mapping icon for condition:', conditions);
-  
-  // Rain conditions - prioritize rain detection
-  // Check for various rain-related keywords
-  if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle') || lower.includes('precipitation')) {
-    console.log('[WeeklyForecast] Detected rain condition');
-    return { ios: 'cloud.rain.fill', android: 'water_drop' };
-  }
-  
-  // Storm conditions
-  if (lower.includes('storm') || lower.includes('thunder') || lower.includes('lightning') || lower.includes('t-storm')) {
-    console.log('[WeeklyForecast] Detected storm condition');
-    return { ios: 'cloud.bolt.fill', android: 'flash_on' };
-  }
-  
-  // Snow conditions
-  if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice') || lower.includes('flurr') || lower.includes('wintry')) {
-    console.log('[WeeklyForecast] Detected snow condition');
-    return { ios: 'snowflake', android: 'ac_unit' };
-  }
-  
-  // Fog/Mist conditions
-  if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) {
-    console.log('[WeeklyForecast] Detected fog condition');
-    return { ios: 'cloud.fog.fill', android: 'cloud' };
-  }
-  
-  // Sunny conditions - check for "sunny" keyword first
-  if (lower.includes('sunny')) {
-    // Check if it's "mostly sunny" or "partly sunny"
-    if (lower.includes('mostly') || lower.includes('partly')) {
-      console.log('[WeeklyForecast] Detected mostly/partly sunny condition');
-      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
-    }
-    console.log('[WeeklyForecast] Detected sunny condition');
-    return { ios: 'sun.max.fill', android: 'wb_sunny' };
-  }
-  
-  // Clear conditions
-  if (lower.includes('clear')) {
-    // Check if it's "mostly clear" or "partly clear"
-    if (lower.includes('mostly') || lower.includes('partly')) {
-      console.log('[WeeklyForecast] Detected mostly/partly clear condition');
-      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
-    }
-    console.log('[WeeklyForecast] Detected clear condition');
-    return { ios: 'sun.max.fill', android: 'wb_sunny' };
-  }
-  
-  // Partly cloudy
-  if (lower.includes('partly cloudy') || lower.includes('partial')) {
-    console.log('[WeeklyForecast] Detected partly cloudy condition');
-    return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
-  }
-  
-  // Mostly cloudy
-  if (lower.includes('mostly cloudy') || lower.includes('mostly overcast')) {
-    console.log('[WeeklyForecast] Detected mostly cloudy condition');
-    return { ios: 'cloud.fill', android: 'cloud' };
-  }
-  
-  // Cloudy/Overcast (general)
-  if (lower.includes('cloud') || lower.includes('overcast')) {
-    console.log('[WeeklyForecast] Detected cloudy condition');
-    return { ios: 'cloud.fill', android: 'cloud' };
-  }
-  
-  // Windy
-  if (lower.includes('wind') || lower.includes('breezy') || lower.includes('gust')) {
-    console.log('[WeeklyForecast] Detected windy condition');
-    return { ios: 'wind', android: 'air' };
-  }
-  
-  // Default fallback
-  console.log('[WeeklyForecast] No specific condition matched, using default icon');
-  return defaultIcon;
-};
-
 export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
   const theme = useTheme();
 
@@ -160,15 +71,17 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
         contentContainerStyle={styles.forecastScroll}
       >
         {forecast.map((day, index) => {
-          const icon = getWeatherIcon(day.conditions);
           const date = new Date(day.date);
           const dayName = day.day_name || date.toLocaleDateString('en-US', { weekday: 'short' });
+          
+          // Get swell size range or use default
+          const swellRange = day.swell_height_range || '1-2 ft';
           
           console.log('[WeeklyForecast] Rendering day card:', {
             index,
             date: day.date,
             conditions: day.conditions,
-            icon: icon,
+            swellRange,
             dayName
           });
           
@@ -184,12 +97,15 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
                 {index === 0 ? 'Today' : dayName}
               </Text>
               
-              <IconSymbol
-                ios_icon_name={icon.ios}
-                android_material_icon_name={icon.android}
-                size={32}
-                color={colors.primary}
-              />
+              {/* Display swell size instead of weather icon */}
+              <View style={styles.swellContainer}>
+                <Text style={[styles.swellSize, { color: colors.primary }]}>
+                  {swellRange}
+                </Text>
+                <Text style={[styles.swellLabel, { color: colors.textSecondary }]}>
+                  swell
+                </Text>
+              </View>
               
               <View style={styles.tempContainer}>
                 <Text style={[styles.highTemp, { color: theme.colors.text }]}>
@@ -264,6 +180,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  swellContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  swellSize: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  swellLabel: {
+    fontSize: 11,
+    marginTop: 2,
   },
   tempContainer: {
     flexDirection: 'row',

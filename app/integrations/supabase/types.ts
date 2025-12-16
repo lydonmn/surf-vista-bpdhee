@@ -208,6 +208,9 @@ export interface Database {
           wind_direction: string | null
           precipitation_chance: number | null
           humidity: number | null
+          swell_height_min: number | null
+          swell_height_max: number | null
+          swell_height_range: string | null
           created_at: string
           updated_at: string
         }
@@ -223,6 +226,9 @@ export interface Database {
           wind_direction?: string | null
           precipitation_chance?: number | null
           humidity?: number | null
+          swell_height_min?: number | null
+          swell_height_max?: number | null
+          swell_height_range?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -238,6 +244,9 @@ export interface Database {
           wind_direction?: string | null
           precipitation_chance?: number | null
           humidity?: number | null
+          swell_height_min?: number | null
+          swell_height_max?: number | null
+          swell_height_range?: string | null
           created_at?: string
           updated_at?: string
         }
