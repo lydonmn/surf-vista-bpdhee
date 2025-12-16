@@ -24,19 +24,20 @@ const getWeatherIcon = (conditions: string | null) => {
   console.log('[WeeklyForecast] Mapping icon for condition:', conditions);
   
   // Rain conditions - prioritize rain detection
-  if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle')) {
+  // Check for various rain-related keywords
+  if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle') || lower.includes('precipitation')) {
     console.log('[WeeklyForecast] Detected rain condition');
     return { ios: 'cloud.rain.fill', android: 'water_drop' };
   }
   
   // Storm conditions
-  if (lower.includes('storm') || lower.includes('thunder') || lower.includes('lightning')) {
+  if (lower.includes('storm') || lower.includes('thunder') || lower.includes('lightning') || lower.includes('t-storm')) {
     console.log('[WeeklyForecast] Detected storm condition');
     return { ios: 'cloud.bolt.fill', android: 'flash_on' };
   }
   
   // Snow conditions
-  if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice') || lower.includes('flurr')) {
+  if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice') || lower.includes('flurr') || lower.includes('wintry')) {
     console.log('[WeeklyForecast] Detected snow condition');
     return { ios: 'snowflake', android: 'ac_unit' };
   }
@@ -44,22 +45,33 @@ const getWeatherIcon = (conditions: string | null) => {
   // Fog/Mist conditions
   if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) {
     console.log('[WeeklyForecast] Detected fog condition');
-    return { ios: 'cloud.fill', android: 'cloud' };
+    return { ios: 'cloud.fog.fill', android: 'cloud' };
   }
   
-  // Clear/Sunny conditions - check for clear or sunny
-  if (lower.includes('clear') || lower.includes('sunny')) {
-    // Check if it's mostly clear/sunny or fully clear/sunny
+  // Sunny conditions - check for "sunny" keyword first
+  if (lower.includes('sunny')) {
+    // Check if it's "mostly sunny" or "partly sunny"
     if (lower.includes('mostly') || lower.includes('partly')) {
-      console.log('[WeeklyForecast] Detected mostly clear/sunny condition');
+      console.log('[WeeklyForecast] Detected mostly/partly sunny condition');
       return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
     }
-    console.log('[WeeklyForecast] Detected clear/sunny condition');
+    console.log('[WeeklyForecast] Detected sunny condition');
+    return { ios: 'sun.max.fill', android: 'wb_sunny' };
+  }
+  
+  // Clear conditions
+  if (lower.includes('clear')) {
+    // Check if it's "mostly clear" or "partly clear"
+    if (lower.includes('mostly') || lower.includes('partly')) {
+      console.log('[WeeklyForecast] Detected mostly/partly clear condition');
+      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+    }
+    console.log('[WeeklyForecast] Detected clear condition');
     return { ios: 'sun.max.fill', android: 'wb_sunny' };
   }
   
   // Partly cloudy
-  if (lower.includes('partly') || lower.includes('partial')) {
+  if (lower.includes('partly cloudy') || lower.includes('partial')) {
     console.log('[WeeklyForecast] Detected partly cloudy condition');
     return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
   }
@@ -70,7 +82,7 @@ const getWeatherIcon = (conditions: string | null) => {
     return { ios: 'cloud.fill', android: 'cloud' };
   }
   
-  // Cloudy/Overcast
+  // Cloudy/Overcast (general)
   if (lower.includes('cloud') || lower.includes('overcast')) {
     console.log('[WeeklyForecast] Detected cloudy condition');
     return { ios: 'cloud.fill', android: 'cloud' };
