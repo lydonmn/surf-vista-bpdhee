@@ -22,7 +22,6 @@ import Purchases, {
   PurchasesOffering,
   LOG_LEVEL
 } from 'react-native-purchases';
-import { presentPaywallUI, presentCustomerCenterUI } from 'react-native-purchases-ui';
 import { Platform, Alert } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 
@@ -168,7 +167,7 @@ export const checkPaymentConfiguration = (): boolean => {
 };
 
 // ============================================
-// PAYWALL PRESENTATION (Modern Method)
+// PAYWALL PRESENTATION (Using Manual Purchase)
 // ============================================
 
 export const presentPaywall = async (
@@ -176,101 +175,247 @@ export const presentPaywall = async (
   userEmail?: string
 ): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
   try {
-    console.log('[RevenueCat] 🎨 Presenting RevenueCat Paywall...');
+    console.log('[RevenueCat] 🎨 ===== PRESENTING PAYWALL =====');
+    console.log('[RevenueCat] User ID:', userId);
+    console.log('[RevenueCat] User Email:', userEmail);
     
     if (!isPaymentSystemAvailable()) {
+      console.error('[RevenueCat] ❌ Payment system not initialized');
       throw new Error('Payment system is not initialized. Please restart the app.');
     }
 
     // Set user ID if provided
     if (userId) {
-      console.log('[RevenueCat] 👤 Setting user ID:', userId);
-      await Purchases.logIn(userId);
+      console.log('[RevenueCat] 👤 Logging in user:', userId);
+      try {
+        await Purchases.logIn(userId);
+        console.log('[RevenueCat] ✅ User logged in successfully');
+      } catch (loginError) {
+        console.error('[RevenueCat] ⚠️ Error logging in user (non-critical):', loginError);
+      }
     }
 
     // Set email if provided
     if (userEmail) {
-      await Purchases.setEmail(userEmail);
+      console.log('[RevenueCat] 📧 Setting user email:', userEmail);
+      try {
+        await Purchases.setEmail(userEmail);
+        console.log('[RevenueCat] ✅ Email set successfully');
+      } catch (emailError) {
+        console.error('[RevenueCat] ⚠️ Error setting email (non-critical):', emailError);
+      }
     }
 
-    // Present the paywall UI (configured in RevenueCat dashboard)
-    console.log('[RevenueCat] 🎨 Showing paywall UI...');
-    const result = await presentPaywallUI();
+    // Check if we have offerings
+    console.log('[RevenueCat] 📦 Checking offerings...');
+    const offerings = await Purchases.getOfferings();
+    console.log('[RevenueCat] Current offering:', offerings.current?.identifier || 'None');
+    
+    if (!offerings.current || offerings.current.availablePackages.length === 0) {
+      console.error('[RevenueCat] ❌ No offerings available');
+      throw new Error('No subscription packages available. Please contact support.');
+    }
 
-    console.log('[RevenueCat] 📊 Paywall result:', result);
+    console.log('[RevenueCat] 📦 Available packages:', offerings.current.availablePackages.length);
+    offerings.current.availablePackages.forEach(pkg => {
+      console.log(`[RevenueCat]   - ${pkg.identifier}: ${pkg.product.priceString}`);
+    });
 
-    // Handle the result
-    if (result === 'purchased' || result === 'restored') {
-      console.log('[RevenueCat] ✅ Purchase successful!');
+    // Present a native alert with subscription options
+    return new Promise((resolve) => {
+      const packages = offerings.current!.availablePackages;
       
-      // Get updated customer info
-      const customerInfo = await Purchases.getCustomerInfo();
-      console.log('[RevenueCat] 📊 Active entitlements:', Object.keys(customerInfo.entitlements.active));
+      // Find monthly and annual packages
+      const monthlyPackage = packages.find(pkg => 
+        pkg.identifier.toLowerCase().includes('monthly') || 
+        pkg.packageType === 'MONTHLY'
+      );
+      const annualPackage = packages.find(pkg => 
+        pkg.identifier.toLowerCase().includes('annual') || 
+        pkg.identifier.toLowerCase().includes('yearly') ||
+        pkg.packageType === 'ANNUAL'
+      );
 
-      // Update Supabase profile
-      if (userId) {
-        await updateSubscriptionInSupabase(userId, customerInfo);
+      const buttons: any[] = [];
+
+      if (monthlyPackage) {
+        buttons.push({
+          text: `Monthly - ${monthlyPackage.product.priceString}`,
+          onPress: async () => {
+            try {
+              console.log('[RevenueCat] 💳 Purchasing monthly package...');
+              const { customerInfo } = await Purchases.purchasePackage(monthlyPackage);
+              
+              console.log('[RevenueCat] ✅ Purchase successful!');
+              console.log('[RevenueCat] 📊 Active entitlements:', Object.keys(customerInfo.entitlements.active));
+
+              // Update Supabase profile
+              if (userId) {
+                console.log('[RevenueCat] 💾 Updating Supabase profile...');
+                await updateSubscriptionInSupabase(userId, customerInfo);
+              }
+
+              resolve({ 
+                state: 'purchased',
+                message: 'Subscription activated successfully!'
+              });
+            } catch (error: any) {
+              console.error('[RevenueCat] ❌ Purchase error:', error);
+              
+              if (error.userCancelled) {
+                console.log('[RevenueCat] ℹ️ User cancelled purchase');
+                resolve({ state: 'declined' });
+              } else {
+                resolve({ 
+                  state: 'error',
+                  message: error.message || 'Purchase failed. Please try again.'
+                });
+              }
+            }
+          }
+        });
       }
 
-      return { 
-        state: result,
-        message: result === 'purchased' 
-          ? 'Subscription activated successfully!' 
-          : 'Subscription restored successfully!'
-      };
-    } else if (result === 'cancelled') {
-      console.log('[RevenueCat] ℹ️ User cancelled paywall');
-      return { state: 'declined' };
-    } else {
-      console.log('[RevenueCat] ℹ️ Paywall closed without purchase');
-      return { state: 'declined' };
-    }
+      if (annualPackage) {
+        buttons.push({
+          text: `Annual - ${annualPackage.product.priceString}`,
+          onPress: async () => {
+            try {
+              console.log('[RevenueCat] 💳 Purchasing annual package...');
+              const { customerInfo } = await Purchases.purchasePackage(annualPackage);
+              
+              console.log('[RevenueCat] ✅ Purchase successful!');
+              console.log('[RevenueCat] 📊 Active entitlements:', Object.keys(customerInfo.entitlements.active));
+
+              // Update Supabase profile
+              if (userId) {
+                console.log('[RevenueCat] 💾 Updating Supabase profile...');
+                await updateSubscriptionInSupabase(userId, customerInfo);
+              }
+
+              resolve({ 
+                state: 'purchased',
+                message: 'Subscription activated successfully!'
+              });
+            } catch (error: any) {
+              console.error('[RevenueCat] ❌ Purchase error:', error);
+              
+              if (error.userCancelled) {
+                console.log('[RevenueCat] ℹ️ User cancelled purchase');
+                resolve({ state: 'declined' });
+              } else {
+                resolve({ 
+                  state: 'error',
+                  message: error.message || 'Purchase failed. Please try again.'
+                });
+              }
+            }
+          }
+        });
+      }
+
+      buttons.push({
+        text: 'Restore Purchases',
+        onPress: async () => {
+          try {
+            console.log('[RevenueCat] 🔄 Restoring purchases...');
+            const customerInfo = await Purchases.restorePurchases();
+            
+            const hasActiveSubscription = Object.keys(customerInfo.entitlements.active).length > 0;
+
+            if (hasActiveSubscription) {
+              // Update Supabase profile
+              if (userId) {
+                console.log('[RevenueCat] 💾 Updating Supabase profile...');
+                await updateSubscriptionInSupabase(userId, customerInfo);
+              }
+
+              resolve({
+                state: 'restored',
+                message: 'Subscription restored successfully!'
+              });
+            } else {
+              resolve({
+                state: 'declined',
+                message: 'No previous purchases found.'
+              });
+            }
+          } catch (error: any) {
+            console.error('[RevenueCat] ❌ Restore error:', error);
+            resolve({
+              state: 'error',
+              message: error.message || 'Failed to restore purchases.'
+            });
+          }
+        }
+      });
+
+      buttons.push({
+        text: 'Cancel',
+        style: 'cancel',
+        onPress: () => {
+          console.log('[RevenueCat] ℹ️ User cancelled paywall');
+          resolve({ state: 'declined' });
+        }
+      });
+
+      Alert.alert(
+        'Subscribe to SurfVista',
+        'Get exclusive access to daily 6K drone footage and surf reports from Folly Beach, SC.',
+        buttons
+      );
+    });
 
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Paywall error:', error);
+    console.error('[RevenueCat] ❌ ===== PAYWALL ERROR =====');
+    console.error('[RevenueCat] Error:', error);
+    console.error('[RevenueCat] Error message:', error.message);
 
-    // Handle user cancellation
-    if (error.userCancelled) {
-      console.log('[RevenueCat] ℹ️ User cancelled purchase');
-      return { state: 'declined' };
-    }
-
-    // Handle other errors
     return { 
       state: 'error',
-      message: error.message || 'Purchase failed. Please try again.'
+      message: error.message || 'Unable to load subscription options. Please try again.'
     };
   }
 };
 
 // ============================================
-// CUSTOMER CENTER (Modern Method)
+// CUSTOMER CENTER (Native Subscription Management)
 // ============================================
 
 export const presentCustomerCenter = async (): Promise<void> => {
   try {
-    console.log('[RevenueCat] 🏢 Presenting Customer Center...');
+    console.log('[RevenueCat] 🏢 ===== PRESENTING CUSTOMER CENTER =====');
     
     if (!isPaymentSystemAvailable()) {
+      console.error('[RevenueCat] ❌ Payment system not initialized');
       throw new Error('Payment system is not initialized. Please restart the app.');
     }
 
-    // Present the Customer Center UI
-    await presentCustomerCenterUI();
+    // For now, show instructions for managing subscription
+    Alert.alert(
+      'Manage Subscription',
+      Platform.OS === 'ios'
+        ? 'To manage your subscription:\n\n1. Open Settings on your iPhone\n2. Tap your name at the top\n3. Tap Subscriptions\n4. Select SurfVista'
+        : 'To manage your subscription:\n\n1. Open Play Store\n2. Tap Menu > Subscriptions\n3. Select SurfVista',
+      [{ text: 'OK' }]
+    );
     
-    console.log('[RevenueCat] ✅ Customer Center closed');
-    
-    // Refresh customer info after Customer Center closes
+    // Refresh customer info after
+    console.log('[RevenueCat] 📊 Refreshing customer info...');
     const customerInfo = await Purchases.getCustomerInfo();
     
     // Update Supabase with latest info
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      console.log('[RevenueCat] 💾 Updating Supabase profile...');
       await updateSubscriptionInSupabase(user.id, customerInfo);
     }
     
+    console.log('[RevenueCat] ===== CUSTOMER CENTER COMPLETE =====');
+    
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Customer Center error:', error);
+    console.error('[RevenueCat] ❌ ===== CUSTOMER CENTER ERROR =====');
+    console.error('[RevenueCat] Error:', error);
     throw error;
   }
 };
@@ -341,12 +486,14 @@ export const restorePurchases = async (): Promise<{
   message?: string 
 }> => {
   try {
-    console.log('[RevenueCat] 🔄 Restoring purchases...');
+    console.log('[RevenueCat] 🔄 ===== RESTORING PURCHASES =====');
 
     if (!isPaymentSystemAvailable()) {
+      console.error('[RevenueCat] ❌ Payment system not initialized');
       throw new Error('Payment system is not initialized.');
     }
 
+    console.log('[RevenueCat] 🔄 Calling restorePurchases()...');
     const customerInfo = await Purchases.restorePurchases();
 
     console.log('[RevenueCat] 📊 Restore complete');
@@ -358,15 +505,18 @@ export const restorePurchases = async (): Promise<{
       // Update Supabase profile
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        console.log('[RevenueCat] 💾 Updating Supabase profile...');
         await updateSubscriptionInSupabase(user.id, customerInfo);
       }
 
+      console.log('[RevenueCat] ===== RESTORE SUCCESS =====');
       return {
         success: true,
         state: 'restored',
         message: 'Subscription restored successfully!'
       };
     } else {
+      console.log('[RevenueCat] ===== NO PURCHASES FOUND =====');
       return {
         success: false,
         state: 'none',
@@ -375,7 +525,8 @@ export const restorePurchases = async (): Promise<{
     }
 
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Restore error:', error);
+    console.error('[RevenueCat] ❌ ===== RESTORE ERROR =====');
+    console.error('[RevenueCat] Error:', error);
     return {
       success: false,
       message: error.message || 'Failed to restore purchases.'
