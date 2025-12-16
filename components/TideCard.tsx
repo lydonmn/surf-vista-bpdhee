@@ -27,8 +27,8 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
           <IconSymbol
-            ios_icon_name="arrow.up.arrow.down"
-            android_material_icon_name="swap_vert"
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
             size={32}
             color={colors.primary}
           />
@@ -51,8 +51,8 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
           <IconSymbol
-            ios_icon_name="arrow.up.arrow.down"
-            android_material_icon_name="swap_vert"
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
             size={32}
             color={colors.primary}
           />
@@ -84,8 +84,8 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
       <View style={styles.header}>
         <IconSymbol
-          ios_icon_name="arrow.up.arrow.down"
-          android_material_icon_name="swap_vert"
+          ios_icon_name="water.waves"
+          android_material_icon_name="waves"
           size={32}
           color={colors.primary}
         />
@@ -105,10 +105,10 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
             hour12: true
           });
 
-          // Determine icon based on tide type - using water wave icons
+          // Determine icon based on tide type
           const isHighTide = tide.type === 'high';
-          const iosIconName = isHighTide ? 'water.waves.and.arrow.up' : 'water.waves.and.arrow.down';
-          const androidIconName = isHighTide ? 'trending_up' : 'trending_down';
+          const iosIconName = isHighTide ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill';
+          const androidIconName = isHighTide ? 'arrow_circle_up' : 'arrow_circle_down';
           const iconColor = isHighTide ? '#2196F3' : '#FF9800';
 
           console.log('[TideCard] Tide icon:', { 
