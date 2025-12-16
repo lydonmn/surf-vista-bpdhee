@@ -44,8 +44,8 @@ export const PAYMENT_CONFIG = {
     YEARLY: 'yearly',
   },
   
-  // RevenueCat Offering ID - YOUR SPECIFIC OFFERING
-  OFFERING_ID: 'ofrnge7bdc97106',
+  // RevenueCat Offering IDs - Try specific first, then fallback to default
+  OFFERING_IDS: ['ofrnge7bdc97106', 'default'],
   
   // Entitlement ID - This is what you check to see if user has access
   // You configured this as "premium" in RevenueCat
@@ -89,11 +89,17 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       console.log('[RevenueCat] 📦 All available offerings:', Object.keys(offerings.all));
       console.log('[RevenueCat] 📦 Current offering:', offerings.current?.identifier || 'None');
       
-      // Try to get the specific offering first
-      if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
-        currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
-        console.log('[RevenueCat] 📦 Using specific offering:', PAYMENT_CONFIG.OFFERING_ID);
-      } else if (offerings.current) {
+      // Try to get offerings in priority order
+      for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
+        if (offerings.all[offeringId]) {
+          currentOffering = offerings.all[offeringId];
+          console.log('[RevenueCat] 📦 Using offering:', offeringId);
+          break;
+        }
+      }
+      
+      // Fallback to current offering if none of the specific ones found
+      if (!currentOffering && offerings.current) {
         currentOffering = offerings.current;
         console.log('[RevenueCat] 📦 Using current offering:', offerings.current.identifier);
       }
@@ -139,7 +145,7 @@ export const checkPaymentConfiguration = (): boolean => {
   console.log('[RevenueCat] - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat] - Platform:', Platform.OS);
   console.log('[RevenueCat] - API Key Configured: ✅ YES');
-  console.log('[RevenueCat] - Offering ID:', PAYMENT_CONFIG.OFFERING_ID);
+  console.log('[RevenueCat] - Offering IDs:', PAYMENT_CONFIG.OFFERING_IDS);
   console.log('[RevenueCat] - Current Offering:', currentOffering?.identifier || 'None');
   
   return isPaymentSystemInitialized;
@@ -187,7 +193,7 @@ export const presentPaywall = async (
     }
 
     // Check if we have offerings
-    console.log('[RevenueCat] 📦 Checking offerings...');
+    console.log('[RevenueCat] 📦 Fetching latest offerings...');
     const offerings = await Purchases.getOfferings();
     
     console.log('[RevenueCat] 📦 All available offerings:', Object.keys(offerings.all));
@@ -207,18 +213,26 @@ export const presentPaywall = async (
       };
     }
 
-    // Determine which offering to use
+    // Determine which offering to use - try multiple strategies
     let offeringToUse: PurchasesOffering | null = null;
     
-    // Try specific offering first
-    if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
-      offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
-      console.log('[RevenueCat] 📦 Using specific offering:', PAYMENT_CONFIG.OFFERING_ID);
-    } else if (offerings.current) {
+    // Strategy 1: Try specific offering IDs in order
+    for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
+      if (offerings.all[offeringId]) {
+        offeringToUse = offerings.all[offeringId];
+        console.log('[RevenueCat] 📦 Using specific offering:', offeringId);
+        break;
+      }
+    }
+    
+    // Strategy 2: Use current/default offering
+    if (!offeringToUse && offerings.current) {
       offeringToUse = offerings.current;
       console.log('[RevenueCat] 📦 Using current/default offering:', offerings.current.identifier);
-    } else if (Object.keys(offerings.all).length > 0) {
-      // Use the first available offering as fallback
+    }
+    
+    // Strategy 3: Use first available offering as last resort
+    if (!offeringToUse && Object.keys(offerings.all).length > 0) {
       const firstOfferingKey = Object.keys(offerings.all)[0];
       offeringToUse = offerings.all[firstOfferingKey];
       console.log('[RevenueCat] 📦 Using first available offering:', firstOfferingKey);
@@ -232,36 +246,49 @@ export const presentPaywall = async (
       };
     }
 
-    console.log('[RevenueCat] 📦 Offering to present:', offeringToUse.identifier);
+    console.log('[RevenueCat] 📦 Final offering to present:', offeringToUse.identifier);
     console.log('[RevenueCat] 📦 Available packages:', offeringToUse.availablePackages.length);
+    
+    if (offeringToUse.availablePackages.length === 0) {
+      console.error('[RevenueCat] ❌ Offering has no packages');
+      return {
+        state: 'error',
+        message: 'No subscription packages found in the offering. Please add products to your offering in RevenueCat dashboard.'
+      };
+    }
 
-    // Present the RevenueCat Paywall UI with the specific offering
-    console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall() with offering...');
+    // Present the RevenueCat Paywall UI
+    console.log('[RevenueCat] 🎨 Presenting paywall...');
     
     let paywallResult: PAYWALL_RESULT;
     
     try {
-      // Try to present with the specific offering
-      paywallResult = await RevenueCatUI.presentPaywall({
-        offering: offeringToUse
-      });
+      // Try presenting WITHOUT specifying offering (uses default paywall configuration)
+      console.log('[RevenueCat] 🎨 Attempting to present default paywall (no offering specified)...');
+      paywallResult = await RevenueCatUI.presentPaywall();
       console.log('[RevenueCat] 📊 Paywall closed with result:', paywallResult);
-    } catch (paywallError: any) {
-      console.error('[RevenueCat] ❌ Error presenting paywall with offering:', paywallError);
+    } catch (defaultError: any) {
+      console.error('[RevenueCat] ❌ Error presenting default paywall:', defaultError);
       
-      // Fallback: Try presenting without specifying offering (uses default)
-      console.log('[RevenueCat] 🔄 Attempting fallback: presenting default paywall...');
+      // Fallback: Try with specific offering
+      console.log('[RevenueCat] 🔄 Attempting fallback: presenting with specific offering...');
       try {
-        paywallResult = await RevenueCatUI.presentPaywall();
+        paywallResult = await RevenueCatUI.presentPaywall({
+          offering: offeringToUse
+        });
         console.log('[RevenueCat] 📊 Fallback paywall closed with result:', paywallResult);
       } catch (fallbackError: any) {
         console.error('[RevenueCat] ❌ Fallback also failed:', fallbackError);
+        console.error('[RevenueCat] Error details:', JSON.stringify(fallbackError, null, 2));
+        
         return {
           state: 'error',
           message: 'Unable to display subscription options. Please ensure:\n\n' +
                    '1. A Paywall is configured in RevenueCat dashboard\n' +
-                   '2. The Paywall is linked to an Offering\n' +
-                   '3. The Offering is set as "Current" or default\n\n' +
+                   '2. The Paywall is linked to the "default" offering\n' +
+                   '3. The Paywall is published/active\n' +
+                   '4. Products are properly configured\n\n' +
+                   'Visit: https://app.revenuecat.com/\n\n' +
                    'Error: ' + (fallbackError.message || 'Unknown error')
         };
       }
@@ -317,8 +344,8 @@ export const presentPaywall = async (
         state: 'error',
         message: 'Unable to display subscription options. Please ensure:\n\n' +
                  '1. A Paywall is configured in RevenueCat dashboard\n' +
-                 '2. The Paywall is linked to your Offering (' + PAYMENT_CONFIG.OFFERING_ID + ')\n' +
-                 '3. The Offering contains at least one product\n' +
+                 '2. The Paywall is linked to the "default" offering\n' +
+                 '3. The Paywall is published/active\n' +
                  '4. Products are properly configured in App Store Connect/Google Play\n\n' +
                  'Visit: https://app.revenuecat.com/ to configure your paywall.'
       };
@@ -332,6 +359,7 @@ export const presentPaywall = async (
     console.error('[RevenueCat] Error:', error);
     console.error('[RevenueCat] Error message:', error.message);
     console.error('[RevenueCat] Error code:', error.code);
+    console.error('[RevenueCat] Full error:', JSON.stringify(error, null, 2));
 
     // Provide more specific error messages
     let errorMessage = 'Unable to load subscription options. ';
@@ -339,7 +367,10 @@ export const presentPaywall = async (
     if (error.message?.includes('No current offering')) {
       errorMessage += 'Please configure a default offering in your RevenueCat dashboard.';
     } else if (error.message?.includes('paywall')) {
-      errorMessage += 'Please configure a paywall in your RevenueCat dashboard.';
+      errorMessage += 'Please ensure:\n\n' +
+                     '1. A Paywall is configured in RevenueCat dashboard\n' +
+                     '2. The Paywall is linked to the "default" offering\n' +
+                     '3. The Paywall is published/active';
     } else if (error.message?.includes('network')) {
       errorMessage += 'Please check your internet connection and try again.';
     } else {
