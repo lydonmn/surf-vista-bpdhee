@@ -35,35 +35,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     console.log('[AuthContext] Initializing...');
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('[AuthContext] Initial session check:', session?.user?.email || 'No session');
-      setSession(session);
-      
-      if (session?.user) {
-        console.log('[AuthContext] Loading initial profile...');
-        await loadUserProfile(session.user);
-        console.log('[AuthContext] Initial profile loaded');
-      } else {
-        console.log('[AuthContext] No session, setting loading to false');
-        setIsLoading(false);
+    
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // Get initial session
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+
+        console.log('[AuthContext] Initial session check:', initialSession?.user?.email || 'No session');
+        
+        if (initialSession?.user) {
+          setSession(initialSession);
+          console.log('[AuthContext] Loading initial profile...');
+          await loadUserProfile(initialSession.user, mounted);
+        } else {
+          console.log('[AuthContext] No session, setting loading to false');
+          setIsLoading(false);
+        }
+        
+        if (mounted) {
+          setIsInitialized(true);
+          console.log('[AuthContext] Initialization complete');
+        }
+      } catch (error) {
+        console.error('[AuthContext] Initialization error:', error);
+        if (mounted) {
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
       }
-      
-      setIsInitialized(true);
-      console.log('[AuthContext] Initialization complete');
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('[AuthContext] Auth state changed:', _event, session?.user?.email || 'No session');
-      setSession(session);
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted) return;
+
+      console.log('[AuthContext] Auth state changed:', event, newSession?.user?.email || 'No session');
       
-      if (session?.user) {
+      setSession(newSession);
+      
+      if (newSession?.user) {
         console.log('[AuthContext] Loading profile after auth change...');
-        await loadUserProfile(session.user);
-        console.log('[AuthContext] Profile loaded after auth change');
+        await loadUserProfile(newSession.user, mounted);
       } else {
         console.log('[AuthContext] No session, clearing user data');
         setUser(null);
@@ -71,33 +91,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
       
-      if (!isInitialized) {
+      if (!isInitialized && mounted) {
         setIsInitialized(true);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const loadUserProfile = async (authUser: SupabaseUser) => {
+  const loadUserProfile = async (authUser: SupabaseUser, mounted: boolean = true) => {
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
-      setIsLoading(true);
       
-      // Add a small delay to ensure database is ready
-      await new Promise(resolve => setTimeout(resolve, 300));
+      if (mounted) {
+        setIsLoading(true);
+      }
       
-      const { data: profileData, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
+      // Retry logic for profile loading
+      let retries = 3;
+      let profileData = null;
+      let error = null;
 
-      if (error) {
-        console.log('[AuthContext] Error loading profile:', error.message, error.code);
+      while (retries > 0 && !profileData) {
+        const result = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
+        if (result.data) {
+          profileData = result.data;
+          break;
+        }
+
+        error = result.error;
         
         // If profile doesn't exist, try to create it
-        if (error.code === 'PGRST116') {
+        if (error?.code === 'PGRST116') {
           console.log('[AuthContext] Profile not found, creating...');
           const { data: newProfile, error: createError } = await supabase
             .from('profiles')
@@ -110,20 +143,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .select()
             .single();
           
-          if (createError) {
-            console.log('[AuthContext] Error creating profile:', createError.message);
-            setProfile(null);
-            setUser({ ...authUser });
+          if (newProfile) {
+            profileData = newProfile;
+            console.log('[AuthContext] Profile created successfully');
+            break;
           } else {
-            console.log('[AuthContext] Profile created successfully:', newProfile);
-            setProfile(newProfile);
-            setUser({ ...authUser, profile: newProfile });
+            console.log('[AuthContext] Error creating profile:', createError?.message);
           }
-        } else {
-          setProfile(null);
-          setUser({ ...authUser });
         }
-      } else {
+
+        retries--;
+        if (retries > 0) {
+          console.log(`[AuthContext] Retrying profile load... (${retries} attempts left)`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      if (!mounted) return;
+
+      if (profileData) {
         console.log('[AuthContext] Profile loaded successfully:', {
           email: profileData.email,
           is_admin: profileData.is_admin,
@@ -132,22 +170,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
+      } else {
+        console.log('[AuthContext] Failed to load profile after retries');
+        setProfile(null);
+        setUser({ ...authUser });
       }
     } catch (error) {
-      console.log('[AuthContext] Exception loading user profile:', error);
-      setProfile(null);
-      setUser({ ...authUser });
+      console.error('[AuthContext] Exception loading user profile:', error);
+      if (mounted) {
+        setProfile(null);
+        setUser({ ...authUser });
+      }
     } finally {
-      console.log('[AuthContext] Setting isLoading to false');
-      setIsLoading(false);
+      if (mounted) {
+        console.log('[AuthContext] Setting isLoading to false');
+        setIsLoading(false);
+      }
     }
   };
 
   const refreshProfile = async () => {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
-      setIsLoading(true);
-      await loadUserProfile(session.user);
+      await loadUserProfile(session.user, true);
     }
   };
 
@@ -175,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, message: 'Account created successfully!' };
     } catch (error) {
-      console.log('[AuthContext] Sign up error:', error);
+      console.error('[AuthContext] Sign up error:', error);
       return { success: false, message: 'An unexpected error occurred' };
     }
   };
@@ -197,21 +242,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.user && data.session) {
-        console.log('[AuthContext] Sign in successful, setting session...');
-        setSession(data.session);
+        console.log('[AuthContext] Sign in successful, user:', data.user.email);
         
-        // Load profile and wait for it to complete
-        console.log('[AuthContext] Loading profile after sign in...');
-        await loadUserProfile(data.user);
+        // The onAuthStateChange listener will handle loading the profile
+        // Just wait a moment to ensure it's triggered
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        console.log('[AuthContext] Sign in complete, profile loaded');
+        console.log('[AuthContext] Sign in complete');
         return { success: true, message: 'Signed in successfully!' };
       }
 
       setIsLoading(false);
       return { success: false, message: 'Sign in failed' };
     } catch (error) {
-      console.log('[AuthContext] Sign in error:', error);
+      console.error('[AuthContext] Sign in error:', error);
       setIsLoading(false);
       return { success: false, message: 'An unexpected error occurred' };
     }
@@ -226,47 +270,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       console.log('[AuthContext] Sign out complete');
     } catch (error) {
-      console.log('[AuthContext] Sign out error:', error);
+      console.error('[AuthContext] Sign out error:', error);
     }
   };
 
   const checkSubscription = (): boolean => {
-    const hasSubscription = (() => {
-      // If no profile, not subscribed
-      if (!profile) {
-        return false;
-      }
+    // Don't check subscription while loading
+    if (isLoading || !profile) {
+      console.log('[AuthContext] Subscription check: loading or no profile');
+      return false;
+    }
 
-      // Admin users always have access
-      if (profile.is_admin) {
-        return true;
-      }
+    // Admin users always have access
+    if (profile.is_admin) {
+      console.log('[AuthContext] Subscription check: user is admin - GRANTED');
+      return true;
+    }
 
-      // Check if user is subscribed
-      if (!profile.is_subscribed) {
-        return false;
-      }
-      
-      // If subscribed and no end date, subscription is active
-      if (!profile.subscription_end_date) {
-        return true;
-      }
-      
-      // If there's an end date, check if it's in the future
-      const endDate = new Date(profile.subscription_end_date);
-      return endDate > new Date();
-    })();
-
-    console.log('[AuthContext] Subscription check:', {
-      profile_exists: !!profile,
-      is_admin: profile?.is_admin,
-      is_subscribed: profile?.is_subscribed,
-      subscription_end_date: profile?.subscription_end_date,
-      is_loading: isLoading,
-      result: hasSubscription
-    });
-
-    return hasSubscription;
+    // Check if user is subscribed
+    if (!profile.is_subscribed) {
+      console.log('[AuthContext] Subscription check: not subscribed');
+      return false;
+    }
+    
+    // If subscribed and no end date, subscription is active
+    if (!profile.subscription_end_date) {
+      console.log('[AuthContext] Subscription check: subscribed with no end date - GRANTED');
+      return true;
+    }
+    
+    // If there's an end date, check if it's in the future
+    const endDate = new Date(profile.subscription_end_date);
+    const isActive = endDate > new Date();
+    console.log('[AuthContext] Subscription check: subscribed with end date -', isActive ? 'GRANTED' : 'EXPIRED');
+    return isActive;
   };
 
   const isAdmin = (): boolean => {

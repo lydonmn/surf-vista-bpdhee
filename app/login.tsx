@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,11 +9,19 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function LoginScreen() {
   const theme = useTheme();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, profile, isLoading: authLoading, checkSubscription } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+
+  // Redirect if already logged in with subscription
+  useEffect(() => {
+    if (user && profile && !authLoading && checkSubscription()) {
+      console.log('[LoginScreen] User already logged in with subscription, redirecting...');
+      router.replace('/(tabs)/(home)/');
+    }
+  }, [user, profile, authLoading]);
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -54,8 +62,12 @@ export default function LoginScreen() {
       setIsLoading(false);
 
       if (result.success) {
-        console.log('[LoginScreen] Sign in successful, navigating to home...');
-        // Use replace to prevent back navigation to login
+        console.log('[LoginScreen] Sign in successful, waiting for profile to load...');
+        // Wait a bit for the profile to load via AuthContext
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Navigate to home - the home screen will handle showing the right content
+        console.log('[LoginScreen] Navigating to home...');
         router.replace('/(tabs)/(home)/');
       } else {
         console.log('[LoginScreen] Sign in failed:', result.message);
