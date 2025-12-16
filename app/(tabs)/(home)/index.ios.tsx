@@ -297,7 +297,7 @@ export default function HomeScreen() {
           >
             <IconSymbol
               ios_icon_name="cloud.sun.fill"
-              android_material_icon_name="wb_sunny"
+              android_material_icon_name="cloud"
               size={32}
               color={colors.primary}
             />
