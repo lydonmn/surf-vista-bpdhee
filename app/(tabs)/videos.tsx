@@ -1,16 +1,18 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
-import { mockVideos } from "@/data/mockData";
 import { IconSymbol } from "@/components/IconSymbol";
+import { useVideos } from "@/hooks/useVideos";
 
 export default function VideosScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
+  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const isSubscribed = checkSubscription();
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export default function VideosScreen() {
       hasUser: !!user,
       hasProfile: !!profile,
       isSubscribed,
-      isLoading,
+      authLoading,
       isInitialized,
       profileData: profile ? {
         is_admin: profile.is_admin,
@@ -26,10 +28,16 @@ export default function VideosScreen() {
         subscription_end_date: profile.subscription_end_date
       } : null
     });
-  }, [user, profile, isSubscribed, isLoading, isInitialized]);
+  }, [user, profile, isSubscribed, authLoading, isInitialized]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshVideos();
+    setIsRefreshing(false);
+  };
 
   // Show loading state while auth is initializing or profile is being loaded
-  if (!isInitialized || isLoading) {
+  if (!isInitialized || authLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -82,6 +90,13 @@ export default function VideosScreen() {
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+        />
+      }
     >
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
@@ -92,44 +107,126 @@ export default function VideosScreen() {
         </Text>
       </View>
 
-      {mockVideos.map((video, index) => (
-        <TouchableOpacity
-          key={index}
-          style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push({
-            pathname: '/video-player',
-            params: { videoId: video.id }
-          })}
-        >
-          <Image
-            source={{ uri: video.thumbnailUrl }}
-            style={styles.thumbnail}
+      {error && (
+        <View style={[styles.errorCard, { backgroundColor: '#FF6B6B' }]}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle.fill"
+            android_material_icon_name="warning"
+            size={24}
+            color="#FFFFFF"
           />
-          <View style={styles.playOverlay}>
-            <IconSymbol
-              ios_icon_name="play.circle.fill"
-              android_material_icon_name="play_circle"
-              size={64}
-              color="#FFFFFF"
-            />
-          </View>
-          <View style={styles.durationBadge}>
-            <Text style={styles.durationText}>{video.duration}</Text>
-          </View>
-          <View style={styles.videoInfo}>
-            <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-              {video.title}
-            </Text>
-            <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-              {new Date(video.date).toLocaleDateString('en-US', {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric'
-              })}
-            </Text>
-          </View>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
+      {videosLoading && !isRefreshing ? (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading videos...
+          </Text>
+        </View>
+      ) : videos.length === 0 ? (
+        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
+          <IconSymbol
+            ios_icon_name="video.fill"
+            android_material_icon_name="videocam"
+            size={64}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            No Videos Yet
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            New drone footage will appear here as it&apos;s uploaded by our team.
+          </Text>
+          {profile?.is_admin && (
+            <TouchableOpacity
+              style={[styles.uploadButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin')}
+            >
+              <IconSymbol
+                ios_icon_name="plus.circle.fill"
+                android_material_icon_name="add_circle"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.uploadButtonText}>Upload Video</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <>
+          {videos.map((video, index) => {
+            // Use thumbnail if available, otherwise use a default surf image
+            const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800';
+            
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
+                onPress={() => router.push({
+                  pathname: '/video-player',
+                  params: { videoId: video.id }
+                })}
+              >
+                <Image
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnail}
+                />
+                <View style={styles.playOverlay}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play_circle"
+                    size={64}
+                    color="#FFFFFF"
+                  />
+                </View>
+                {video.duration && (
+                  <View style={styles.durationBadge}>
+                    <Text style={styles.durationText}>{video.duration}</Text>
+                  </View>
+                )}
+                <View style={styles.videoInfo}>
+                  <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                    {video.title}
+                  </Text>
+                  <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                    {new Date(video.created_at).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </Text>
+                  {video.description && (
+                    <Text 
+                      style={[styles.videoDescription, { color: colors.textSecondary }]}
+                      numberOfLines={2}
+                    >
+                      {video.description}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </>
+      )}
+
+      {profile?.is_admin && videos.length > 0 && (
+        <TouchableOpacity
+          style={[styles.adminButton, { backgroundColor: colors.primary }]}
+          onPress={() => router.push('/admin')}
+        >
+          <IconSymbol
+            ios_icon_name="plus.circle.fill"
+            android_material_icon_name="add_circle"
+            size={20}
+            color="#FFFFFF"
+          />
+          <Text style={styles.adminButtonText}>Upload New Video</Text>
         </TouchableOpacity>
-      ))}
+      )}
     </ScrollView>
   );
 }
@@ -148,6 +245,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+    paddingVertical: 48,
   },
   loadingText: {
     fontSize: 16,
@@ -191,6 +289,52 @@ const styles = StyleSheet.create({
   subscribeButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 12,
+  },
+  errorText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyCard: {
+    alignItems: 'center',
+    padding: 48,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  uploadButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: 'bold',
   },
   videoCard: {
@@ -238,5 +382,25 @@ const styles = StyleSheet.create({
   },
   videoDate: {
     fontSize: 14,
+    marginBottom: 4,
+  },
+  videoDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  adminButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
