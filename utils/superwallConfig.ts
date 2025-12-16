@@ -3,10 +3,10 @@ import Superwall from 'expo-superwall';
 import { supabase } from '@/app/integrations/supabase/client';
 
 // ============================================
-// IMPORTANT: Replace with your actual Superwall API key
-// Get your API key from: https://superwall.com/dashboard
+// Superwall API Key configured
+// Dashboard: https://superwall.com/dashboard
 // ============================================
-export const SUPERWALL_API_KEY = 'pk_YOUR_SUPERWALL_API_KEY_HERE';
+export const SUPERWALL_API_KEY = 'pk_gHLCe_Tlt8M5kFpi5dBHW';
 
 let isSuperwallInitialized = false;
 
