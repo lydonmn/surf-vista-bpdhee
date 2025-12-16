@@ -309,7 +309,7 @@ export default function HomeScreen() {
           onPress={() => router.push('/(tabs)/videos')}
         >
           <IconSymbol
-            ios_icon_name="film.fill"
+            ios_icon_name="play.rectangle.on.rectangle.fill"
             android_material_icon_name="video_library"
             size={32}
             color={colors.primary}
@@ -324,8 +324,8 @@ export default function HomeScreen() {
           onPress={() => router.push('/(tabs)/report')}
         >
           <IconSymbol
-            ios_icon_name="chart.bar.fill"
-            android_material_icon_name="bar_chart"
+            ios_icon_name="doc.text.fill"
+            android_material_icon_name="description"
             size={32}
             color={colors.primary}
           />
@@ -345,7 +345,22 @@ export default function HomeScreen() {
             color={colors.primary}
           />
           <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Weather & Tides
+            Weather
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/weather')}
+        >
+          <IconSymbol
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Tides
           </Text>
         </TouchableOpacity>
       </View>
@@ -479,7 +494,7 @@ const styles = StyleSheet.create({
   },
   quickLinkCard: {
     flex: 1,
-    minWidth: 100,
+    minWidth: 80,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',

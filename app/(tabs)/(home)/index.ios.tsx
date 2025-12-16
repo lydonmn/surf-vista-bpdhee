@@ -259,6 +259,69 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Quick Links */}
+        <View style={styles.quickLinks}>
+          <TouchableOpacity
+            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+            onPress={() => router.push('/(tabs)/videos')}
+          >
+            <IconSymbol
+              ios_icon_name="play.rectangle.on.rectangle.fill"
+              android_material_icon_name="video_library"
+              size={32}
+              color={colors.primary}
+            />
+            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+              Video Library
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+            onPress={() => router.push('/(tabs)/report')}
+          >
+            <IconSymbol
+              ios_icon_name="doc.text.fill"
+              android_material_icon_name="description"
+              size={32}
+              color={colors.primary}
+            />
+            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+              Full Reports
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+            onPress={() => router.push('/(tabs)/weather')}
+          >
+            <IconSymbol
+              ios_icon_name="cloud.sun.fill"
+              android_material_icon_name="wb_sunny"
+              size={32}
+              color={colors.primary}
+            />
+            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+              Weather
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+            onPress={() => router.push('/(tabs)/weather')}
+          >
+            <IconSymbol
+              ios_icon_name="water.waves"
+              android_material_icon_name="waves"
+              size={32}
+              color={colors.primary}
+            />
+            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+              Tides
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {isAdmin() && (
           <TouchableOpacity
             style={[styles.adminButton, { backgroundColor: colors.accent }]}
@@ -414,6 +477,30 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+  },
+  quickLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 24,
+  },
+  quickLinkCard: {
+    flex: 1,
+    minWidth: 80,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  quickLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   adminButton: {
     flexDirection: 'row',
