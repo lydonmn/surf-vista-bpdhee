@@ -30,9 +30,26 @@ import { supabase } from '@/app/integrations/supabase/client';
 // CONFIGURATION - YOUR API KEYS
 // ============================================
 
-// RevenueCat API Key (test key provided)
-// Get your production key from: https://app.revenuecat.com/settings/api-keys
-const REVENUECAT_API_KEY = 'test_pIbMwlfINrGOjQfGWYzmARWVOvg';
+// ⚠️ IMPORTANT: Replace with your PRODUCTION API key from RevenueCat
+// 
+// The test key (test_pIbMwlfINrGOjQfGWYzmARWVOvg) will NOT show paywalls!
+// It only works in "Preview API mode" which doesn't present actual paywalls.
+//
+// To get your production key:
+// 1. Go to https://app.revenuecat.com/
+// 2. Click on your project
+// 3. Go to Settings → API Keys
+// 4. Copy the "Apple App Store" key for iOS or "Google Play Store" key for Android
+// 5. Replace the key below
+//
+// Your production key will look like: appl_xxxxxxxxxxxxxxxxx (for iOS)
+// or goog_xxxxxxxxxxxxxxxxx (for Android)
+
+const REVENUECAT_API_KEY_IOS = 'test_pIbMwlfINrGOjQfGWYzmARWVOvg'; // ⚠️ REPLACE WITH YOUR iOS PRODUCTION KEY
+const REVENUECAT_API_KEY_ANDROID = 'test_pIbMwlfINrGOjQfGWYzmARWVOvg'; // ⚠️ REPLACE WITH YOUR Android PRODUCTION KEY
+
+// Select the appropriate key based on platform
+const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
 
 // Product Identifiers (must match App Store Connect / Google Play Console)
 export const PAYMENT_CONFIG = {
@@ -73,6 +90,15 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
   try {
     console.log('[RevenueCat] 🚀 Initializing RevenueCat SDK...');
     console.log('[RevenueCat] 📱 Platform:', Platform.OS);
+    console.log('[RevenueCat] 🔑 API Key:', REVENUECAT_API_KEY.substring(0, 20) + '...');
+    
+    // Check if using test key
+    if (REVENUECAT_API_KEY.startsWith('test_')) {
+      console.warn('[RevenueCat] ⚠️⚠️⚠️ WARNING: Using TEST API key! ⚠️⚠️⚠️');
+      console.warn('[RevenueCat] ⚠️ Paywalls will NOT present in test mode!');
+      console.warn('[RevenueCat] ⚠️ Replace with your PRODUCTION key from:');
+      console.warn('[RevenueCat] ⚠️ https://app.revenuecat.com/ → Settings → API Keys');
+    }
     
     // Set log level for debugging
     Purchases.setLogLevel(LOG_LEVEL.DEBUG);
@@ -144,7 +170,7 @@ export const checkPaymentConfiguration = (): boolean => {
   console.log('[RevenueCat] ⚙️ Configuration Check:');
   console.log('[RevenueCat] - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat] - Platform:', Platform.OS);
-  console.log('[RevenueCat] - API Key Configured: ✅ YES');
+  console.log('[RevenueCat] - API Key Type:', REVENUECAT_API_KEY.startsWith('test_') ? '⚠️ TEST KEY (won\'t show paywalls!)' : '✅ PRODUCTION KEY');
   console.log('[RevenueCat] - Offering IDs:', PAYMENT_CONFIG.OFFERING_IDS);
   console.log('[RevenueCat] - Current Offering:', currentOffering?.identifier || 'None');
   
@@ -161,6 +187,22 @@ export const presentPaywall = async (
 ): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
   try {
     console.log('[RevenueCat] 🎨 ===== PRESENTING PAYWALL UI =====');
+    
+    // Check if using test key
+    if (REVENUECAT_API_KEY.startsWith('test_')) {
+      console.error('[RevenueCat] ❌ Cannot present paywall with TEST API key!');
+      return {
+        state: 'error',
+        message: '⚠️ TEST API KEY DETECTED\n\n' +
+                 'Paywalls cannot be presented in test mode.\n\n' +
+                 'To fix this:\n' +
+                 '1. Go to https://app.revenuecat.com/\n' +
+                 '2. Navigate to Settings → API Keys\n' +
+                 '3. Copy your iOS or Android PRODUCTION key\n' +
+                 '4. Replace the test key in utils/superwallConfig.ts\n\n' +
+                 'Your production key will start with "appl_" (iOS) or "goog_" (Android)'
+      };
+    }
     
     if (!isPaymentSystemAvailable()) {
       console.error('[RevenueCat] ❌ Payment system not initialized');
