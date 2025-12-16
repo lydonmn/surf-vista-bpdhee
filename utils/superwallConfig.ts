@@ -197,18 +197,75 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ No offerings available');
       return {
         state: 'error',
-        message: 'No subscription packages available. Please ensure products and paywalls are configured in RevenueCat dashboard.'
+        message: 'No subscription packages available. Please ensure:\n\n' +
+                 '1. Products are created in App Store Connect/Google Play Console\n' +
+                 '2. Products are added to RevenueCat dashboard\n' +
+                 '3. An Offering is created in RevenueCat\n' +
+                 '4. The Offering is set as "Current" or default\n' +
+                 '5. A Paywall is configured and linked to the Offering\n\n' +
+                 'Check the RevenueCat dashboard at: https://app.revenuecat.com/'
       };
     }
 
-    // Present the RevenueCat Paywall UI
-    console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall()...');
-    console.log('[RevenueCat] 🎨 This will show the default paywall configured in RevenueCat dashboard');
+    // Determine which offering to use
+    let offeringToUse: PurchasesOffering | null = null;
     
-    // Call presentPaywall - it will use the default offering/paywall
-    const paywallResult = await RevenueCatUI.presentPaywall();
+    // Try specific offering first
+    if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
+      offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+      console.log('[RevenueCat] 📦 Using specific offering:', PAYMENT_CONFIG.OFFERING_ID);
+    } else if (offerings.current) {
+      offeringToUse = offerings.current;
+      console.log('[RevenueCat] 📦 Using current/default offering:', offerings.current.identifier);
+    } else if (Object.keys(offerings.all).length > 0) {
+      // Use the first available offering as fallback
+      const firstOfferingKey = Object.keys(offerings.all)[0];
+      offeringToUse = offerings.all[firstOfferingKey];
+      console.log('[RevenueCat] 📦 Using first available offering:', firstOfferingKey);
+    }
+
+    if (!offeringToUse) {
+      console.error('[RevenueCat] ❌ No offering available to present');
+      return {
+        state: 'error',
+        message: 'Unable to load subscription options. Please ensure an Offering is configured in RevenueCat dashboard.'
+      };
+    }
+
+    console.log('[RevenueCat] 📦 Offering to present:', offeringToUse.identifier);
+    console.log('[RevenueCat] 📦 Available packages:', offeringToUse.availablePackages.length);
+
+    // Present the RevenueCat Paywall UI with the specific offering
+    console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall() with offering...');
     
-    console.log('[RevenueCat] 📊 Paywall closed with result:', paywallResult);
+    let paywallResult: PAYWALL_RESULT;
+    
+    try {
+      // Try to present with the specific offering
+      paywallResult = await RevenueCatUI.presentPaywall({
+        offering: offeringToUse
+      });
+      console.log('[RevenueCat] 📊 Paywall closed with result:', paywallResult);
+    } catch (paywallError: any) {
+      console.error('[RevenueCat] ❌ Error presenting paywall with offering:', paywallError);
+      
+      // Fallback: Try presenting without specifying offering (uses default)
+      console.log('[RevenueCat] 🔄 Attempting fallback: presenting default paywall...');
+      try {
+        paywallResult = await RevenueCatUI.presentPaywall();
+        console.log('[RevenueCat] 📊 Fallback paywall closed with result:', paywallResult);
+      } catch (fallbackError: any) {
+        console.error('[RevenueCat] ❌ Fallback also failed:', fallbackError);
+        return {
+          state: 'error',
+          message: 'Unable to display subscription options. Please ensure:\n\n' +
+                   '1. A Paywall is configured in RevenueCat dashboard\n' +
+                   '2. The Paywall is linked to an Offering\n' +
+                   '3. The Offering is set as "Current" or default\n\n' +
+                   'Error: ' + (fallbackError.message || 'Unknown error')
+        };
+      }
+    }
 
     // Handle the result
     if (paywallResult === PAYWALL_RESULT.PURCHASED) {
@@ -258,7 +315,12 @@ export const presentPaywall = async (
       console.log('[RevenueCat] ⚠️ Paywall was not presented');
       return { 
         state: 'error',
-        message: 'Unable to display subscription options. Please ensure a paywall is configured in RevenueCat dashboard with the default offering.'
+        message: 'Unable to display subscription options. Please ensure:\n\n' +
+                 '1. A Paywall is configured in RevenueCat dashboard\n' +
+                 '2. The Paywall is linked to your Offering (' + PAYMENT_CONFIG.OFFERING_ID + ')\n' +
+                 '3. The Offering contains at least one product\n' +
+                 '4. Products are properly configured in App Store Connect/Google Play\n\n' +
+                 'Visit: https://app.revenuecat.com/ to configure your paywall.'
       };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action, result:', paywallResult);
@@ -281,7 +343,7 @@ export const presentPaywall = async (
     } else if (error.message?.includes('network')) {
       errorMessage += 'Please check your internet connection and try again.';
     } else {
-      errorMessage += 'Please try again later or contact support.';
+      errorMessage += 'Please try again later or contact support.\n\nError: ' + (error.message || 'Unknown error');
     }
 
     return { 
