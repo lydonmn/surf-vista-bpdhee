@@ -34,34 +34,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
+    console.log('[AuthContext] Initializing...');
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session:', session?.user?.email);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('[AuthContext] Initial session check:', session?.user?.email || 'No session');
       setSession(session);
+      
       if (session?.user) {
-        loadUserProfile(session.user).then(() => {
-          setIsInitialized(true);
-        });
+        console.log('[AuthContext] Loading initial profile...');
+        await loadUserProfile(session.user);
+        console.log('[AuthContext] Initial profile loaded');
       } else {
+        console.log('[AuthContext] No session, setting loading to false');
         setIsLoading(false);
-        setIsInitialized(true);
       }
+      
+      setIsInitialized(true);
+      console.log('[AuthContext] Initialization complete');
     });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('Auth state changed:', _event, session?.user?.email);
+      console.log('[AuthContext] Auth state changed:', _event, session?.user?.email || 'No session');
       setSession(session);
+      
       if (session?.user) {
+        console.log('[AuthContext] Loading profile after auth change...');
         await loadUserProfile(session.user);
+        console.log('[AuthContext] Profile loaded after auth change');
       } else {
+        console.log('[AuthContext] No session, clearing user data');
         setUser(null);
         setProfile(null);
         setIsLoading(false);
       }
-      setIsInitialized(true);
+      
+      if (!isInitialized) {
+        setIsInitialized(true);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -69,10 +81,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadUserProfile = async (authUser: SupabaseUser) => {
     try {
-      console.log('Loading profile for user:', authUser.id);
+      console.log('[AuthContext] Loading profile for user:', authUser.id);
+      setIsLoading(true);
       
       // Add a small delay to ensure database is ready
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -81,11 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error) {
-        console.log('Error loading profile:', error);
+        console.log('[AuthContext] Error loading profile:', error.message, error.code);
         
         // If profile doesn't exist, try to create it
         if (error.code === 'PGRST116') {
-          console.log('Profile not found, creating...');
+          console.log('[AuthContext] Profile not found, creating...');
           const { data: newProfile, error: createError } = await supabase
             .from('profiles')
             .insert({
@@ -98,11 +111,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .single();
           
           if (createError) {
-            console.log('Error creating profile:', createError);
+            console.log('[AuthContext] Error creating profile:', createError.message);
             setProfile(null);
             setUser({ ...authUser });
           } else {
-            console.log('Profile created:', newProfile);
+            console.log('[AuthContext] Profile created successfully:', newProfile);
             setProfile(newProfile);
             setUser({ ...authUser, profile: newProfile });
           }
@@ -111,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser({ ...authUser });
         }
       } else {
-        console.log('Profile loaded successfully:', {
+        console.log('[AuthContext] Profile loaded successfully:', {
           email: profileData.email,
           is_admin: profileData.is_admin,
           is_subscribed: profileData.is_subscribed,
@@ -121,17 +134,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser({ ...authUser, profile: profileData });
       }
     } catch (error) {
-      console.log('Error loading user profile:', error);
+      console.log('[AuthContext] Exception loading user profile:', error);
       setProfile(null);
       setUser({ ...authUser });
     } finally {
+      console.log('[AuthContext] Setting isLoading to false');
       setIsLoading(false);
     }
   };
 
   const refreshProfile = async () => {
     if (session?.user) {
-      console.log('Refreshing profile...');
+      console.log('[AuthContext] Refreshing profile...');
       setIsLoading(true);
       await loadUserProfile(session.user);
     }
@@ -148,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.log('Sign up error:', error);
+        console.log('[AuthContext] Sign up error:', error);
         return { success: false, message: error.message };
       }
 
@@ -161,14 +175,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, message: 'Account created successfully!' };
     } catch (error) {
-      console.log('Sign up error:', error);
+      console.log('[AuthContext] Sign up error:', error);
       return { success: false, message: 'An unexpected error occurred' };
     }
   };
 
   const signIn = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
-      console.log('Attempting sign in for:', email);
+      console.log('[AuthContext] Attempting sign in for:', email);
       setIsLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -177,30 +191,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.log('Sign in error:', error);
+        console.log('[AuthContext] Sign in error:', error);
         setIsLoading(false);
         return { success: false, message: error.message };
       }
 
       if (data.user && data.session) {
-        console.log('Sign in successful, loading profile...');
+        console.log('[AuthContext] Sign in successful, setting session...');
         setSession(data.session);
         
-        // Load profile and wait for it to complete with longer delay
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Load profile and wait for it to complete
+        console.log('[AuthContext] Loading profile after sign in...');
         await loadUserProfile(data.user);
         
-        // Additional delay to ensure state is fully updated
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        console.log('Profile loaded after sign in, user state updated');
+        console.log('[AuthContext] Sign in complete, profile loaded');
         return { success: true, message: 'Signed in successfully!' };
       }
 
       setIsLoading(false);
       return { success: false, message: 'Sign in failed' };
     } catch (error) {
-      console.log('Sign in error:', error);
+      console.log('[AuthContext] Sign in error:', error);
       setIsLoading(false);
       return { success: false, message: 'An unexpected error occurred' };
     }
@@ -208,68 +219,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      console.log('[AuthContext] Signing out...');
       await supabase.auth.signOut();
       setUser(null);
       setProfile(null);
       setSession(null);
+      console.log('[AuthContext] Sign out complete');
     } catch (error) {
-      console.log('Sign out error:', error);
+      console.log('[AuthContext] Sign out error:', error);
     }
   };
 
   const checkSubscription = (): boolean => {
-    console.log('Checking subscription:', {
+    const hasSubscription = (() => {
+      // If no profile, not subscribed
+      if (!profile) {
+        return false;
+      }
+
+      // Admin users always have access
+      if (profile.is_admin) {
+        return true;
+      }
+
+      // Check if user is subscribed
+      if (!profile.is_subscribed) {
+        return false;
+      }
+      
+      // If subscribed and no end date, subscription is active
+      if (!profile.subscription_end_date) {
+        return true;
+      }
+      
+      // If there's an end date, check if it's in the future
+      const endDate = new Date(profile.subscription_end_date);
+      return endDate > new Date();
+    })();
+
+    console.log('[AuthContext] Subscription check:', {
       profile_exists: !!profile,
       is_admin: profile?.is_admin,
       is_subscribed: profile?.is_subscribed,
       subscription_end_date: profile?.subscription_end_date,
-      is_loading: isLoading
+      is_loading: isLoading,
+      result: hasSubscription
     });
 
-    // If still loading, return false to show loading state
-    if (isLoading) {
-      console.log('Still loading profile data');
-      return false;
-    }
-
-    // If no profile, not subscribed
-    if (!profile) {
-      console.log('No profile found');
-      return false;
-    }
-
-    // Admin users always have access
-    if (profile.is_admin) {
-      console.log('User is admin, granting access');
-      return true;
-    }
-
-    // Check if user is subscribed
-    if (!profile.is_subscribed) {
-      console.log('User is not subscribed');
-      return false;
-    }
-    
-    // If subscribed and no end date, subscription is active
-    if (!profile.subscription_end_date) {
-      console.log('Subscription active (no end date)');
-      return true;
-    }
-    
-    // If there's an end date, check if it's in the future
-    const endDate = new Date(profile.subscription_end_date);
-    const isValid = endDate > new Date();
-    console.log('Subscription end date check:', { 
-      endDate: endDate.toISOString(), 
-      now: new Date().toISOString(),
-      isValid 
-    });
-    return isValid;
+    return hasSubscription;
   };
 
   const isAdmin = (): boolean => {
     const adminStatus = profile?.is_admin || false;
-    console.log('Admin status:', adminStatus);
+    console.log('[AuthContext] Admin status:', adminStatus);
     return adminStatus;
   };
 

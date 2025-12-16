@@ -19,61 +19,93 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
-    console.log('Home screen state:', {
+    console.log('[HomeScreen] State update:', {
       isInitialized,
       isLoading,
       hasUser: !!user,
       hasProfile: !!profile,
-      checkSubscription: checkSubscription()
+      profileData: profile ? {
+        email: profile.email,
+        is_admin: profile.is_admin,
+        is_subscribed: profile.is_subscribed
+      } : null,
+      hasSubscription: checkSubscription()
     });
 
-    if (isInitialized && user && checkSubscription()) {
+    // Only load data when fully initialized, not loading, has user, and has subscription
+    if (isInitialized && !isLoading && user && profile && checkSubscription()) {
+      console.log('[HomeScreen] Loading content data...');
       loadData();
-    } else if (isInitialized) {
+    } else if (isInitialized && !isLoading) {
+      console.log('[HomeScreen] Not loading data - conditions not met');
       setIsLoadingData(false);
     }
   }, [user, isInitialized, profile, isLoading]);
 
   const loadData = async () => {
     try {
+      console.log('[HomeScreen] Fetching videos and reports...');
+      
       // Load latest video
-      const { data: videoData } = await supabase
+      const { data: videoData, error: videoError } = await supabase
         .from('videos')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
 
-      if (videoData) {
+      if (videoError) {
+        console.log('[HomeScreen] Video fetch error:', videoError.message);
+      } else if (videoData) {
+        console.log('[HomeScreen] Video loaded:', videoData.title);
         setLatestVideo(videoData);
       }
 
       // Load today's surf report
       const today = new Date().toISOString().split('T')[0];
-      const { data: reportData } = await supabase
+      const { data: reportData, error: reportError } = await supabase
         .from('surf_reports')
         .select('*')
         .eq('date', today)
         .single();
 
-      if (reportData) {
+      if (reportError) {
+        console.log('[HomeScreen] Report fetch error:', reportError.message);
+      } else if (reportData) {
+        console.log('[HomeScreen] Report loaded for:', today);
         setTodayReport(reportData);
       }
     } catch (error) {
-      console.log('Error loading data:', error);
+      console.log('[HomeScreen] Error loading data:', error);
     } finally {
       setIsLoadingData(false);
     }
   };
 
-  // Show loading state while auth is initializing or loading
-  if (!isInitialized || isLoading) {
+  // Show loading state while auth is initializing
+  if (!isInitialized) {
+    console.log('[HomeScreen] Rendering: Not initialized');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading...
+            Initializing...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show loading state while profile is being loaded
+  if (isLoading) {
+    console.log('[HomeScreen] Rendering: Loading profile');
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading your profile...
           </Text>
         </View>
       </View>
@@ -82,6 +114,7 @@ export default function HomeScreen() {
 
   // Not logged in - show sign in prompt
   if (!user) {
+    console.log('[HomeScreen] Rendering: Not logged in');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -111,6 +144,7 @@ export default function HomeScreen() {
 
   // Logged in but no subscription - show subscribe prompt
   if (!checkSubscription()) {
+    console.log('[HomeScreen] Rendering: No subscription');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -129,7 +163,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.accent }]}
             onPress={() => {
-              console.log('Opening subscription flow');
+              console.log('[HomeScreen] Opening subscription flow');
               router.push('/(tabs)/profile');
             }}
           >
@@ -141,6 +175,7 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
+  console.log('[HomeScreen] Rendering: Subscribed content');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}

@@ -48,16 +48,17 @@ export default function LoginScreen() {
         ]
       );
     } else {
+      console.log('[LoginScreen] Starting sign in...');
       const result = await signIn(email, password);
+      console.log('[LoginScreen] Sign in result:', result);
       setIsLoading(false);
 
       if (result.success) {
-        console.log('Sign in successful, redirecting to home...');
-        // Small delay to ensure state is updated
-        setTimeout(() => {
-          router.replace('/(tabs)/(home)/');
-        }, 100);
+        console.log('[LoginScreen] Sign in successful, navigating to home...');
+        // Use replace to prevent back navigation to login
+        router.replace('/(tabs)/(home)/');
       } else {
+        console.log('[LoginScreen] Sign in failed:', result.message);
         Alert.alert('Sign In Failed', result.message);
       }
     }
@@ -162,7 +163,7 @@ export default function LoginScreen() {
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={() => {
-              console.log('Opening subscription flow');
+              console.log('[LoginScreen] Opening subscription flow');
               Alert.alert(
                 'Subscribe to SurfVista',
                 'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
