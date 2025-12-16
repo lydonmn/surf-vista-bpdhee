@@ -48,7 +48,7 @@ export default function ReportScreen() {
     
     const lower = conditions.toLowerCase();
     if (lower.includes('rain') || lower.includes('shower')) {
-      return { ios: 'cloud.rain.fill', android: 'grain' };
+      return { ios: 'cloud.rain.fill', android: 'rainy' };
     } else if (lower.includes('storm') || lower.includes('thunder')) {
       return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
     } else if (lower.includes('snow')) {

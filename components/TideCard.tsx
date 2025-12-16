@@ -110,7 +110,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
               <View style={styles.tideIconContainer}>
                 <IconSymbol
                   ios_icon_name={tide.type === 'high' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
-                  android_material_icon_name={tide.type === 'high' ? 'arrow_circle_up' : 'arrow_circle_down'}
+                  android_material_icon_name={tide.type === 'high' ? 'arrow_upward' : 'arrow_downward'}
                   size={24}
                   color={tide.type === 'high' ? '#2196F3' : '#FF9800'}
                 />

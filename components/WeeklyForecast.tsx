@@ -50,7 +50,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
     
     const lower = conditions.toLowerCase();
     if (lower.includes('rain') || lower.includes('shower')) {
-      return { ios: 'cloud.rain.fill', android: 'grain' };
+      return { ios: 'cloud.rain.fill', android: 'rainy' };
     } else if (lower.includes('storm') || lower.includes('thunder')) {
       return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
     } else if (lower.includes('snow')) {
@@ -121,7 +121,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
                 <View style={styles.precipContainer}>
                   <IconSymbol
                     ios_icon_name="drop.fill"
-                    android_material_icon_name="opacity"
+                    android_material_icon_name="water_drop"
                     size={12}
                     color={colors.primary}
                   />
