@@ -88,7 +88,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
           
           return (
             <View 
-              key={index}
+              key={day.date || `day-${index}`}
               style={[
                 styles.dayCard,
                 { backgroundColor: colors.highlight }
