@@ -24,13 +24,13 @@ export function WeatherCard({ weather }: WeatherCardProps) {
     } else if (lower.includes('storm') || lower.includes('thunder')) {
       return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
     } else if (lower.includes('snow')) {
-      return { ios: 'cloud.snow.fill', android: 'ac-unit' };
+      return { ios: 'cloud.snow.fill', android: 'ac_unit' };
     } else if (lower.includes('clear') || lower.includes('sunny')) {
-      return { ios: 'sun.max.fill', android: 'wb-sunny' };
+      return { ios: 'sun.max.fill', android: 'wb_sunny' };
     } else if (lower.includes('cloud') || lower.includes('overcast')) {
       return { ios: 'cloud.fill', android: 'cloud' };
     } else if (lower.includes('partly')) {
-      return { ios: 'cloud.sun.fill', android: 'wb-cloudy' };
+      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
     }
     return { ios: 'cloud.fill', android: 'cloud' };
   };

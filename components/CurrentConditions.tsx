@@ -20,7 +20,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
         <View style={styles.header}>
           <IconSymbol
             ios_icon_name="sparkles"
-            android_material_icon_name="auto-awesome"
+            android_material_icon_name="auto_awesome"
             size={24}
             color={colors.primary}
           />
@@ -51,7 +51,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
       <View style={styles.header}>
         <IconSymbol
           ios_icon_name="sparkles"
-          android_material_icon_name="auto-awesome"
+          android_material_icon_name="auto_awesome"
           size={24}
           color={colors.primary}
         />

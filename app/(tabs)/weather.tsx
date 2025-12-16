@@ -113,7 +113,7 @@ export default function WeatherScreen() {
             <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
               <IconSymbol
                 ios_icon_name="cloud.sun.fill"
-                android_material_icon_name="wb-sunny"
+                android_material_icon_name="wb_sunny"
                 size={48}
                 color={colors.textSecondary}
               />

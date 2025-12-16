@@ -19,7 +19,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
         <View style={styles.header}>
           <IconSymbol
             ios_icon_name="calendar"
-            android_material_icon_name="calendar-today"
+            android_material_icon_name="calendar_today"
             size={24}
             color={colors.primary}
           />
@@ -54,13 +54,13 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
     } else if (lower.includes('storm') || lower.includes('thunder')) {
       return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
     } else if (lower.includes('snow')) {
-      return { ios: 'cloud.snow.fill', android: 'ac-unit' };
+      return { ios: 'cloud.snow.fill', android: 'ac_unit' };
     } else if (lower.includes('clear') || lower.includes('sunny')) {
-      return { ios: 'sun.max.fill', android: 'wb-sunny' };
+      return { ios: 'sun.max.fill', android: 'wb_sunny' };
     } else if (lower.includes('cloud') || lower.includes('overcast')) {
       return { ios: 'cloud.fill', android: 'cloud' };
     } else if (lower.includes('partly')) {
-      return { ios: 'cloud.sun.fill', android: 'wb-cloudy' };
+      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
     }
     return { ios: 'cloud.fill', android: 'cloud' };
   };
@@ -70,7 +70,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
       <View style={styles.header}>
         <IconSymbol
           ios_icon_name="calendar"
-          android_material_icon_name="calendar-today"
+          android_material_icon_name="calendar_today"
           size={24}
           color={colors.primary}
         />

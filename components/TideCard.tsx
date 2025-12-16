@@ -28,7 +28,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
         <View style={styles.header}>
           <IconSymbol
             ios_icon_name="arrow.up.arrow.down"
-            android_material_icon_name="swap-vert"
+            android_material_icon_name="swap_vert"
             size={32}
             color={colors.primary}
           />
@@ -52,7 +52,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
         <View style={styles.header}>
           <IconSymbol
             ios_icon_name="arrow.up.arrow.down"
-            android_material_icon_name="swap-vert"
+            android_material_icon_name="swap_vert"
             size={32}
             color={colors.primary}
           />
@@ -85,7 +85,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
       <View style={styles.header}>
         <IconSymbol
           ios_icon_name="arrow.up.arrow.down"
-          android_material_icon_name="swap-vert"
+          android_material_icon_name="swap_vert"
           size={32}
           color={colors.primary}
         />
@@ -110,7 +110,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
               <View style={styles.tideIconContainer}>
                 <IconSymbol
                   ios_icon_name={tide.type === 'high' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
-                  android_material_icon_name={tide.type === 'high' ? 'arrow-upward' : 'arrow-downward'}
+                  android_material_icon_name={tide.type === 'high' ? 'arrow_upward' : 'arrow_downward'}
                   size={24}
                   color={tide.type === 'high' ? '#2196F3' : '#FF9800'}
                 />

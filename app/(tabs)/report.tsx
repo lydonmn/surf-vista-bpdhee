@@ -320,7 +320,7 @@ export default function ReportScreen() {
                         <View style={styles.conditionItem}>
                           <IconSymbol
                             ios_icon_name="arrow.up.right"
-                            android_material_icon_name="trending_up"
+                            android_material_icon_name="north_east"
                             size={24}
                             color={colors.primary}
                           />
