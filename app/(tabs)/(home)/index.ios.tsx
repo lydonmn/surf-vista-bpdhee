@@ -266,8 +266,8 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/videos')}
           >
             <IconSymbol
-              ios_icon_name="play.rectangle.on.rectangle.fill"
-              android_material_icon_name="video_library"
+              ios_icon_name="film.stack"
+              android_material_icon_name="movie"
               size={32}
               color={colors.primary}
             />
@@ -297,7 +297,7 @@ export default function HomeScreen() {
           >
             <IconSymbol
               ios_icon_name="cloud.sun.fill"
-              android_material_icon_name="cloud"
+              android_material_icon_name="wb_sunny"
               size={32}
               color={colors.primary}
             />
