@@ -269,8 +269,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // IMPORTANT: Call Supabase signOut FIRST before clearing any state
       // This ensures the session is properly removed from AsyncStorage
+      // The correct syntax is signOut() without parameters for all sessions,
+      // or signOut('local') to sign out only the current session
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
-      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('[AuthContext] ❌ Supabase signOut error:', error);
