@@ -1,20 +1,165 @@
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/app/integrations/supabase/client';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { supabase } from '@/app/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function AdminDataScreen() {
   const theme = useTheme();
-  const { profile, isAdmin } = useAuth();
-  const [isUpdating, setIsUpdating] = useState<string | null>(null);
-  const [lastResults, setLastResults] = useState<Record<string, any>>({});
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
 
-  if (!isAdmin()) {
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [`[${timestamp}] ${message}`, ...prev]);
+  };
+
+  const handleFetchWeather = async () => {
+    try {
+      setLoading('weather');
+      addLog('Fetching weather data...');
+      
+      const { data, error } = await supabase.functions.invoke('fetch-weather-data');
+      
+      if (error) {
+        addLog(`Error: ${error.message}`);
+        Alert.alert('Error', `Failed to fetch weather data: ${error.message}`);
+      } else {
+        addLog(`Success! Weather data updated. Forecast records: ${data.forecast_count}`);
+        Alert.alert('Success', 'Weather data and forecast updated successfully!');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Exception: ${message}`);
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleFetchTides = async () => {
+    try {
+      setLoading('tides');
+      addLog('Fetching tide data...');
+      
+      const { data, error } = await supabase.functions.invoke('fetch-tide-data');
+      
+      if (error) {
+        addLog(`Error: ${error.message}`);
+        Alert.alert('Error', `Failed to fetch tide data: ${error.message}`);
+      } else {
+        addLog(`Success! ${data.count} tide records stored.`);
+        Alert.alert('Success', `${data.count} tide records updated successfully!`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Exception: ${message}`);
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleFetchSurf = async () => {
+    try {
+      setLoading('surf');
+      addLog('Fetching surf report data...');
+      
+      const { data, error } = await supabase.functions.invoke('fetch-surf-reports');
+      
+      if (error) {
+        addLog(`Error: ${error.message}`);
+        Alert.alert('Error', `Failed to fetch surf data: ${error.message}`);
+      } else {
+        addLog('Success! Surf report data updated.');
+        Alert.alert('Success', 'Surf report data updated successfully!');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Exception: ${message}`);
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    try {
+      setLoading('report');
+      addLog('Generating daily surf report...');
+      
+      const { data, error } = await supabase.functions.invoke('generate-daily-report');
+      
+      if (error) {
+        addLog(`Error: ${error.message}`);
+        Alert.alert('Error', `Failed to generate report: ${error.message}`);
+      } else {
+        addLog('Success! Daily surf report generated.');
+        Alert.alert('Success', 'Daily surf report generated successfully!');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Exception: ${message}`);
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleUpdateAll = async () => {
+    try {
+      setLoading('all');
+      addLog('Starting full data update...');
+      
+      // Fetch weather and forecast
+      addLog('Step 1/4: Fetching weather data...');
+      const weatherResponse = await supabase.functions.invoke('fetch-weather-data');
+      if (weatherResponse.error) {
+        throw new Error(`Weather: ${weatherResponse.error.message}`);
+      }
+      addLog(`✓ Weather data updated (${weatherResponse.data.forecast_count} forecast records)`);
+      
+      // Fetch tides
+      addLog('Step 2/4: Fetching tide data...');
+      const tideResponse = await supabase.functions.invoke('fetch-tide-data');
+      if (tideResponse.error) {
+        throw new Error(`Tides: ${tideResponse.error.message}`);
+      }
+      addLog(`✓ Tide data updated (${tideResponse.data.count} records)`);
+      
+      // Fetch surf reports
+      addLog('Step 3/4: Fetching surf report data...');
+      const surfResponse = await supabase.functions.invoke('fetch-surf-reports');
+      if (surfResponse.error) {
+        throw new Error(`Surf: ${surfResponse.error.message}`);
+      }
+      addLog('✓ Surf report data updated');
+      
+      // Generate daily report
+      addLog('Step 4/4: Generating daily report...');
+      const reportResponse = await supabase.functions.invoke('generate-daily-report');
+      if (reportResponse.error) {
+        throw new Error(`Report: ${reportResponse.error.message}`);
+      }
+      addLog('✓ Daily surf report generated');
+      
+      addLog('=== ALL DATA UPDATED SUCCESSFULLY ===');
+      Alert.alert('Success', 'All data has been updated successfully!');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`FAILED: ${message}`);
+      Alert.alert('Error', `Update failed: ${message}`);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  if (!profile?.is_admin) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -24,11 +169,8 @@ export default function AdminDataScreen() {
             size={64}
             color={colors.textSecondary}
           />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Admin Only
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            This page is only accessible to administrators
+          <Text style={[styles.errorText, { color: theme.colors.text }]}>
+            Admin access required
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
@@ -41,267 +183,186 @@ export default function AdminDataScreen() {
     );
   }
 
-  const updateData = async (functionName: string, displayName: string) => {
-    setIsUpdating(functionName);
-    try {
-      console.log(`Calling ${functionName}...`);
-      const { data, error } = await supabase.functions.invoke(functionName);
-
-      if (error) {
-        console.error(`Error calling ${functionName}:`, error);
-        Alert.alert('Error', `Failed to update ${displayName}: ${error.message}`);
-        setLastResults(prev => ({
-          ...prev,
-          [functionName]: { success: false, error: error.message }
-        }));
-      } else {
-        console.log(`${functionName} result:`, data);
-        Alert.alert('Success', `${displayName} updated successfully!`);
-        setLastResults(prev => ({
-          ...prev,
-          [functionName]: { success: true, data }
-        }));
-      }
-    } catch (error) {
-      console.error(`Exception calling ${functionName}:`, error);
-      Alert.alert('Error', `Failed to update ${displayName}`);
-      setLastResults(prev => ({
-        ...prev,
-        [functionName]: { success: false, error: String(error) }
-      }));
-    } finally {
-      setIsUpdating(null);
-    }
-  };
-
-  const updateAllData = async () => {
-    setIsUpdating('all');
-    try {
-      console.log('Updating all data...');
-      
-      // Call all functions in sequence
-      const weatherResult = await supabase.functions.invoke('fetch-weather-data');
-      if (weatherResult.error) throw new Error('Weather update failed');
-      
-      const tideResult = await supabase.functions.invoke('fetch-tide-data');
-      if (tideResult.error) throw new Error('Tide update failed');
-      
-      const surfResult = await supabase.functions.invoke('fetch-surf-reports');
-      if (surfResult.error) throw new Error('Surf report update failed');
-      
-      const reportResult = await supabase.functions.invoke('generate-daily-report');
-      if (reportResult.error) throw new Error('Daily report generation failed');
-
-      Alert.alert('Success', 'All data updated successfully!');
-      setLastResults({
-        'fetch-weather-data': { success: true, data: weatherResult.data },
-        'fetch-tide-data': { success: true, data: tideResult.data },
-        'fetch-surf-reports': { success: true, data: surfResult.data },
-        'generate-daily-report': { success: true, data: reportResult.data },
-      });
-    } catch (error) {
-      console.error('Error updating all data:', error);
-      Alert.alert('Error', `Failed to update all data: ${error}`);
-    } finally {
-      setIsUpdating(null);
-    }
-  };
-
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.scrollContent}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <IconSymbol
-            ios_icon_name="chevron.left"
-            android_material_icon_name="arrow_back"
-            size={24}
-            color={colors.primary}
-          />
-        </TouchableOpacity>
-        <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <IconSymbol
+              ios_icon_name="chevron.left"
+              android_material_icon_name="arrow_back"
+              size={24}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
             Data Management
           </Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-            Manually trigger data updates
-          </Text>
         </View>
-      </View>
 
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Update All Data
-        </Text>
-        <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-          Fetch weather, tides, surf reports, and generate daily report
-        </Text>
-        <TouchableOpacity
-          style={[
-            styles.updateButton,
-            { backgroundColor: colors.accent },
-            isUpdating === 'all' && styles.disabledButton
-          ]}
-          onPress={updateAllData}
-          disabled={isUpdating !== null}
-        >
-          {isUpdating === 'all' ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <>
-              <IconSymbol
-                ios_icon_name="arrow.clockwise"
-                android_material_icon_name="refresh"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.updateButtonText}>Update All</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Individual Updates
-        </Text>
-        
-        <View style={styles.buttonGroup}>
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Update All Data
+          </Text>
+          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            Fetch weather, tides, surf reports, and generate daily report
+          </Text>
           <TouchableOpacity
             style={[
-              styles.individualButton,
-              { backgroundColor: colors.primary },
-              isUpdating === 'fetch-weather-data' && styles.disabledButton
+              styles.button,
+              { backgroundColor: colors.accent },
+              loading === 'all' && styles.buttonDisabled
             ]}
-            onPress={() => updateData('fetch-weather-data', 'Weather Data')}
-            disabled={isUpdating !== null}
+            onPress={handleUpdateAll}
+            disabled={loading !== null}
           >
-            {isUpdating === 'fetch-weather-data' ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+            {loading === 'all' ? (
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <>
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="arrow.clockwise"
+                  android_material_icon_name="refresh"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.buttonText}>Update All Data</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Individual Updates
+          </Text>
+          
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: colors.primary },
+              loading === 'weather' && styles.buttonDisabled
+            ]}
+            onPress={handleFetchWeather}
+            disabled={loading !== null}
+          >
+            {loading === 'weather' ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
                 <IconSymbol
                   ios_icon_name="cloud.sun.fill"
                   android_material_icon_name="wb_sunny"
-                  size={24}
+                  size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.individualButtonText}>Update Weather</Text>
-              </>
+                <Text style={styles.buttonText}>Fetch Weather & Forecast</Text>
+              </React.Fragment>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.individualButton,
+              styles.button,
               { backgroundColor: colors.primary },
-              isUpdating === 'fetch-tide-data' && styles.disabledButton
+              loading === 'tides' && styles.buttonDisabled
             ]}
-            onPress={() => updateData('fetch-tide-data', 'Tide Data')}
-            disabled={isUpdating !== null}
+            onPress={handleFetchTides}
+            disabled={loading !== null}
           >
-            {isUpdating === 'fetch-tide-data' ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+            {loading === 'tides' ? (
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <>
+              <React.Fragment>
                 <IconSymbol
                   ios_icon_name="arrow.up.arrow.down"
                   android_material_icon_name="swap_vert"
-                  size={24}
+                  size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.individualButtonText}>Update Tides</Text>
-              </>
+                <Text style={styles.buttonText}>Fetch Tide Data</Text>
+              </React.Fragment>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.individualButton,
+              styles.button,
               { backgroundColor: colors.primary },
-              isUpdating === 'fetch-surf-reports' && styles.disabledButton
+              loading === 'surf' && styles.buttonDisabled
             ]}
-            onPress={() => updateData('fetch-surf-reports', 'Surf Reports')}
-            disabled={isUpdating !== null}
+            onPress={handleFetchSurf}
+            disabled={loading !== null}
           >
-            {isUpdating === 'fetch-surf-reports' ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+            {loading === 'surf' ? (
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <>
+              <React.Fragment>
                 <IconSymbol
                   ios_icon_name="water.waves"
                   android_material_icon_name="waves"
-                  size={24}
+                  size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.individualButtonText}>Update Surf</Text>
-              </>
+                <Text style={styles.buttonText}>Fetch Surf Reports</Text>
+              </React.Fragment>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.individualButton,
+              styles.button,
               { backgroundColor: colors.primary },
-              isUpdating === 'generate-daily-report' && styles.disabledButton
+              loading === 'report' && styles.buttonDisabled
             ]}
-            onPress={() => updateData('generate-daily-report', 'Daily Report')}
-            disabled={isUpdating !== null}
+            onPress={handleGenerateReport}
+            disabled={loading !== null}
           >
-            {isUpdating === 'generate-daily-report' ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+            {loading === 'report' ? (
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <>
+              <React.Fragment>
                 <IconSymbol
                   ios_icon_name="doc.text.fill"
                   android_material_icon_name="description"
-                  size={24}
+                  size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.individualButtonText}>Generate Report</Text>
-              </>
+                <Text style={styles.buttonText}>Generate Daily Report</Text>
+              </React.Fragment>
             )}
           </TouchableOpacity>
         </View>
-      </View>
 
-      {Object.keys(lastResults).length > 0 && (
-        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-            Last Results
-          </Text>
-          {Object.entries(lastResults).map(([key, result]) => (
-            <View key={key} style={styles.resultItem}>
-              <IconSymbol
-                ios_icon_name={result.success ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
-                android_material_icon_name={result.success ? 'check_circle' : 'error'}
-                size={20}
-                color={result.success ? '#4CAF50' : '#F44336'}
-              />
-              <Text style={[styles.resultText, { color: theme.colors.text }]}>
-                {key}: {result.success ? 'Success' : 'Failed'}
+        {logs.length > 0 && (
+          <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.logsHeader}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Activity Log
               </Text>
+              <TouchableOpacity onPress={() => setLogs([])}>
+                <Text style={[styles.clearButton, { color: colors.primary }]}>
+                  Clear
+                </Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </View>
-      )}
-
-      <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
-        <IconSymbol
-          ios_icon_name="info.circle.fill"
-          android_material_icon_name="info"
-          size={24}
-          color={colors.primary}
-        />
-        <View style={styles.infoTextContainer}>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Data is automatically updated daily at 6:00 AM EST via a cron job. Use these manual controls for testing or immediate updates.
-          </Text>
-        </View>
-      </View>
-    </ScrollView>
+            <ScrollView style={styles.logsContainer}>
+              {logs.map((log, index) => (
+                <Text
+                  key={index}
+                  style={[styles.logText, { color: colors.textSecondary }]}
+                >
+                  {log}
+                </Text>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -309,16 +370,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
-    paddingTop: 48,
-    paddingHorizontal: 16,
+    padding: 16,
+    paddingTop: 60,
     paddingBottom: 100,
   },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    padding: 32,
   },
   header: {
     flexDirection: 'row',
@@ -329,38 +393,8 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-  },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  text: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  button: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 28,
     fontWeight: 'bold',
   },
   card: {
@@ -380,61 +414,46 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
-  updateButton: {
+  button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 8,
     gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 12,
   },
-  updateButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  disabledButton: {
+  buttonDisabled: {
     opacity: 0.6,
   },
-  buttonGroup: {
-    gap: 12,
-  },
-  individualButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  individualButtonText: {
+  buttonText: {
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 18,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  logsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  clearButton: {
     fontSize: 14,
     fontWeight: '600',
   },
-  resultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
+  logsContainer: {
+    maxHeight: 300,
   },
-  resultText: {
-    fontSize: 14,
-  },
-  infoCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  infoTextContainer: {
-    flex: 1,
-  },
-  infoText: {
-    fontSize: 14,
-    lineHeight: 20,
+  logText: {
+    fontSize: 12,
+    fontFamily: 'monospace',
+    marginBottom: 4,
+    lineHeight: 18,
   },
 });

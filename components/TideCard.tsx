@@ -16,7 +16,35 @@ export function TideCard({ tides }: TideCardProps) {
   const theme = useTheme();
 
   if (!tides || tides.length === 0) {
-    return null;
+    return (
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.header}>
+          <IconSymbol
+            ios_icon_name="arrow.up.arrow.down"
+            android_material_icon_name="swap_vert"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Tide Schedule
+          </Text>
+        </View>
+        <View style={styles.emptyState}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle"
+            android_material_icon_name="warning"
+            size={48}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No tide data available yet
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+            Data will be updated automatically
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -60,7 +88,7 @@ export function TideCard({ tides }: TideCardProps) {
                 </Text>
               </View>
               <Text style={[styles.tideHeight, { color: theme.colors.text }]}>
-                {tide.height.toFixed(1)} ft
+                {Number(tide.height).toFixed(1)} ft
               </Text>
             </View>
           );
@@ -115,5 +143,17 @@ const styles = StyleSheet.create({
   tideHeight: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    fontSize: 14,
   },
 });

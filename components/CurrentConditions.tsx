@@ -15,7 +15,35 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const theme = useTheme();
 
   if (!weather && !surfReport) {
-    return null;
+    return (
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.header}>
+          <IconSymbol
+            ios_icon_name="sparkles"
+            android_material_icon_name="auto_awesome"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Current Conditions
+          </Text>
+        </View>
+        <View style={styles.emptyState}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle"
+            android_material_icon_name="warning"
+            size={48}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No data available yet
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+            Data will be updated automatically
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -38,7 +66,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             <View style={styles.mainWeather}>
               <View style={styles.temperatureSection}>
                 <Text style={[styles.temperature, { color: theme.colors.text }]}>
-                  {weather.temperature ? `${Math.round(weather.temperature)}°F` : '--'}
+                  {weather.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--'}
                 </Text>
                 {weather.conditions && (
                   <Text style={[styles.weatherConditions, { color: colors.textSecondary }]}>
@@ -57,7 +85,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   color={colors.primary}
                 />
                 <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                  {weather.wind_speed ? `${Math.round(weather.wind_speed)} mph` : '--'} {weather.wind_direction || ''}
+                  {weather.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--'} {weather.wind_direction || ''}
                 </Text>
               </View>
 
@@ -96,7 +124,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   Waves
                 </Text>
                 <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {surfReport.wave_height}
+                  {surfReport.wave_height || '--'}
                 </Text>
               </View>
 
@@ -105,7 +133,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   Water
                 </Text>
                 <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {surfReport.water_temp}
+                  {surfReport.water_temp || '--'}
                 </Text>
               </View>
 
@@ -129,6 +157,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 12,
     padding: 16,
+    marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
@@ -204,5 +233,17 @@ const styles = StyleSheet.create({
   surfValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    fontSize: 14,
   },
 });

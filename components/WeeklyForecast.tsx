@@ -14,7 +14,35 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
   const theme = useTheme();
 
   if (!forecast || forecast.length === 0) {
-    return null;
+    return (
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.header}>
+          <IconSymbol
+            ios_icon_name="calendar"
+            android_material_icon_name="calendar_today"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            7-Day Forecast
+          </Text>
+        </View>
+        <View style={styles.emptyState}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle"
+            android_material_icon_name="warning"
+            size={48}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No forecast data available yet
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+            Data will be updated automatically
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   const getWeatherIcon = (conditions: string | null) => {
@@ -82,10 +110,10 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
               
               <View style={styles.tempContainer}>
                 <Text style={[styles.highTemp, { color: theme.colors.text }]}>
-                  {day.high_temp ? `${Math.round(day.high_temp)}°` : '--'}
+                  {day.high_temp ? `${Math.round(Number(day.high_temp))}°` : '--'}
                 </Text>
                 <Text style={[styles.lowTemp, { color: colors.textSecondary }]}>
-                  {day.low_temp ? `${Math.round(day.low_temp)}°` : '--'}
+                  {day.low_temp ? `${Math.round(Number(day.low_temp))}°` : '--'}
                 </Text>
               </View>
 
@@ -123,6 +151,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 12,
     padding: 16,
+    marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
@@ -179,5 +208,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     marginTop: 4,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    fontSize: 14,
   },
 });

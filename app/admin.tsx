@@ -1,38 +1,183 @@
 
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from "react-native";
-import { useTheme } from "@react-navigation/native";
-import { useAuth } from "@/contexts/AuthContext";
-import { router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
-import { supabase } from "@/app/integrations/supabase/client";
-import { colors } from "@/styles/commonStyles";
-import { IconSymbol } from "@/components/IconSymbol";
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { useTheme } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { colors } from '@/styles/commonStyles';
+import { IconSymbol } from '@/components/IconSymbol';
+import { supabase } from '@/app/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
+
+interface UserProfile {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  is_subscribed: boolean;
+  subscription_end_date: string | null;
+}
 
 export default function AdminScreen() {
   const theme = useTheme();
-  const { user, isAdmin } = useAuth();
-  const [subscriptionPrice, setSubscriptionPrice] = useState('5.00');
-  const [selectedVideo, setSelectedVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const { profile } = useAuth();
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  // Video upload state
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
 
-  if (!isAdmin()) {
+  useEffect(() => {
+    if (profile?.is_admin) {
+      loadUsers();
+    }
+  }, [profile]);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      Alert.alert('Error', 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSubscription = async (userId: string, currentStatus: boolean) => {
+    try {
+      const newEndDate = currentStatus 
+        ? null 
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_subscribed: !currentStatus,
+          subscription_end_date: newEndDate
+        })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      Alert.alert('Success', `Subscription ${!currentStatus ? 'activated' : 'deactivated'}`);
+      loadUsers();
+    } catch (error) {
+      console.error('Error toggling subscription:', error);
+      Alert.alert('Error', 'Failed to update subscription');
+    }
+  };
+
+  const toggleAdmin = async (userId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_admin: !currentStatus })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      Alert.alert('Success', `Admin status ${!currentStatus ? 'granted' : 'revoked'}`);
+      loadUsers();
+    } catch (error) {
+      console.error('Error toggling admin:', error);
+      Alert.alert('Error', 'Failed to update admin status');
+    }
+  };
+
+  const pickVideo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setSelectedVideo(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking video:', error);
+      Alert.alert('Error', 'Failed to pick video');
+    }
+  };
+
+  const uploadVideo = async () => {
+    if (!selectedVideo || !videoTitle) {
+      Alert.alert('Error', 'Please select a video and enter a title');
+      return;
+    }
+
+    try {
+      setUploading(true);
+
+      // Get file info
+      const response = await fetch(selectedVideo);
+      const blob = await response.blob();
+      const fileExt = selectedVideo.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `videos/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, blob, {
+          contentType: 'video/mp4',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      // Create video record
+      const { error: dbError } = await supabase
+        .from('videos')
+        .insert({
+          title: videoTitle,
+          description: videoDescription,
+          video_url: publicUrl,
+          uploaded_by: profile?.id
+        });
+
+      if (dbError) throw dbError;
+
+      Alert.alert('Success', 'Video uploaded successfully!');
+      setVideoTitle('');
+      setVideoDescription('');
+      setSelectedVideo(null);
+    } catch (error) {
+      console.error('Error uploading video:', error);
+      Alert.alert('Error', 'Failed to upload video');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (!profile?.is_admin) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <IconSymbol
-            ios_icon_name="exclamationmark.triangle.fill"
-            android_material_icon_name="warning"
+            ios_icon_name="lock.fill"
+            android_material_icon_name="lock"
             size={64}
             color={colors.textSecondary}
           />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Access Denied
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            You need admin privileges to access this page
+          <Text style={[styles.errorText, { color: theme.colors.text }]}>
+            Admin access required
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
@@ -45,307 +190,191 @@ export default function AdminScreen() {
     );
   }
 
-  const pickVideo = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
-        allowsEditing: true,
-        quality: 1,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setSelectedVideo(result.assets[0]);
-        console.log('Selected video:', result.assets[0]);
-      }
-    } catch (error) {
-      console.log('Error picking video:', error);
-      Alert.alert('Error', 'Failed to select video');
-    }
-  };
-
-  const uploadVideo = async () => {
-    if (!selectedVideo) {
-      Alert.alert('No Video', 'Please select a video first');
-      return;
-    }
-
-    if (!videoTitle.trim()) {
-      Alert.alert('Missing Title', 'Please enter a title for the video');
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      // Get video file
-      const response = await fetch(selectedVideo.uri);
-      const blob = await response.blob();
-      const fileExt = selectedVideo.uri.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      console.log('Uploading video to storage...');
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(filePath, blob, {
-          contentType: selectedVideo.type || 'video/mp4',
-          upsert: false
-        });
-
-      if (uploadError) {
-        console.log('Upload error:', uploadError);
-        throw uploadError;
-      }
-
-      console.log('Video uploaded, getting public URL...');
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(filePath);
-
-      console.log('Creating video record in database...');
-
-      // Create video record in database
-      const { error: dbError } = await supabase
-        .from('videos')
-        .insert({
-          title: videoTitle,
-          description: videoDescription || null,
-          video_url: publicUrl,
-          duration: selectedVideo.duration ? `${Math.floor(selectedVideo.duration / 60)}:${String(Math.floor(selectedVideo.duration % 60)).padStart(2, '0')}` : null,
-          uploaded_by: user?.id
-        });
-
-      if (dbError) {
-        console.log('Database error:', dbError);
-        throw dbError;
-      }
-
-      Alert.alert('Success', 'Video uploaded successfully!');
-      setSelectedVideo(null);
-      setVideoTitle('');
-      setVideoDescription('');
-    } catch (error: any) {
-      console.log('Upload error:', error);
-      Alert.alert('Upload Failed', error.message || 'Failed to upload video');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const updateSubscriptionPrice = () => {
-    const price = parseFloat(subscriptionPrice);
-    if (isNaN(price) || price <= 0) {
-      Alert.alert('Invalid Price', 'Please enter a valid price');
-      return;
-    }
-
-    Alert.alert(
-      'Update Subscription Price',
-      `Set subscription price to $${price.toFixed(2)}/month?\n\nNote: In production, this would update your Superwall configuration.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Update',
-          onPress: () => {
-            console.log('Subscription price updated to:', price);
-            Alert.alert('Success', `Subscription price updated to $${price.toFixed(2)}/month`);
-          }
-        }
-      ]
-    );
-  };
-
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.scrollContent}
-    >
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Admin Panel
-        </Text>
-        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-          Manage videos and subscription settings
-        </Text>
-      </View>
-
-      {/* Video Upload Section */}
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.cardHeader}>
-          <IconSymbol
-            ios_icon_name="video.fill"
-            android_material_icon_name="videocam"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-            Upload Drone Video
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <IconSymbol
+              ios_icon_name="chevron.left"
+              android_material_icon_name="arrow_back"
+              size={24}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Admin Panel
           </Text>
         </View>
 
-        <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-          Upload high-resolution drone footage to Supabase Storage
-        </Text>
+        {/* Data Management Card */}
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin-data')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="arrow.clockwise.circle.fill"
+              android_material_icon_name="sync"
+              size={32}
+              color={colors.accent}
+            />
+            <View style={styles.cardHeaderText}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Data Management
+              </Text>
+              <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+                Update weather, tides, and surf reports
+              </Text>
+            </View>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron_right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
 
-        <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
-          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-            Video Title *
+        {/* Video Upload Section */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Upload Video
           </Text>
+
           <TextInput
-            style={[styles.textInput, { color: theme.colors.text }]}
+            style={[styles.input, { 
+              backgroundColor: theme.colors.background,
+              color: theme.colors.text,
+              borderColor: colors.textSecondary
+            }]}
+            placeholder="Video Title"
+            placeholderTextColor={colors.textSecondary}
             value={videoTitle}
             onChangeText={setVideoTitle}
-            placeholder="e.g., Morning Session - Epic Conditions"
-            placeholderTextColor={colors.textSecondary}
           />
-        </View>
 
-        <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
-          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-            Description (optional)
-          </Text>
           <TextInput
-            style={[styles.textInput, styles.textArea, { color: theme.colors.text }]}
+            style={[styles.input, styles.textArea, { 
+              backgroundColor: theme.colors.background,
+              color: theme.colors.text,
+              borderColor: colors.textSecondary
+            }]}
+            placeholder="Description (optional)"
+            placeholderTextColor={colors.textSecondary}
             value={videoDescription}
             onChangeText={setVideoDescription}
-            placeholder="Add a description..."
-            placeholderTextColor={colors.textSecondary}
             multiline
             numberOfLines={3}
           />
-        </View>
 
-        {selectedVideo && (
-          <View style={[styles.selectedVideoInfo, { backgroundColor: colors.highlight }]}>
-            <IconSymbol
-              ios_icon_name="checkmark.circle.fill"
-              android_material_icon_name="check_circle"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={[styles.selectedVideoText, { color: theme.colors.text }]}>
-              Video selected: {selectedVideo.fileName || 'video file'}
-            </Text>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.secondary }]}
-          onPress={pickVideo}
-          disabled={isUploading}
-        >
-          <IconSymbol
-            ios_icon_name="photo.on.rectangle"
-            android_material_icon_name="photo_library"
-            size={20}
-            color={colors.text}
-          />
-          <Text style={[styles.actionButtonText, { color: colors.text }]}>
-            Select Video from Library
-          </Text>
-        </TouchableOpacity>
-
-        {selectedVideo && (
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]}
-            onPress={uploadVideo}
-            disabled={isUploading}
+            style={[styles.button, { backgroundColor: colors.primary }]}
+            onPress={pickVideo}
           >
             <IconSymbol
-              ios_icon_name="arrow.up.circle.fill"
-              android_material_icon_name="cloud_upload"
+              ios_icon_name="video.fill"
+              android_material_icon_name="videocam"
               size={20}
               color="#FFFFFF"
             />
-            <Text style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
-              {isUploading ? 'Uploading...' : 'Upload Video'}
+            <Text style={styles.buttonText}>
+              {selectedVideo ? 'Change Video' : 'Select Video'}
             </Text>
           </TouchableOpacity>
-        )}
-      </View>
 
-      {/* Subscription Settings Section */}
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.cardHeader}>
-          <IconSymbol
-            ios_icon_name="dollarsign.circle.fill"
-            android_material_icon_name="payments"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-            Subscription Settings
-          </Text>
+          {selectedVideo && (
+            <Text style={[styles.selectedFile, { color: colors.textSecondary }]}>
+              Video selected ✓
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: colors.accent },
+              (!selectedVideo || !videoTitle || uploading) && styles.buttonDisabled
+            ]}
+            onPress={uploadVideo}
+            disabled={!selectedVideo || !videoTitle || uploading}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="arrow.up.circle.fill"
+                  android_material_icon_name="upload"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.buttonText}>Upload Video</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
         </View>
 
-        <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-          Adjust the monthly subscription price
-        </Text>
-
-        <View style={styles.priceInputContainer}>
-          <Text style={[styles.priceLabel, { color: theme.colors.text }]}>
-            Monthly Price (USD)
+        {/* User Management Section */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            User Management
           </Text>
-          <View style={[styles.priceInput, { backgroundColor: colors.background }]}>
-            <Text style={[styles.dollarSign, { color: theme.colors.text }]}>$</Text>
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              value={subscriptionPrice}
-              onChangeText={setSubscriptionPrice}
-              keyboardType="decimal-pad"
-              placeholder="5.00"
-              placeholderTextColor={colors.textSecondary}
-            />
-          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+          ) : (
+            users.map((user) => (
+              <View key={user.id} style={[styles.userCard, { borderColor: colors.textSecondary }]}>
+                <View style={styles.userInfo}>
+                  <Text style={[styles.userEmail, { color: theme.colors.text }]}>
+                    {user.email}
+                  </Text>
+                  <View style={styles.badges}>
+                    {user.is_admin && (
+                      <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                        <Text style={styles.badgeText}>Admin</Text>
+                      </View>
+                    )}
+                    {user.is_subscribed && (
+                      <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                        <Text style={styles.badgeText}>Subscribed</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.userActions}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { 
+                      backgroundColor: user.is_subscribed ? colors.textSecondary : colors.primary 
+                    }]}
+                    onPress={() => toggleSubscription(user.id, user.is_subscribed)}
+                  >
+                    <Text style={styles.actionButtonText}>
+                      {user.is_subscribed ? 'Revoke Sub' : 'Grant Sub'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, { 
+                      backgroundColor: user.is_admin ? colors.textSecondary : colors.accent 
+                    }]}
+                    onPress={() => toggleAdmin(user.id, user.is_admin)}
+                  >
+                    <Text style={styles.actionButtonText}>
+                      {user.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
         </View>
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.accent }]}
-          onPress={updateSubscriptionPrice}
-        >
-          <IconSymbol
-            ios_icon_name="checkmark.circle.fill"
-            android_material_icon_name="check_circle"
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
-            Update Price
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Info Section */}
-      <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
-        <IconSymbol
-          ios_icon_name="info.circle.fill"
-          android_material_icon_name="info"
-          size={24}
-          color={colors.primary}
-        />
-        <View style={styles.infoTextContainer}>
-          <Text style={[styles.infoTitle, { color: theme.colors.text }]}>
-            Supabase Integration Active
-          </Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Videos are stored in Supabase Storage
-          </Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - User authentication via Supabase Auth
-          </Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Row Level Security (RLS) policies enabled
-          </Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Integrate Superwall for subscription payments
-          </Text>
-        </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -353,49 +382,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     padding: 16,
+    paddingTop: 60,
     paddingBottom: 100,
   },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    padding: 32,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 24,
-    paddingTop: 20,
+    gap: 12,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
+  backButton: {
+    padding: 8,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  text: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  button: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 28,
     fontWeight: 'bold',
   },
   card: {
@@ -409,105 +420,107 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 8,
+  },
+  cardHeaderText: {
+    flex: 1,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
   },
   cardDescription: {
     fontSize: 14,
-    marginBottom: 16,
-    lineHeight: 20,
   },
-  inputContainer: {
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
     marginBottom: 16,
+  },
+  input: {
+    borderWidth: 1,
     borderRadius: 8,
     padding: 12,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  textInput: {
+    marginBottom: 12,
     fontSize: 16,
-    padding: 8,
   },
   textArea: {
-    minHeight: 80,
+    height: 80,
     textAlignVertical: 'top',
   },
-  selectedVideoInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  selectedVideoText: {
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  actionButton: {
+  button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     borderRadius: 8,
+    marginTop: 12,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  selectedFile: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  loader: {
+    marginVertical: 20,
+  },
+  userCard: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  userInfo: {
+    marginBottom: 12,
+  },
+  userEmail: {
+    fontSize: 16,
+    fontWeight: '600',
     marginBottom: 8,
+  },
+  badges: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  userActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
   },
   actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  priceInputContainer: {
-    marginBottom: 16,
-  },
-  priceLabel: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
   },
-  priceInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  dollarSign: {
+  errorText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginRight: 4,
-  },
-  input: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  infoCard: {
-    flexDirection: 'row',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  infoTextContainer: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 4,
+    marginTop: 16,
+    marginBottom: 24,
   },
 });
