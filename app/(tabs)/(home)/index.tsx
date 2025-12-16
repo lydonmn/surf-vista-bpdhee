@@ -232,9 +232,7 @@ export default function HomeScreen() {
           Welcome to
         </Text>
         <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-        <Text style={[styles.location, { color: colors.textSecondary }]}>
-          Folly Beach, South Carolina
-        </Text>
+        <Text style={[styles.location, { color: colors.textSecondary }]}>The Real Folly Surf Report</Text>
       </View>
 
       {/* Current Conditions */}

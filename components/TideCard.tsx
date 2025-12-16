@@ -107,8 +107,8 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
 
           // Determine icon based on tide type
           const isHighTide = tide.type === 'high';
-          const iosIconName = isHighTide ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill';
-          const androidIconName = isHighTide ? 'arrow_upward' : 'arrow_downward';
+          const iosIconName = isHighTide ? 'arrow.up' : 'arrow.down';
+          const androidIconName = isHighTide ? 'north' : 'south';
           const iconColor = isHighTide ? '#2196F3' : '#FF9800';
 
           console.log('[TideCard] Tide icon:', { 

@@ -191,9 +191,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               </View>
 
               <View style={styles.surfItem}>
-                <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
-                  Rating
-                </Text>
+                <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>Stoke Rating</Text>
                 <Text style={[styles.surfValue, { color: colors.accent }]}>
                   {surfReport.rating || 5}/10
                 </Text>
