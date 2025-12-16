@@ -24,6 +24,7 @@ export default function SetupAdminScreen() {
       if (error) {
         console.error('Error calling function:', error);
         Alert.alert('Setup Failed', error.message || 'Failed to create admin user');
+        setIsLoading(false);
         return;
       }
 
@@ -136,7 +137,7 @@ export default function SetupAdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.successText, { color: theme.colors.text }]}>
-              Admin account created successfully!
+              Admin account created successfully! You can now go back and sign in.
             </Text>
           </View>
         )}
@@ -149,7 +150,7 @@ export default function SetupAdminScreen() {
             color={colors.primary}
           />
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            This setup only needs to be run once. If the account already exists, it will update the password.
+            This setup only needs to be run once. If the account already exists, it will update the password. After setup, return to the login screen and sign in with the credentials above.
           </Text>
         </View>
       </View>

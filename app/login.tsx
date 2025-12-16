@@ -169,7 +169,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.infoCard}>
+        <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
             ios_icon_name="info.circle.fill"
             android_material_icon_name="info"
@@ -184,6 +184,21 @@ export default function LoginScreen() {
             </Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={[styles.adminSetupButton, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/setup-admin')}
+        >
+          <IconSymbol
+            ios_icon_name="person.badge.key.fill"
+            android_material_icon_name="admin_panel_settings"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.adminSetupText, { color: colors.primary }]}>
+            First Time Setup - Create Admin Account
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -279,7 +294,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 16,
     borderRadius: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
     marginTop: 24,
     gap: 12,
   },
@@ -289,5 +303,21 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  adminSetupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 24,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  adminSetupText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

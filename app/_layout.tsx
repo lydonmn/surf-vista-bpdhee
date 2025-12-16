@@ -81,6 +81,14 @@ export default function RootLayout() {
                 }} 
               />
               <Stack.Screen 
+                name="setup-admin" 
+                options={{ 
+                  headerShown: true,
+                  title: "Admin Setup",
+                  presentation: "modal"
+                }} 
+              />
+              <Stack.Screen 
                 name="video-player" 
                 options={{ 
                   headerShown: true,
