@@ -35,13 +35,7 @@
     "plugins": [
       "expo-font",
       "expo-router",
-      "expo-web-browser",
-      [
-        "react-native-purchases",
-        {
-          "apiKey": "test_pIbMwlfINrGOjQfGWYzmARWVOvg"
-        }
-      ]
+      "expo-web-browser"
     ],
     "scheme": "natively",
     "experiments": {
@@ -50,6 +44,5 @@
     "extra": {
       "router": {}
     }
-  },
-  "scheme": "SurfVista"
+  }
 }
