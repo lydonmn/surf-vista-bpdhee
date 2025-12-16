@@ -92,7 +92,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               <View style={styles.detailItem}>
                 <IconSymbol
                   ios_icon_name="humidity.fill"
-                  android_material_icon_name="opacity"
+                  android_material_icon_name="water_drop"
                   size={16}
                   color={colors.primary}
                 />

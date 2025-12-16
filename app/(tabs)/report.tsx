@@ -265,7 +265,7 @@ export default function ReportScreen() {
                     <View style={styles.conditionItem}>
                       <IconSymbol
                         ios_icon_name="location.north.fill"
-                        android_material_icon_name="explore"
+                        android_material_icon_name="navigation"
                         size={24}
                         color={colors.primary}
                       />
