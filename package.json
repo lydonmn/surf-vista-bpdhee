@@ -23,6 +23,7 @@
     "@react-navigation/drawer": "^7.1.1",
     "@react-navigation/native": "^7.0.14",
     "@react-navigation/native-stack": "^7.2.0",
+    "@supabase/supabase-js": "^2.87.3",
     "@types/difflib": "^0.2.7",
     "difflib": "^0.2.4",
     "eas": "^0.1.0",

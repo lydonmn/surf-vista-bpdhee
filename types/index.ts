@@ -1,14 +1,17 @@
 
-export interface SurfReport {
+import { Database } from '@/app/integrations/supabase/types';
+
+export type Profile = Database['public']['Tables']['profiles']['Row'];
+export type Video = Database['public']['Tables']['videos']['Row'];
+export type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
+
+// Legacy types for backward compatibility
+export interface User {
   id: string;
-  date: string;
-  waveHeight: string;
-  windSpeed: string;
-  windDirection: string;
-  tide: string;
-  waterTemp: string;
-  conditions: string;
-  rating: number;
+  email: string;
+  isSubscribed: boolean;
+  isAdmin: boolean;
+  subscriptionEndDate?: string;
 }
 
 export interface VideoItem {
@@ -20,10 +23,14 @@ export interface VideoItem {
   duration: string;
 }
 
-export interface User {
+export interface SurfReportLegacy {
   id: string;
-  email: string;
-  isSubscribed: boolean;
-  isAdmin: boolean;
-  subscriptionEndDate?: string;
+  date: string;
+  waveHeight: string;
+  windSpeed: string;
+  windDirection: string;
+  tide: string;
+  waterTemp: string;
+  conditions: string;
+  rating: number;
 }

@@ -5,16 +5,20 @@ import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { supabase } from "@/app/integrations/supabase/client";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 
 export default function AdminScreen() {
   const theme = useTheme();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [subscriptionPrice, setSubscriptionPrice] = useState('5.00');
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [videoTitle, setVideoTitle] = useState('');
+  const [videoDescription, setVideoDescription] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
-  if (!user?.isAdmin) {
+  if (!isAdmin()) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -50,8 +54,7 @@ export default function AdminScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setSelectedVideo(result.assets[0].uri);
-        Alert.alert('Video Selected', 'Video ready to upload. In production, this would upload to your backend.');
+        setSelectedVideo(result.assets[0]);
         console.log('Selected video:', result.assets[0]);
       }
     } catch (error) {
@@ -60,26 +63,77 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideo = () => {
+  const uploadVideo = async () => {
     if (!selectedVideo) {
       Alert.alert('No Video', 'Please select a video first');
       return;
     }
 
-    // In production, this would upload to your backend/storage
-    Alert.alert(
-      'Upload Video',
-      'In production, this would upload the 6K drone video to your backend storage (e.g., Supabase Storage, AWS S3, etc.)',
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            setSelectedVideo(null);
-            console.log('Video upload simulated');
-          }
-        }
-      ]
-    );
+    if (!videoTitle.trim()) {
+      Alert.alert('Missing Title', 'Please enter a title for the video');
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Get video file
+      const response = await fetch(selectedVideo.uri);
+      const blob = await response.blob();
+      const fileExt = selectedVideo.uri.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      console.log('Uploading video to storage...');
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, blob, {
+          contentType: selectedVideo.type || 'video/mp4',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.log('Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('Video uploaded, getting public URL...');
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      console.log('Creating video record in database...');
+
+      // Create video record in database
+      const { error: dbError } = await supabase
+        .from('videos')
+        .insert({
+          title: videoTitle,
+          description: videoDescription || null,
+          video_url: publicUrl,
+          duration: selectedVideo.duration ? `${Math.floor(selectedVideo.duration / 60)}:${String(Math.floor(selectedVideo.duration % 60)).padStart(2, '0')}` : null,
+          uploaded_by: user?.id
+        });
+
+      if (dbError) {
+        console.log('Database error:', dbError);
+        throw dbError;
+      }
+
+      Alert.alert('Success', 'Video uploaded successfully!');
+      setSelectedVideo(null);
+      setVideoTitle('');
+      setVideoDescription('');
+    } catch (error: any) {
+      console.log('Upload error:', error);
+      Alert.alert('Upload Failed', error.message || 'Failed to upload video');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const updateSubscriptionPrice = () => {
@@ -91,12 +145,9 @@ export default function AdminScreen() {
 
     Alert.alert(
       'Update Subscription Price',
-      `Set subscription price to $${price.toFixed(2)}/month?\n\nIn production, this would update your Superwall configuration.`,
+      `Set subscription price to $${price.toFixed(2)}/month?\n\nNote: In production, this would update your Superwall configuration.`,
       [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Update',
           onPress: () => {
@@ -137,8 +188,36 @@ export default function AdminScreen() {
         </View>
 
         <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-          Upload high-resolution drone footage (up to 6K) from your device
+          Upload high-resolution drone footage to Supabase Storage
         </Text>
+
+        <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+            Video Title *
+          </Text>
+          <TextInput
+            style={[styles.textInput, { color: theme.colors.text }]}
+            value={videoTitle}
+            onChangeText={setVideoTitle}
+            placeholder="e.g., Morning Session - Epic Conditions"
+            placeholderTextColor={colors.textSecondary}
+          />
+        </View>
+
+        <View style={[styles.inputContainer, { backgroundColor: colors.background }]}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+            Description (optional)
+          </Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea, { color: theme.colors.text }]}
+            value={videoDescription}
+            onChangeText={setVideoDescription}
+            placeholder="Add a description..."
+            placeholderTextColor={colors.textSecondary}
+            multiline
+            numberOfLines={3}
+          />
+        </View>
 
         {selectedVideo && (
           <View style={[styles.selectedVideoInfo, { backgroundColor: colors.highlight }]}>
@@ -149,7 +228,7 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.selectedVideoText, { color: theme.colors.text }]}>
-              Video selected and ready to upload
+              Video selected: {selectedVideo.fileName || 'video file'}
             </Text>
           </View>
         )}
@@ -157,6 +236,7 @@ export default function AdminScreen() {
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.secondary }]}
           onPress={pickVideo}
+          disabled={isUploading}
         >
           <IconSymbol
             ios_icon_name="photo.on.rectangle"
@@ -171,8 +251,9 @@ export default function AdminScreen() {
 
         {selectedVideo && (
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            style={[styles.actionButton, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]}
             onPress={uploadVideo}
+            disabled={isUploading}
           >
             <IconSymbol
               ios_icon_name="arrow.up.circle.fill"
@@ -181,7 +262,7 @@ export default function AdminScreen() {
               color="#FFFFFF"
             />
             <Text style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
-              Upload Video
+              {isUploading ? 'Uploading...' : 'Upload Video'}
             </Text>
           </TouchableOpacity>
         )}
@@ -248,19 +329,19 @@ export default function AdminScreen() {
         />
         <View style={styles.infoTextContainer}>
           <Text style={[styles.infoTitle, { color: theme.colors.text }]}>
-            Production Setup Required
+            Supabase Integration Active
           </Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            To enable full functionality, you&apos;ll need to:
+            - Videos are stored in Supabase Storage
           </Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Set up Supabase for video storage and user management
+            - User authentication via Supabase Auth
           </Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Configure Superwall for subscription payments
+            - Row Level Security (RLS) policies enabled
           </Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            - Integrate a surf report API for automated updates
+            - Integrate Superwall for subscription payments
           </Text>
         </View>
       </View>
@@ -274,7 +355,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   centerContent: {
     flex: 1,
@@ -284,6 +365,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 24,
+    paddingTop: 20,
   },
   headerTitle: {
     fontSize: 28,
@@ -338,6 +420,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
+  inputContainer: {
+    marginBottom: 16,
+    borderRadius: 8,
+    padding: 12,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  textInput: {
+    fontSize: 16,
+    padding: 8,
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
   selectedVideoInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,6 +449,7 @@ const styles = StyleSheet.create({
   selectedVideoText: {
     fontSize: 14,
     fontWeight: '600',
+    flex: 1,
   },
   actionButton: {
     flexDirection: 'row',

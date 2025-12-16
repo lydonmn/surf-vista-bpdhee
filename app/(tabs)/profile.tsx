@@ -9,50 +9,57 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, logout, checkSubscription } = useAuth();
-  const isSubscribed = checkSubscription();
+  const { user, profile, signOut, checkSubscription, isAdmin } = useAuth();
 
-  if (!user) {
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            router.replace('/login');
+          }
+        }
+      ]
+    );
+  };
+
+  if (!user || !profile) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <IconSymbol
-            ios_icon_name="person.circle"
+            ios_icon_name="person.circle.fill"
             android_material_icon_name="account_circle"
             size={80}
             color={colors.textSecondary}
           />
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Not Logged In
+            Not Signed In
+          </Text>
+          <Text style={[styles.text, { color: colors.textSecondary }]}>
+            Please sign in to view your profile
           </Text>
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }]}
+            style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/login')}
           >
-            <Text style={styles.loginButtonText}>Login</Text>
+            <Text style={styles.buttonText}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/(tabs)/(home)/');
-          },
-        },
-      ]
-    );
-  };
+  const isSubscribed = checkSubscription();
+  const subscriptionEndDate = profile.subscription_end_date 
+    ? new Date(profile.subscription_end_date).toLocaleDateString()
+    : null;
 
   return (
     <ScrollView 
@@ -60,140 +67,138 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.scrollContent}
     >
       <View style={styles.header}>
-        <IconSymbol
-          ios_icon_name="person.circle.fill"
-          android_material_icon_name="account_circle"
-          size={80}
-          color={colors.primary}
-        />
+        <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
+          <IconSymbol
+            ios_icon_name="person.fill"
+            android_material_icon_name="person"
+            size={48}
+            color="#FFFFFF"
+          />
+        </View>
         <Text style={[styles.email, { color: theme.colors.text }]}>
           {user.email}
         </Text>
-        {user.isAdmin && (
-          <View style={[styles.adminBadge, { backgroundColor: colors.accent }]}>
-            <Text style={styles.adminBadgeText}>Admin</Text>
+        {profile.is_admin && (
+          <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+            <IconSymbol
+              ios_icon_name="star.fill"
+              android_material_icon_name="star"
+              size={16}
+              color="#FFFFFF"
+            />
+            <Text style={styles.badgeText}>Admin</Text>
           </View>
         )}
       </View>
 
+      {/* Subscription Status */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Subscription Status
-        </Text>
-        <View style={styles.statusRow}>
+        <View style={styles.cardHeader}>
           <IconSymbol
-            ios_icon_name={isSubscribed ? "checkmark.circle.fill" : "xmark.circle.fill"}
-            android_material_icon_name={isSubscribed ? "check_circle" : "cancel"}
+            ios_icon_name="checkmark.seal.fill"
+            android_material_icon_name="verified"
             size={24}
             color={isSubscribed ? colors.primary : colors.textSecondary}
           />
-          <Text style={[styles.statusText, { color: theme.colors.text }]}>
-            {isSubscribed ? 'Active Subscription' : 'No Active Subscription'}
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Subscription Status
           </Text>
         </View>
-        {isSubscribed && user.subscriptionEndDate && (
-          <Text style={[styles.expiryText, { color: colors.textSecondary }]}>
-            Renews on {new Date(user.subscriptionEndDate).toLocaleDateString()}
+        
+        <View style={styles.statusContainer}>
+          <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+            Status:
           </Text>
+          <Text style={[
+            styles.statusValue, 
+            { color: isSubscribed ? colors.primary : colors.textSecondary }
+          ]}>
+            {isSubscribed ? 'Active' : 'Inactive'}
+          </Text>
+        </View>
+
+        {subscriptionEndDate && (
+          <View style={styles.statusContainer}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Expires:
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {subscriptionEndDate}
+            </Text>
+          </View>
         )}
+
         {!isSubscribed && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={() => {
-              console.log('Opening subscription flow');
-              // In production, this would trigger Superwall
+              Alert.alert(
+                'Subscribe to SurfVista',
+                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
+              );
             }}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe - $5/month</Text>
+            <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Account Settings
-        </Text>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="bell.fill"
-            android_material_icon_name="notifications"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Notifications
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="creditcard.fill"
-            android_material_icon_name="payment"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Payment Method
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="questionmark.circle.fill"
-            android_material_icon_name="help"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Help & Support
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {user.isAdmin && (
+      {/* Admin Panel Access */}
+      {isAdmin() && (
         <TouchableOpacity
-          style={[styles.adminButton, { backgroundColor: colors.accent }]}
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
           onPress={() => router.push('/admin')}
         >
-          <IconSymbol
-            ios_icon_name="gear"
-            android_material_icon_name="settings"
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={styles.adminButtonText}>Admin Panel</Text>
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Admin Panel
+            </Text>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron_right"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </View>
+          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            Manage videos, surf reports, and subscription settings
+          </Text>
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity
-        style={[styles.logoutButton, { backgroundColor: colors.textSecondary }]}
-        onPress={handleLogout}
-      >
-        <Text style={styles.logoutButtonText}>Logout</Text>
-      </TouchableOpacity>
+      {/* Account Actions */}
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={handleSignOut}
+        >
+          <IconSymbol
+            ios_icon_name="rectangle.portrait.and.arrow.right"
+            android_material_icon_name="logout"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Sign Out
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      <Text style={[styles.version, { color: colors.textSecondary }]}>
-        SurfVista v1.0.0
-      </Text>
+      {/* Info */}
+      <View style={styles.infoContainer}>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          SurfVista - Folly Beach, SC
+        </Text>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          Version 1.0.0
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -203,8 +208,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 48,
-    paddingHorizontal: 16,
+    padding: 16,
     paddingBottom: 100,
   },
   centerContent: {
@@ -216,40 +220,56 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 24,
+    paddingTop: 20,
+  },
+  avatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   email: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 12,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  adminBadge: {
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  adminBadgeText: {
+  badgeText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    textAlign: 'center',
     marginTop: 16,
-    marginBottom: 24,
+    marginBottom: 8,
   },
-  loginButton: {
+  text: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  button: {
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    minWidth: 200,
   },
-  loginButtonText: {
+  buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   card: {
     borderRadius: 12,
@@ -258,24 +278,33 @@ const styles = StyleSheet.create({
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  statusRow: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  cardDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  statusText: {
+  statusLabel: {
     fontSize: 16,
-    fontWeight: '600',
   },
-  expiryText: {
-    fontSize: 14,
-    marginLeft: 36,
+  statusValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   subscribeButton: {
     paddingVertical: 12,
@@ -288,44 +317,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  menuItem: {
+  actionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
     gap: 12,
+    paddingVertical: 4,
   },
-  menuText: {
-    flex: 1,
+  actionText: {
     fontSize: 16,
   },
-  adminButton: {
-    flexDirection: 'row',
+  infoContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 8,
+    marginTop: 24,
+    gap: 4,
   },
-  adminButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoutButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  version: {
+  infoText: {
     fontSize: 12,
-    textAlign: 'center',
   },
 });

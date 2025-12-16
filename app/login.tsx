@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -9,28 +9,53 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function LoginScreen() {
   const theme = useTheme();
-  const { login } = useAuth();
+  const { signIn, signUp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
-  const handleLogin = async () => {
+  const handleAuth = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please enter both email and password');
       return;
     }
 
-    setIsLoading(true);
-    const success = await login(email, password);
-    setIsLoading(false);
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
 
-    if (success) {
-      router.replace('/(tabs)/(home)/');
-    } else {
+    setIsLoading(true);
+
+    if (isSignUp) {
+      const result = await signUp(email, password);
+      setIsLoading(false);
+      
       Alert.alert(
-        'Login Failed',
-        'Invalid credentials. Try:\nAdmin: admin@surfvista.com / admin123\nUser: user@example.com / user123'
+        result.success ? 'Success' : 'Error',
+        result.message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              if (result.success) {
+                setIsSignUp(false);
+                setPassword('');
+              }
+            }
+          }
+        ]
       );
+    } else {
+      const result = await signIn(email, password);
+      setIsLoading(false);
+
+      if (result.success) {
+        router.replace('/(tabs)/(home)/');
+      } else {
+        Alert.alert('Sign In Failed', result.message);
+      }
     }
   };
 
@@ -39,7 +64,10 @@ export default function LoginScreen() {
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.content}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         <TouchableOpacity
           style={styles.closeButton}
           onPress={() => router.back()}
@@ -56,7 +84,7 @@ export default function LoginScreen() {
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
         </View>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Sign in to access exclusive content
+          {isSignUp ? 'Create your account' : 'Sign in to access exclusive content'}
         </Text>
 
         <View style={styles.form}>
@@ -88,7 +116,7 @@ export default function LoginScreen() {
             />
             <TextInput
               style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Password"
+              placeholder="Password (min 6 characters)"
               placeholderTextColor={colors.textSecondary}
               value={password}
               onChangeText={setPassword}
@@ -99,12 +127,25 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }]}
-            onPress={handleLogin}
+            style={[styles.authButton, { backgroundColor: colors.primary }]}
+            onPress={handleAuth}
             disabled={isLoading}
           >
-            <Text style={styles.loginButtonText}>
-              {isLoading ? 'Signing In...' : 'Sign In'}
+            <Text style={styles.authButtonText}>
+              {isLoading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Create Account' : 'Sign In')}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.switchModeButton}
+            onPress={() => setIsSignUp(!isSignUp)}
+            disabled={isLoading}
+          >
+            <Text style={[styles.switchModeText, { color: colors.textSecondary }]}>
+              {isSignUp ? 'Already have an account? ' : 'Don&apos;t have an account? '}
+              <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
+                {isSignUp ? 'Sign In' : 'Sign Up'}
+              </Text>
             </Text>
           </TouchableOpacity>
 
@@ -118,10 +159,9 @@ export default function LoginScreen() {
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={() => {
               console.log('Opening subscription flow');
-              // In production, this would trigger Superwall
               Alert.alert(
                 'Subscribe to SurfVista',
-                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon!'
+                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
               );
             }}
           >
@@ -129,18 +169,22 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.demoInfo}>
-          <Text style={[styles.demoTitle, { color: colors.textSecondary }]}>
-            Demo Credentials:
-          </Text>
-          <Text style={[styles.demoText, { color: colors.textSecondary }]}>
-            Admin: admin@surfvista.com / admin123
-          </Text>
-          <Text style={[styles.demoText, { color: colors.textSecondary }]}>
-            User: user@example.com / user123
-          </Text>
+        <View style={styles.infoCard}>
+          <IconSymbol
+            ios_icon_name="info.circle.fill"
+            android_material_icon_name="info"
+            size={20}
+            color={colors.primary}
+          />
+          <View style={styles.infoTextContainer}>
+            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+              {isSignUp 
+                ? 'After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.'
+                : 'New users need to verify their email address before accessing the app.'}
+            </Text>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -149,8 +193,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 32,
     paddingTop: 60,
     paddingBottom: 40,
@@ -189,16 +233,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
   },
-  loginButton: {
+  authButton: {
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
   },
-  loginButtonText: {
+  authButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  switchModeButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  switchModeText: {
+    fontSize: 14,
   },
   divider: {
     flexDirection: 'row',
@@ -223,19 +275,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  demoInfo: {
-    marginTop: 40,
+  infoCard: {
+    flexDirection: 'row',
     padding: 16,
     borderRadius: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    marginTop: 24,
+    gap: 12,
   },
-  demoTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
+  infoTextContainer: {
+    flex: 1,
   },
-  demoText: {
-    fontSize: 12,
-    marginBottom: 4,
+  infoText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

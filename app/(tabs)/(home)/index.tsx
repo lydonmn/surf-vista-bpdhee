@@ -1,58 +1,112 @@
 
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
-import { mockSurfReports, mockVideos } from "@/data/mockData";
 import { IconSymbol } from "@/components/IconSymbol";
+import { supabase } from "@/app/integrations/supabase/client";
+import { Video, SurfReport } from "@/types";
+
+const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, checkSubscription } = useAuth();
-  const isSubscribed = checkSubscription();
-  const latestReport = mockSurfReports[0];
-  const latestVideo = mockVideos[0];
+  const [latestVideo, setLatestVideo] = useState<Video | null>(null);
+  const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (user && checkSubscription()) {
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  const loadData = async () => {
+    try {
+      // Load latest video
+      const { data: videoData } = await supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (videoData) {
+        setLatestVideo(videoData);
+      }
+
+      // Load today's surf report
+      const today = new Date().toISOString().split('T')[0];
+      const { data: reportData } = await supabase
+        .from('surf_reports')
+        .select('*')
+        .eq('date', today)
+        .single();
+
+      if (reportData) {
+        setTodayReport(reportData);
+      }
+    } catch (error) {
+      console.log('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-          <Text style={[styles.tagline, { color: colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Exclusive Surf Reports from Folly Beach, SC
           </Text>
+          <IconSymbol
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={80}
+            color={colors.primary}
+          />
+          <Text style={[styles.description, { color: theme.colors.text }]}>
+            Get access to daily 6K drone footage and exclusive surf reports
+          </Text>
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }]}
+            style={[styles.ctaButton, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/login')}
           >
-            <Text style={styles.loginButtonText}>Login / Subscribe</Text>
+            <Text style={styles.ctaButtonText}>Sign In / Subscribe</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  if (!isSubscribed) {
+  if (!checkSubscription()) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
-          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+          <IconSymbol
+            ios_icon_name="lock.fill"
+            android_material_icon_name="lock"
+            size={80}
+            color={colors.textSecondary}
+          />
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscribe to Access Premium Content
+            Subscription Required
           </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            Get daily drone footage and exclusive surf reports for just $5/month
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
+            Subscribe to access exclusive drone footage and daily surf reports for just $5/month
           </Text>
           <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              console.log('Opening subscription flow');
-              // In production, this would trigger Superwall
-            }}
+            style={[styles.ctaButton, { backgroundColor: colors.accent }]}
+            onPress={() => router.push('/(tabs)/profile')}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
+            <Text style={styles.ctaButtonText}>Subscribe Now</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -65,138 +119,181 @@ export default function HomeScreen() {
       contentContainerStyle={styles.scrollContent}
     >
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.primary }]}>SurfVista</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+        <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
+          Welcome to
+        </Text>
+        <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+        <Text style={[styles.location, { color: colors.textSecondary }]}>
           Folly Beach, South Carolina
         </Text>
       </View>
 
       {/* Latest Video Section */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Latest Drone Footage
-        </Text>
-        <TouchableOpacity
-          style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push({
-            pathname: '/video-player',
-            params: { videoId: latestVideo.id }
-          })}
-        >
-          <Image
-            source={{ uri: latestVideo.thumbnailUrl }}
-            style={styles.thumbnail}
+      <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol
+            ios_icon_name="video.fill"
+            android_material_icon_name="videocam"
+            size={24}
+            color={colors.primary}
           />
-          <View style={styles.playOverlay}>
-            <IconSymbol
-              ios_icon_name="play.circle.fill"
-              android_material_icon_name="play_circle"
-              size={64}
-              color="#FFFFFF"
-            />
-          </View>
-          <View style={styles.videoInfo}>
-            <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-              {latestVideo.title}
-            </Text>
-            <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-              {new Date(latestVideo.date).toLocaleDateString()} • {latestVideo.duration}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Today's Conditions */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Today&apos;s Conditions
-        </Text>
-        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.ratingContainer}>
-            <Text style={[styles.ratingNumber, { color: colors.accent }]}>
-              {latestReport.rating}/10
-            </Text>
-            <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
-              Surf Rating
-            </Text>
-          </View>
-          
-          <View style={styles.conditionsGrid}>
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="water.waves"
-                android_material_icon_name="waves"
-                size={24}
-                color={colors.primary}
-              />
-              <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                Wave Height
-              </Text>
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                {latestReport.waveHeight}
-              </Text>
-            </View>
-
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="wind"
-                android_material_icon_name="air"
-                size={24}
-                color={colors.primary}
-              />
-              <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                Wind
-              </Text>
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                {latestReport.windSpeed}
-              </Text>
-            </View>
-
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="thermometer"
-                android_material_icon_name="thermostat"
-                size={24}
-                color={colors.primary}
-              />
-              <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                Water Temp
-              </Text>
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                {latestReport.waterTemp}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.conditionsText}>
-            <Text style={[styles.conditionsDescription, { color: theme.colors.text }]}>
-              {latestReport.conditions}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.viewMoreButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/(tabs)/report')}
-          >
-            <Text style={styles.viewMoreButtonText}>View Full Report</Text>
-          </TouchableOpacity>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Latest Drone Footage
+          </Text>
         </View>
+
+        {latestVideo ? (
+          <TouchableOpacity
+            style={styles.videoCard}
+            onPress={() => router.push({
+              pathname: '/video-player',
+              params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
+            })}
+          >
+            <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
+              <IconSymbol
+                ios_icon_name="play.circle.fill"
+                android_material_icon_name="play_circle"
+                size={64}
+                color={colors.primary}
+              />
+            </View>
+            <View style={styles.videoInfo}>
+              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                {latestVideo.title}
+              </Text>
+              {latestVideo.description && (
+                <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
+                  {latestVideo.description}
+                </Text>
+              )}
+              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                {new Date(latestVideo.created_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No videos available yet
+            </Text>
+          </View>
+        )}
       </View>
 
-      {user.isAdmin && (
+      {/* Today's Surf Report */}
+      <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Today&apos;s Conditions
+          </Text>
+        </View>
+
+        {todayReport ? (
+          <View style={styles.reportCard}>
+            <View style={styles.reportRow}>
+              <View style={styles.reportItem}>
+                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
+                  Wave Height
+                </Text>
+                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
+                  {todayReport.wave_height}
+                </Text>
+              </View>
+              <View style={styles.reportItem}>
+                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
+                  Wind
+                </Text>
+                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
+                  {todayReport.wind_speed} {todayReport.wind_direction}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.reportRow}>
+              <View style={styles.reportItem}>
+                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
+                  Water Temp
+                </Text>
+                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
+                  {todayReport.water_temp}
+                </Text>
+              </View>
+              <View style={styles.reportItem}>
+                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
+                  Rating
+                </Text>
+                <Text style={[styles.reportValue, { color: colors.primary }]}>
+                  {todayReport.rating}/10
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.conditionsContainer}>
+              <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
+                Conditions
+              </Text>
+              <Text style={[styles.conditionsText, { color: theme.colors.text }]}>
+                {todayReport.conditions}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.viewMoreButton, { backgroundColor: colors.secondary }]}
+              onPress={() => router.push('/(tabs)/report')}
+            >
+              <Text style={[styles.viewMoreText, { color: colors.text }]}>
+                View Full Report
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No surf report available for today
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Quick Links */}
+      <View style={styles.quickLinks}>
         <TouchableOpacity
-          style={[styles.adminButton, { backgroundColor: colors.accent }]}
-          onPress={() => router.push('/admin')}
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/videos')}
         >
           <IconSymbol
-            ios_icon_name="gear"
-            android_material_icon_name="settings"
-            size={20}
-            color="#FFFFFF"
+            ios_icon_name="film.fill"
+            android_material_icon_name="video_library"
+            size={32}
+            color={colors.primary}
           />
-          <Text style={styles.adminButtonText}>Admin Panel</Text>
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Video Library
+          </Text>
         </TouchableOpacity>
-      )}
+
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/report')}
+        >
+          <IconSymbol
+            ios_icon_name="chart.bar.fill"
+            android_material_icon_name="bar_chart"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Surf Reports
+          </Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -206,8 +303,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 48,
-    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   centerContent: {
@@ -215,146 +310,126 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
-    gap: 24,
-  },
-  appTitle: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    letterSpacing: 1,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 24,
-    gap: 8,
+    paddingTop: 40,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
   },
-  headerTitle: {
-    fontSize: 32,
+  welcomeText: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  appTitle: {
+    fontSize: 42,
     fontWeight: 'bold',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  location: {
+    fontSize: 14,
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  tagline: {
     fontSize: 18,
     textAlign: 'center',
+    marginBottom: 32,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 16,
   },
-  text: {
+  description: {
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
+    marginBottom: 32,
   },
-  loginButton: {
+  ctaButton: {
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    minWidth: 200,
   },
-  loginButtonText: {
+  ctaButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  subscribeButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    minWidth: 250,
-  },
-  subscribeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
   },
   section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  videoCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  thumbnail: {
-    width: '100%',
-    height: 200,
-    resizeMode: 'cover',
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoInfo: {
-    padding: 12,
-  },
-  videoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  videoDate: {
-    fontSize: 14,
-  },
-  reportCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
     borderRadius: 12,
     padding: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
-  ratingContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  ratingNumber: {
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  ratingLabel: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  conditionsGrid: {
+  sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-  },
-  conditionItem: {
     alignItems: 'center',
-    flex: 1,
-  },
-  conditionLabel: {
-    fontSize: 12,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  conditionValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  conditionsText: {
+    gap: 12,
     marginBottom: 16,
   },
-  conditionsDescription: {
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  videoCard: {
+    gap: 12,
+  },
+  videoPlaceholder: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoInfo: {
+    gap: 4,
+  },
+  videoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  videoDescription: {
     fontSize: 14,
-    textAlign: 'center',
+    lineHeight: 20,
+  },
+  videoDate: {
+    fontSize: 12,
+  },
+  emptyState: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+  },
+  reportCard: {
+    gap: 16,
+  },
+  reportRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  reportItem: {
+    flex: 1,
+  },
+  reportLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  reportValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  conditionsContainer: {
+    gap: 4,
+  },
+  conditionsText: {
+    fontSize: 14,
     lineHeight: 20,
   },
   viewMoreButton: {
@@ -362,24 +437,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  viewMoreButtonText: {
-    color: '#FFFFFF',
+  viewMoreText: {
     fontSize: 16,
     fontWeight: '600',
   },
-  adminButton: {
+  quickLinks: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
-    gap: 8,
+    paddingHorizontal: 16,
+    gap: 16,
+    marginBottom: 16,
   },
-  adminButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  quickLinkCard: {
+    flex: 1,
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  quickLinkText: {
+    fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });
