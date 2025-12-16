@@ -61,6 +61,32 @@ export function useSurfData() {
           .order('time'),
       ]);
 
+      // Log detailed results
+      console.log('[useSurfData] Surf reports result:', {
+        error: surfReportsResult.error,
+        count: surfReportsResult.data?.length || 0,
+        data: surfReportsResult.data
+      });
+
+      console.log('[useSurfData] Weather result:', {
+        error: weatherResult.error,
+        hasData: !!weatherResult.data,
+        data: weatherResult.data
+      });
+
+      console.log('[useSurfData] Forecast result:', {
+        error: forecastResult.error,
+        count: forecastResult.data?.length || 0,
+        data: forecastResult.data
+      });
+
+      console.log('[useSurfData] Tide result:', {
+        error: tideResult.error,
+        count: tideResult.data?.length || 0,
+        data: tideResult.data,
+        query: `date = ${today}`
+      });
+
       if (surfReportsResult.error) {
         console.error('[useSurfData] Surf reports error:', surfReportsResult.error);
         throw surfReportsResult.error;
@@ -221,8 +247,9 @@ export function useSurfData() {
           schema: 'public',
           table: 'tide_data',
         },
-        () => {
-          console.log('[useSurfData] Tide data updated, refreshing data...');
+        (payload) => {
+          console.log('[useSurfData] Tide data updated, payload:', payload);
+          console.log('[useSurfData] Refreshing data...');
           fetchData();
         }
       )

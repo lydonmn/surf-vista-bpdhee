@@ -16,9 +16,11 @@ export default function AdminDataScreen() {
   const [tideCount, setTideCount] = useState<number>(0);
   const [weatherCount, setWeatherCount] = useState<number>(0);
   const [forecastCount, setForecastCount] = useState<number>(0);
+  const [testTideData, setTestTideData] = useState<any[]>([]);
 
   useEffect(() => {
     loadDataCounts();
+    testTideDataFetch();
   }, []);
 
   const loadDataCounts = async () => {
@@ -34,8 +36,36 @@ export default function AdminDataScreen() {
       setTideCount(tideResult.count || 0);
       setWeatherCount(weatherResult.count || 0);
       setForecastCount(forecastResult.count || 0);
+      
+      addLog(`Data counts loaded: Tides=${tideResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}`);
     } catch (error) {
       console.error('Error loading data counts:', error);
+      addLog(`Error loading counts: ${error}`);
+    }
+  };
+
+  const testTideDataFetch = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      addLog(`Testing tide data fetch for ${today}...`);
+      
+      const { data, error } = await supabase
+        .from('tide_data')
+        .select('*')
+        .eq('date', today)
+        .order('time');
+      
+      if (error) {
+        addLog(`❌ Tide fetch error: ${error.message}`);
+        console.error('Tide fetch error:', error);
+      } else {
+        addLog(`✅ Tide fetch successful: ${data?.length || 0} records`);
+        console.log('Tide data:', data);
+        setTestTideData(data || []);
+      }
+    } catch (error) {
+      addLog(`❌ Exception: ${error}`);
+      console.error('Exception:', error);
     }
   };
 
@@ -82,6 +112,7 @@ export default function AdminDataScreen() {
         addLog(`Success! ${data.count} tide records stored.`);
         Alert.alert('Success', `${data.count} tide records updated successfully!`);
         await loadDataCounts();
+        await testTideDataFetch();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -180,6 +211,7 @@ export default function AdminDataScreen() {
       addLog('=== ALL DATA UPDATED SUCCESSFULLY ===');
       Alert.alert('Success', 'All data has been updated successfully!');
       await loadDataCounts();
+      await testTideDataFetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       addLog(`FAILED: ${message}`);
@@ -264,7 +296,10 @@ export default function AdminDataScreen() {
           </View>
           <TouchableOpacity
             style={[styles.refreshButton, { backgroundColor: colors.primary }]}
-            onPress={loadDataCounts}
+            onPress={() => {
+              loadDataCounts();
+              testTideDataFetch();
+            }}
           >
             <IconSymbol
               ios_icon_name="arrow.clockwise"
@@ -275,6 +310,22 @@ export default function AdminDataScreen() {
             <Text style={styles.refreshButtonText}>Refresh Counts</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Tide Data Test Card */}
+        {testTideData.length > 0 && (
+          <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Tide Data Test (Today)
+            </Text>
+            {testTideData.map((tide, index) => (
+              <View key={index} style={styles.tideTestRow}>
+                <Text style={[styles.tideTestText, { color: theme.colors.text }]}>
+                  {tide.time} - {tide.type.toUpperCase()} - {Number(tide.height).toFixed(1)} ft
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
@@ -499,6 +550,15 @@ const styles = StyleSheet.create({
   statusValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  tideTestRow: {
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  tideTestText: {
+    fontSize: 14,
+    fontFamily: 'monospace',
   },
   refreshButton: {
     flexDirection: 'row',

@@ -19,7 +19,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
   console.log('[TideCard] Rendering with:', { 
     tidesCount: tides?.length || 0, 
     isLoading,
-    tides: tides 
+    tides: JSON.stringify(tides, null, 2)
   });
 
   if (isLoading) {
@@ -46,6 +46,7 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
   }
 
   if (!tides || tides.length === 0) {
+    console.log('[TideCard] No tides available - showing empty state');
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
@@ -67,15 +68,17 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
             color={colors.textSecondary}
           />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            No tide data available yet
+            No tide data available for today
           </Text>
           <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-            Data will be updated automatically
+            Pull down to refresh or check back later
           </Text>
         </View>
       </View>
     );
   }
+
+  console.log('[TideCard] Rendering', tides.length, 'tide entries');
 
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -93,6 +96,9 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
 
       <View style={styles.tidesContainer}>
         {tides.map((tide, index) => {
+          console.log('[TideCard] Rendering tide:', tide);
+          
+          // Parse the time string
           const time = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
@@ -182,8 +188,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
+    textAlign: 'center',
   },
 });
