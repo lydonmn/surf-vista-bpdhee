@@ -35,11 +35,24 @@ const REVENUECAT_API_KEY_IOS = 'YOUR_IOS_API_KEY_HERE';
 const REVENUECAT_API_KEY_ANDROID = 'YOUR_ANDROID_API_KEY_HERE';
 
 // Product Identifiers (must match App Store Connect / Google Play Console)
+// IMPORTANT: Use these exact identifiers when creating products in:
+// - App Store Connect (iOS)
+// - Google Play Console (Android)
+// - RevenueCat Dashboard
 export const PAYMENT_CONFIG = {
-  MONTHLY_PRICE: 10.99,
-  ANNUAL_PRICE: 100.99,
-  MONTHLY_PRODUCT_ID: 'monthly_subscription',
-  ANNUAL_PRODUCT_ID: 'annual_subscription',
+  // Pricing (can be adjusted in App Store Connect / Google Play Console)
+  MONTHLY_PRICE: 4.99,  // $4.99/month
+  ANNUAL_PRICE: 49.99,  // $49.99/year (save ~17%)
+  
+  // Product Identifiers - MUST MATCH YOUR STORE CONFIGURATION
+  // Option 1: Reverse domain notation (recommended for iOS)
+  MONTHLY_PRODUCT_ID: 'com.anonymous.Natively.monthly',
+  ANNUAL_PRODUCT_ID: 'com.anonymous.Natively.annual',
+  
+  // Option 2: Simple naming (alternative)
+  // MONTHLY_PRODUCT_ID: 'surfvista_monthly',
+  // ANNUAL_PRODUCT_ID: 'surfvista_annual',
+  
   // RevenueCat Offering ID (default is usually 'default')
   OFFERING_ID: 'default',
 };
@@ -123,6 +136,9 @@ export const checkPaymentConfiguration = (): boolean => {
   console.log('[Payment] ⚙️ Configuration Check:');
   console.log('[Payment] - Initialized:', isPaymentSystemInitialized);
   console.log('[Payment] - Platform:', Platform.OS);
+  console.log('[Payment] - Product IDs:');
+  console.log('[Payment]   • Monthly:', PAYMENT_CONFIG.MONTHLY_PRODUCT_ID);
+  console.log('[Payment]   • Annual:', PAYMENT_CONFIG.ANNUAL_PRODUCT_ID);
   
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
   const isConfigured = apiKey !== 'YOUR_IOS_API_KEY_HERE' && apiKey !== 'YOUR_ANDROID_API_KEY_HERE';
@@ -134,7 +150,9 @@ export const checkPaymentConfiguration = (): boolean => {
     console.log('[Payment] 📝 Setup Instructions:');
     console.log('[Payment]   1. Create account at https://www.revenuecat.com/');
     console.log('[Payment]   2. Add your app in RevenueCat dashboard');
-    console.log('[Payment]   3. Configure products (monthly & annual)');
+    console.log('[Payment]   3. Configure products with these identifiers:');
+    console.log('[Payment]      • Monthly: ' + PAYMENT_CONFIG.MONTHLY_PRODUCT_ID);
+    console.log('[Payment]      • Annual: ' + PAYMENT_CONFIG.ANNUAL_PRODUCT_ID);
     console.log('[Payment]   4. Get API keys from Settings > API Keys');
     console.log('[Payment]   5. Update REVENUECAT_API_KEY_IOS and REVENUECAT_API_KEY_ANDROID');
     console.log('[Payment]   6. Restart the app');
@@ -176,7 +194,9 @@ export const presentPaywall = async (
         '1. Go to https://app.revenuecat.com/\n' +
         '2. Select your app\n' +
         '3. Go to Products\n' +
-        '4. Add your subscription products\n' +
+        '4. Add your subscription products:\n' +
+        `   • ${PAYMENT_CONFIG.MONTHLY_PRODUCT_ID}\n` +
+        `   • ${PAYMENT_CONFIG.ANNUAL_PRODUCT_ID}\n` +
         '5. Create an offering with your packages'
       );
     }
@@ -191,14 +211,16 @@ export const presentPaywall = async (
       selectedPackage = offering.monthly || 
                        offering.availablePackages.find(pkg => 
                          pkg.identifier.toLowerCase().includes('monthly') ||
-                         pkg.packageType === 'MONTHLY'
+                         pkg.packageType === 'MONTHLY' ||
+                         pkg.product.identifier === PAYMENT_CONFIG.MONTHLY_PRODUCT_ID
                        ) || null;
     } else {
       selectedPackage = offering.annual || 
                        offering.availablePackages.find(pkg => 
                          pkg.identifier.toLowerCase().includes('annual') ||
                          pkg.identifier.toLowerCase().includes('yearly') ||
-                         pkg.packageType === 'ANNUAL'
+                         pkg.packageType === 'ANNUAL' ||
+                         pkg.product.identifier === PAYMENT_CONFIG.ANNUAL_PRODUCT_ID
                        ) || null;
     }
 
