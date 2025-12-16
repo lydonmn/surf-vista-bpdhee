@@ -16,28 +16,36 @@ export default function AdminDataScreen() {
   const [tideCount, setTideCount] = useState<number>(0);
   const [weatherCount, setWeatherCount] = useState<number>(0);
   const [forecastCount, setForecastCount] = useState<number>(0);
+  const [surfReportCount, setSurfReportCount] = useState<number>(0);
+  const [externalSurfCount, setExternalSurfCount] = useState<number>(0);
   const [testTideData, setTestTideData] = useState<any[]>([]);
+  const [testSurfData, setTestSurfData] = useState<any>(null);
 
   useEffect(() => {
     loadDataCounts();
     testTideDataFetch();
+    testSurfDataFetch();
   }, []);
 
   const loadDataCounts = async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      const [tideResult, weatherResult, forecastResult] = await Promise.all([
+      const [tideResult, weatherResult, forecastResult, surfResult, externalSurfResult] = await Promise.all([
         supabase.from('tide_data').select('*', { count: 'exact', head: true }).eq('date', today),
         supabase.from('weather_data').select('*', { count: 'exact', head: true }).eq('date', today),
         supabase.from('weather_forecast').select('*', { count: 'exact', head: true }).gte('date', today),
+        supabase.from('surf_reports').select('*', { count: 'exact', head: true }).eq('date', today),
+        supabase.from('external_surf_reports').select('*', { count: 'exact', head: true }).eq('date', today),
       ]);
 
       setTideCount(tideResult.count || 0);
       setWeatherCount(weatherResult.count || 0);
       setForecastCount(forecastResult.count || 0);
+      setSurfReportCount(surfResult.count || 0);
+      setExternalSurfCount(externalSurfResult.count || 0);
       
-      addLog(`Data counts loaded: Tides=${tideResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}`);
+      addLog(`Data counts loaded: Tides=${tideResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalSurfResult.count}`);
     } catch (error) {
       console.error('Error loading data counts:', error);
       addLog(`Error loading counts: ${error}`);
@@ -62,6 +70,31 @@ export default function AdminDataScreen() {
         addLog(`✅ Tide fetch successful: ${data?.length || 0} records`);
         console.log('Tide data:', data);
         setTestTideData(data || []);
+      }
+    } catch (error) {
+      addLog(`❌ Exception: ${error}`);
+      console.error('Exception:', error);
+    }
+  };
+
+  const testSurfDataFetch = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      addLog(`Testing surf data fetch for ${today}...`);
+      
+      const { data, error } = await supabase
+        .from('surf_reports')
+        .select('*')
+        .eq('date', today)
+        .maybeSingle();
+      
+      if (error) {
+        addLog(`❌ Surf fetch error: ${error.message}`);
+        console.error('Surf fetch error:', error);
+      } else {
+        addLog(`✅ Surf fetch successful: ${data ? 'Found' : 'Not found'}`);
+        console.log('Surf data:', data);
+        setTestSurfData(data);
       }
     } catch (error) {
       addLog(`❌ Exception: ${error}`);
@@ -137,6 +170,7 @@ export default function AdminDataScreen() {
         addLog('Success! Surf report data updated.');
         Alert.alert('Success', 'Surf report data updated successfully!');
         await loadDataCounts();
+        await testSurfDataFetch();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -161,6 +195,7 @@ export default function AdminDataScreen() {
         addLog('Success! Daily surf report generated.');
         Alert.alert('Success', 'Daily surf report generated successfully!');
         await loadDataCounts();
+        await testSurfDataFetch();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -212,6 +247,7 @@ export default function AdminDataScreen() {
       Alert.alert('Success', 'All data has been updated successfully!');
       await loadDataCounts();
       await testTideDataFetch();
+      await testSurfDataFetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       addLog(`FAILED: ${message}`);
@@ -294,11 +330,28 @@ export default function AdminDataScreen() {
               {forecastCount}
             </Text>
           </View>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Surf Reports (Today):
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {surfReportCount}
+            </Text>
+          </View>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              External Surf Data:
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {externalSurfCount}
+            </Text>
+          </View>
           <TouchableOpacity
             style={[styles.refreshButton, { backgroundColor: colors.primary }]}
             onPress={() => {
               loadDataCounts();
               testTideDataFetch();
+              testSurfDataFetch();
             }}
           >
             <IconSymbol
@@ -310,6 +363,47 @@ export default function AdminDataScreen() {
             <Text style={styles.refreshButtonText}>Refresh Counts</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Surf Data Test Card */}
+        {testSurfData && (
+          <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Surf Report Data (Today)
+            </Text>
+            <View style={styles.surfDataRow}>
+              <Text style={[styles.surfDataLabel, { color: colors.textSecondary }]}>
+                Wave Height:
+              </Text>
+              <Text style={[styles.surfDataValue, { color: theme.colors.text }]}>
+                {testSurfData.wave_height || 'N/A'}
+              </Text>
+            </View>
+            <View style={styles.surfDataRow}>
+              <Text style={[styles.surfDataLabel, { color: colors.textSecondary }]}>
+                Wave Period:
+              </Text>
+              <Text style={[styles.surfDataValue, { color: theme.colors.text }]}>
+                {testSurfData.wave_period || 'N/A'}
+              </Text>
+            </View>
+            <View style={styles.surfDataRow}>
+              <Text style={[styles.surfDataLabel, { color: colors.textSecondary }]}>
+                Water Temp:
+              </Text>
+              <Text style={[styles.surfDataValue, { color: theme.colors.text }]}>
+                {testSurfData.water_temp || 'N/A'}
+              </Text>
+            </View>
+            <View style={styles.surfDataRow}>
+              <Text style={[styles.surfDataLabel, { color: colors.textSecondary }]}>
+                Rating:
+              </Text>
+              <Text style={[styles.surfDataValue, { color: theme.colors.text }]}>
+                {testSurfData.rating || 'N/A'}/10
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Tide Data Test Card */}
         {testTideData.length > 0 && (
@@ -550,6 +644,21 @@ const styles = StyleSheet.create({
   statusValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  surfDataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  surfDataLabel: {
+    fontSize: 14,
+  },
+  surfDataValue: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   tideTestRow: {
     paddingVertical: 6,
