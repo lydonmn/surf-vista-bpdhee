@@ -9,10 +9,10 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, logout, checkSubscription } = useAuth();
+  const { user, profile, signOut, checkSubscription, isAdmin } = useAuth();
   const isSubscribed = checkSubscription();
 
-  if (!user) {
+  if (!user || !profile) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -36,18 +36,20 @@ export default function ProfileScreen() {
     );
   }
 
-  const handleLogout = () => {
+  const handleSignOut = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'Sign Out',
+      'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            router.replace('/(tabs)/(home)/');
+            console.log('[ProfileScreen] Signing out...');
+            await signOut();
+            console.log('[ProfileScreen] Sign out complete, redirecting to login...');
+            router.replace('/login');
           },
         },
       ]
@@ -69,7 +71,7 @@ export default function ProfileScreen() {
         <Text style={[styles.email, { color: theme.colors.text }]}>
           {user.email}
         </Text>
-        {user.isAdmin && (
+        {profile.is_admin && (
           <View style={[styles.adminBadge, { backgroundColor: colors.accent }]}>
             <Text style={styles.adminBadgeText}>Admin</Text>
           </View>
@@ -91,9 +93,9 @@ export default function ProfileScreen() {
             {isSubscribed ? 'Active Subscription' : 'No Active Subscription'}
           </Text>
         </View>
-        {isSubscribed && user.subscriptionEndDate && (
+        {isSubscribed && profile.subscription_end_date && (
           <Text style={[styles.expiryText, { color: colors.textSecondary }]}>
-            Renews on {new Date(user.subscriptionEndDate).toLocaleDateString()}
+            Renews on {new Date(profile.subscription_end_date).toLocaleDateString()}
           </Text>
         )}
         {!isSubscribed && (
@@ -101,7 +103,10 @@ export default function ProfileScreen() {
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={() => {
               console.log('Opening subscription flow');
-              // In production, this would trigger Superwall
+              Alert.alert(
+                'Subscribe to SurfVista',
+                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
+              );
             }}
           >
             <Text style={styles.subscribeButtonText}>Subscribe - $5/month</Text>
@@ -151,7 +156,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {user.isAdmin && (
+      {isAdmin() && (
         <TouchableOpacity
           style={[styles.adminButton, { backgroundColor: colors.accent }]}
           onPress={() => router.push('/admin')}
@@ -167,10 +172,16 @@ export default function ProfileScreen() {
       )}
 
       <TouchableOpacity
-        style={[styles.logoutButton, { backgroundColor: colors.textSecondary }]}
-        onPress={handleLogout}
+        style={[styles.signOutButton, { backgroundColor: colors.textSecondary }]}
+        onPress={handleSignOut}
       >
-        <Text style={styles.logoutButtonText}>Logout</Text>
+        <IconSymbol
+          ios_icon_name="rectangle.portrait.and.arrow.right"
+          android_material_icon_name="logout"
+          size={20}
+          color="#FFFFFF"
+        />
+        <Text style={styles.signOutButtonText}>Sign Out</Text>
       </TouchableOpacity>
 
       <Text style={[styles.version, { color: colors.textSecondary }]}>
@@ -298,13 +309,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  logoutButton: {
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
     marginBottom: 16,
+    gap: 8,
   },
-  logoutButtonText: {
+  signOutButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',

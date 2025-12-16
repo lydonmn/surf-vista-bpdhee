@@ -21,7 +21,9 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
+            console.log('[ProfileScreen] Signing out...');
             await signOut();
+            console.log('[ProfileScreen] Sign out complete, redirecting to login...');
             router.replace('/login');
           }
         }
