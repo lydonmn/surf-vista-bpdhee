@@ -32,21 +32,21 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
-              console.log('[ProfileScreen iOS] User confirmed sign out');
-              console.log('[ProfileScreen iOS] Current user:', user?.email);
+              console.log('[ProfileScreen] ===== SIGN OUT BUTTON PRESSED =====');
+              console.log('[ProfileScreen] User confirmed sign out');
+              console.log('[ProfileScreen] Current user:', user?.email);
               
               // Call signOut - it will clear state immediately
-              console.log('[ProfileScreen iOS] Calling signOut()...');
+              console.log('[ProfileScreen] Calling signOut()...');
               await signOut();
-              console.log('[ProfileScreen iOS] ✅ signOut() completed');
+              console.log('[ProfileScreen] ✅ signOut() completed');
               
               // Navigate to login immediately after signOut completes
-              console.log('[ProfileScreen iOS] Navigating to login screen...');
+              console.log('[ProfileScreen] Navigating to login screen...');
               router.replace('/login');
-              console.log('[ProfileScreen iOS] ===== SIGN OUT PROCESS COMPLETE =====');
+              console.log('[ProfileScreen] ===== SIGN OUT PROCESS COMPLETE =====');
             } catch (error) {
-              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
+              console.error('[ProfileScreen] ❌ Error during sign out:', error);
               // Still try to navigate even if there was an error
               router.replace('/login');
             }
@@ -57,7 +57,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
-    console.log('[ProfileScreen iOS] Refreshing profile data...');
+    console.log('[ProfileScreen] Refreshing profile data...');
     await refreshProfile();
     Alert.alert('Success', 'Profile data refreshed');
   };
@@ -81,11 +81,11 @@ export default function ProfileScreen() {
     setIsRestoring(true);
     
     try {
-      console.log('[ProfileScreen iOS] 🔄 Starting restore purchases...');
+      console.log('[ProfileScreen] 🔄 Starting restore purchases...');
       
       const result = await restorePurchases();
       
-      console.log('[ProfileScreen iOS] 📊 Restore result:', result);
+      console.log('[ProfileScreen] 📊 Restore result:', result);
       
       // Refresh profile to get updated subscription status
       await refreshProfile();
@@ -104,7 +104,7 @@ export default function ProfileScreen() {
         );
       }
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Restore purchases error:', error);
+      console.error('[ProfileScreen] ❌ Restore purchases error:', error);
       Alert.alert(
         'Restore Failed',
         error.message || 'Unable to restore purchases at this time. Please try again later or contact support.',
@@ -130,27 +130,25 @@ export default function ProfileScreen() {
     setIsLoadingCustomerCenter(true);
     
     try {
-      console.log('[ProfileScreen iOS] 🏢 Opening Customer Center...');
+      console.log('[ProfileScreen] 🏢 Opening Customer Center...');
       
       // Present the RevenueCat Customer Center
       await presentCustomerCenter();
       
-      console.log('[ProfileScreen iOS] ✅ Customer Center closed');
+      console.log('[ProfileScreen] ✅ Customer Center closed');
       
       // Refresh profile to get updated subscription status
       await refreshProfile();
       
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Customer Center error:', error);
+      console.error('[ProfileScreen] ❌ Customer Center error:', error);
       
       // Fallback to native subscription management
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription, cancel, or change your plan:\n\n' +
-        '1. Open Settings on your iPhone\n' +
-        '2. Tap your name at the top\n' +
-        '3. Tap Subscriptions\n' +
-        '4. Select SurfVista\n\n' +
+        '• iOS: Go to Settings > [Your Name] > Subscriptions\n' +
+        '• Android: Open Play Store > Menu > Subscriptions\n\n' +
         'You can also restore your purchases if you\'ve subscribed on another device.',
         [
           { text: 'Cancel', style: 'cancel' },
@@ -166,11 +164,11 @@ export default function ProfileScreen() {
   };
 
   const handleSubscribeNow = async () => {
-    console.log('[ProfileScreen iOS] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
+    console.log('[ProfileScreen] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
     
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
-      console.log('[ProfileScreen iOS] ⚠️ Payment system not available');
+      console.log('[ProfileScreen] ⚠️ Payment system not available');
       checkPaymentConfiguration();
       
       Alert.alert(
@@ -188,28 +186,28 @@ export default function ProfileScreen() {
     setIsSubscribing(true);
 
     try {
-      console.log('[ProfileScreen iOS] 🎨 Opening subscription paywall...');
-      console.log('[ProfileScreen iOS] User ID:', user?.id);
-      console.log('[ProfileScreen iOS] User Email:', user?.email);
+      console.log('[ProfileScreen] 🎨 Opening subscription paywall...');
+      console.log('[ProfileScreen] User ID:', user?.id);
+      console.log('[ProfileScreen] User Email:', user?.email);
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
+      console.log('[ProfileScreen] 📊 Paywall result:', result);
       
       // Refresh profile to get updated subscription status
-      console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
+      console.log('[ProfileScreen] 🔄 Refreshing profile...');
       await refreshProfile();
       
       if (result.state === 'purchased' || result.state === 'restored') {
-        console.log('[ProfileScreen iOS] ✅ Purchase/Restore successful!');
+        console.log('[ProfileScreen] ✅ Purchase/Restore successful!');
         Alert.alert(
           'Success!',
           result.message || 'Subscription activated successfully!',
           [{ text: 'OK' }]
         );
       } else if (result.state === 'error') {
-        console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
+        console.log('[ProfileScreen] ❌ Paywall error:', result.message);
         
         // Provide helpful error message
         Alert.alert(
@@ -222,12 +220,12 @@ export default function ProfileScreen() {
           [{ text: 'OK' }]
         );
       } else if (result.state === 'declined') {
-        console.log('[ProfileScreen iOS] ℹ️ User cancelled paywall');
+        console.log('[ProfileScreen] ℹ️ User cancelled paywall');
         // User cancelled, do nothing
       }
       
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
+      console.error('[ProfileScreen] ❌ Subscribe error:', error);
       Alert.alert(
         'Subscribe Failed',
         error.message || 'Unable to open subscription page. Please try again later.',
@@ -235,7 +233,7 @@ export default function ProfileScreen() {
       );
     } finally {
       setIsSubscribing(false);
-      console.log('[ProfileScreen iOS] ===== SUBSCRIBE FLOW COMPLETE =====');
+      console.log('[ProfileScreen] ===== SUBSCRIBE FLOW COMPLETE =====');
     }
   };
 
