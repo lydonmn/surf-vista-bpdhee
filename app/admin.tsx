@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
@@ -8,6 +8,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface UserProfile {
   id: string;
@@ -23,11 +24,13 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Video upload state
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [videoSize, setVideoSize] = useState<number>(0);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -94,19 +97,62 @@ export default function AdminScreen() {
     }
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
   const pickVideo = async () => {
     try {
+      // Request permissions
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant permission to access your photo library');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
         quality: 1,
+        videoMaxDuration: 600, // 10 minutes max
       });
 
       if (!result.canceled && result.assets[0]) {
-        setSelectedVideo(result.assets[0].uri);
+        const videoUri = result.assets[0].uri;
+        setSelectedVideo(videoUri);
+        
+        // Get file size
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(videoUri);
+          if (fileInfo.exists && 'size' in fileInfo) {
+            setVideoSize(fileInfo.size);
+            console.log('[AdminScreen] Video selected:', {
+              uri: videoUri,
+              size: formatFileSize(fileInfo.size)
+            });
+            
+            // Warn if file is very large
+            if (fileInfo.size > 500 * 1024 * 1024) { // 500MB
+              Alert.alert(
+                'Large File',
+                `This video is ${formatFileSize(fileInfo.size)}. Upload may take several minutes. Consider using a shorter video or lower resolution for faster uploads.`,
+                [
+                  { text: 'Cancel', onPress: () => setSelectedVideo(null), style: 'cancel' },
+                  { text: 'Continue', style: 'default' }
+                ]
+              );
+            }
+          }
+        } catch (error) {
+          console.error('[AdminScreen] Error getting file info:', error);
+        }
       }
     } catch (error) {
-      console.error('Error picking video:', error);
+      console.error('[AdminScreen] Error picking video:', error);
       Alert.alert('Error', 'Failed to pick video');
     }
   };
@@ -119,30 +165,70 @@ export default function AdminScreen() {
 
     try {
       setUploading(true);
+      setUploadProgress(0);
+      
+      console.log('[AdminScreen] Starting video upload...');
+      console.log('[AdminScreen] Video URI:', selectedVideo);
+      console.log('[AdminScreen] Video size:', formatFileSize(videoSize));
 
-      // Get file info
-      const response = await fetch(selectedVideo);
-      const blob = await response.blob();
-      const fileExt = selectedVideo.split('.').pop();
+      // Read the file as base64 for better compatibility with iOS
+      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `videos/${fileName}`;
 
-      // Upload to Supabase Storage
+      console.log('[AdminScreen] Reading file...');
+      
+      // For iOS, we need to handle the file differently
+      let fileData: ArrayBuffer;
+      
+      if (Platform.OS === 'ios') {
+        // On iOS, read as base64 and convert to ArrayBuffer
+        const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        // Convert base64 to ArrayBuffer
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        fileData = bytes.buffer;
+      } else {
+        // On Android, fetch should work fine
+        const response = await fetch(selectedVideo);
+        fileData = await response.arrayBuffer();
+      }
+
+      console.log('[AdminScreen] File read successfully, uploading to Supabase...');
+      setUploadProgress(30);
+
+      // Upload to Supabase Storage with proper content type
       const { error: uploadError } = await supabase.storage
         .from('videos')
-        .upload(filePath, blob, {
-          contentType: 'video/mp4',
-          upsert: false
+        .upload(filePath, fileData, {
+          contentType: `video/${fileExt}`,
+          upsert: false,
+          cacheControl: '3600',
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('[AdminScreen] Upload successful, getting public URL...');
+      setUploadProgress(70);
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(filePath);
 
-      // Create video record
+      console.log('[AdminScreen] Public URL:', publicUrl);
+      setUploadProgress(85);
+
+      // Create video record in database
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -152,15 +238,36 @@ export default function AdminScreen() {
           uploaded_by: profile?.id
         });
 
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error('[AdminScreen] Database error:', dbError);
+        throw dbError;
+      }
 
-      Alert.alert('Success', 'Video uploaded successfully!');
-      setVideoTitle('');
-      setVideoDescription('');
-      setSelectedVideo(null);
-    } catch (error) {
-      console.error('Error uploading video:', error);
-      Alert.alert('Error', 'Failed to upload video');
+      console.log('[AdminScreen] Video record created successfully');
+      setUploadProgress(100);
+
+      Alert.alert(
+        'Success!', 
+        'Video uploaded successfully! It may take a few moments to process.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setVideoTitle('');
+              setVideoDescription('');
+              setSelectedVideo(null);
+              setVideoSize(0);
+              setUploadProgress(0);
+            }
+          }
+        ]
+      );
+    } catch (error: any) {
+      console.error('[AdminScreen] Upload error:', error);
+      Alert.alert(
+        'Upload Failed', 
+        error.message || 'Failed to upload video. Please check your internet connection and try again.'
+      );
     } finally {
       setUploading(false);
     }
@@ -274,6 +381,7 @@ export default function AdminScreen() {
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={pickVideo}
+            disabled={uploading}
           >
             <IconSymbol
               ios_icon_name="video.fill"
@@ -287,9 +395,35 @@ export default function AdminScreen() {
           </TouchableOpacity>
 
           {selectedVideo && (
-            <Text style={[styles.selectedFile, { color: colors.textSecondary }]}>
-              Video selected ✓
-            </Text>
+            <View style={styles.selectedFileInfo}>
+              <Text style={[styles.selectedFile, { color: colors.textSecondary }]}>
+                ✓ Video selected
+              </Text>
+              {videoSize > 0 && (
+                <Text style={[styles.fileSize, { color: colors.textSecondary }]}>
+                  Size: {formatFileSize(videoSize)}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {uploading && (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${uploadProgress}%`,
+                      backgroundColor: colors.primary 
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+                Uploading... {uploadProgress}%
+              </Text>
+            </View>
           )}
 
           <TouchableOpacity
@@ -315,6 +449,18 @@ export default function AdminScreen() {
               </React.Fragment>
             )}
           </TouchableOpacity>
+
+          <View style={[styles.infoBox, { backgroundColor: theme.colors.background }]}>
+            <IconSymbol
+              ios_icon_name="info.circle"
+              android_material_icon_name="info"
+              size={16}
+              color={colors.primary}
+            />
+            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+              For best results, use videos under 500MB. Large files may take several minutes to upload.
+            </Text>
+          </View>
         </View>
 
         {/* User Management Section */}
@@ -466,10 +612,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  selectedFileInfo: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
   selectedFile: {
     fontSize: 14,
-    marginTop: 8,
+    fontWeight: '600',
+  },
+  fileSize: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  progressContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
     textAlign: 'center',
+    marginTop: 8,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
   loader: {
     marginVertical: 20,

@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
+import Superwall from 'expo-superwall';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -14,6 +15,20 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+
+  // Initialize Superwall
+  useEffect(() => {
+    const initSuperwall = async () => {
+      try {
+        await Superwall.configure('pk_5f8c8e8e8e8e8e8e8e8e8e8e'); // Replace with your actual Superwall API key
+        console.log('[LoginScreen] Superwall initialized');
+      } catch (error) {
+        console.error('[LoginScreen] Superwall initialization error:', error);
+      }
+    };
+    
+    initSuperwall();
+  }, []);
 
   // Redirect if already logged in with subscription
   useEffect(() => {
@@ -73,6 +88,67 @@ export default function LoginScreen() {
         console.log('[LoginScreen] Sign in failed:', result.message);
         Alert.alert('Sign In Failed', result.message);
       }
+    }
+  };
+
+  const handleSubscribe = async () => {
+    try {
+      console.log('[LoginScreen] Opening Superwall paywall...');
+      
+      // Register the paywall
+      await Superwall.register('subscription_paywall');
+      
+      // Set user attributes if logged in
+      if (user) {
+        await Superwall.setUserAttributes({
+          userId: user.id,
+          email: user.email || '',
+        });
+      }
+      
+      // Present the paywall
+      const result = await Superwall.presentPaywall('subscription_paywall');
+      
+      console.log('[LoginScreen] Paywall result:', result);
+      
+      if (result.state === 'purchased') {
+        Alert.alert(
+          'Success!',
+          'Your subscription is now active. Enjoy exclusive content!',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Refresh the profile to get updated subscription status
+                if (user) {
+                  router.replace('/(tabs)/(home)/');
+                }
+              }
+            }
+          ]
+        );
+      } else if (result.state === 'restored') {
+        Alert.alert(
+          'Subscription Restored',
+          'Your subscription has been restored successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (user) {
+                  router.replace('/(tabs)/(home)/');
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('[LoginScreen] Superwall error:', error);
+      Alert.alert(
+        'Subscription',
+        'Unable to process subscription at this time. Please try again later.'
+      );
     }
   };
 
@@ -174,14 +250,14 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              console.log('[LoginScreen] Opening subscription flow');
-              Alert.alert(
-                'Subscribe to SurfVista',
-                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
-              );
-            }}
+            onPress={handleSubscribe}
           >
+            <IconSymbol
+              ios_icon_name="star.fill"
+              android_material_icon_name="star"
+              size={20}
+              color="#FFFFFF"
+            />
             <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
           </TouchableOpacity>
         </View>
@@ -197,25 +273,10 @@ export default function LoginScreen() {
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               {isSignUp 
                 ? 'After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.'
-                : 'New users need to verify their email address before accessing the app.'}
+                : 'Subscribe to access exclusive 6K drone footage and daily surf reports from Folly Beach, SC.'}
             </Text>
           </View>
         </View>
-
-        <TouchableOpacity
-          style={[styles.adminSetupButton, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/setup-admin')}
-        >
-          <IconSymbol
-            ios_icon_name="person.badge.key.fill"
-            android_material_icon_name="admin_panel_settings"
-            size={20}
-            color={colors.primary}
-          />
-          <Text style={[styles.adminSetupText, { color: colors.primary }]}>
-            First Time Setup - Create Admin Account
-          </Text>
-        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -298,9 +359,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   subscribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
   },
   subscribeButtonText: {
     color: '#FFFFFF',
@@ -320,21 +384,5 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  adminSetupButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginTop: 24,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  adminSetupText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

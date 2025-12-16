@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
+import { initializeSuperwall } from '@/utils/superwallConfig';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -40,6 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
+        // Initialize Superwall
+        await initializeSuperwall();
+        
         // Get initial session
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
