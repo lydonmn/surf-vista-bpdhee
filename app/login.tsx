@@ -6,7 +6,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import SurfVistaLogo from "@/components/SurfVistaLogo";
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -54,7 +53,7 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
         <View style={styles.logoContainer}>
-          <SurfVistaLogo size="large" />
+          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
         </View>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Sign in to access exclusive content
@@ -163,6 +162,11 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: 8,
+  },
+  appTitle: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   subtitle: {
     fontSize: 16,

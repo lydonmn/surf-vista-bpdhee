@@ -7,7 +7,6 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { mockSurfReports, mockVideos } from "@/data/mockData";
 import { IconSymbol } from "@/components/IconSymbol";
-import SurfVistaLogo from "@/components/SurfVistaLogo";
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -20,7 +19,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
-          <SurfVistaLogo size="large" />
+          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
           <Text style={[styles.tagline, { color: colors.textSecondary }]}>
             Exclusive Surf Reports from Folly Beach, SC
           </Text>
@@ -39,7 +38,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
-          <SurfVistaLogo size="large" />
+          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Subscribe to Access Premium Content
           </Text>
@@ -66,7 +65,7 @@ export default function HomeScreen() {
       contentContainerStyle={styles.scrollContent}
     >
       <View style={styles.header}>
-        <SurfVistaLogo size="medium" />
+        <Text style={[styles.headerTitle, { color: colors.primary }]}>SurfVista</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Folly Beach, South Carolina
         </Text>
@@ -218,10 +217,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 24,
   },
+  appTitle: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
   header: {
     alignItems: 'center',
     marginBottom: 24,
     gap: 8,
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 16,
