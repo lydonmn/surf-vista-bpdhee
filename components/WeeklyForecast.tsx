@@ -82,7 +82,8 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
             date: day.date,
             conditions: day.conditions,
             swellRange,
-            dayName
+            dayName,
+            precipChance: day.precipitation_chance
           });
           
           return (
@@ -119,9 +120,9 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
               {day.precipitation_chance !== null && day.precipitation_chance > 0 && (
                 <View style={styles.precipContainer}>
                   <IconSymbol
-                    ios_icon_name="drop.fill"
-                    android_material_icon_name="water_drop"
-                    size={12}
+                    ios_icon_name="cloud.rain.fill"
+                    android_material_icon_name="umbrella"
+                    size={14}
                     color={colors.primary}
                   />
                   <Text style={[styles.precipText, { color: colors.textSecondary }]}>
