@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -11,14 +11,16 @@ import { Video, SurfReport } from "@/types";
 import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
+import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const { user, session, checkSubscription, isLoading, isInitialized, profile } = useAuth();
+  const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
@@ -134,6 +136,58 @@ export default function HomeScreen() {
     return date.toLocaleDateString();
   };
 
+  const handleSubscribeNow = async () => {
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      checkPaymentConfiguration();
+      Alert.alert(
+        'Subscribe Unavailable',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsSubscribing(true);
+
+    try {
+      console.log('[HomeScreen] 🎨 Opening subscription paywall...');
+      
+      // Present the RevenueCat Paywall
+      const result = await presentPaywall(user?.id, user?.email || undefined);
+      
+      console.log('[HomeScreen] 📊 Paywall result:', result);
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+      if (result.state === 'purchased' || result.state === 'restored') {
+        Alert.alert(
+          'Success!',
+          result.message || 'Subscription activated successfully!',
+          [{ text: 'OK' }]
+        );
+      } else if (result.state === 'error') {
+        Alert.alert(
+          'Purchase Failed',
+          result.message || 'Unable to complete purchase. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+      // If declined, do nothing (user cancelled)
+      
+    } catch (error: any) {
+      console.error('[HomeScreen] ❌ Subscribe error:', error);
+      Alert.alert(
+        'Subscribe Failed',
+        error.message || 'Unable to open subscription page. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
   // Show loading state while auth is initializing
   if (!isInitialized) {
     console.log('[HomeScreen] Rendering: Not initialized');
@@ -228,16 +282,18 @@ export default function HomeScreen() {
             Subscription Required
           </Text>
           <Text style={[styles.description, { color: colors.textSecondary }]}>
-            Subscribe to access exclusive drone footage and daily surf reports for just $5/month
+            Subscribe to access exclusive drone footage and daily surf reports for just $10.99/month
           </Text>
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              console.log('[HomeScreen] Opening subscription flow');
-              router.push('/(tabs)/profile');
-            }}
+            onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <Text style={styles.ctaButtonText}>Subscribe Now</Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.ctaButtonText}>Subscribe Now</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
