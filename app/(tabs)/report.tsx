@@ -43,26 +43,6 @@ export default function ReportScreen() {
     setIsRefreshing(false);
   };
 
-  const getWeatherIcon = (conditions: string | null) => {
-    if (!conditions) return { ios: 'cloud.fill', android: 'cloud' };
-    
-    const lower = conditions.toLowerCase();
-    if (lower.includes('rain') || lower.includes('shower')) {
-      return { ios: 'cloud.rain.fill', android: 'rainy' };
-    } else if (lower.includes('storm') || lower.includes('thunder')) {
-      return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
-    } else if (lower.includes('snow')) {
-      return { ios: 'cloud.snow.fill', android: 'ac_unit' };
-    } else if (lower.includes('clear') || lower.includes('sunny')) {
-      return { ios: 'sun.max.fill', android: 'wb_sunny' };
-    } else if (lower.includes('cloud') || lower.includes('overcast')) {
-      return { ios: 'cloud.fill', android: 'cloud' };
-    } else if (lower.includes('partly')) {
-      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
-    }
-    return { ios: 'cloud.fill', android: 'cloud' };
-  };
-
   const getSwellDirectionIcon = (direction: string | null) => {
     if (!direction) return { ios: 'arrow.up', android: 'north' };
     
@@ -257,7 +237,6 @@ export default function ReportScreen() {
       ) : (
         <>
           {surfReports.map((report, index) => {
-            const weatherIcon = getWeatherIcon(report.weather_conditions);
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
             
             return (
@@ -435,26 +414,6 @@ export default function ReportScreen() {
                     </Text>
                   )}
                 </View>
-
-                {report.weather_conditions && (
-                  <View style={[styles.weatherBox, { backgroundColor: colors.highlight, marginTop: 12 }]}>
-                    <View style={styles.weatherHeader}>
-                      <IconSymbol
-                        ios_icon_name={weatherIcon.ios}
-                        android_material_icon_name={weatherIcon.android}
-                        size={20}
-                        color={colors.primary}
-                      />
-                      <Text style={[styles.weatherTitle, { color: theme.colors.text }]}>
-                        Weather
-                      </Text>
-                    </View>
-                    <Text style={[styles.weatherText, { color: theme.colors.text }]}>
-                      {report.weather_conditions}
-                      {report.air_temp && ` • Air: ${report.air_temp}`}
-                    </Text>
-                  </View>
-                )}
               </View>
             );
           })}
@@ -700,24 +659,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     marginTop: 8,
-  },
-  weatherBox: {
-    padding: 12,
-    borderRadius: 8,
-  },
-  weatherHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  weatherTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  weatherText: {
-    fontSize: 14,
-    lineHeight: 20,
   },
   infoCard: {
     flexDirection: 'row',
