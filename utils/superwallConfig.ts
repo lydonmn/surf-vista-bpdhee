@@ -216,6 +216,7 @@ export const presentPaywall = async (
       console.log('[RevenueCat] ⚠️ Default paywall failed, trying with specific offering...');
       
       // If that fails, try with the specific offering
+      // Note: The offering parameter should be passed as a property
       paywallResult = await RevenueCatUI.presentPaywall({
         offering: targetOffering
       });
