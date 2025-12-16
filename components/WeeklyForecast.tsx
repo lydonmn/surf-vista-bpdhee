@@ -18,8 +18,8 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
           <IconSymbol
-            ios_icon_name="calendar"
-            android_material_icon_name="calendar_today"
+            ios_icon_name="calendar.badge.clock"
+            android_material_icon_name="event"
             size={24}
             color={colors.primary}
           />
@@ -69,8 +69,8 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
       <View style={styles.header}>
         <IconSymbol
-          ios_icon_name="calendar"
-          android_material_icon_name="calendar_today"
+          ios_icon_name="calendar.badge.clock"
+          android_material_icon_name="event"
           size={24}
           color={colors.primary}
         />

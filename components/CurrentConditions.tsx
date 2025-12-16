@@ -19,8 +19,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
           <IconSymbol
-            ios_icon_name="sparkles"
-            android_material_icon_name="auto_awesome"
+            ios_icon_name="cloud.sun.fill"
+            android_material_icon_name="wb_cloudy"
             size={24}
             color={colors.primary}
           />
@@ -50,8 +50,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
       <View style={styles.header}>
         <IconSymbol
-          ios_icon_name="sparkles"
-          android_material_icon_name="auto_awesome"
+          ios_icon_name="cloud.sun.fill"
+          android_material_icon_name="wb_cloudy"
           size={24}
           color={colors.primary}
         />
