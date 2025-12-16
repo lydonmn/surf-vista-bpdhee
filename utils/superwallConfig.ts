@@ -26,14 +26,13 @@ import { Platform, Alert } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 
 // ============================================
-// CONFIGURATION - REPLACE WITH YOUR KEYS
+// CONFIGURATION - YOUR API KEYS
 // ============================================
 
 // RevenueCat API Keys
 // Get these from: https://app.revenuecat.com/settings/api-keys
-// IMPORTANT: Replace these with your actual API keys from RevenueCat
-const REVENUECAT_API_KEY_IOS = 'YOUR_IOS_API_KEY_HERE';
-const REVENUECAT_API_KEY_ANDROID = 'YOUR_ANDROID_API_KEY_HERE';
+const REVENUECAT_API_KEY_IOS = 'app5173aadeaf';
+const REVENUECAT_API_KEY_ANDROID = 'app5173aadeaf'; // Using same key for both platforms (test store)
 
 // Product Identifiers (must match App Store Connect / Google Play Console)
 // IMPORTANT: Use these exact identifiers when creating products in:
@@ -42,8 +41,8 @@ const REVENUECAT_API_KEY_ANDROID = 'YOUR_ANDROID_API_KEY_HERE';
 // - RevenueCat Dashboard
 export const PAYMENT_CONFIG = {
   // Pricing (can be adjusted in App Store Connect / Google Play Console)
-  MONTHLY_PRICE: 4.99,  // $4.99/month
-  ANNUAL_PRICE: 49.99,  // $49.99/year (save ~17%)
+  MONTHLY_PRICE: 5.00,  // $5.00/month
+  ANNUAL_PRICE: 50.00,  // $50.00/year (save ~17%)
   
   // Product Identifiers - MUST MATCH YOUR STORE CONFIGURATION
   // These are the identifiers you provided:
@@ -52,6 +51,10 @@ export const PAYMENT_CONFIG = {
   
   // RevenueCat Offering ID (default is usually 'default')
   OFFERING_ID: 'default',
+  
+  // Entitlement ID - This is what you check to see if user has access
+  // You need to create this in RevenueCat Dashboard under Entitlements
+  ENTITLEMENT_ID: 'premium',
 };
 
 // ============================================
@@ -68,17 +71,12 @@ let currentOffering: PurchasesOffering | null = null;
 export const initializePaymentSystem = async (): Promise<boolean> => {
   try {
     console.log('[Payment] 🚀 Initializing RevenueCat...');
+    console.log('[Payment] 📱 Platform:', Platform.OS);
     
-    // Check if API keys are configured
+    // Get the appropriate API key for the platform
     const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
     
-    if (apiKey === 'YOUR_IOS_API_KEY_HERE' || apiKey === 'YOUR_ANDROID_API_KEY_HERE') {
-      console.log('[Payment] ⚠️ RevenueCat API keys not configured');
-      console.log('[Payment] 📝 Please update utils/superwallConfig.ts with your RevenueCat API keys');
-      console.log('[Payment] 🔗 Get your keys from: https://app.revenuecat.com/settings/api-keys');
-      isPaymentSystemInitialized = false;
-      return false;
-    }
+    console.log('[Payment] 🔑 Using API key:', apiKey.substring(0, 8) + '...');
 
     // Configure RevenueCat
     Purchases.setLogLevel(LOG_LEVEL.DEBUG);
@@ -102,6 +100,15 @@ export const initializePaymentSystem = async (): Promise<boolean> => {
         });
       } else {
         console.log('[Payment] ⚠️ No offerings found. Please configure products in RevenueCat dashboard.');
+        console.log('[Payment] 📝 Next steps:');
+        console.log('[Payment]   1. Go to https://app.revenuecat.com/');
+        console.log('[Payment]   2. Select your app');
+        console.log('[Payment]   3. Go to Products section');
+        console.log('[Payment]   4. Add your subscription products:');
+        console.log('[Payment]      • Monthly: ' + PAYMENT_CONFIG.MONTHLY_PRODUCT_ID);
+        console.log('[Payment]      • Annual: ' + PAYMENT_CONFIG.ANNUAL_PRODUCT_ID);
+        console.log('[Payment]   5. Create an Entitlement called: ' + PAYMENT_CONFIG.ENTITLEMENT_ID);
+        console.log('[Payment]   6. Create an Offering and attach your products');
       }
     } catch (offeringError) {
       console.error('[Payment] ⚠️ Error fetching offerings:', offeringError);
@@ -123,39 +130,34 @@ export const initializePaymentSystem = async (): Promise<boolean> => {
 // ============================================
 
 export const isPaymentSystemAvailable = (): boolean => {
-  const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
-  const isConfigured = apiKey !== 'YOUR_IOS_API_KEY_HERE' && apiKey !== 'YOUR_ANDROID_API_KEY_ANDROID';
-  
-  return isPaymentSystemInitialized && isConfigured;
+  return isPaymentSystemInitialized;
 };
 
 export const checkPaymentConfiguration = (): boolean => {
   console.log('[Payment] ⚙️ Configuration Check:');
   console.log('[Payment] - Initialized:', isPaymentSystemInitialized);
   console.log('[Payment] - Platform:', Platform.OS);
+  console.log('[Payment] - API Key Configured: ✅ YES');
   console.log('[Payment] - Product IDs:');
   console.log('[Payment]   • Monthly:', PAYMENT_CONFIG.MONTHLY_PRODUCT_ID);
   console.log('[Payment]   • Annual:', PAYMENT_CONFIG.ANNUAL_PRODUCT_ID);
-  
-  const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
-  const isConfigured = apiKey !== 'YOUR_IOS_API_KEY_HERE' && apiKey !== 'YOUR_ANDROID_API_KEY_HERE';
-  
-  console.log('[Payment] - API Key Configured:', isConfigured);
+  console.log('[Payment] - Entitlement ID:', PAYMENT_CONFIG.ENTITLEMENT_ID);
   console.log('[Payment] - Current Offering:', currentOffering?.identifier || 'None');
   
-  if (!isConfigured) {
+  if (!currentOffering) {
     console.log('[Payment] 📝 Setup Instructions:');
-    console.log('[Payment]   1. Create account at https://www.revenuecat.com/');
-    console.log('[Payment]   2. Add your app in RevenueCat dashboard');
-    console.log('[Payment]   3. Configure products with these identifiers:');
+    console.log('[Payment]   1. Go to https://app.revenuecat.com/');
+    console.log('[Payment]   2. Select your app');
+    console.log('[Payment]   3. Go to Products section');
+    console.log('[Payment]   4. Add your subscription products:');
     console.log('[Payment]      • Monthly: ' + PAYMENT_CONFIG.MONTHLY_PRODUCT_ID);
     console.log('[Payment]      • Annual: ' + PAYMENT_CONFIG.ANNUAL_PRODUCT_ID);
-    console.log('[Payment]   4. Get API keys from Settings > API Keys');
-    console.log('[Payment]   5. Update REVENUECAT_API_KEY_IOS and REVENUECAT_API_KEY_ANDROID');
-    console.log('[Payment]   6. Restart the app');
+    console.log('[Payment]   5. Create an Entitlement called: ' + PAYMENT_CONFIG.ENTITLEMENT_ID);
+    console.log('[Payment]   6. Create an Offering and attach your products');
+    console.log('[Payment]   7. Restart the app');
   }
   
-  return isConfigured && isPaymentSystemInitialized;
+  return isPaymentSystemInitialized;
 };
 
 // ============================================
@@ -171,7 +173,7 @@ export const presentPaywall = async (
     console.log('[Payment] 🎨 Presenting paywall for:', productType);
     
     if (!isPaymentSystemAvailable()) {
-      throw new Error('Payment system is not configured. Please update your RevenueCat API keys.');
+      throw new Error('Payment system is not initialized. Please restart the app.');
     }
 
     // Set user ID if provided
@@ -281,7 +283,7 @@ export const restorePurchases = async (): Promise<{
     console.log('[Payment] 🔄 Restoring purchases...');
 
     if (!isPaymentSystemAvailable()) {
-      throw new Error('Payment system is not configured.');
+      throw new Error('Payment system is not initialized.');
     }
 
     const customerInfo = await Purchases.restorePurchases();
@@ -337,11 +339,12 @@ export const checkSubscriptionStatus = async (userId: string): Promise<{
     // Get customer info from RevenueCat
     const customerInfo = await Purchases.getCustomerInfo();
     
-    const hasActiveSubscription = Object.keys(customerInfo.entitlements.active).length > 0;
+    // Check for the premium entitlement
+    const hasActiveSubscription = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID] !== undefined;
     
     if (hasActiveSubscription) {
-      // Get the first active entitlement
-      const entitlement = Object.values(customerInfo.entitlements.active)[0];
+      // Get the entitlement
+      const entitlement = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID];
       const endDate = entitlement.expirationDate || null;
       
       console.log('[Payment] ✅ Active subscription found');
@@ -374,12 +377,12 @@ export const checkSubscriptionStatus = async (userId: string): Promise<{
 
 const updateSubscriptionInSupabase = async (userId: string, customerInfo: CustomerInfo) => {
   try {
-    const hasActiveSubscription = Object.keys(customerInfo.entitlements.active).length > 0;
+    const hasActiveSubscription = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID] !== undefined;
     
     let subscriptionEndDate: string | null = null;
     
     if (hasActiveSubscription) {
-      const entitlement = Object.values(customerInfo.entitlements.active)[0];
+      const entitlement = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID];
       subscriptionEndDate = entitlement.expirationDate || null;
     }
     
