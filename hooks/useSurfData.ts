@@ -5,11 +5,13 @@ import { Database } from '@/app/integrations/supabase/types';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
 type WeatherData = Database['public']['Tables']['weather_data']['Row'];
+type WeatherForecast = Database['public']['Tables']['weather_forecast']['Row'];
 type TideData = Database['public']['Tables']['tide_data']['Row'];
 
 interface SurfDataState {
   surfReports: SurfReport[];
   weatherData: WeatherData | null;
+  weatherForecast: WeatherForecast[];
   tideData: TideData[];
   isLoading: boolean;
   error: string | null;
@@ -20,6 +22,7 @@ export function useSurfData() {
   const [state, setState] = useState<SurfDataState>({
     surfReports: [],
     weatherData: null,
+    weatherForecast: [],
     tideData: [],
     isLoading: true,
     error: null,
@@ -33,7 +36,7 @@ export function useSurfData() {
       const today = new Date().toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [surfReportsResult, weatherResult, tideResult] = await Promise.all([
+      const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
         supabase
           .from('surf_reports')
           .select('*')
@@ -45,6 +48,12 @@ export function useSurfData() {
           .eq('date', today)
           .maybeSingle(),
         supabase
+          .from('weather_forecast')
+          .select('*')
+          .gte('date', today)
+          .order('date', { ascending: true })
+          .limit(7),
+        supabase
           .from('tide_data')
           .select('*')
           .eq('date', today)
@@ -53,11 +62,13 @@ export function useSurfData() {
 
       if (surfReportsResult.error) throw surfReportsResult.error;
       if (weatherResult.error) throw weatherResult.error;
+      if (forecastResult.error) throw forecastResult.error;
       if (tideResult.error) throw tideResult.error;
 
       setState({
         surfReports: surfReportsResult.data || [],
         weatherData: weatherResult.data,
+        weatherForecast: forecastResult.data || [],
         tideData: tideResult.data || [],
         isLoading: false,
         error: null,
@@ -109,7 +120,7 @@ export function useSurfData() {
     fetchData();
 
     // Set up real-time subscription for surf reports
-    const subscription = supabase
+    const surfReportsSubscription = supabase
       .channel('surf_reports_changes')
       .on(
         'postgres_changes',
@@ -125,8 +136,44 @@ export function useSurfData() {
       )
       .subscribe();
 
+    // Set up real-time subscription for weather data
+    const weatherSubscription = supabase
+      .channel('weather_data_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'weather_data',
+        },
+        () => {
+          console.log('Weather data updated, refreshing data...');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    // Set up real-time subscription for weather forecast
+    const forecastSubscription = supabase
+      .channel('weather_forecast_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'weather_forecast',
+        },
+        () => {
+          console.log('Weather forecast updated, refreshing data...');
+          fetchData();
+        }
+      )
+      .subscribe();
+
     return () => {
-      subscription.unsubscribe();
+      surfReportsSubscription.unsubscribe();
+      weatherSubscription.unsubscribe();
+      forecastSubscription.unsubscribe();
     };
   }, []);
 

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -8,6 +8,9 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video, SurfReport } from "@/types";
+import { useSurfData } from "@/hooks/useSurfData";
+import { CurrentConditions } from "@/components/CurrentConditions";
+import { WeeklyForecast } from "@/components/WeeklyForecast";
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -15,6 +18,10 @@ export default function HomeScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Use the surf data hook for weather and forecast
+  const { weatherData, weatherForecast, refreshData } = useSurfData();
 
   useEffect(() => {
     console.log('[HomeScreen iOS] State update:', {
@@ -78,6 +85,12 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingData(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([loadData(), refreshData()]);
+    setIsRefreshing(false);
   };
 
   // Show loading state while auth is initializing
@@ -178,6 +191,13 @@ export default function HomeScreen() {
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+        />
+      }
     >
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.primary }]}>SurfVista</Text>
@@ -186,149 +206,74 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      {/* Latest Video Section */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Latest Drone Footage
-        </Text>
-        {latestVideo ? (
-          <TouchableOpacity
-            style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
-            onPress={() => router.push({
-              pathname: '/video-player',
-              params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
-            })}
-          >
-            <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
-              <IconSymbol
-                ios_icon_name="play.circle.fill"
-                android_material_icon_name="play_circle"
-                size={64}
-                color={colors.primary}
-              />
-            </View>
-            <View style={styles.videoInfo}>
-              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                {latestVideo.title}
-              </Text>
-              {latestVideo.description && (
-                <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
-                  {latestVideo.description}
-                </Text>
-              )}
-              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                {new Date(latestVideo.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos available yet
-            </Text>
-          </View>
+      {/* Current Conditions */}
+      <View style={styles.contentContainer}>
+        <CurrentConditions weather={weatherData} surfReport={todayReport} />
+
+        {/* 7-Day Forecast */}
+        {weatherForecast.length > 0 && (
+          <WeeklyForecast forecast={weatherForecast} />
         )}
-      </View>
 
-      {/* Today's Conditions */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Today&apos;s Conditions
-        </Text>
-        {todayReport ? (
-          <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.ratingContainer}>
-              <Text style={[styles.ratingNumber, { color: colors.accent }]}>
-                {todayReport.rating}/10
-              </Text>
-              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
-                Surf Rating
-              </Text>
-            </View>
-            
-            <View style={styles.conditionsGrid}>
-              <View style={styles.conditionItem}>
-                <IconSymbol
-                  ios_icon_name="water.waves"
-                  android_material_icon_name="waves"
-                  size={24}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Wave Height
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                  {todayReport.wave_height}
-                </Text>
-              </View>
-
-              <View style={styles.conditionItem}>
-                <IconSymbol
-                  ios_icon_name="wind"
-                  android_material_icon_name="air"
-                  size={24}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Wind
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                  {todayReport.wind_speed} {todayReport.wind_direction}
-                </Text>
-              </View>
-
-              <View style={styles.conditionItem}>
-                <IconSymbol
-                  ios_icon_name="thermometer"
-                  android_material_icon_name="thermostat"
-                  size={24}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Water Temp
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                  {todayReport.water_temp}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.conditionsText}>
-              <Text style={[styles.conditionsDescription, { color: theme.colors.text }]}>
-                {todayReport.conditions}
-              </Text>
-            </View>
-
+        {/* Latest Video Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Latest Drone Footage
+          </Text>
+          {latestVideo ? (
             <TouchableOpacity
-              style={[styles.viewMoreButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/(tabs)/report')}
+              style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
+              onPress={() => router.push({
+                pathname: '/video-player',
+                params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
+              })}
             >
-              <Text style={styles.viewMoreButtonText}>View Full Report</Text>
+              <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
+                <IconSymbol
+                  ios_icon_name="play.circle.fill"
+                  android_material_icon_name="play_circle"
+                  size={64}
+                  color={colors.primary}
+                />
+              </View>
+              <View style={styles.videoInfo}>
+                <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                  {latestVideo.title}
+                </Text>
+                {latestVideo.description && (
+                  <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
+                    {latestVideo.description}
+                  </Text>
+                )}
+                <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                  {new Date(latestVideo.created_at).toLocaleDateString()}
+                </Text>
+              </View>
             </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No surf report available for today
-            </Text>
-          </View>
+          ) : (
+            <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No videos available yet
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {isAdmin() && (
+          <TouchableOpacity
+            style={[styles.adminButton, { backgroundColor: colors.accent }]}
+            onPress={() => router.push('/admin')}
+          >
+            <IconSymbol
+              ios_icon_name="gear"
+              android_material_icon_name="settings"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.adminButtonText}>Admin Panel</Text>
+          </TouchableOpacity>
         )}
       </View>
-
-      {isAdmin() && (
-        <TouchableOpacity
-          style={[styles.adminButton, { backgroundColor: colors.accent }]}
-          onPress={() => router.push('/admin')}
-        >
-          <IconSymbol
-            ios_icon_name="gear"
-            android_material_icon_name="settings"
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={styles.adminButtonText}>Admin Panel</Text>
-        </TouchableOpacity>
-      )}
     </ScrollView>
   );
 }
@@ -339,8 +284,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 16,
-    paddingHorizontal: 16,
     paddingBottom: 100,
+  },
+  contentContainer: {
+    paddingHorizontal: 16,
   },
   centerContent: {
     flex: 1,
@@ -361,6 +308,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 24,
+    paddingHorizontal: 16,
     gap: 8,
   },
   headerTitle: {
@@ -466,63 +414,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-  },
-  reportCard: {
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  ratingContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  ratingNumber: {
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  ratingLabel: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  conditionsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-  },
-  conditionItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  conditionLabel: {
-    fontSize: 12,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  conditionValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  conditionsText: {
-    marginBottom: 16,
-  },
-  conditionsDescription: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  viewMoreButton: {
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  viewMoreButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   adminButton: {
     flexDirection: 'row',

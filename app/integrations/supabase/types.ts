@@ -186,6 +186,53 @@ export interface Database {
           updated_at?: string
         }
       }
+      weather_forecast: {
+        Row: {
+          id: string
+          date: string
+          day_name: string | null
+          high_temp: number | null
+          low_temp: number | null
+          conditions: string | null
+          icon: string | null
+          wind_speed: number | null
+          wind_direction: string | null
+          precipitation_chance: number | null
+          humidity: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          date: string
+          day_name?: string | null
+          high_temp?: number | null
+          low_temp?: number | null
+          conditions?: string | null
+          icon?: string | null
+          wind_speed?: number | null
+          wind_direction?: string | null
+          precipitation_chance?: number | null
+          humidity?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          date?: string
+          day_name?: string | null
+          high_temp?: number | null
+          low_temp?: number | null
+          conditions?: string | null
+          icon?: string | null
+          wind_speed?: number | null
+          wind_direction?: string | null
+          precipitation_chance?: number | null
+          humidity?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       tide_data: {
         Row: {
           id: string

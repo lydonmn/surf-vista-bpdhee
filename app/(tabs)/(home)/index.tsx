@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -8,8 +8,9 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video, SurfReport } from "@/types";
-
-const { width } = Dimensions.get('window');
+import { useSurfData } from "@/hooks/useSurfData";
+import { CurrentConditions } from "@/components/CurrentConditions";
+import { WeeklyForecast } from "@/components/WeeklyForecast";
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -17,6 +18,10 @@ export default function HomeScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Use the surf data hook for weather and forecast
+  const { weatherData, weatherForecast, refreshData } = useSurfData();
 
   useEffect(() => {
     console.log('[HomeScreen] State update:', {
@@ -90,6 +95,12 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingData(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([loadData(), refreshData()]);
+    setIsRefreshing(false);
   };
 
   // Show loading state while auth is initializing
@@ -208,6 +219,13 @@ export default function HomeScreen() {
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+        />
+      }
     >
       <View style={styles.header}>
         <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
@@ -218,6 +236,14 @@ export default function HomeScreen() {
           Folly Beach, South Carolina
         </Text>
       </View>
+
+      {/* Current Conditions */}
+      <CurrentConditions weather={weatherData} surfReport={todayReport} />
+
+      {/* 7-Day Forecast */}
+      {weatherForecast.length > 0 && (
+        <WeeklyForecast forecast={weatherForecast} />
+      )}
 
       {/* Latest Video Section */}
       <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
@@ -276,91 +302,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Today's Surf Report */}
-      <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.sectionHeader}>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Today&apos;s Conditions
-          </Text>
-        </View>
-
-        {isLoadingData ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : todayReport ? (
-          <View style={styles.reportCard}>
-            <View style={styles.reportRow}>
-              <View style={styles.reportItem}>
-                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
-                  Wave Height
-                </Text>
-                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
-                  {todayReport.wave_height}
-                </Text>
-              </View>
-              <View style={styles.reportItem}>
-                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
-                  Wind
-                </Text>
-                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
-                  {todayReport.wind_speed} {todayReport.wind_direction}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.reportRow}>
-              <View style={styles.reportItem}>
-                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
-                  Water Temp
-                </Text>
-                <Text style={[styles.reportValue, { color: theme.colors.text }]}>
-                  {todayReport.water_temp}
-                </Text>
-              </View>
-              <View style={styles.reportItem}>
-                <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
-                  Rating
-                </Text>
-                <Text style={[styles.reportValue, { color: colors.primary }]}>
-                  {todayReport.rating}/10
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.conditionsContainer}>
-              <Text style={[styles.reportLabel, { color: colors.textSecondary }]}>
-                Conditions
-              </Text>
-              <Text style={[styles.conditionsText, { color: theme.colors.text }]}>
-                {todayReport.conditions}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.viewMoreButton, { backgroundColor: colors.secondary }]}
-              onPress={() => router.push('/(tabs)/report')}
-            >
-              <Text style={[styles.viewMoreText, { color: colors.text }]}>
-                View Full Report
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No surf report available for today
-            </Text>
-          </View>
-        )}
-      </View>
-
       {/* Quick Links */}
       <View style={styles.quickLinks}>
         <TouchableOpacity
@@ -389,7 +330,22 @@ export default function HomeScreen() {
             color={colors.primary}
           />
           <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Surf Reports
+            Full Reports
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/weather')}
+        >
+          <IconSymbol
+            ios_icon_name="cloud.sun.fill"
+            android_material_icon_name="wb_sunny"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Weather & Tides
           </Text>
         </TouchableOpacity>
       </View>
@@ -514,49 +470,17 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
   },
-  reportCard: {
-    gap: 16,
-  },
-  reportRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  reportItem: {
-    flex: 1,
-  },
-  reportLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  reportValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  conditionsContainer: {
-    gap: 4,
-  },
-  conditionsText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  viewMoreButton: {
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  viewMoreText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
   quickLinks: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    gap: 16,
+    gap: 12,
     marginBottom: 16,
+    flexWrap: 'wrap',
   },
   quickLinkCard: {
     flex: 1,
-    padding: 20,
+    minWidth: 100,
+    padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     gap: 8,
@@ -564,7 +488,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   quickLinkText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
   },

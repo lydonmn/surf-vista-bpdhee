@@ -5,6 +5,7 @@ export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type Video = Database['public']['Tables']['videos']['Row'];
 export type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
 export type WeatherData = Database['public']['Tables']['weather_data']['Row'];
+export type WeatherForecast = Database['public']['Tables']['weather_forecast']['Row'];
 export type TideData = Database['public']['Tables']['tide_data']['Row'];
 export type ExternalSurfReport = Database['public']['Tables']['external_surf_reports']['Row'];
 
