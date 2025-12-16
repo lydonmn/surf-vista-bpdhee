@@ -18,22 +18,22 @@ const getWeatherIcon = (conditions: string | null) => {
   
   // Rain conditions
   if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle')) {
-    return { ios: 'cloud.rain.fill', android: 'rainy' };
+    return { ios: 'cloud.rain.fill', android: 'water_drop' };
   }
   
   // Storm conditions
   if (lower.includes('storm') || lower.includes('thunder')) {
-    return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
+    return { ios: 'cloud.bolt.fill', android: 'flash_on' };
   }
   
   // Snow conditions
   if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice')) {
-    return { ios: 'cloud.snow.fill', android: 'ac_unit' };
+    return { ios: 'snowflake', android: 'ac_unit' };
   }
   
   // Fog/Mist conditions
   if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) {
-    return { ios: 'cloud.fog.fill', android: 'foggy' };
+    return { ios: 'cloud.fog.fill', android: 'cloud' };
   }
   
   // Clear/Sunny conditions
