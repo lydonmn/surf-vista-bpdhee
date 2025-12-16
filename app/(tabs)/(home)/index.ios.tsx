@@ -14,20 +14,21 @@ import { WeeklyForecast } from "@/components/WeeklyForecast";
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const { user, checkSubscription, isLoading, isInitialized, profile, isAdmin } = useAuth();
+  const { user, session, checkSubscription, isLoading, isInitialized, profile } = useAuth();
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
+  
   // Use the surf data hook for weather and forecast
-  const { weatherData, weatherForecast, refreshData } = useSurfData();
+  const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
   useEffect(() => {
-    console.log('[HomeScreen iOS] State update:', {
+    console.log('[HomeScreen] State update:', {
       isInitialized,
       isLoading,
       hasUser: !!user,
+      hasSession: !!session,
       hasProfile: !!profile,
       profileData: profile ? {
         email: profile.email,
@@ -37,19 +38,24 @@ export default function HomeScreen() {
       hasSubscription: checkSubscription()
     });
 
-    // Only load data when fully initialized, not loading, has user, and has subscription
+    // Only load data when fully initialized, not loading, has user, profile, and subscription
     if (isInitialized && !isLoading && user && profile && checkSubscription()) {
-      console.log('[HomeScreen iOS] Loading content data...');
+      console.log('[HomeScreen] Conditions met, loading content data...');
       loadData();
-    } else if (isInitialized && !isLoading) {
-      console.log('[HomeScreen iOS] Not loading data - conditions not met');
-      setIsLoadingData(false);
+    } else {
+      console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [user, isInitialized, profile, isLoading]);
+  }, [user, session, isInitialized, profile, isLoading]);
 
   const loadData = async () => {
+    if (isLoadingData) {
+      console.log('[HomeScreen] Already loading data, skipping...');
+      return;
+    }
+
     try {
-      console.log('[HomeScreen iOS] Fetching videos and reports...');
+      setIsLoadingData(true);
+      console.log('[HomeScreen] Fetching videos and reports...');
       
       // Load latest video
       const { data: videoData, error: videoError } = await supabase
@@ -57,13 +63,15 @@ export default function HomeScreen() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (videoError) {
-        console.log('[HomeScreen iOS] Video fetch error:', videoError.message);
+        console.log('[HomeScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
-        console.log('[HomeScreen iOS] Video loaded:', videoData.title);
+        console.log('[HomeScreen] Video loaded:', videoData.title);
         setLatestVideo(videoData);
+      } else {
+        console.log('[HomeScreen] No videos found');
       }
 
       // Load today's surf report
@@ -72,16 +80,18 @@ export default function HomeScreen() {
         .from('surf_reports')
         .select('*')
         .eq('date', today)
-        .single();
+        .maybeSingle();
 
       if (reportError) {
-        console.log('[HomeScreen iOS] Report fetch error:', reportError.message);
+        console.log('[HomeScreen] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen iOS] Report loaded for:', today);
+        console.log('[HomeScreen] Report loaded for:', today);
         setTodayReport(reportData);
+      } else {
+        console.log('[HomeScreen] No report found for today');
       }
     } catch (error) {
-      console.log('[HomeScreen iOS] Error loading data:', error);
+      console.error('[HomeScreen] Error loading data:', error);
     } finally {
       setIsLoadingData(false);
     }
@@ -93,9 +103,25 @@ export default function HomeScreen() {
     setIsRefreshing(false);
   };
 
+  const formatLastUpdated = (date: Date | null) => {
+    if (!date) return 'Never';
+    
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    
+    return date.toLocaleDateString();
+  };
+
   // Show loading state while auth is initializing
   if (!isInitialized) {
-    console.log('[HomeScreen iOS] Rendering: Not initialized');
+    console.log('[HomeScreen] Rendering: Not initialized');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -110,7 +136,7 @@ export default function HomeScreen() {
 
   // Show loading state while profile is being loaded
   if (isLoading) {
-    console.log('[HomeScreen iOS] Rendering: Loading profile');
+    console.log('[HomeScreen] Rendering: Loading profile');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -124,13 +150,13 @@ export default function HomeScreen() {
   }
 
   // Not logged in - show sign in prompt
-  if (!user) {
-    console.log('[HomeScreen iOS] Rendering: Not logged in');
+  if (!user || !session) {
+    console.log('[HomeScreen] Rendering: Not logged in');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-          <Text style={[styles.tagline, { color: colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Exclusive Surf Reports from Folly Beach, SC
           </Text>
           <IconSymbol
@@ -143,11 +169,29 @@ export default function HomeScreen() {
             Get access to daily 6K drone footage and exclusive surf reports
           </Text>
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/login')}
+            style={[styles.ctaButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              console.log('[HomeScreen] Navigating to login...');
+              router.push('/login');
+            }}
           >
-            <Text style={styles.loginButtonText}>Sign In / Subscribe</Text>
+            <Text style={styles.ctaButtonText}>Sign In / Subscribe</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Wait for profile to load
+  if (!profile) {
+    console.log('[HomeScreen] Rendering: Waiting for profile');
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading your profile...
+          </Text>
         </View>
       </View>
     );
@@ -155,7 +199,7 @@ export default function HomeScreen() {
 
   // Logged in but no subscription - show subscribe prompt
   if (!checkSubscription()) {
-    console.log('[HomeScreen iOS] Rendering: No subscription');
+    console.log('[HomeScreen] Rendering: No subscription');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -168,17 +212,17 @@ export default function HomeScreen() {
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Subscription Required
           </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
             Subscribe to access exclusive drone footage and daily surf reports for just $5/month
           </Text>
           <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
+            style={[styles.ctaButton, { backgroundColor: colors.accent }]}
             onPress={() => {
-              console.log('[HomeScreen iOS] Opening subscription flow');
+              console.log('[HomeScreen] Opening subscription flow');
               router.push('/(tabs)/profile');
             }}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+            <Text style={styles.ctaButtonText}>Subscribe Now</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -186,7 +230,7 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
-  console.log('[HomeScreen iOS] Rendering: Subscribed content');
+  console.log('[HomeScreen] Rendering: Subscribed content');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -200,127 +244,164 @@ export default function HomeScreen() {
       }
     >
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.primary }]}>SurfVista</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Folly Beach, South Carolina
+        <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
+          Welcome to
         </Text>
+        <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+        <Text style={[styles.location, { color: colors.textSecondary }]}>The Real Folly Surf Report</Text>
+        
+        {/* Last Updated Info */}
+        <View style={styles.updateInfo}>
+          <IconSymbol
+            ios_icon_name="clock.fill"
+            android_material_icon_name="schedule"
+            size={14}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.updateText, { color: colors.textSecondary }]}>
+            Updated {formatLastUpdated(lastUpdated)}
+          </Text>
+          <TouchableOpacity 
+            onPress={handleRefresh}
+            style={styles.refreshButton}
+            disabled={isRefreshing}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={16}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Error Message */}
+        {error && (
+          <View style={[styles.errorBanner, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={16}
+              color="#FF3B30"
+            />
+            <Text style={[styles.errorText, { color: '#FF3B30' }]}>
+              {error}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Current Conditions */}
-      <View style={styles.contentContainer}>
-        <CurrentConditions weather={weatherData} surfReport={todayReport} />
+      <CurrentConditions weather={weatherData} surfReport={todayReport} />
 
-        {/* 7-Day Forecast */}
-        {weatherForecast.length > 0 && (
-          <WeeklyForecast forecast={weatherForecast} />
-        )}
+      {/* 7-Day Forecast */}
+      {weatherForecast.length > 0 && (
+        <WeeklyForecast forecast={weatherForecast} />
+      )}
 
-        {/* Latest Video Section */}
-        <View style={styles.section}>
+      {/* Latest Video Section */}
+      <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol
+            ios_icon_name="video.fill"
+            android_material_icon_name="videocam"
+            size={24}
+            color={colors.primary}
+          />
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             Latest Drone Footage
           </Text>
-          {latestVideo ? (
-            <TouchableOpacity
-              style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
-              onPress={() => router.push({
-                pathname: '/video-player',
-                params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
-              })}
-            >
-              <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
-                <IconSymbol
-                  ios_icon_name="play.circle.fill"
-                  android_material_icon_name="play_circle"
-                  size={64}
-                  color={colors.primary}
-                />
-              </View>
-              <View style={styles.videoInfo}>
-                <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                  {latestVideo.title}
+        </View>
+
+        {isLoadingData ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : latestVideo ? (
+          <TouchableOpacity
+            style={styles.videoCard}
+            onPress={() => router.push({
+              pathname: '/video-player',
+              params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
+            })}
+          >
+            <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
+              <IconSymbol
+                ios_icon_name="play.circle.fill"
+                android_material_icon_name="play_circle"
+                size={64}
+                color={colors.primary}
+              />
+            </View>
+            <View style={styles.videoInfo}>
+              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                {latestVideo.title}
+              </Text>
+              {latestVideo.description && (
+                <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
+                  {latestVideo.description}
                 </Text>
-                {latestVideo.description && (
-                  <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
-                    {latestVideo.description}
-                  </Text>
-                )}
-                <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                  {new Date(latestVideo.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No videos available yet
+              )}
+              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                {new Date(latestVideo.created_at).toLocaleDateString()}
               </Text>
             </View>
-          )}
-        </View>
-
-        {/* Quick Links */}
-        <View style={styles.quickLinks}>
-          <TouchableOpacity
-            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-            onPress={() => router.push('/(tabs)/videos')}
-          >
-            <IconSymbol
-              ios_icon_name="film.stack"
-              android_material_icon_name="movie"
-              size={32}
-              color={colors.primary}
-            />
-            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-              Video Library
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No videos available yet
             </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-            onPress={() => router.push('/(tabs)/report')}
-          >
-            <IconSymbol
-              ios_icon_name="doc.text.fill"
-              android_material_icon_name="description"
-              size={32}
-              color={colors.primary}
-            />
-            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-              Full Reports
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-            onPress={() => router.push('/(tabs)/weather')}
-          >
-            <IconSymbol
-              ios_icon_name="water.waves"
-              android_material_icon_name="waves"
-              size={32}
-              color={colors.primary}
-            />
-            <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-              Tides
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {isAdmin() && (
-          <TouchableOpacity
-            style={[styles.adminButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/admin')}
-          >
-            <IconSymbol
-              ios_icon_name="gear"
-              android_material_icon_name="settings"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.adminButtonText}>Admin Panel</Text>
-          </TouchableOpacity>
+          </View>
         )}
+      </View>
+
+      {/* Quick Links */}
+      <View style={styles.quickLinks}>
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/videos')}
+        >
+          <IconSymbol
+            ios_icon_name="film.stack"
+            android_material_icon_name="movie"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Video Library
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/report')}
+        >
+          <IconSymbol
+            ios_icon_name="doc.text.fill"
+            android_material_icon_name="description"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Full Reports
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/(tabs)/weather')}
+        >
+          <IconSymbol
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
+            Tides
+          </Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -331,143 +412,150 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 16,
     paddingBottom: 100,
-  },
-  contentContainer: {
-    paddingHorizontal: 16,
   },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
-    gap: 24,
   },
   loadingText: {
     fontSize: 16,
     marginTop: 16,
   },
-  appTitle: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+  loadingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 24,
+    paddingTop: 40,
+    paddingBottom: 24,
     paddingHorizontal: 16,
-    gap: 8,
   },
-  headerTitle: {
-    fontSize: 32,
+  welcomeText: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  appTitle: {
+    fontSize: 42,
     fontWeight: 'bold',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  location: {
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  updateInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  updateText: {
+    fontSize: 12,
+  },
+  refreshButton: {
+    padding: 4,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    flex: 1,
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  tagline: {
     fontSize: 18,
     textAlign: 'center',
+    marginBottom: 32,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  text: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
+    marginTop: 24,
+    marginBottom: 16,
   },
   description: {
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
+    marginBottom: 32,
   },
-  loginButton: {
+  ctaButton: {
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    minWidth: 200,
   },
-  loginButtonText: {
+  ctaButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  subscribeButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    minWidth: 250,
-  },
-  subscribeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
   },
   section: {
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+    padding: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 12,
   },
   videoCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    gap: 12,
   },
   videoPlaceholder: {
     width: '100%',
     height: 200,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   videoInfo: {
-    padding: 12,
+    gap: 4,
   },
   videoTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
   videoDescription: {
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 4,
   },
   videoDate: {
-    fontSize: 14,
+    fontSize: 12,
   },
-  emptyCard: {
-    borderRadius: 12,
-    padding: 32,
+  emptyState: {
+    paddingVertical: 32,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
   },
   emptyText: {
     fontSize: 14,
   },
   quickLinks: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    paddingHorizontal: 16,
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 16,
+    flexWrap: 'wrap',
   },
   quickLinkCard: {
     flex: 1,
@@ -476,30 +564,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
   quickLinkText: {
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
-  },
-  adminButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
-    gap: 8,
-  },
-  adminButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

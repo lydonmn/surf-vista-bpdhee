@@ -1,5 +1,6 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Database } from '@/app/integrations/supabase/types';
 
@@ -18,6 +19,9 @@ interface SurfDataState {
   lastUpdated: Date | null;
 }
 
+const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const RETRY_DELAY = 5000; // 5 seconds
+
 export function useSurfData() {
   const [state, setState] = useState<SurfDataState>({
     surfReports: [],
@@ -28,6 +32,10 @@ export function useSurfData() {
     error: null,
     lastUpdated: null,
   });
+
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   const fetchData = async () => {
     try {
@@ -65,26 +73,21 @@ export function useSurfData() {
       console.log('[useSurfData] Surf reports result:', {
         error: surfReportsResult.error,
         count: surfReportsResult.data?.length || 0,
-        data: surfReportsResult.data
       });
 
       console.log('[useSurfData] Weather result:', {
         error: weatherResult.error,
         hasData: !!weatherResult.data,
-        data: weatherResult.data
       });
 
       console.log('[useSurfData] Forecast result:', {
         error: forecastResult.error,
         count: forecastResult.data?.length || 0,
-        data: forecastResult.data
       });
 
       console.log('[useSurfData] Tide result:', {
         error: tideResult.error,
         count: tideResult.data?.length || 0,
-        data: tideResult.data,
-        query: `date = ${today}`
       });
 
       if (surfReportsResult.error) {
@@ -120,13 +123,28 @@ export function useSurfData() {
         error: null,
         lastUpdated: new Date(),
       });
+
+      // Clear any pending retry
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
     } catch (error) {
       console.error('[useSurfData] Error fetching surf data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch data';
+      
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to fetch data',
+        error: errorMessage,
       }));
+
+      // Retry after delay
+      console.log('[useSurfData] Scheduling retry in 5 seconds...');
+      retryTimeoutRef.current = setTimeout(() => {
+        console.log('[useSurfData] Retrying data fetch...');
+        fetchData();
+      }, RETRY_DELAY);
     }
   };
 
@@ -182,9 +200,45 @@ export function useSurfData() {
     }
   };
 
+  // Setup periodic refresh
+  const setupPeriodicRefresh = () => {
+    console.log('[useSurfData] Setting up periodic refresh (every 15 minutes)...');
+    
+    // Clear existing interval
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+    }
+
+    // Set up new interval
+    refreshIntervalRef.current = setInterval(() => {
+      console.log('[useSurfData] Periodic refresh triggered');
+      fetchData();
+    }, REFRESH_INTERVAL);
+  };
+
+  // Handle app state changes
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
+    
+    if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+      console.log('[useSurfData] App came to foreground, refreshing data...');
+      fetchData();
+    }
+    
+    appStateRef.current = nextAppState;
+  };
+
   useEffect(() => {
     console.log('[useSurfData] Initializing...');
+    
+    // Initial data fetch
     fetchData();
+
+    // Setup periodic refresh
+    setupPeriodicRefresh();
+
+    // Setup app state listener
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
     // Set up real-time subscription for surf reports
     const surfReportsSubscription = supabase
@@ -256,7 +310,20 @@ export function useSurfData() {
       .subscribe();
 
     return () => {
-      console.log('[useSurfData] Cleaning up subscriptions...');
+      console.log('[useSurfData] Cleaning up...');
+      
+      // Clear intervals and timeouts
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+
+      // Remove app state listener
+      appStateSubscription.remove();
+
+      // Unsubscribe from real-time channels
       surfReportsSubscription.unsubscribe();
       weatherSubscription.unsubscribe();
       forecastSubscription.unsubscribe();

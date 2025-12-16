@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Use the surf data hook for weather and forecast
-  const { weatherData, weatherForecast, refreshData } = useSurfData();
+  const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
   useEffect(() => {
     console.log('[HomeScreen] State update:', {
@@ -101,6 +101,22 @@ export default function HomeScreen() {
     setIsRefreshing(true);
     await Promise.all([loadData(), refreshData()]);
     setIsRefreshing(false);
+  };
+
+  const formatLastUpdated = (date: Date | null) => {
+    if (!date) return 'Never';
+    
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    
+    return date.toLocaleDateString();
   };
 
   // Show loading state while auth is initializing
@@ -233,6 +249,46 @@ export default function HomeScreen() {
         </Text>
         <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
         <Text style={[styles.location, { color: colors.textSecondary }]}>The Real Folly Surf Report</Text>
+        
+        {/* Last Updated Info */}
+        <View style={styles.updateInfo}>
+          <IconSymbol
+            ios_icon_name="clock.fill"
+            android_material_icon_name="schedule"
+            size={14}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.updateText, { color: colors.textSecondary }]}>
+            Updated {formatLastUpdated(lastUpdated)}
+          </Text>
+          <TouchableOpacity 
+            onPress={handleRefresh}
+            style={styles.refreshButton}
+            disabled={isRefreshing}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={16}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Error Message */}
+        {error && (
+          <View style={[styles.errorBanner, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={16}
+              color="#FF3B30"
+            />
+            <Text style={[styles.errorText, { color: '#FF3B30' }]}>
+              {error}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Current Conditions */}
@@ -390,6 +446,32 @@ const styles = StyleSheet.create({
   },
   location: {
     fontSize: 14,
+    marginBottom: 12,
+  },
+  updateInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  updateText: {
+    fontSize: 12,
+  },
+  refreshButton: {
+    padding: 4,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    flex: 1,
   },
   subtitle: {
     fontSize: 18,
