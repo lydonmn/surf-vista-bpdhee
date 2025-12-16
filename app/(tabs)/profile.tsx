@@ -19,6 +19,7 @@ export default function ProfileScreen() {
   const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
   const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -67,7 +68,11 @@ export default function ProfileScreen() {
       checkPaymentConfiguration();
       Alert.alert(
         'Restore Purchases Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
+        'Subscription features are currently being configured. This usually means:\n\n' +
+        '• Products need to be set up in RevenueCat dashboard\n' +
+        '• Paywalls need to be configured\n' +
+        '• Offerings need to be created\n\n' +
+        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
         [{ text: 'OK' }]
       );
       return;
@@ -159,16 +164,26 @@ export default function ProfileScreen() {
   };
 
   const handleSubscribeNow = async () => {
+    console.log('[ProfileScreen] 🔘 Subscribe Now button pressed');
+    
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
+      console.log('[ProfileScreen] ⚠️ Payment system not available');
       checkPaymentConfiguration();
+      
       Alert.alert(
-        'Subscribe Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
+        'Subscription Setup Required',
+        'The subscription system is being configured. This usually means:\n\n' +
+        '• Products need to be set up in RevenueCat dashboard\n' +
+        '• Paywalls need to be configured\n' +
+        '• Offerings need to be created\n\n' +
+        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
         [{ text: 'OK' }]
       );
       return;
     }
+
+    setIsSubscribing(true);
 
     try {
       console.log('[ProfileScreen] 🎨 Opening subscription paywall...');
@@ -188,9 +203,16 @@ export default function ProfileScreen() {
           [{ text: 'OK' }]
         );
       } else if (result.state === 'error') {
+        console.log('[ProfileScreen] ❌ Paywall error:', result.message);
+        
+        // Provide helpful error message
         Alert.alert(
-          'Purchase Failed',
-          result.message || 'Unable to complete purchase. Please try again.',
+          'Unable to Show Subscription Options',
+          result.message || 'The subscription paywall could not be displayed. This usually means:\n\n' +
+          '• Products are not configured in RevenueCat\n' +
+          '• Paywalls are not set up\n' +
+          '• Network connectivity issues\n\n' +
+          'Please check the console logs for more details, or try again later.',
           [{ text: 'OK' }]
         );
       }
@@ -203,6 +225,8 @@ export default function ProfileScreen() {
         error.message || 'Unable to open subscription page. Please try again later.',
         [{ text: 'OK' }]
       );
+    } finally {
+      setIsSubscribing(false);
     }
   };
 
@@ -309,14 +333,21 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <IconSymbol
-              ios_icon_name="star.fill"
-              android_material_icon_name="star"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="star.fill"
+                  android_material_icon_name="star"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
         )}
 
