@@ -41,8 +41,8 @@ const REVENUECAT_API_KEY_ANDROID = 'app5173aadeaf'; // Using same key for both p
 // - RevenueCat Dashboard
 export const PAYMENT_CONFIG = {
   // Pricing (can be adjusted in App Store Connect / Google Play Console)
-  MONTHLY_PRICE: 5.00,  // $5.00/month
-  ANNUAL_PRICE: 50.00,  // $50.00/year (save ~17%)
+  MONTHLY_PRICE: 10.99,  // $10.99/month
+  ANNUAL_PRICE: 100.99,  // $100.99/year (save ~8%)
   
   // Product Identifiers - MUST MATCH YOUR STORE CONFIGURATION
   // These are the identifiers you provided:
