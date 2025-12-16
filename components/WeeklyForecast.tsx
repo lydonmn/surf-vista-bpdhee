@@ -86,9 +86,12 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
             precipChance: day.precipitation_chance
           });
           
+          // Create a truly unique key by combining date and index
+          const uniqueKey = `forecast-${day.date || 'unknown'}-${index}`;
+          
           return (
             <View 
-              key={day.date || `day-${index}`}
+              key={uniqueKey}
               style={[
                 styles.dayCard,
                 { backgroundColor: colors.highlight }
