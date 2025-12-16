@@ -14,7 +14,7 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
 
   // Parse text to handle markdown-style bold (**text**)
   const parseTextWithBold = (inputText: string) => {
-    const parts: Array<{ text: string; bold: boolean }> = [];
+    const parts: { text: string; bold: boolean }[] = [];
     const regex = /\*\*([^*]+)\*\*/g;
     let lastIndex = 0;
     let match;

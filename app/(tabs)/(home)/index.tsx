@@ -62,7 +62,7 @@ export default function HomeScreen() {
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [user, session, isInitialized, profile, isLoading]);
+  }, [user, session, isInitialized, profile, isLoading, checkSubscription, loadData]);
 
   const loadData = async () => {
     if (isLoadingData) {

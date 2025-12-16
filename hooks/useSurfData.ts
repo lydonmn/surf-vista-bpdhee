@@ -329,7 +329,7 @@ export function useSurfData() {
       forecastSubscription.unsubscribe();
       tideSubscription.unsubscribe();
     };
-  }, []);
+  }, [fetchData, handleAppStateChange, setupPeriodicRefresh]);
 
   return {
     ...state,

@@ -25,7 +25,7 @@ export default function AdminDataScreen() {
     loadDataCounts();
     testTideDataFetch();
     testSurfDataFetch();
-  }, []);
+  }, [loadDataCounts, testTideDataFetch, testSurfDataFetch]);
 
   const loadDataCounts = async () => {
     try {

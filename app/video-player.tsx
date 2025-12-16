@@ -18,7 +18,7 @@ export default function VideoPlayerScreen() {
 
   useEffect(() => {
     loadVideo();
-  }, [videoId]);
+  }, [videoId, loadVideo]);
 
   const loadVideo = async () => {
     try {

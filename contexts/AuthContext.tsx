@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [isInitialized]);
 
   const loadUserProfile = async (authUser: SupabaseUser, mounted: boolean = true) => {
     try {

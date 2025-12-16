@@ -26,7 +26,7 @@ export default function EditReportScreen() {
 
   useEffect(() => {
     loadReport();
-  }, [reportId]);
+  }, [reportId, loadReport]);
 
   const loadReport = async () => {
     try {
