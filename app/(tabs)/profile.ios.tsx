@@ -12,6 +12,41 @@ export default function ProfileScreen() {
   const { user, profile, signOut, checkSubscription, isAdmin } = useAuth();
   const isSubscribed = checkSubscription();
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
+              console.log('[ProfileScreen iOS] User confirmed sign out');
+              console.log('[ProfileScreen iOS] Current user:', user?.email);
+              
+              // Call signOut - it will clear state immediately
+              console.log('[ProfileScreen iOS] Calling signOut()...');
+              await signOut();
+              console.log('[ProfileScreen iOS] ✅ signOut() completed');
+              
+              // Navigate to login immediately after signOut completes
+              console.log('[ProfileScreen iOS] Navigating to login screen...');
+              router.replace('/login');
+              console.log('[ProfileScreen iOS] ===== SIGN OUT PROCESS COMPLETE =====');
+            } catch (error) {
+              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
+              // Still try to navigate even if there was an error
+              router.replace('/login');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (!user || !profile) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -35,42 +70,6 @@ export default function ProfileScreen() {
       </View>
     );
   }
-
-  const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
-              console.log('[ProfileScreen iOS] User confirmed sign out');
-              console.log('[ProfileScreen iOS] Current user:', user.email);
-              
-              // Call signOut and wait for it to complete
-              console.log('[ProfileScreen iOS] Calling signOut()...');
-              await signOut();
-              console.log('[ProfileScreen iOS] ✅ signOut() completed successfully');
-              
-              // Small delay to ensure state is cleared
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              console.log('[ProfileScreen iOS] Navigating to login screen...');
-              router.replace('/login');
-              console.log('[ProfileScreen iOS] ===== SIGN OUT PROCESS COMPLETE =====');
-            } catch (error) {
-              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   return (
     <ScrollView 

@@ -262,33 +262,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    console.log('[AuthContext] ===== SIGN OUT STARTED =====');
+    console.log('[AuthContext] Current session before sign out:', session?.user?.email);
+    console.log('[AuthContext] Current user state:', user?.email);
+    
     try {
-      console.log('[AuthContext] ===== SIGN OUT STARTED =====');
-      console.log('[AuthContext] Current session before sign out:', session?.user?.email);
-      console.log('[AuthContext] Current user state:', user?.email);
+      // Clear local state FIRST for immediate UI update
+      console.log('[AuthContext] Clearing local state immediately...');
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setIsLoading(false);
       
-      // IMPORTANT: Call Supabase signOut FIRST before clearing any state
-      // This ensures the session is properly removed from AsyncStorage
-      // The correct syntax is signOut() without parameters for all sessions,
-      // or signOut('local') to sign out only the current session
+      // Then call Supabase signOut to clear the session from storage
+      // This will also trigger the SIGNED_OUT event in onAuthStateChange
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('[AuthContext] ❌ Supabase signOut error:', error);
-        throw error;
+        // Don't throw - we already cleared local state
+      } else {
+        console.log('[AuthContext] ✅ Supabase signOut successful');
       }
-      
-      console.log('[AuthContext] ✅ Supabase signOut successful');
-      
-      // Now clear the local state
-      // The onAuthStateChange listener should also trigger and clear state,
-      // but we do it here too for immediate UI update
-      console.log('[AuthContext] Clearing local state...');
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setIsLoading(false);
       
       console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
     } catch (error) {
@@ -298,7 +294,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
-      throw error;
     }
   };
 

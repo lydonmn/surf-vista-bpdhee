@@ -26,20 +26,19 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen] User confirmed sign out');
               console.log('[ProfileScreen] Current user:', user?.email);
               
-              // Call signOut and wait for it to complete
+              // Call signOut - it will clear state immediately
               console.log('[ProfileScreen] Calling signOut()...');
               await signOut();
-              console.log('[ProfileScreen] ✅ signOut() completed successfully');
+              console.log('[ProfileScreen] ✅ signOut() completed');
               
-              // Small delay to ensure state is cleared
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
+              // Navigate to login immediately after signOut completes
               console.log('[ProfileScreen] Navigating to login screen...');
               router.replace('/login');
               console.log('[ProfileScreen] ===== SIGN OUT PROCESS COMPLETE =====');
             } catch (error) {
               console.error('[ProfileScreen] ❌ Error during sign out:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              // Still try to navigate even if there was an error
+              router.replace('/login');
             }
           }
         }
