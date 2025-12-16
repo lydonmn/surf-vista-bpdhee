@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Database } from '@/app/integrations/supabase/types';
@@ -36,8 +36,12 @@ export function useSurfData() {
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appStateRef = useRef(AppState.currentState);
+  const isMountedRef = useRef(true);
 
-  const fetchData = async () => {
+  // Memoize fetchData to prevent infinite loops
+  const fetchData = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -68,6 +72,8 @@ export function useSurfData() {
           .eq('date', today)
           .order('time'),
       ]);
+
+      if (!isMountedRef.current) return;
 
       // Log detailed results
       console.log('[useSurfData] Surf reports result:', {
@@ -114,15 +120,17 @@ export function useSurfData() {
         tides: tideResult.data?.length || 0,
       });
 
-      setState({
-        surfReports: surfReportsResult.data || [],
-        weatherData: weatherResult.data,
-        weatherForecast: forecastResult.data || [],
-        tideData: tideResult.data || [],
-        isLoading: false,
-        error: null,
-        lastUpdated: new Date(),
-      });
+      if (isMountedRef.current) {
+        setState({
+          surfReports: surfReportsResult.data || [],
+          weatherData: weatherResult.data,
+          weatherForecast: forecastResult.data || [],
+          tideData: tideResult.data || [],
+          isLoading: false,
+          error: null,
+          lastUpdated: new Date(),
+        });
+      }
 
       // Clear any pending retry
       if (retryTimeoutRef.current) {
@@ -133,22 +141,26 @@ export function useSurfData() {
       console.error('[useSurfData] Error fetching surf data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch data';
       
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMessage,
-      }));
+      if (isMountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage,
+        }));
 
-      // Retry after delay
-      console.log('[useSurfData] Scheduling retry in 5 seconds...');
-      retryTimeoutRef.current = setTimeout(() => {
-        console.log('[useSurfData] Retrying data fetch...');
-        fetchData();
-      }, RETRY_DELAY);
+        // Retry after delay
+        console.log('[useSurfData] Scheduling retry in 5 seconds...');
+        retryTimeoutRef.current = setTimeout(() => {
+          console.log('[useSurfData] Retrying data fetch...');
+          fetchData();
+        }, RETRY_DELAY);
+      }
     }
-  };
+  }, []); // Empty dependency array - this function doesn't depend on any props or state
 
-  const updateAllData = async () => {
+  const updateAllData = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       console.log('[useSurfData] Updating all data via Edge Functions...');
@@ -192,16 +204,18 @@ export function useSurfData() {
       await fetchData();
     } catch (error) {
       console.error('[useSurfData] Error updating surf data:', error);
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Failed to update data',
-      }));
+      if (isMountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: error instanceof Error ? error.message : 'Failed to update data',
+        }));
+      }
     }
-  };
+  }, [fetchData]);
 
-  // Setup periodic refresh
-  const setupPeriodicRefresh = () => {
+  // Setup periodic refresh - memoized
+  const setupPeriodicRefresh = useCallback(() => {
     console.log('[useSurfData] Setting up periodic refresh (every 15 minutes)...');
     
     // Clear existing interval
@@ -214,10 +228,10 @@ export function useSurfData() {
       console.log('[useSurfData] Periodic refresh triggered');
       fetchData();
     }, REFRESH_INTERVAL);
-  };
+  }, [fetchData]);
 
-  // Handle app state changes
-  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+  // Handle app state changes - memoized
+  const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
     console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
     
     if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
@@ -226,10 +240,11 @@ export function useSurfData() {
     }
     
     appStateRef.current = nextAppState;
-  };
+  }, [fetchData]);
 
   useEffect(() => {
     console.log('[useSurfData] Initializing...');
+    isMountedRef.current = true;
     
     // Initial data fetch
     fetchData();
@@ -311,6 +326,7 @@ export function useSurfData() {
 
     return () => {
       console.log('[useSurfData] Cleaning up...');
+      isMountedRef.current = false;
       
       // Clear intervals and timeouts
       if (refreshIntervalRef.current) {

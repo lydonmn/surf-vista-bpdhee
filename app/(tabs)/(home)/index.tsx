@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,18 +25,13 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
-  // Store subscription status in state to avoid recalculating
-  const [hasSubscription, setHasSubscription] = useState(false);
-
-  // Update subscription status when profile changes
-  useEffect(() => {
-    if (profile) {
-      const subscriptionStatus = checkSubscription();
-      console.log('[HomeScreen] Subscription status updated:', subscriptionStatus);
-      setHasSubscription(subscriptionStatus);
-    }
+  // Memoize subscription status to prevent recalculation
+  const hasSubscription = useMemo(() => {
+    if (!profile) return false;
+    return checkSubscription();
   }, [profile, checkSubscription]);
 
+  // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
     if (isLoadingData) {
       console.log('[HomeScreen] Already loading data, skipping...');
@@ -87,6 +82,7 @@ export default function HomeScreen() {
     }
   }, [isLoadingData]);
 
+  // Only load data when conditions are met - use separate effect
   useEffect(() => {
     console.log('[HomeScreen] State update:', {
       isInitialized,
@@ -94,11 +90,6 @@ export default function HomeScreen() {
       hasUser: !!user,
       hasSession: !!session,
       hasProfile: !!profile,
-      profileData: profile ? {
-        email: profile.email,
-        is_admin: profile.is_admin,
-        is_subscribed: profile.is_subscribed
-      } : null,
       hasSubscription
     });
 
@@ -109,15 +100,15 @@ export default function HomeScreen() {
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [user, session, isInitialized, profile, isLoading, hasSubscription, loadData]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription]); // Remove loadData from dependencies
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await Promise.all([loadData(), refreshData()]);
     setIsRefreshing(false);
-  };
+  }, [loadData, refreshData]);
 
-  const formatLastUpdated = (date: Date | null) => {
+  const formatLastUpdated = useCallback((date: Date | null) => {
     if (!date) return 'Never';
     
     const now = new Date();
@@ -131,9 +122,9 @@ export default function HomeScreen() {
     if (diffHours < 24) return `${diffHours}h ago`;
     
     return date.toLocaleDateString();
-  };
+  }, []);
 
-  const handleSubscribeNow = async () => {
+  const handleSubscribeNow = useCallback(async () => {
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
@@ -183,7 +174,7 @@ export default function HomeScreen() {
     } finally {
       setIsSubscribing(false);
     }
-  };
+  }, [user, refreshProfile]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
