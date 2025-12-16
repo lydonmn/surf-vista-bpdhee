@@ -44,8 +44,8 @@ export const PAYMENT_CONFIG = {
     YEARLY: 'yearly',
   },
   
-  // RevenueCat Offering ID (default is usually 'default')
-  OFFERING_ID: 'default',
+  // RevenueCat Offering ID - YOUR SPECIFIC OFFERING
+  OFFERING_ID: 'ofrnge7bdc97106',
   
   // Entitlement ID - This is what you check to see if user has access
   // You configured this as "premium" in RevenueCat
@@ -53,8 +53,8 @@ export const PAYMENT_CONFIG = {
   
   // Pricing (for display purposes)
   PRICING: {
-    MONTHLY: '$10.99',
-    ANNUAL: '$100.99',
+    MONTHLY: '$5.00',
+    ANNUAL: '$50.00',
   },
 };
 
@@ -85,10 +85,18 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     // Fetch available offerings
     try {
       const offerings = await Purchases.getOfferings();
-      currentOffering = offerings.current;
+      
+      // Try to get the specific offering first
+      if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
+        currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+        console.log('[RevenueCat] 📦 Using specific offering:', PAYMENT_CONFIG.OFFERING_ID);
+      } else if (offerings.current) {
+        currentOffering = offerings.current;
+        console.log('[RevenueCat] 📦 Using current offering:', offerings.current.identifier);
+      }
       
       if (currentOffering) {
-        console.log('[RevenueCat] 📦 Current offering:', currentOffering.identifier);
+        console.log('[RevenueCat] 📦 Offering identifier:', currentOffering.identifier);
         console.log('[RevenueCat] 📦 Available packages:', currentOffering.availablePackages.length);
         
         currentOffering.availablePackages.forEach(pkg => {
@@ -100,11 +108,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         console.log('[RevenueCat]   1. Go to https://app.revenuecat.com/');
         console.log('[RevenueCat]   2. Select your app');
         console.log('[RevenueCat]   3. Go to Products section');
-        console.log('[RevenueCat]   4. Add your subscription products:');
-        console.log('[RevenueCat]      - Monthly: surfvista_monthly or monthly');
-        console.log('[RevenueCat]      - Annual: surfvista_annual or yearly');
+        console.log('[RevenueCat]   4. Add your subscription products');
         console.log('[RevenueCat]   5. Create an Entitlement called: ' + PAYMENT_CONFIG.ENTITLEMENT_ID);
-        console.log('[RevenueCat]   6. Create an Offering and attach your products');
+        console.log('[RevenueCat]   6. Create an Offering with ID: ' + PAYMENT_CONFIG.OFFERING_ID);
         console.log('[RevenueCat]   7. Configure your Paywall in the Paywalls section');
         console.log('[RevenueCat]   8. Restart the app');
       }
@@ -144,6 +150,7 @@ export const checkPaymentConfiguration = (): boolean => {
   console.log('[RevenueCat] - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat] - Platform:', Platform.OS);
   console.log('[RevenueCat] - API Key Configured: ✅ YES');
+  console.log('[RevenueCat] - Offering ID:', PAYMENT_CONFIG.OFFERING_ID);
   console.log('[RevenueCat] - Product IDs:');
   console.log('[RevenueCat]   • Monthly Subscription:', PAYMENT_CONFIG.PRODUCTS.MONTHLY_SUBSCRIPTION);
   console.log('[RevenueCat]   • Annual Subscription:', PAYMENT_CONFIG.PRODUCTS.ANNUAL_SUBSCRIPTION);
@@ -159,7 +166,7 @@ export const checkPaymentConfiguration = (): boolean => {
     console.log('[RevenueCat]   3. Go to Products section');
     console.log('[RevenueCat]   4. Add your subscription products');
     console.log('[RevenueCat]   5. Create an Entitlement called: ' + PAYMENT_CONFIG.ENTITLEMENT_ID);
-    console.log('[RevenueCat]   6. Create an Offering and attach your products');
+    console.log('[RevenueCat]   6. Create an Offering with ID: ' + PAYMENT_CONFIG.OFFERING_ID);
     console.log('[RevenueCat]   7. Configure your Paywall in the Paywalls section');
     console.log('[RevenueCat]   8. Restart the app');
   }
@@ -177,6 +184,7 @@ export const presentPaywall = async (
 ): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
   try {
     console.log('[RevenueCat] 🎨 ===== PRESENTING PAYWALL UI =====');
+    console.log('[RevenueCat] Offering ID:', PAYMENT_CONFIG.OFFERING_ID);
     console.log('[RevenueCat] User ID:', userId);
     console.log('[RevenueCat] User Email:', userEmail);
     
@@ -210,28 +218,38 @@ export const presentPaywall = async (
     // Check if we have offerings
     console.log('[RevenueCat] 📦 Checking offerings...');
     const offerings = await Purchases.getOfferings();
-    console.log('[RevenueCat] Current offering:', offerings.current?.identifier || 'None');
     
-    if (!offerings.current || offerings.current.availablePackages.length === 0) {
+    // Try to get the specific offering
+    let targetOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+    
+    if (!targetOffering) {
+      console.log('[RevenueCat] ⚠️ Specific offering not found, trying current offering...');
+      targetOffering = offerings.current;
+    }
+    
+    if (!targetOffering || targetOffering.availablePackages.length === 0) {
       console.error('[RevenueCat] ❌ No offerings available');
       console.log('[RevenueCat] 📝 This means:');
       console.log('[RevenueCat]   1. You need to configure products in RevenueCat dashboard');
       console.log('[RevenueCat]   2. Go to https://app.revenuecat.com/');
-      console.log('[RevenueCat]   3. Add products and create an offering');
+      console.log('[RevenueCat]   3. Add products and create an offering with ID: ' + PAYMENT_CONFIG.OFFERING_ID);
       console.log('[RevenueCat]   4. Configure a paywall design');
       throw new Error('No subscription packages available. Please contact support.');
     }
 
-    console.log('[RevenueCat] 📦 Available packages:', offerings.current.availablePackages.length);
-    offerings.current.availablePackages.forEach(pkg => {
+    console.log('[RevenueCat] 📦 Using offering:', targetOffering.identifier);
+    console.log('[RevenueCat] 📦 Available packages:', targetOffering.availablePackages.length);
+    targetOffering.availablePackages.forEach(pkg => {
       console.log(`[RevenueCat]   - ${pkg.identifier}: ${pkg.product.priceString}`);
     });
 
-    // Present the RevenueCat Paywall UI
-    console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall()...');
+    // Present the RevenueCat Paywall UI with specific offering
+    console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall() with offering:', targetOffering.identifier);
     console.log('[RevenueCat] 🎨 This should show a modal paywall...');
     
-    const paywallResult = await RevenueCatUI.presentPaywall();
+    const paywallResult = await RevenueCatUI.presentPaywall({
+      offering: targetOffering
+    });
     
     console.log('[RevenueCat] 📊 Paywall closed with result:', paywallResult);
     console.log('[RevenueCat] 📊 Result type:', typeof paywallResult);
@@ -275,12 +293,12 @@ export const presentPaywall = async (
     } else if (paywallResult === PAYWALL_RESULT.NOT_PRESENTED) {
       console.log('[RevenueCat] ⚠️ Paywall was not presented');
       console.log('[RevenueCat] 📝 This could mean:');
-      console.log('[RevenueCat]   1. No paywall is configured in RevenueCat dashboard');
+      console.log('[RevenueCat]   1. No paywall is configured in RevenueCat dashboard for offering: ' + PAYMENT_CONFIG.OFFERING_ID);
       console.log('[RevenueCat]   2. User already has an active subscription');
       console.log('[RevenueCat]   3. There was an error loading the paywall');
       return { 
         state: 'error',
-        message: 'Unable to display subscription options. Please ensure paywalls are configured in RevenueCat dashboard.'
+        message: 'Unable to display subscription options. Please ensure paywalls are configured in RevenueCat dashboard for offering: ' + PAYMENT_CONFIG.OFFERING_ID
       };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action, result:', paywallResult);
@@ -342,10 +360,18 @@ export const presentPaywallWithOffering = async (
       }
     }
 
+    // Get the specific offering
+    const offerings = await Purchases.getOfferings();
+    const targetOffering = offerings.all[offeringIdentifier];
+    
+    if (!targetOffering) {
+      throw new Error(`Offering ${offeringIdentifier} not found`);
+    }
+
     // Present the RevenueCat Paywall UI with specific offering
     console.log('[RevenueCat] 🎨 Presenting RevenueCat Paywall UI with offering...');
-    const paywallResult = await RevenueCatUI.presentPaywallIfNeeded({
-      requiredEntitlementIdentifier: PAYMENT_CONFIG.ENTITLEMENT_ID
+    const paywallResult = await RevenueCatUI.presentPaywall({
+      offering: targetOffering
     });
     
     console.log('[RevenueCat] 📊 Paywall result:', paywallResult);
@@ -462,7 +488,13 @@ export const purchaseSubscription = async (
 
     // Get current offerings
     const offerings = await Purchases.getOfferings();
-    const offering = offerings.current;
+    
+    // Try to get the specific offering first
+    let offering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+    
+    if (!offering) {
+      offering = offerings.current;
+    }
 
     if (!offering || offering.availablePackages.length === 0) {
       throw new Error('No subscription packages available.');
@@ -818,13 +850,19 @@ export const getOfferings = async (): Promise<PurchasesOffering | null> => {
     }
 
     const offerings = await Purchases.getOfferings();
-    const offering = offerings.current;
+    
+    // Try to get the specific offering first
+    let offering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+    
+    if (!offering) {
+      offering = offerings.current;
+    }
     
     if (offering) {
-      console.log('[RevenueCat] 📦 Current offering:', offering.identifier);
+      console.log('[RevenueCat] 📦 Offering:', offering.identifier);
       console.log('[RevenueCat] 📦 Available packages:', offering.availablePackages.length);
     } else {
-      console.log('[RevenueCat] ⚠️ No current offering found');
+      console.log('[RevenueCat] ⚠️ No offering found');
     }
     
     return offering;
