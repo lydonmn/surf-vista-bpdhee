@@ -56,12 +56,6 @@ export function WeatherCard({ weather }: WeatherCardProps) {
         </View>
 
         <View style={styles.detailItem}>
-          <IconSymbol
-            ios_icon_name="drop.fill"
-            android_material_icon_name="water_drop"
-            size={20}
-            color={colors.primary}
-          />
           <View style={styles.detailText}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
               Humidity
