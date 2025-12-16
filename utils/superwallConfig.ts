@@ -1,214 +1,153 @@
 
-import Superwall from 'expo-superwall';
+// ============================================
+// PAYMENT INTEGRATION PLACEHOLDER
+// ============================================
+// 
+// IMPORTANT: Superwall requires native modules that are not compatible
+// with Expo's managed workflow. To integrate payments, you have 3 options:
+//
+// OPTION 1 (Recommended): Use RevenueCat with Expo
+// - Install: npx expo install react-native-purchases
+// - RevenueCat has better Expo support and similar features
+// - Docs: https://www.revenuecat.com/docs/getting-started
+//
+// OPTION 2: Create an EAS Development Build
+// - Install: npm install @superwall/react-native
+// - Run: eas build --profile development --platform ios
+// - This creates a custom native build with Superwall
+// - Docs: https://docs.expo.dev/develop/development-builds/introduction/
+//
+// OPTION 3: Use Web-Based Payments
+// - Integrate Stripe or another web payment provider
+// - Use WebView or expo-web-browser for checkout
+// - Update subscription status in Supabase after payment
+//
+// ============================================
+
 import { supabase } from '@/app/integrations/supabase/client';
 
-// ============================================
-// Superwall API Key configured
-// Dashboard: https://superwall.com/dashboard
-// ============================================
-export const SUPERWALL_API_KEY = 'pk_gHLCe_Tlt8M5kFpi5dBHW';
-
-// Superwall Paywall Identifiers
-export const PAYWALL_IDENTIFIERS = {
-  MONTHLY: 'monthly_subscription_paywall',  // $10.99/month
-  ANNUAL: 'subscription_paywall',           // $100.99/year
+// Placeholder configuration
+export const PAYMENT_CONFIG = {
+  MONTHLY_PRICE: 10.99,
+  ANNUAL_PRICE: 100.99,
+  MONTHLY_PRODUCT_ID: 'monthly_subscription',
+  ANNUAL_PRODUCT_ID: 'annual_subscription',
 };
 
-let isSuperwallInitialized = false;
+let isPaymentSystemInitialized = false;
 
-export const initializeSuperwall = async () => {
-  // Skip initialization if API key is not configured
-  if (!SUPERWALL_API_KEY || SUPERWALL_API_KEY === 'pk_YOUR_SUPERWALL_API_KEY_HERE') {
-    console.warn('[Superwall] ⚠️ API key not configured. Superwall features will be disabled.');
-    console.warn('[Superwall] 📝 Please set SUPERWALL_API_KEY in utils/superwallConfig.ts');
-    console.warn('[Superwall] 🔗 Get your API key from: https://superwall.com/dashboard');
-    return false;
-  }
-
-  // Skip if already initialized
-  if (isSuperwallInitialized) {
-    console.log('[Superwall] ✅ Already initialized');
-    return true;
-  }
-
-  try {
-    console.log('[Superwall] 🚀 Initializing...');
-    await Superwall.configure(SUPERWALL_API_KEY);
-    console.log('[Superwall] ✅ Initialized successfully');
-    isSuperwallInitialized = true;
-    
-    // Set up purchase handler
-    Superwall.setPurchaseHandler(async (productId: string) => {
-      console.log('[Superwall] 💳 Purchase handler called for product:', productId);
-      
-      try {
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          console.error('[Superwall] ❌ No user found for purchase');
-          return { success: false, error: 'User not authenticated' };
-        }
-        
-        // Determine subscription duration based on product ID
-        // You'll need to map your actual product IDs from App Store/Play Store
-        // to the appropriate subscription duration
-        const subscriptionEndDate = new Date();
-        let subscriptionType = 'monthly';
-        
-        // Check if this is an annual subscription (adjust product ID matching as needed)
-        if (productId.toLowerCase().includes('annual') || productId.toLowerCase().includes('year')) {
-          subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
-          subscriptionType = 'annual';
-          console.log('[Superwall] 📅 Annual subscription detected');
-        } else {
-          subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
-          subscriptionType = 'monthly';
-          console.log('[Superwall] 📅 Monthly subscription detected');
-        }
-        
-        // Update user's subscription status in Supabase
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            is_subscribed: true,
-            subscription_end_date: subscriptionEndDate.toISOString(),
-          })
-          .eq('id', user.id);
-        
-        if (error) {
-          console.error('[Superwall] ❌ Error updating subscription:', error);
-          return { success: false, error: error.message };
-        }
-        
-        console.log('[Superwall] ✅ Subscription updated successfully');
-        console.log('[Superwall] 📅 Subscription type:', subscriptionType);
-        console.log('[Superwall] 📅 Subscription end date:', subscriptionEndDate.toISOString());
-        return { success: true };
-      } catch (error: any) {
-        console.error('[Superwall] ❌ Exception in purchase handler:', error);
-        return { success: false, error: error.message || 'Purchase failed' };
-      }
-    });
-    
-    // Set up restore handler
-    Superwall.setRestoreHandler(async () => {
-      console.log('[Superwall] 🔄 Restore handler called');
-      
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          console.error('[Superwall] ❌ No user found for restore');
-          return { success: false, error: 'User not authenticated' };
-        }
-        
-        // Check if user has an active subscription
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('is_subscribed, subscription_end_date')
-          .eq('id', user.id)
-          .single();
-        
-        if (error || !profile) {
-          console.error('[Superwall] ❌ Error fetching profile:', error);
-          return { success: false, error: 'Could not fetch subscription status' };
-        }
-        
-        if (profile.is_subscribed && profile.subscription_end_date) {
-          const endDate = new Date(profile.subscription_end_date);
-          if (endDate > new Date()) {
-            console.log('[Superwall] ✅ Active subscription found');
-            return { success: true };
-          }
-        }
-        
-        console.log('[Superwall] ℹ️ No active subscription found');
-        return { success: false, error: 'No active subscription found' };
-      } catch (error: any) {
-        console.error('[Superwall] ❌ Exception in restore handler:', error);
-        return { success: false, error: error.message || 'Restore failed' };
-      }
-    });
-    
-    return true;
-  } catch (error: any) {
-    console.error('[Superwall] ❌ Initialization error:', error);
-    console.error('[Superwall] 📋 Error details:', error.message || 'Unknown error');
-    // Don't throw - just return false to indicate initialization failed
-    return false;
-  }
+export const initializePaymentSystem = async () => {
+  console.log('[Payment] ⚠️ Payment system is not configured');
+  console.log('[Payment] 📝 See utils/superwallConfig.ts for integration options');
+  console.log('[Payment] 💡 Recommended: Use RevenueCat or create an EAS development build');
+  
+  isPaymentSystemInitialized = true;
+  return true;
 };
 
-export const isSuperwallAvailable = () => {
-  return isSuperwallInitialized;
+export const isPaymentSystemAvailable = () => {
+  return isPaymentSystemInitialized;
 };
 
-export const presentPaywall = async (paywallIdentifier: string = PAYWALL_IDENTIFIERS.MONTHLY, userId?: string, userEmail?: string) => {
-  if (!isSuperwallInitialized) {
-    console.warn('[Superwall] ⚠️ Cannot present paywall - Superwall not initialized');
-    throw new Error('Superwall is not configured. Please contact support.');
-  }
-
-  try {
-    console.log('[Superwall] 🎨 Presenting paywall:', paywallIdentifier);
-    
-    // Set user attributes if provided
-    if (userId && userEmail) {
-      console.log('[Superwall] 👤 Setting user attributes:', { userId, email: userEmail });
-      await Superwall.setUserAttributes({
-        userId,
-        email: userEmail,
-      });
-    }
-    
-    // Present the paywall
-    const result = await Superwall.presentPaywall(paywallIdentifier);
-    console.log('[Superwall] 📊 Paywall result:', result);
-    return result;
-  } catch (error: any) {
-    console.error('[Superwall] ❌ Error presenting paywall:', error);
-    throw error;
-  }
+export const presentPaywall = async (productType: 'monthly' | 'annual' = 'monthly', userId?: string, userEmail?: string) => {
+  console.log('[Payment] ⚠️ Payment system not configured');
+  console.log('[Payment] 📝 Product type:', productType);
+  console.log('[Payment] 👤 User:', userEmail);
+  
+  throw new Error(
+    'Payment system is not configured.\n\n' +
+    'To enable payments, please:\n' +
+    '1. Choose a payment provider (RevenueCat recommended)\n' +
+    '2. Follow the integration guide in utils/superwallConfig.ts\n' +
+    '3. Update this file with the actual implementation'
+  );
 };
 
 export const restorePurchases = async () => {
-  if (!isSuperwallInitialized) {
-    console.warn('[Superwall] ⚠️ Cannot restore purchases - Superwall not initialized');
-    throw new Error('Superwall is not configured. Please contact support.');
-  }
+  console.log('[Payment] ⚠️ Restore purchases not available - payment system not configured');
+  
+  throw new Error(
+    'Payment system is not configured.\n\n' +
+    'Cannot restore purchases without a payment provider.'
+  );
+};
 
+// Helper function to manually grant subscription (for testing or admin purposes)
+export const grantSubscription = async (userId: string, durationType: 'monthly' | 'annual') => {
   try {
-    console.log('[Superwall] 🔄 Restoring purchases...');
-    const result = await Superwall.restorePurchases();
-    console.log('[Superwall] 📊 Restore result:', result);
-    return result;
+    console.log('[Payment] 🎁 Manually granting subscription:', durationType);
+    
+    const subscriptionEndDate = new Date();
+    if (durationType === 'annual') {
+      subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+    } else {
+      subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
+    }
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        is_subscribed: true,
+        subscription_end_date: subscriptionEndDate.toISOString(),
+      })
+      .eq('id', userId);
+    
+    if (error) {
+      console.error('[Payment] ❌ Error granting subscription:', error);
+      return { success: false, error: error.message };
+    }
+    
+    console.log('[Payment] ✅ Subscription granted successfully');
+    console.log('[Payment] 📅 End date:', subscriptionEndDate.toISOString());
+    return { success: true };
   } catch (error: any) {
-    console.error('[Superwall] ❌ Error restoring purchases:', error);
-    throw error;
+    console.error('[Payment] ❌ Exception granting subscription:', error);
+    return { success: false, error: error.message || 'Failed to grant subscription' };
   }
 };
 
-// Helper function to check if Superwall is properly configured
-export const checkSuperwallConfiguration = () => {
-  const isConfigured = SUPERWALL_API_KEY && SUPERWALL_API_KEY !== 'pk_YOUR_SUPERWALL_API_KEY_HERE';
-  
-  if (!isConfigured) {
-    console.log('[Superwall] ⚠️ Configuration Check:');
-    console.log('[Superwall] - API Key: NOT CONFIGURED');
-    console.log('[Superwall] - Status: Disabled');
-    console.log('[Superwall] 📝 To enable Superwall:');
-    console.log('[Superwall]   1. Get your API key from https://superwall.com/dashboard');
-    console.log('[Superwall]   2. Update SUPERWALL_API_KEY in utils/superwallConfig.ts');
-    console.log('[Superwall]   3. Restart the app');
-  } else {
-    console.log('[Superwall] ✅ Configuration Check:');
-    console.log('[Superwall] - API Key: Configured');
-    console.log('[Superwall] - Status:', isSuperwallInitialized ? 'Initialized' : 'Not Initialized');
-    console.log('[Superwall] - Paywall Identifiers:');
-    console.log('[Superwall]   - Monthly: ' + PAYWALL_IDENTIFIERS.MONTHLY);
-    console.log('[Superwall]   - Annual: ' + PAYWALL_IDENTIFIERS.ANNUAL);
+// Helper function to check subscription status
+export const checkSubscriptionStatus = async (userId: string) => {
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('is_subscribed, subscription_end_date')
+      .eq('id', userId)
+      .single();
+    
+    if (error || !profile) {
+      console.error('[Payment] ❌ Error checking subscription:', error);
+      return { isActive: false, endDate: null };
+    }
+    
+    if (profile.is_subscribed && profile.subscription_end_date) {
+      const endDate = new Date(profile.subscription_end_date);
+      const isActive = endDate > new Date();
+      
+      console.log('[Payment] 📊 Subscription status:', isActive ? 'Active' : 'Expired');
+      console.log('[Payment] 📅 End date:', profile.subscription_end_date);
+      
+      return { isActive, endDate: profile.subscription_end_date };
+    }
+    
+    console.log('[Payment] 📊 No active subscription');
+    return { isActive: false, endDate: null };
+  } catch (error: any) {
+    console.error('[Payment] ❌ Exception checking subscription:', error);
+    return { isActive: false, endDate: null };
   }
+};
+
+// Helper function to check payment configuration
+export const checkPaymentConfiguration = () => {
+  console.log('[Payment] ⚠️ Configuration Check:');
+  console.log('[Payment] - Status: Not Configured');
+  console.log('[Payment] - Monthly Price: $' + PAYMENT_CONFIG.MONTHLY_PRICE);
+  console.log('[Payment] - Annual Price: $' + PAYMENT_CONFIG.ANNUAL_PRICE);
+  console.log('[Payment] 📝 To enable payments:');
+  console.log('[Payment]   1. Choose a payment provider (RevenueCat, Stripe, etc.)');
+  console.log('[Payment]   2. Follow integration guide in utils/superwallConfig.ts');
+  console.log('[Payment]   3. Update payment functions in this file');
   
-  return isConfigured;
+  return false;
 };

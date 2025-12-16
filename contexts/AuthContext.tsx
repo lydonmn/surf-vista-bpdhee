@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
-import { initializeSuperwall } from '@/utils/superwallConfig';
+import { initializePaymentSystem } from '@/utils/superwallConfig';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -41,12 +41,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Initialize Superwall (non-blocking - failures are logged but don't stop initialization)
+        // Initialize payment system (non-blocking - failures are logged but don't stop initialization)
         try {
-          await initializeSuperwall();
-        } catch (superwallError) {
-          console.error('[AuthContext] Superwall initialization failed (non-critical):', superwallError);
-          // Continue with auth initialization even if Superwall fails
+          await initializePaymentSystem();
+        } catch (paymentError) {
+          console.error('[AuthContext] Payment system initialization failed (non-critical):', paymentError);
+          // Continue with auth initialization even if payment system fails
         }
         
         // Get initial session

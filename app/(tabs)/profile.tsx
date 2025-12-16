@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isSuperwallAvailable, restorePurchases, checkSuperwallConfiguration } from '@/utils/superwallConfig';
+import { isPaymentSystemAvailable, restorePurchases, checkPaymentConfiguration } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
@@ -55,9 +55,9 @@ export default function ProfileScreen() {
   };
 
   const handleRestorePurchases = async () => {
-    // Check if Superwall is available
-    if (!isSuperwallAvailable()) {
-      checkSuperwallConfiguration();
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      checkPaymentConfiguration();
       Alert.alert(
         'Restore Purchases Unavailable',
         'Subscription features are currently being configured. Please contact support or try again later.',
@@ -356,7 +356,7 @@ export default function ProfileScreen() {
             Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-            Superwall Available: {isSuperwallAvailable() ? 'Yes' : 'No'}
+            Payment System Available: {isPaymentSystemAvailable() ? 'Yes' : 'No'}
           </Text>
         </View>
       )}

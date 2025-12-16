@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isSuperwallAvailable, presentPaywall, checkSuperwallConfiguration, PAYWALL_IDENTIFIERS } from '@/utils/superwallConfig';
+import { isPaymentSystemAvailable, presentPaywall, checkPaymentConfiguration, PAYMENT_CONFIG } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -79,19 +79,19 @@ export default function LoginScreen() {
   };
 
   const handleSubscribe = async (subscriptionType: 'monthly' | 'annual') => {
-    // Check if Superwall is available
-    if (!isSuperwallAvailable()) {
-      console.log('[LoginScreen] Superwall not available, checking configuration...');
-      checkSuperwallConfiguration();
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      console.log('[LoginScreen] Payment system not available, checking configuration...');
+      checkPaymentConfiguration();
       
       Alert.alert(
-        'Subscription Setup Required',
+        'Payment Integration Required',
         'Subscription features are currently being configured.\n\n' +
-        'To enable subscriptions:\n' +
-        '1. Get your API key from superwall.com\n' +
-        '2. Update SUPERWALL_API_KEY in utils/superwallConfig.ts\n' +
-        '3. Restart the app\n\n' +
-        'See docs/SUPERWALL_QUICK_START.md for details.',
+        'To enable subscriptions, you need to integrate a payment provider:\n\n' +
+        '• RevenueCat (Recommended)\n' +
+        '• Stripe with WebView\n' +
+        '• Create EAS Development Build with Superwall\n\n' +
+        'See utils/superwallConfig.ts for detailed integration instructions.',
         [{ text: 'OK' }]
       );
       return;
@@ -100,19 +100,17 @@ export default function LoginScreen() {
     setIsSubscribing(true);
 
     try {
-      const paywallIdentifier = subscriptionType === 'monthly' 
-        ? PAYWALL_IDENTIFIERS.MONTHLY 
-        : PAYWALL_IDENTIFIERS.ANNUAL;
-      
       const subscriptionName = subscriptionType === 'monthly' ? 'Monthly' : 'Annual';
-      const subscriptionPrice = subscriptionType === 'monthly' ? '$10.99/month' : '$100.99/year';
+      const subscriptionPrice = subscriptionType === 'monthly' 
+        ? `$${PAYMENT_CONFIG.MONTHLY_PRICE}/month` 
+        : `$${PAYMENT_CONFIG.ANNUAL_PRICE}/year`;
       
-      console.log(`[LoginScreen] 🎨 Opening ${subscriptionName} Superwall paywall...`);
+      console.log(`[LoginScreen] 🎨 Opening ${subscriptionName} paywall...`);
       
       // Set user attributes if logged in
       if (user) {
         console.log('[LoginScreen] 👤 User logged in, presenting paywall with user context');
-        const result = await presentPaywall(paywallIdentifier, user.id, user.email || '');
+        const result = await presentPaywall(subscriptionType, user.id, user.email || '');
         
         console.log('[LoginScreen] 📊 Paywall result:', result);
         
@@ -155,7 +153,7 @@ export default function LoginScreen() {
       } else {
         // User not logged in - show paywall without user context
         console.log('[LoginScreen] ⚠️ User not logged in, presenting paywall without user context');
-        const result = await presentPaywall(paywallIdentifier);
+        const result = await presentPaywall(subscriptionType);
         
         if (result.state === 'purchased' || result.state === 'restored') {
           Alert.alert(
@@ -166,7 +164,7 @@ export default function LoginScreen() {
         }
       }
     } catch (error: any) {
-      console.error('[LoginScreen] ❌ Superwall error:', error);
+      console.error('[LoginScreen] ❌ Payment error:', error);
       
       let errorMessage = 'Unable to process subscription at this time.';
       
@@ -176,7 +174,7 @@ export default function LoginScreen() {
       
       Alert.alert(
         'Subscription Error',
-        errorMessage + '\n\nPlease try again later or contact support if the problem persists.',
+        errorMessage,
         [{ text: 'OK' }]
       );
     } finally {
@@ -299,7 +297,7 @@ export default function LoginScreen() {
                     />
                     <Text style={styles.subscribeButtonTitle}>Monthly</Text>
                   </View>
-                  <Text style={styles.subscribeButtonPrice}>$10.99/month</Text>
+                  <Text style={styles.subscribeButtonPrice}>${PAYMENT_CONFIG.MONTHLY_PRICE}/month</Text>
                   <Text style={styles.subscribeButtonDescription}>Cancel anytime</Text>
                 </React.Fragment>
               )}
@@ -326,7 +324,7 @@ export default function LoginScreen() {
                     />
                     <Text style={styles.subscribeButtonTitle}>Annual</Text>
                   </View>
-                  <Text style={styles.subscribeButtonPrice}>$100.99/year</Text>
+                  <Text style={styles.subscribeButtonPrice}>${PAYMENT_CONFIG.ANNUAL_PRICE}/year</Text>
                   <Text style={styles.subscribeButtonDescription}>Save $30 per year</Text>
                 </React.Fragment>
               )}
