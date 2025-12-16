@@ -105,14 +105,20 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
             hour12: true
           });
 
+          // Determine icon based on tide type
+          const isHighTide = tide.type === 'high';
+          const iosIconName = isHighTide ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill';
+          const androidIconName = isHighTide ? 'arrow_upward' : 'arrow_downward';
+          const iconColor = isHighTide ? '#2196F3' : '#FF9800';
+
           return (
             <View key={index} style={styles.tideItem}>
               <View style={styles.tideIconContainer}>
                 <IconSymbol
-                  ios_icon_name={tide.type === 'high' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
-                  android_material_icon_name={tide.type === 'high' ? 'arrow_circle_up' : 'arrow_circle_down'}
+                  ios_icon_name={iosIconName}
+                  android_material_icon_name={androidIconName}
                   size={24}
-                  color={tide.type === 'high' ? '#2196F3' : '#FF9800'}
+                  color={iconColor}
                 />
               </View>
               <View style={styles.tideInfo}>
