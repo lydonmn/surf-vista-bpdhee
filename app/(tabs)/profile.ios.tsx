@@ -6,13 +6,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isPaymentSystemAvailable, restorePurchases, checkPaymentConfiguration, presentPaywall } from '@/utils/superwallConfig';
+import { 
+  isPaymentSystemAvailable, 
+  restorePurchases, 
+  checkPaymentConfiguration,
+  presentCustomerCenter,
+  presentPaywall
+} from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
-  const isSubscribed = checkSubscription();
+  const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -43,10 +50,16 @@ export default function ProfileScreen() {
               // Still try to navigate even if there was an error
               router.replace('/login');
             }
-          },
-        },
+          }
+        }
       ]
     );
+  };
+
+  const handleRefreshProfile = async () => {
+    console.log('[ProfileScreen iOS] Refreshing profile data...');
+    await refreshProfile();
+    Alert.alert('Success', 'Profile data refreshed');
   };
 
   const handleRestorePurchases = async () => {
@@ -55,7 +68,11 @@ export default function ProfileScreen() {
       checkPaymentConfiguration();
       Alert.alert(
         'Restore Purchases Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
+        'Subscription features are currently being configured. This usually means:\n\n' +
+        '• Products need to be set up in RevenueCat dashboard\n' +
+        '• Paywalls need to be configured\n' +
+        '• Offerings need to be created\n\n' +
+        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
         [{ text: 'OK' }]
       );
       return;
@@ -98,39 +115,82 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleManageSubscription = () => {
-    Alert.alert(
-      'Manage Subscription',
-      'To manage your subscription or cancel:\n\n' +
-      '1. Open Settings on your iPhone\n' +
-      '2. Tap your name at the top\n' +
-      '3. Tap Subscriptions\n' +
-      '4. Select SurfVista\n\n' +
-      'You can also restore your purchases if you\'ve subscribed on another device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore Purchases',
-          onPress: handleRestorePurchases
-        }
-      ]
-    );
-  };
-
-  const handleSubscribeNow = async () => {
+  const handleManageSubscription = async () => {
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
       Alert.alert(
-        'Subscribe Unavailable',
+        'Manage Subscription Unavailable',
         'Subscription features are currently being configured. Please contact support or try again later.',
         [{ text: 'OK' }]
       );
       return;
     }
 
+    setIsLoadingCustomerCenter(true);
+    
+    try {
+      console.log('[ProfileScreen iOS] 🏢 Opening Customer Center...');
+      
+      // Present the RevenueCat Customer Center
+      await presentCustomerCenter();
+      
+      console.log('[ProfileScreen iOS] ✅ Customer Center closed');
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+    } catch (error: any) {
+      console.error('[ProfileScreen iOS] ❌ Customer Center error:', error);
+      
+      // Fallback to native subscription management
+      Alert.alert(
+        'Manage Subscription',
+        'To manage your subscription, cancel, or change your plan:\n\n' +
+        '1. Open Settings on your iPhone\n' +
+        '2. Tap your name at the top\n' +
+        '3. Tap Subscriptions\n' +
+        '4. Select SurfVista\n\n' +
+        'You can also restore your purchases if you\'ve subscribed on another device.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore Purchases',
+            onPress: handleRestorePurchases
+          }
+        ]
+      );
+    } finally {
+      setIsLoadingCustomerCenter(false);
+    }
+  };
+
+  const handleSubscribeNow = async () => {
+    console.log('[ProfileScreen iOS] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
+    
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      console.log('[ProfileScreen iOS] ⚠️ Payment system not available');
+      checkPaymentConfiguration();
+      
+      Alert.alert(
+        'Subscription Setup Required',
+        'The subscription system is being configured. This usually means:\n\n' +
+        '• Products need to be set up in RevenueCat dashboard\n' +
+        '• Paywalls need to be configured\n' +
+        '• Offerings need to be created\n\n' +
+        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsSubscribing(true);
+
     try {
       console.log('[ProfileScreen iOS] 🎨 Opening subscription paywall...');
+      console.log('[ProfileScreen iOS] User ID:', user?.id);
+      console.log('[ProfileScreen iOS] User Email:', user?.email);
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
@@ -138,22 +198,33 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
       
       // Refresh profile to get updated subscription status
+      console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
       await refreshProfile();
       
       if (result.state === 'purchased' || result.state === 'restored') {
+        console.log('[ProfileScreen iOS] ✅ Purchase/Restore successful!');
         Alert.alert(
           'Success!',
           result.message || 'Subscription activated successfully!',
           [{ text: 'OK' }]
         );
       } else if (result.state === 'error') {
+        console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
+        
+        // Provide helpful error message
         Alert.alert(
-          'Purchase Failed',
-          result.message || 'Unable to complete purchase. Please try again.',
+          'Unable to Show Subscription Options',
+          result.message || 'The subscription paywall could not be displayed. This usually means:\n\n' +
+          '• Products are not configured in RevenueCat\n' +
+          '• Paywalls are not set up\n' +
+          '• Network connectivity issues\n\n' +
+          'Please check the console logs for more details, or try again later.',
           [{ text: 'OK' }]
         );
+      } else if (result.state === 'declined') {
+        console.log('[ProfileScreen iOS] ℹ️ User cancelled paywall');
+        // User cancelled, do nothing
       }
-      // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
       console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
@@ -162,6 +233,9 @@ export default function ProfileScreen() {
         error.message || 'Unable to open subscription page. Please try again later.',
         [{ text: 'OK' }]
       );
+    } finally {
+      setIsSubscribing(false);
+      console.log('[ProfileScreen iOS] ===== SUBSCRIBE FLOW COMPLETE =====');
     }
   };
 
@@ -170,24 +244,32 @@ export default function ProfileScreen() {
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <IconSymbol
-            ios_icon_name="person.circle"
+            ios_icon_name="person.circle.fill"
             android_material_icon_name="account_circle"
             size={80}
             color={colors.textSecondary}
           />
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Not Logged In
+            Not Signed In
+          </Text>
+          <Text style={[styles.text, { color: colors.textSecondary }]}>
+            Please sign in to view your profile
           </Text>
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }]}
+            style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/login')}
           >
-            <Text style={styles.loginButtonText}>Login</Text>
+            <Text style={styles.buttonText}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
+
+  const isSubscribed = checkSubscription();
+  const subscriptionEndDate = profile.subscription_end_date 
+    ? new Date(profile.subscription_end_date).toLocaleDateString()
+    : null;
 
   return (
     <ScrollView 
@@ -195,49 +277,86 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.scrollContent}
     >
       <View style={styles.header}>
-        <IconSymbol
-          ios_icon_name="person.circle.fill"
-          android_material_icon_name="account_circle"
-          size={80}
-          color={colors.primary}
-        />
+        <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
+          <IconSymbol
+            ios_icon_name="person.fill"
+            android_material_icon_name="person"
+            size={48}
+            color="#FFFFFF"
+          />
+        </View>
         <Text style={[styles.email, { color: theme.colors.text }]}>
           {user.email}
         </Text>
         {profile.is_admin && (
-          <View style={[styles.adminBadge, { backgroundColor: colors.accent }]}>
-            <Text style={styles.adminBadgeText}>Admin</Text>
+          <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+            <IconSymbol
+              ios_icon_name="star.fill"
+              android_material_icon_name="star"
+              size={16}
+              color="#FFFFFF"
+            />
+            <Text style={styles.badgeText}>Admin</Text>
           </View>
         )}
       </View>
 
+      {/* Subscription Status */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Subscription Status
-        </Text>
-        <View style={styles.statusRow}>
+        <View style={styles.cardHeader}>
           <IconSymbol
-            ios_icon_name={isSubscribed ? "checkmark.circle.fill" : "xmark.circle.fill"}
-            android_material_icon_name={isSubscribed ? "check_circle" : "cancel"}
+            ios_icon_name="checkmark.seal.fill"
+            android_material_icon_name="verified"
             size={24}
             color={isSubscribed ? colors.primary : colors.textSecondary}
           />
-          <Text style={[styles.statusText, { color: theme.colors.text }]}>
-            {isSubscribed ? 'Active Subscription' : 'No Active Subscription'}
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Subscription Status
           </Text>
         </View>
-        {isSubscribed && profile.subscription_end_date && (
-          <Text style={[styles.expiryText, { color: colors.textSecondary }]}>
-            Renews on {new Date(profile.subscription_end_date).toLocaleDateString()}
-          </Text>
-        )}
         
+        <View style={styles.statusContainer}>
+          <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+            Status:
+          </Text>
+          <Text style={[
+            styles.statusValue, 
+            { color: isSubscribed ? colors.primary : colors.textSecondary }
+          ]}>
+            {isSubscribed ? 'Active ✓' : 'Inactive'}
+          </Text>
+        </View>
+
+        {subscriptionEndDate && (
+          <View style={styles.statusContainer}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              {isSubscribed ? 'Renews:' : 'Expired:'}
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {subscriptionEndDate}
+            </Text>
+          </View>
+        )}
+
         {!isSubscribed && !profile.is_admin && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="star.fill"
+                  android_material_icon_name="star"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
         )}
 
@@ -245,16 +364,23 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.manageButton, { borderColor: colors.primary }]}
             onPress={handleManageSubscription}
+            disabled={isLoadingCustomerCenter}
           >
-            <IconSymbol
-              ios_icon_name="gearshape"
-              android_material_icon_name="settings"
-              size={18}
-              color={colors.primary}
-            />
-            <Text style={[styles.manageButtonText, { color: colors.primary }]}>
-              Manage Subscription
-            </Text>
+            {isLoadingCustomerCenter ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="gearshape.fill"
+                  android_material_icon_name="settings"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.manageButtonText, { color: colors.primary }]}>
+                  Manage Subscription
+                </Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
         )}
 
@@ -271,7 +397,7 @@ export default function ProfileScreen() {
               <IconSymbol
                 ios_icon_name="arrow.clockwise"
                 android_material_icon_name="refresh"
-                size={18}
+                size={20}
                 color={colors.textSecondary}
               />
               <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
@@ -280,77 +406,69 @@ export default function ProfileScreen() {
             </React.Fragment>
           )}
         </TouchableOpacity>
-      </View>
 
-      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-          Account Settings
-        </Text>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="bell.fill"
-            android_material_icon_name="notifications"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Notifications
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="creditcard.fill"
-            android_material_icon_name="payment"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Payment Method
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {isAdmin() && (
         <TouchableOpacity
-          style={[styles.adminButton, { backgroundColor: colors.accent }]}
-          onPress={() => router.push('/admin')}
+          style={[styles.refreshButton, { borderColor: colors.primary }]}
+          onPress={handleRefreshProfile}
         >
           <IconSymbol
-            ios_icon_name="gear"
-            android_material_icon_name="settings"
+            ios_icon_name="arrow.clockwise"
+            android_material_icon_name="refresh"
             size={20}
-            color="#FFFFFF"
+            color={colors.primary}
           />
-          <Text style={styles.adminButtonText}>Admin Panel</Text>
+          <Text style={[styles.refreshButtonText, { color: colors.primary }]}>
+            Refresh Profile Data
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Admin Panel Access */}
+      {isAdmin() && (
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Admin Panel
+            </Text>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron_right"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </View>
+          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            Manage videos, surf reports, and subscription settings
+          </Text>
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity
-        style={[styles.signOutButton, { backgroundColor: colors.textSecondary }]}
-        onPress={handleSignOut}
-      >
-        <IconSymbol
-          ios_icon_name="rectangle.portrait.and.arrow.right"
-          android_material_icon_name="logout"
-          size={20}
-          color="#FFFFFF"
-        />
-        <Text style={styles.signOutButtonText}>Sign Out</Text>
-      </TouchableOpacity>
+      {/* Account Actions */}
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={handleSignOut}
+        >
+          <IconSymbol
+            ios_icon_name="rectangle.portrait.and.arrow.right"
+            android_material_icon_name="logout"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Sign Out
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Debug Info */}
       {__DEV__ && (
@@ -359,14 +477,32 @@ export default function ProfileScreen() {
             Debug Info
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            User ID: {user.id}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Admin: {profile.is_admin ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Subscribed: {profile.is_subscribed ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Payment System Available: {isPaymentSystemAvailable() ? 'Yes' : 'No'}
           </Text>
         </View>
       )}
 
-      <Text style={[styles.version, { color: colors.textSecondary }]}>
-        SurfVista v1.0.0
-      </Text>
+      {/* Info */}
+      <View style={styles.infoContainer}>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          SurfVista - Folly Beach, SC
+        </Text>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          Version 1.0.0
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -376,8 +512,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 16,
-    paddingHorizontal: 16,
+    padding: 16,
     paddingBottom: 100,
   },
   centerContent: {
@@ -389,75 +524,99 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 24,
+    paddingTop: 20,
+  },
+  avatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   email: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 12,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  adminBadge: {
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  adminBadgeText: {
+  badgeText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    textAlign: 'center',
     marginTop: 16,
-    marginBottom: 24,
+    marginBottom: 8,
   },
-  loginButton: {
+  text: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  button: {
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    minWidth: 200,
   },
-  loginButtonText: {
+  buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   card: {
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    flex: 1,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
-  },
-  statusText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  expiryText: {
+  cardDescription: {
     fontSize: 14,
-    marginLeft: 36,
+    lineHeight: 20,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  statusLabel: {
+    fontSize: 16,
+  },
+  statusValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   subscribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
     marginTop: 12,
   },
   subscribeButtonText: {
@@ -472,7 +631,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    marginTop: 8,
+    marginTop: 12,
     borderWidth: 1,
   },
   manageButtonText: {
@@ -493,44 +652,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  menuItem: {
+  refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  refreshButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    paddingVertical: 4,
   },
-  menuText: {
-    flex: 1,
+  actionText: {
     fontSize: 16,
-  },
-  adminButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  adminButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  signOutButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   debugCard: {
     borderRadius: 12,
@@ -549,8 +692,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontFamily: 'monospace',
   },
-  version: {
+  infoContainer: {
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 4,
+  },
+  infoText: {
     fontSize: 12,
-    textAlign: 'center',
   },
 });
