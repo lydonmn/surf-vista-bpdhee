@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -16,11 +16,7 @@ export default function VideoPlayerScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  useEffect(() => {
-    loadVideo();
-  }, [videoId, loadVideo]);
-
-  const loadVideo = async () => {
+  const loadVideo = useCallback(async () => {
     try {
       setIsLoading(true);
       console.log('[VideoPlayer] Loading video:', videoId);
@@ -43,7 +39,11 @@ export default function VideoPlayerScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [videoId]);
+
+  useEffect(() => {
+    loadVideo();
+  }, [loadVideo]);
 
   const player = useVideoPlayer(video?.video_url || '', player => {
     player.loop = false;

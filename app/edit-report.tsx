@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -24,11 +24,7 @@ export default function EditReportScreen() {
   const [reportText, setReportText] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
-  useEffect(() => {
-    loadReport();
-  }, [reportId, loadReport]);
-
-  const loadReport = async () => {
+  const loadReport = useCallback(async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -53,7 +49,11 @@ export default function EditReportScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [reportId]);
+
+  useEffect(() => {
+    loadReport();
+  }, [loadReport]);
 
   const handleSave = async () => {
     if (!report || !user) return;

@@ -222,7 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile]);
+  }, [loadUserProfile, isInitialized]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {

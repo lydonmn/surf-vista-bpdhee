@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -21,13 +21,12 @@ export default function AdminDataScreen() {
   const [testTideData, setTestTideData] = useState<any[]>([]);
   const [testSurfData, setTestSurfData] = useState<any>(null);
 
-  useEffect(() => {
-    loadDataCounts();
-    testTideDataFetch();
-    testSurfDataFetch();
-  }, [loadDataCounts, testTideDataFetch, testSurfDataFetch]);
+  const addLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [`[${timestamp}] ${message}`, ...prev]);
+  }, []);
 
-  const loadDataCounts = async () => {
+  const loadDataCounts = useCallback(async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       
@@ -50,9 +49,9 @@ export default function AdminDataScreen() {
       console.error('Error loading data counts:', error);
       addLog(`Error loading counts: ${error}`);
     }
-  };
+  }, [addLog]);
 
-  const testTideDataFetch = async () => {
+  const testTideDataFetch = useCallback(async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       addLog(`Testing tide data fetch for ${today}...`);
@@ -75,9 +74,9 @@ export default function AdminDataScreen() {
       addLog(`❌ Exception: ${error}`);
       console.error('Exception:', error);
     }
-  };
+  }, [addLog]);
 
-  const testSurfDataFetch = async () => {
+  const testSurfDataFetch = useCallback(async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       addLog(`Testing surf data fetch for ${today}...`);
@@ -100,12 +99,13 @@ export default function AdminDataScreen() {
       addLog(`❌ Exception: ${error}`);
       console.error('Exception:', error);
     }
-  };
+  }, [addLog]);
 
-  const addLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [`[${timestamp}] ${message}`, ...prev]);
-  };
+  useEffect(() => {
+    loadDataCounts();
+    testTideDataFetch();
+    testSurfDataFetch();
+  }, [loadDataCounts, testTideDataFetch, testSurfDataFetch]);
 
   const handleFetchWeather = async () => {
     try {

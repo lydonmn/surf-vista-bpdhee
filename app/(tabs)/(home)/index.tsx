@@ -100,7 +100,7 @@ export default function HomeScreen() {
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription]); // Remove loadData from dependencies
+  }, [isInitialized, isLoading, user, profile, hasSubscription, loadData, session]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
