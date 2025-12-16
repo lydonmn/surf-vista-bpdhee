@@ -82,19 +82,34 @@ export default function LoginScreen() {
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
       console.log('[LoginScreen] Payment system not available, checking configuration...');
-      checkPaymentConfiguration();
+      const isConfigured = checkPaymentConfiguration();
       
-      Alert.alert(
-        'Payment Integration Required',
-        'Subscription features are currently being configured.\n\n' +
-        'To enable subscriptions, you need to integrate a payment provider:\n\n' +
-        '• RevenueCat (Recommended)\n' +
-        '• Stripe with WebView\n' +
-        '• Create EAS Development Build with Superwall\n\n' +
-        'See utils/superwallConfig.ts for detailed integration instructions.',
-        [{ text: 'OK' }]
-      );
-      return;
+      if (!isConfigured) {
+        Alert.alert(
+          'Payment Setup Required',
+          'To enable subscriptions, you need to configure RevenueCat:\n\n' +
+          '1. Create a RevenueCat account\n' +
+          '2. Get your API keys\n' +
+          '3. Update utils/superwallConfig.ts\n' +
+          '4. Restart the app\n\n' +
+          'See docs/PAYMENT_QUICK_START.md for detailed instructions.',
+          [
+            { text: 'OK' },
+            {
+              text: 'View Guide',
+              onPress: () => {
+                console.log('[LoginScreen] User wants to view setup guide');
+                Alert.alert(
+                  'Setup Guide',
+                  'Please check the docs/PAYMENT_QUICK_START.md file in your project for step-by-step instructions.',
+                  [{ text: 'OK' }]
+                );
+              }
+            }
+          ]
+        );
+        return;
+      }
     }
 
     setIsSubscribing(true);
@@ -105,66 +120,61 @@ export default function LoginScreen() {
         ? `$${PAYMENT_CONFIG.MONTHLY_PRICE}/month` 
         : `$${PAYMENT_CONFIG.ANNUAL_PRICE}/year`;
       
-      console.log(`[LoginScreen] 🎨 Opening ${subscriptionName} paywall...`);
+      console.log(`[LoginScreen] 🎨 Starting ${subscriptionName} subscription...`);
       
-      // Set user attributes if logged in
-      if (user) {
-        console.log('[LoginScreen] 👤 User logged in, presenting paywall with user context');
-        const result = await presentPaywall(subscriptionType, user.id, user.email || '');
+      // Present paywall
+      const result = await presentPaywall(
+        subscriptionType,
+        user?.id,
+        user?.email || undefined
+      );
+      
+      console.log('[LoginScreen] 📊 Subscription result:', result);
+      
+      if (result.state === 'purchased') {
+        // Refresh profile to get updated subscription status
+        await refreshProfile();
         
-        console.log('[LoginScreen] 📊 Paywall result:', result);
-        
-        if (result.state === 'purchased') {
-          // Refresh profile to get updated subscription status
-          await refreshProfile();
-          
-          Alert.alert(
-            'Success! 🎉',
-            `Your ${subscriptionName.toLowerCase()} subscription is now active. Enjoy exclusive content!`,
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  router.replace('/(tabs)/(home)/');
-                }
+        Alert.alert(
+          'Success! 🎉',
+          `Your ${subscriptionName.toLowerCase()} subscription is now active. Enjoy exclusive content!`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(tabs)/(home)/');
               }
-            ]
-          );
-        } else if (result.state === 'restored') {
-          // Refresh profile to get updated subscription status
-          await refreshProfile();
-          
-          Alert.alert(
-            'Subscription Restored ✅',
-            'Your subscription has been restored successfully!',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  router.replace('/(tabs)/(home)/');
-                }
-              }
-            ]
-          );
-        } else if (result.state === 'declined') {
-          console.log('[LoginScreen] ℹ️ User declined purchase');
-          // User cancelled - no need to show alert
-        }
-      } else {
-        // User not logged in - show paywall without user context
-        console.log('[LoginScreen] ⚠️ User not logged in, presenting paywall without user context');
-        const result = await presentPaywall(subscriptionType);
+            }
+          ]
+        );
+      } else if (result.state === 'restored') {
+        // Refresh profile to get updated subscription status
+        await refreshProfile();
         
-        if (result.state === 'purchased' || result.state === 'restored') {
-          Alert.alert(
-            'Success! 🎉',
-            'Please sign in or create an account to link your subscription.',
-            [{ text: 'OK' }]
-          );
-        }
+        Alert.alert(
+          'Subscription Restored ✅',
+          'Your subscription has been restored successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(tabs)/(home)/');
+              }
+            }
+          ]
+        );
+      } else if (result.state === 'declined') {
+        console.log('[LoginScreen] ℹ️ User cancelled purchase');
+        // User cancelled - no need to show alert
+      } else if (result.state === 'error') {
+        Alert.alert(
+          'Subscription Error',
+          result.message || 'Unable to process subscription at this time. Please try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error: any) {
-      console.error('[LoginScreen] ❌ Payment error:', error);
+      console.error('[LoginScreen] ❌ Subscription error:', error);
       
       let errorMessage = 'Unable to process subscription at this time.';
       
@@ -254,9 +264,13 @@ export default function LoginScreen() {
             onPress={handleAuth}
             disabled={isLoading}
           >
-            <Text style={styles.authButtonText}>
-              {isLoading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Create Account' : 'Sign In')}
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.authButtonText}>
+                {isSignUp ? 'Create Account' : 'Sign In'}
+              </Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -325,7 +339,7 @@ export default function LoginScreen() {
                     <Text style={styles.subscribeButtonTitle}>Annual</Text>
                   </View>
                   <Text style={styles.subscribeButtonPrice}>${PAYMENT_CONFIG.ANNUAL_PRICE}/year</Text>
-                  <Text style={styles.subscribeButtonDescription}>Save $30 per year</Text>
+                  <Text style={styles.subscribeButtonDescription}>Save ${(PAYMENT_CONFIG.MONTHLY_PRICE * 12 - PAYMENT_CONFIG.ANNUAL_PRICE).toFixed(2)} per year</Text>
                 </React.Fragment>
               )}
             </TouchableOpacity>

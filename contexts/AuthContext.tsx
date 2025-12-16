@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
-import { initializePaymentSystem } from '@/utils/superwallConfig';
+import { initializePaymentSystem, identifyUser, logoutUser } from '@/utils/superwallConfig';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -41,12 +41,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Initialize payment system (non-blocking - failures are logged but don't stop initialization)
+        // Initialize payment system (non-blocking)
         try {
-          await initializePaymentSystem();
+          console.log('[AuthContext] Initializing payment system...');
+          const paymentInitialized = await initializePaymentSystem();
+          if (paymentInitialized) {
+            console.log('[AuthContext] ✅ Payment system initialized');
+          } else {
+            console.log('[AuthContext] ⚠️ Payment system not configured (non-critical)');
+          }
         } catch (paymentError) {
-          console.error('[AuthContext] Payment system initialization failed (non-critical):', paymentError);
-          // Continue with auth initialization even if payment system fails
+          console.error('[AuthContext] ⚠️ Payment system initialization failed (non-critical):', paymentError);
         }
         
         // Get initial session
@@ -60,6 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(initialSession);
           console.log('[AuthContext] Loading initial profile...');
           await loadUserProfile(initialSession.user, mounted);
+          
+          // Identify user in payment system
+          try {
+            await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+          } catch (error) {
+            console.error('[AuthContext] Error identifying user in payment system:', error);
+          }
         } else {
           console.log('[AuthContext] No session, setting loading to false');
           setIsLoading(false);
@@ -90,6 +102,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (event === 'SIGNED_OUT') {
         console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
+        
+        // Logout from payment system
+        try {
+          await logoutUser();
+        } catch (error) {
+          console.error('[AuthContext] Error logging out from payment system:', error);
+        }
+        
         setUser(null);
         setProfile(null);
         setSession(null);
@@ -98,10 +118,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] SIGNED_IN event detected, loading profile...');
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
+        
+        // Identify user in payment system
+        try {
+          await identifyUser(newSession.user.id, newSession.user.email || undefined);
+        } catch (error) {
+          console.error('[AuthContext] Error identifying user in payment system:', error);
+        }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event detected');
         setSession(newSession);
-        // Don't reload profile on token refresh, just update session
       } else if (event === 'USER_UPDATED' && newSession?.user) {
         console.log('[AuthContext] USER_UPDATED event detected');
         setSession(newSession);
@@ -276,6 +302,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[AuthContext] Current user state:', user?.email);
     
     try {
+      // Logout from payment system first
+      try {
+        await logoutUser();
+      } catch (error) {
+        console.error('[AuthContext] Error logging out from payment system:', error);
+      }
+      
       // Clear local state FIRST for immediate UI update
       console.log('[AuthContext] Clearing local state immediately...');
       setUser(null);
@@ -284,13 +317,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       
       // Then call Supabase signOut to clear the session from storage
-      // This will also trigger the SIGNED_OUT event in onAuthStateChange
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('[AuthContext] ❌ Supabase signOut error:', error);
-        // Don't throw - we already cleared local state
       } else {
         console.log('[AuthContext] ✅ Supabase signOut successful');
       }
