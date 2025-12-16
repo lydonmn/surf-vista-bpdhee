@@ -143,12 +143,9 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               </View>
 
               <View style={styles.detailItem}>
-                <IconSymbol
-                  ios_icon_name="drop.fill"
-                  android_material_icon_name="water_drop"
-                  size={16}
-                  color={colors.primary}
-                />
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                  Humidity:
+                </Text>
                 <Text style={[styles.detailText, { color: theme.colors.text }]}>
                   {weather.humidity ? `${weather.humidity}%` : '--'}
                 </Text>
@@ -250,6 +247,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   detailText: {
     fontSize: 14,
