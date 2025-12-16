@@ -13,18 +13,26 @@ const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const { user, checkSubscription, isLoading, isInitialized } = useAuth();
+  const { user, checkSubscription, isLoading, isInitialized, profile } = useAuth();
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
+    console.log('Home screen state:', {
+      isInitialized,
+      isLoading,
+      hasUser: !!user,
+      hasProfile: !!profile,
+      checkSubscription: checkSubscription()
+    });
+
     if (isInitialized && user && checkSubscription()) {
       loadData();
     } else if (isInitialized) {
       setIsLoadingData(false);
     }
-  }, [user, isInitialized]);
+  }, [user, isInitialized, profile, isLoading]);
 
   const loadData = async () => {
     try {
@@ -58,7 +66,7 @@ export default function HomeScreen() {
     }
   };
 
-  // Show loading state while auth is initializing
+  // Show loading state while auth is initializing or loading
   if (!isInitialized || isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -72,6 +80,7 @@ export default function HomeScreen() {
     );
   }
 
+  // Not logged in - show sign in prompt
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -100,6 +109,7 @@ export default function HomeScreen() {
     );
   }
 
+  // Logged in but no subscription - show subscribe prompt
   if (!checkSubscription()) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -118,7 +128,10 @@ export default function HomeScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/(tabs)/profile')}
+            onPress={() => {
+              console.log('Opening subscription flow');
+              router.push('/(tabs)/profile');
+            }}
           >
             <Text style={styles.ctaButtonText}>Subscribe Now</Text>
           </TouchableOpacity>
@@ -127,6 +140,7 @@ export default function HomeScreen() {
     );
   }
 
+  // Subscribed - show content
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}

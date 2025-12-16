@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Loading profile for user:', authUser.id);
       
       // Add a small delay to ensure database is ready
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -186,8 +186,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Sign in successful, loading profile...');
         setSession(data.session);
         
-        // Load profile and wait for it to complete
+        // Load profile and wait for it to complete with longer delay
+        await new Promise(resolve => setTimeout(resolve, 300));
         await loadUserProfile(data.user);
+        
+        // Additional delay to ensure state is fully updated
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         console.log('Profile loaded after sign in, user state updated');
         return { success: true, message: 'Signed in successfully!' };
