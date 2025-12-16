@@ -164,7 +164,7 @@ export default function ProfileScreen() {
   };
 
   const handleSubscribeNow = async () => {
-    console.log('[ProfileScreen] 🔘 Subscribe Now button pressed');
+    console.log('[ProfileScreen] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
     
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
@@ -187,6 +187,8 @@ export default function ProfileScreen() {
 
     try {
       console.log('[ProfileScreen] 🎨 Opening subscription paywall...');
+      console.log('[ProfileScreen] User ID:', user?.id);
+      console.log('[ProfileScreen] User Email:', user?.email);
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
@@ -194,9 +196,11 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] 📊 Paywall result:', result);
       
       // Refresh profile to get updated subscription status
+      console.log('[ProfileScreen] 🔄 Refreshing profile...');
       await refreshProfile();
       
       if (result.state === 'purchased' || result.state === 'restored') {
+        console.log('[ProfileScreen] ✅ Purchase/Restore successful!');
         Alert.alert(
           'Success!',
           result.message || 'Subscription activated successfully!',
@@ -215,11 +219,14 @@ export default function ProfileScreen() {
           'Please check the console logs for more details, or try again later.',
           [{ text: 'OK' }]
         );
+      } else if (result.state === 'declined') {
+        console.log('[ProfileScreen] ℹ️ User cancelled paywall');
+        // User cancelled, do nothing
       }
-      // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
       console.error('[ProfileScreen] ❌ Subscribe error:', error);
+      console.error('[ProfileScreen] Error details:', JSON.stringify(error, null, 2));
       Alert.alert(
         'Subscribe Failed',
         error.message || 'Unable to open subscription page. Please try again later.',
@@ -227,6 +234,7 @@ export default function ProfileScreen() {
       );
     } finally {
       setIsSubscribing(false);
+      console.log('[ProfileScreen] ===== SUBSCRIBE FLOW COMPLETE =====');
     }
   };
 

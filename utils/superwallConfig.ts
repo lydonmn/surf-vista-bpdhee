@@ -205,7 +205,7 @@ export const presentPaywall = async (
     console.log('[RevenueCat] 🎨 Calling RevenueCatUI.presentPaywall()...');
     console.log('[RevenueCat] 🎨 This will show the default paywall configured in RevenueCat dashboard');
     
-    // Call presentPaywall without parameters to show the default paywall
+    // Call presentPaywall - it will use the default offering/paywall
     const paywallResult = await RevenueCatUI.presentPaywall();
     
     console.log('[RevenueCat] 📊 Paywall closed with result:', paywallResult);
