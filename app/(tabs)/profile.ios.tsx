@@ -149,24 +149,6 @@ export default function ProfileScreen() {
             color={colors.textSecondary}
           />
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <IconSymbol
-            ios_icon_name="questionmark.circle.fill"
-            android_material_icon_name="help"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.menuText, { color: theme.colors.text }]}>
-            Help & Support
-          </Text>
-          <IconSymbol
-            ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
       </View>
 
       {user.isAdmin && (
