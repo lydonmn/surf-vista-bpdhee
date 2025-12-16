@@ -64,6 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUserProfile = async (authUser: SupabaseUser) => {
     try {
       console.log('Loading profile for user:', authUser.id);
+      
+      // Add a small delay to ensure database is ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -72,9 +76,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.log('Error loading profile:', error);
-        setProfile(null);
+        
+        // If profile doesn't exist, try to create it
+        if (error.code === 'PGRST116') {
+          console.log('Profile not found, creating...');
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: authUser.id,
+              email: authUser.email,
+              is_admin: false,
+              is_subscribed: false,
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.log('Error creating profile:', createError);
+            setProfile(null);
+          } else {
+            console.log('Profile created:', newProfile);
+            setProfile(newProfile);
+            setUser({ ...authUser, profile: newProfile });
+          }
+        } else {
+          setProfile(null);
+        }
       } else {
-        console.log('Profile loaded:', {
+        console.log('Profile loaded successfully:', {
           email: profileData.email,
           is_admin: profileData.is_admin,
           is_subscribed: profileData.is_subscribed,
@@ -94,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = async () => {
     if (session?.user) {
       console.log('Refreshing profile...');
+      setIsLoading(true);
       await loadUserProfile(session.user);
     }
   };
@@ -130,6 +160,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
       console.log('Attempting sign in for:', email);
+      setIsLoading(true);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -137,18 +169,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.log('Sign in error:', error);
+        setIsLoading(false);
         return { success: false, message: error.message };
       }
 
       if (data.user && data.session) {
         console.log('Sign in successful, loading profile...');
+        setSession(data.session);
+        
+        // Load profile and wait for it to complete
         await loadUserProfile(data.user);
+        
+        console.log('Profile loaded after sign in');
         return { success: true, message: 'Signed in successfully!' };
       }
 
+      setIsLoading(false);
       return { success: false, message: 'Sign in failed' };
     } catch (error) {
       console.log('Sign in error:', error);
+      setIsLoading(false);
       return { success: false, message: 'An unexpected error occurred' };
     }
   };
@@ -168,23 +208,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('Checking subscription:', {
       profile_exists: !!profile,
       is_subscribed: profile?.is_subscribed,
-      subscription_end_date: profile?.subscription_end_date
+      subscription_end_date: profile?.subscription_end_date,
+      is_loading: isLoading
     });
 
-    if (!profile || !profile.is_subscribed) {
-      console.log('Not subscribed');
+    // If still loading, return false to show loading state
+    if (isLoading) {
+      console.log('Still loading profile data');
+      return false;
+    }
+
+    // If no profile, not subscribed
+    if (!profile) {
+      console.log('No profile found');
+      return false;
+    }
+
+    // Check if user is subscribed
+    if (!profile.is_subscribed) {
+      console.log('User is not subscribed');
       return false;
     }
     
-    if (profile.subscription_end_date) {
-      const endDate = new Date(profile.subscription_end_date);
-      const isValid = endDate > new Date();
-      console.log('Subscription end date check:', { endDate, isValid });
-      return isValid;
+    // If subscribed and no end date, subscription is active
+    if (!profile.subscription_end_date) {
+      console.log('Subscription active (no end date)');
+      return true;
     }
     
-    console.log('Subscription active (no end date)');
-    return true;
+    // If there's an end date, check if it's in the future
+    const endDate = new Date(profile.subscription_end_date);
+    const isValid = endDate > new Date();
+    console.log('Subscription end date check:', { 
+      endDate: endDate.toISOString(), 
+      now: new Date().toISOString(),
+      isValid 
+    });
+    return isValid;
   };
 
   const isAdmin = (): boolean => {

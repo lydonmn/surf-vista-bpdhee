@@ -52,7 +52,11 @@ export default function LoginScreen() {
       setIsLoading(false);
 
       if (result.success) {
-        router.replace('/(tabs)/(home)/');
+        console.log('Sign in successful, redirecting to home...');
+        // Add a small delay to ensure profile is loaded
+        setTimeout(() => {
+          router.replace('/(tabs)/(home)/');
+        }, 300);
       } else {
         Alert.alert('Sign In Failed', result.message);
       }

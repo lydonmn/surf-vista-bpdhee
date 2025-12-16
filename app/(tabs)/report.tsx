@@ -1,6 +1,6 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -10,7 +10,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function ReportScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription } = useAuth();
+  const { user, profile, checkSubscription, isLoading } = useAuth();
   const isSubscribed = checkSubscription();
 
   useEffect(() => {
@@ -18,13 +18,28 @@ export default function ReportScreen() {
       hasUser: !!user,
       hasProfile: !!profile,
       isSubscribed,
+      isLoading,
       profileData: profile ? {
         is_admin: profile.is_admin,
         is_subscribed: profile.is_subscribed,
         subscription_end_date: profile.subscription_end_date
       } : null
     });
-  }, [user, profile, isSubscribed]);
+  }, [user, profile, isSubscribed, isLoading]);
+
+  // Show loading state while profile is being loaded
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading your profile...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   if (!user || !isSubscribed) {
     console.log('ReportScreen - Showing locked content');
@@ -225,6 +240,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 16,
   },
   header: {
     marginBottom: 24,
