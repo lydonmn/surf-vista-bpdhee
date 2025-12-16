@@ -10,10 +10,40 @@ type TideData = Database['public']['Tables']['tide_data']['Row'];
 
 interface TideCardProps {
   tides: TideData[];
+  isLoading?: boolean;
 }
 
-export function TideCard({ tides }: TideCardProps) {
+export function TideCard({ tides, isLoading = false }: TideCardProps) {
   const theme = useTheme();
+
+  console.log('[TideCard] Rendering with:', { 
+    tidesCount: tides?.length || 0, 
+    isLoading,
+    tides: tides 
+  });
+
+  if (isLoading) {
+    return (
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.header}>
+          <IconSymbol
+            ios_icon_name="arrow.up.arrow.down"
+            android_material_icon_name="swap_vert"
+            size={32}
+            color={colors.primary}
+          />
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Tide Schedule
+          </Text>
+        </View>
+        <View style={styles.emptyState}>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Loading tide data...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   if (!tides || tides.length === 0) {
     return (

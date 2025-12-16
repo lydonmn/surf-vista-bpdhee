@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -13,6 +13,31 @@ export default function AdminDataScreen() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [tideCount, setTideCount] = useState<number>(0);
+  const [weatherCount, setWeatherCount] = useState<number>(0);
+  const [forecastCount, setForecastCount] = useState<number>(0);
+
+  useEffect(() => {
+    loadDataCounts();
+  }, []);
+
+  const loadDataCounts = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const [tideResult, weatherResult, forecastResult] = await Promise.all([
+        supabase.from('tide_data').select('*', { count: 'exact', head: true }).eq('date', today),
+        supabase.from('weather_data').select('*', { count: 'exact', head: true }).eq('date', today),
+        supabase.from('weather_forecast').select('*', { count: 'exact', head: true }).gte('date', today),
+      ]);
+
+      setTideCount(tideResult.count || 0);
+      setWeatherCount(weatherResult.count || 0);
+      setForecastCount(forecastResult.count || 0);
+    } catch (error) {
+      console.error('Error loading data counts:', error);
+    }
+  };
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -32,6 +57,7 @@ export default function AdminDataScreen() {
       } else {
         addLog(`Success! Weather data updated. Forecast records: ${data.forecast_count}`);
         Alert.alert('Success', 'Weather data and forecast updated successfully!');
+        await loadDataCounts();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -55,6 +81,7 @@ export default function AdminDataScreen() {
       } else {
         addLog(`Success! ${data.count} tide records stored.`);
         Alert.alert('Success', `${data.count} tide records updated successfully!`);
+        await loadDataCounts();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -78,6 +105,7 @@ export default function AdminDataScreen() {
       } else {
         addLog('Success! Surf report data updated.');
         Alert.alert('Success', 'Surf report data updated successfully!');
+        await loadDataCounts();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -101,6 +129,7 @@ export default function AdminDataScreen() {
       } else {
         addLog('Success! Daily surf report generated.');
         Alert.alert('Success', 'Daily surf report generated successfully!');
+        await loadDataCounts();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -150,6 +179,7 @@ export default function AdminDataScreen() {
       
       addLog('=== ALL DATA UPDATED SUCCESSFULLY ===');
       Alert.alert('Success', 'All data has been updated successfully!');
+      await loadDataCounts();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       addLog(`FAILED: ${message}`);
@@ -201,6 +231,49 @@ export default function AdminDataScreen() {
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Data Management
           </Text>
+        </View>
+
+        {/* Data Status Card */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Current Data Status
+          </Text>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Tide Records (Today):
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {tideCount}
+            </Text>
+          </View>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Weather Data (Today):
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {weatherCount}
+            </Text>
+          </View>
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Forecast Records:
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {forecastCount}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: colors.primary }]}
+            onPress={loadDataCounts}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={16}
+              color="#FFFFFF"
+            />
+            <Text style={styles.refreshButtonText}>Refresh Counts</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -413,6 +486,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
     lineHeight: 20,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  statusLabel: {
+    fontSize: 14,
+  },
+  statusValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  refreshButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   button: {
     flexDirection: 'row',

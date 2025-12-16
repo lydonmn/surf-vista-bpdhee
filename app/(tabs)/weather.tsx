@@ -106,7 +106,7 @@ export default function WeatherScreen() {
           </Text>
         </View>
       ) : (
-        <>
+        <React.Fragment>
           {weatherData ? (
             <WeatherCard weather={weatherData} />
           ) : (
@@ -123,21 +123,7 @@ export default function WeatherScreen() {
             </View>
           )}
 
-          {tideData && tideData.length > 0 ? (
-            <TideCard tides={tideData} />
-          ) : (
-            <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-              <IconSymbol
-                ios_icon_name="arrow.up.arrow.down"
-                android_material_icon_name="swap_vert"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No tide data available yet
-              </Text>
-            </View>
-          )}
+          <TideCard tides={tideData} isLoading={isLoading && !isRefreshing} />
 
           <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
             <IconSymbol
@@ -155,7 +141,7 @@ export default function WeatherScreen() {
               </Text>
             </View>
           </View>
-        </>
+        </React.Fragment>
       )}
     </ScrollView>
   );
