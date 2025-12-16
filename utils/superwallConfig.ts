@@ -31,6 +31,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 
 // RevenueCat API Keys
 // Get these from: https://app.revenuecat.com/settings/api-keys
+// IMPORTANT: Replace these with your actual API keys from RevenueCat
 const REVENUECAT_API_KEY_IOS = 'YOUR_IOS_API_KEY_HERE';
 const REVENUECAT_API_KEY_ANDROID = 'YOUR_ANDROID_API_KEY_HERE';
 
@@ -45,13 +46,9 @@ export const PAYMENT_CONFIG = {
   ANNUAL_PRICE: 49.99,  // $49.99/year (save ~17%)
   
   // Product Identifiers - MUST MATCH YOUR STORE CONFIGURATION
-  // Option 1: Reverse domain notation (recommended for iOS)
+  // These are the identifiers you provided:
   MONTHLY_PRODUCT_ID: 'com.anonymous.Natively.monthly',
   ANNUAL_PRODUCT_ID: 'com.anonymous.Natively.annual',
-  
-  // Option 2: Simple naming (alternative)
-  // MONTHLY_PRODUCT_ID: 'surfvista_monthly',
-  // ANNUAL_PRODUCT_ID: 'surfvista_annual',
   
   // RevenueCat Offering ID (default is usually 'default')
   OFFERING_ID: 'default',
@@ -127,7 +124,7 @@ export const initializePaymentSystem = async (): Promise<boolean> => {
 
 export const isPaymentSystemAvailable = (): boolean => {
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
-  const isConfigured = apiKey !== 'YOUR_IOS_API_KEY_HERE' && apiKey !== 'YOUR_ANDROID_API_KEY_HERE';
+  const isConfigured = apiKey !== 'YOUR_IOS_API_KEY_HERE' && apiKey !== 'YOUR_ANDROID_API_KEY_ANDROID';
   
   return isPaymentSystemInitialized && isConfigured;
 };
