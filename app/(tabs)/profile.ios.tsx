@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isPaymentSystemAvailable, restorePurchases, checkPaymentConfiguration, presentPaywall } from '@/utils/superwallConfig';
+import { isPaymentSystemAvailable, restorePurchases, checkPaymentConfiguration } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
@@ -117,54 +117,6 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleSubscribeNow = async () => {
-    // Check if payment system is available
-    if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
-      Alert.alert(
-        'Subscribe Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    try {
-      console.log('[ProfileScreen iOS] 🎨 Opening subscription paywall...');
-      
-      // Present the RevenueCat Paywall
-      const result = await presentPaywall(user?.id, user?.email || undefined);
-      
-      console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
-      
-      // Refresh profile to get updated subscription status
-      await refreshProfile();
-      
-      if (result.state === 'purchased' || result.state === 'restored') {
-        Alert.alert(
-          'Success!',
-          result.message || 'Subscription activated successfully!',
-          [{ text: 'OK' }]
-        );
-      } else if (result.state === 'error') {
-        Alert.alert(
-          'Purchase Failed',
-          result.message || 'Unable to complete purchase. Please try again.',
-          [{ text: 'OK' }]
-        );
-      }
-      // If declined, do nothing (user cancelled)
-      
-    } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
-      Alert.alert(
-        'Subscribe Failed',
-        error.message || 'Unable to open subscription page. Please try again later.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
   if (!user || !profile) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -235,9 +187,9 @@ export default function ProfileScreen() {
         {!isSubscribed && !profile.is_admin && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={handleSubscribeNow}
+            onPress={() => router.push('/login')}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe - $10.99/month</Text>
+            <Text style={styles.subscribeButtonText}>Subscribe - $5/month</Text>
           </TouchableOpacity>
         )}
 
