@@ -26,12 +26,6 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={32}
-            color={colors.primary}
-          />
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Tide Schedule
           </Text>
@@ -50,12 +44,6 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={32}
-            color={colors.primary}
-          />
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Tide Schedule
           </Text>
@@ -83,12 +71,6 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
       <View style={styles.header}>
-        <IconSymbol
-          ios_icon_name="water.waves"
-          android_material_icon_name="waves"
-          size={32}
-          color={colors.primary}
-        />
         <Text style={[styles.title, { color: theme.colors.text }]}>
           Tide Schedule
         </Text>
@@ -156,9 +138,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     marginBottom: 16,
   },
   title: {
