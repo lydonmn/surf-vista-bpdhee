@@ -263,35 +263,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('[AuthContext] Starting sign out process...');
+      console.log('[AuthContext] ===== SIGN OUT STARTED =====');
       console.log('[AuthContext] Current session before sign out:', session?.user?.email);
+      console.log('[AuthContext] Current user state:', user?.email);
       
-      // Call Supabase signOut FIRST - this will trigger the SIGNED_OUT event
-      // which will clear the local state via the onAuthStateChange listener
+      // IMPORTANT: Call Supabase signOut FIRST before clearing any state
+      // This ensures the session is properly removed from AsyncStorage
+      console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       
       if (error) {
-        console.error('[AuthContext] Sign out error from Supabase:', error);
-        // Even if there's an error, clear local state manually
-        setUser(null);
-        setProfile(null);
-        setSession(null);
-        setIsLoading(false);
+        console.error('[AuthContext] ❌ Supabase signOut error:', error);
         throw error;
       }
       
-      console.log('[AuthContext] Supabase sign out successful - session cleared from AsyncStorage');
+      console.log('[AuthContext] ✅ Supabase signOut successful');
       
-      // The onAuthStateChange listener should handle clearing state,
-      // but we'll do it here too to ensure immediate UI update
+      // Now clear the local state
+      // The onAuthStateChange listener should also trigger and clear state,
+      // but we do it here too for immediate UI update
+      console.log('[AuthContext] Clearing local state...');
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
       
-      console.log('[AuthContext] Sign out complete');
+      console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
     } catch (error) {
-      console.error('[AuthContext] Sign out exception:', error);
+      console.error('[AuthContext] ❌ Sign out exception:', error);
       // Ensure state is cleared even on error
       setUser(null);
       setProfile(null);
