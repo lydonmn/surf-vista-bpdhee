@@ -235,13 +235,13 @@ export default function ReportScreen() {
           )}
         </View>
       ) : (
-        <>
+        <React.Fragment>
           {surfReports.map((report, index) => {
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
             
             return (
               <View 
-                key={index}
+                key={`report-${report.id || index}`}
                 style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
               >
                 <View style={styles.reportHeader}>
@@ -330,27 +330,29 @@ export default function ReportScreen() {
                     </View>
                   </View>
 
-                  {report.wave_period && (
-                    <View style={styles.conditionRow}>
-                      <View style={styles.conditionItem}>
-                        <IconSymbol
-                          ios_icon_name="timer"
-                          android_material_icon_name="schedule"
-                          size={24}
-                          color={colors.primary}
-                        />
-                        <View style={styles.conditionTextContainer}>
-                          <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                            Wave Period
-                          </Text>
-                          <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                            {report.wave_period}
-                          </Text>
+                  {(report.wave_period || report.swell_direction) && (
+                    <View key={`extra-row-${report.id || index}`} style={styles.conditionRow}>
+                      {report.wave_period && (
+                        <View key={`wave-period-${report.id || index}`} style={styles.conditionItem}>
+                          <IconSymbol
+                            ios_icon_name="timer"
+                            android_material_icon_name="schedule"
+                            size={24}
+                            color={colors.primary}
+                          />
+                          <View style={styles.conditionTextContainer}>
+                            <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                              Wave Period
+                            </Text>
+                            <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                              {report.wave_period}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
+                      )}
 
                       {report.swell_direction && (
-                        <View style={styles.conditionItem}>
+                        <View key={`swell-direction-${report.id || index}`} style={styles.conditionItem}>
                           <IconSymbol
                             ios_icon_name={swellIcon.ios}
                             android_material_icon_name={swellIcon.android}
@@ -417,7 +419,7 @@ export default function ReportScreen() {
               </View>
             );
           })}
-        </>
+        </React.Fragment>
       )}
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
