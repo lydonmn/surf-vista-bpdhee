@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -40,31 +40,7 @@ export default function HomeScreen() {
     });
   }, [weatherData]);
 
-  useEffect(() => {
-    console.log('[HomeScreen] State update:', {
-      isInitialized,
-      isLoading,
-      hasUser: !!user,
-      hasSession: !!session,
-      hasProfile: !!profile,
-      profileData: profile ? {
-        email: profile.email,
-        is_admin: profile.is_admin,
-        is_subscribed: profile.is_subscribed
-      } : null,
-      hasSubscription: checkSubscription()
-    });
-
-    // Only load data when fully initialized, not loading, has user, profile, and subscription
-    if (isInitialized && !isLoading && user && profile && checkSubscription()) {
-      console.log('[HomeScreen] Conditions met, loading content data...');
-      loadData();
-    } else {
-      console.log('[HomeScreen] Not loading data - conditions not met');
-    }
-  }, [user, session, isInitialized, profile, isLoading, checkSubscription, loadData]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (isLoadingData) {
       console.log('[HomeScreen] Already loading data, skipping...');
       return;
@@ -112,7 +88,31 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingData(false);
     }
-  };
+  }, [isLoadingData]);
+
+  useEffect(() => {
+    console.log('[HomeScreen] State update:', {
+      isInitialized,
+      isLoading,
+      hasUser: !!user,
+      hasSession: !!session,
+      hasProfile: !!profile,
+      profileData: profile ? {
+        email: profile.email,
+        is_admin: profile.is_admin,
+        is_subscribed: profile.is_subscribed
+      } : null,
+      hasSubscription: checkSubscription()
+    });
+
+    // Only load data when fully initialized, not loading, has user, profile, and subscription
+    if (isInitialized && !isLoading && user && profile && checkSubscription()) {
+      console.log('[HomeScreen] Conditions met, loading content data...');
+      loadData();
+    } else {
+      console.log('[HomeScreen] Not loading data - conditions not met');
+    }
+  }, [user, session, isInitialized, profile, isLoading, checkSubscription, loadData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

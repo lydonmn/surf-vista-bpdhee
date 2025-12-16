@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
@@ -33,6 +33,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const loadUserProfile = useCallback(async (authUser: SupabaseUser, mounted: boolean = true) => {
+    try {
+      console.log('[AuthContext] Loading profile for user:', authUser.id);
+      
+      if (mounted) {
+        setIsLoading(true);
+      }
+      
+      // Try to fetch the profile
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (!mounted) return;
+
+      if (profileData) {
+        console.log('[AuthContext] Profile loaded successfully:', {
+          email: profileData.email,
+          is_admin: profileData.is_admin,
+          is_subscribed: profileData.is_subscribed,
+          subscription_end_date: profileData.subscription_end_date
+        });
+        setProfile(profileData);
+        setUser({ ...authUser, profile: profileData });
+        setIsLoading(false);
+        return;
+      }
+
+      // If profile doesn't exist, create it
+      if (error?.code === 'PGRST116') {
+        console.log('[AuthContext] Profile not found, creating...');
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authUser.id,
+            email: authUser.email,
+            is_admin: false,
+            is_subscribed: false,
+          })
+          .select()
+          .single();
+        
+        if (newProfile && mounted) {
+          console.log('[AuthContext] Profile created successfully');
+          setProfile(newProfile);
+          setUser({ ...authUser, profile: newProfile });
+          setIsLoading(false);
+          return;
+        } else {
+          console.error('[AuthContext] Error creating profile:', createError?.message);
+        }
+      } else {
+        console.error('[AuthContext] Error loading profile:', error?.message);
+      }
+
+      // If we get here, something went wrong
+      if (mounted) {
+        setProfile(null);
+        setUser({ ...authUser });
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('[AuthContext] Exception loading user profile:', error);
+      if (mounted) {
+        setProfile(null);
+        setUser({ ...authUser });
+        setIsLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     console.log('[AuthContext] Initializing...');
@@ -149,80 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [isInitialized]);
-
-  const loadUserProfile = async (authUser: SupabaseUser, mounted: boolean = true) => {
-    try {
-      console.log('[AuthContext] Loading profile for user:', authUser.id);
-      
-      if (mounted) {
-        setIsLoading(true);
-      }
-      
-      // Try to fetch the profile
-      const { data: profileData, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (!mounted) return;
-
-      if (profileData) {
-        console.log('[AuthContext] Profile loaded successfully:', {
-          email: profileData.email,
-          is_admin: profileData.is_admin,
-          is_subscribed: profileData.is_subscribed,
-          subscription_end_date: profileData.subscription_end_date
-        });
-        setProfile(profileData);
-        setUser({ ...authUser, profile: profileData });
-        setIsLoading(false);
-        return;
-      }
-
-      // If profile doesn't exist, create it
-      if (error?.code === 'PGRST116') {
-        console.log('[AuthContext] Profile not found, creating...');
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authUser.id,
-            email: authUser.email,
-            is_admin: false,
-            is_subscribed: false,
-          })
-          .select()
-          .single();
-        
-        if (newProfile && mounted) {
-          console.log('[AuthContext] Profile created successfully');
-          setProfile(newProfile);
-          setUser({ ...authUser, profile: newProfile });
-          setIsLoading(false);
-          return;
-        } else {
-          console.error('[AuthContext] Error creating profile:', createError?.message);
-        }
-      } else {
-        console.error('[AuthContext] Error loading profile:', error?.message);
-      }
-
-      // If we get here, something went wrong
-      if (mounted) {
-        setProfile(null);
-        setUser({ ...authUser });
-        setIsLoading(false);
-      }
-    } catch (error) {
-      console.error('[AuthContext] Exception loading user profile:', error);
-      if (mounted) {
-        setProfile(null);
-        setUser({ ...authUser });
-        setIsLoading(false);
-      }
-    }
-  };
+  }, [isInitialized, loadUserProfile]);
 
   const refreshProfile = async () => {
     if (session?.user) {
