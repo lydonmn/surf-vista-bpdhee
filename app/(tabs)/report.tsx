@@ -10,7 +10,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function ReportScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading } = useAuth();
+  const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
 
   useEffect(() => {
@@ -19,16 +19,17 @@ export default function ReportScreen() {
       hasProfile: !!profile,
       isSubscribed,
       isLoading,
+      isInitialized,
       profileData: profile ? {
         is_admin: profile.is_admin,
         is_subscribed: profile.is_subscribed,
         subscription_end_date: profile.subscription_end_date
       } : null
     });
-  }, [user, profile, isSubscribed, isLoading]);
+  }, [user, profile, isSubscribed, isLoading, isInitialized]);
 
-  // Show loading state while profile is being loaded
-  if (isLoading) {
+  // Show loading state while auth is initializing or profile is being loaded
+  if (!isInitialized || isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>

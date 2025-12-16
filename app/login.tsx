@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,11 +9,19 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function LoginScreen() {
   const theme = useTheme();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, isInitialized } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+
+  // If user is already logged in, redirect to home
+  useEffect(() => {
+    if (isInitialized && user) {
+      console.log('User already logged in, redirecting to home');
+      router.replace('/(tabs)/(home)/');
+    }
+  }, [user, isInitialized]);
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -53,10 +61,8 @@ export default function LoginScreen() {
 
       if (result.success) {
         console.log('Sign in successful, redirecting to home...');
-        // Add a small delay to ensure profile is loaded
-        setTimeout(() => {
-          router.replace('/(tabs)/(home)/');
-        }, 300);
+        // Use replace to prevent going back to login screen
+        router.replace('/(tabs)/(home)/');
       } else {
         Alert.alert('Sign In Failed', result.message);
       }

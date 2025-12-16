@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -13,18 +13,18 @@ const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const { user, checkSubscription } = useAuth();
+  const { user, checkSubscription, isLoading, isInitialized } = useAuth();
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
-    if (user && checkSubscription()) {
+    if (isInitialized && user && checkSubscription()) {
       loadData();
-    } else {
-      setIsLoading(false);
+    } else if (isInitialized) {
+      setIsLoadingData(false);
     }
-  }, [user]);
+  }, [user, isInitialized]);
 
   const loadData = async () => {
     try {
@@ -54,9 +54,23 @@ export default function HomeScreen() {
     } catch (error) {
       console.log('Error loading data:', error);
     } finally {
-      setIsLoading(false);
+      setIsLoadingData(false);
     }
   };
+
+  // Show loading state while auth is initializing
+  if (!isInitialized || isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   if (!user) {
     return (
@@ -310,6 +324,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 16,
   },
   header: {
     alignItems: 'center',

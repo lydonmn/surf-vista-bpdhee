@@ -15,6 +15,7 @@ interface AuthContextType {
   profile: Profile | null;
   session: Session | null;
   isLoading: boolean;
+  isInitialized: boolean;
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     // Get initial session
@@ -37,9 +39,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Initial session:', session?.user?.email);
       setSession(session);
       if (session?.user) {
-        loadUserProfile(session.user);
+        loadUserProfile(session.user).then(() => {
+          setIsInitialized(true);
+        });
       } else {
         setIsLoading(false);
+        setIsInitialized(true);
       }
     });
 
@@ -56,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setIsLoading(false);
       }
+      setIsInitialized(true);
     });
 
     return () => subscription.unsubscribe();
@@ -94,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (createError) {
             console.log('Error creating profile:', createError);
             setProfile(null);
+            setUser({ ...authUser });
           } else {
             console.log('Profile created:', newProfile);
             setProfile(newProfile);
@@ -101,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setProfile(null);
+          setUser({ ...authUser });
         }
       } else {
         console.log('Profile loaded successfully:', {
@@ -115,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.log('Error loading user profile:', error);
       setProfile(null);
+      setUser({ ...authUser });
     } finally {
       setIsLoading(false);
     }
@@ -180,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Load profile and wait for it to complete
         await loadUserProfile(data.user);
         
-        console.log('Profile loaded after sign in');
+        console.log('Profile loaded after sign in, user state updated');
         return { success: true, message: 'Signed in successfully!' };
       }
 
@@ -207,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkSubscription = (): boolean => {
     console.log('Checking subscription:', {
       profile_exists: !!profile,
+      is_admin: profile?.is_admin,
       is_subscribed: profile?.is_subscribed,
       subscription_end_date: profile?.subscription_end_date,
       is_loading: isLoading
@@ -222,6 +232,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!profile) {
       console.log('No profile found');
       return false;
+    }
+
+    // Admin users always have access
+    if (profile.is_admin) {
+      console.log('User is admin, granting access');
+      return true;
     }
 
     // Check if user is subscribed
@@ -259,6 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       session,
       isLoading, 
+      isInitialized,
       signUp,
       signIn, 
       signOut,
