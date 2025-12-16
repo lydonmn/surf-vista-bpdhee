@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,10 +10,24 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function VideosScreen() {
   const theme = useTheme();
-  const { user, checkSubscription } = useAuth();
+  const { user, profile, checkSubscription } = useAuth();
   const isSubscribed = checkSubscription();
 
+  useEffect(() => {
+    console.log('VideosScreen - Auth state:', {
+      hasUser: !!user,
+      hasProfile: !!profile,
+      isSubscribed,
+      profileData: profile ? {
+        is_admin: profile.is_admin,
+        is_subscribed: profile.is_subscribed,
+        subscription_end_date: profile.subscription_end_date
+      } : null
+    });
+  }, [user, profile, isSubscribed]);
+
   if (!user || !isSubscribed) {
+    console.log('VideosScreen - Showing locked content');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -29,17 +43,25 @@ export default function VideosScreen() {
           <Text style={[styles.text, { color: colors.textSecondary }]}>
             Subscribe to access our exclusive drone footage library
           </Text>
+          {user && (
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              You are signed in but not subscribed
+            </Text>
+          )}
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={() => router.push('/login')}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+            <Text style={styles.subscribeButtonText}>
+              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  console.log('VideosScreen - Showing video library');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -134,6 +156,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
+  },
+  debugText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
   },
   subscribeButton: {
     paddingHorizontal: 32,

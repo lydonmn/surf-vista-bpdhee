@@ -9,7 +9,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, profile, signOut, checkSubscription, isAdmin } = useAuth();
+  const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
 
   const handleSignOut = () => {
     Alert.alert(
@@ -27,6 +27,12 @@ export default function ProfileScreen() {
         }
       ]
     );
+  };
+
+  const handleRefreshProfile = async () => {
+    console.log('Refreshing profile data...');
+    await refreshProfile();
+    Alert.alert('Success', 'Profile data refreshed');
   };
 
   if (!user || !profile) {
@@ -141,6 +147,21 @@ export default function ProfileScreen() {
             <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity
+          style={[styles.refreshButton, { borderColor: colors.primary }]}
+          onPress={handleRefreshProfile}
+        >
+          <IconSymbol
+            ios_icon_name="arrow.clockwise"
+            android_material_icon_name="refresh"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.refreshButtonText, { color: colors.primary }]}>
+            Refresh Profile Data
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Admin Panel Access */}
@@ -189,6 +210,27 @@ export default function ProfileScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Debug Info */}
+      {__DEV__ && (
+        <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+            Debug Info
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            User ID: {user.id}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Admin: {profile.is_admin ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Subscribed: {profile.is_subscribed ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
+          </Text>
+        </View>
+      )}
 
       {/* Info */}
       <View style={styles.infoContainer}>
@@ -317,6 +359,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    borderWidth: 1,
+  },
+  refreshButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   actionItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -325,6 +381,23 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 16,
+  },
+  debugCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FFA07A',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    marginBottom: 4,
+    fontFamily: 'monospace',
   },
   infoContainer: {
     alignItems: 'center',

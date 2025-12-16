@@ -18,6 +18,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   checkSubscription: () => boolean;
   isAdmin: () => boolean;
 }
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadUserProfile = async (authUser: SupabaseUser) => {
     try {
+      console.log('Loading profile for user:', authUser.id);
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -72,7 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Error loading profile:', error);
         setProfile(null);
       } else {
-        console.log('Profile loaded:', profileData);
+        console.log('Profile loaded:', {
+          email: profileData.email,
+          is_admin: profileData.is_admin,
+          is_subscribed: profileData.is_subscribed,
+          subscription_end_date: profileData.subscription_end_date
+        });
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
       }
@@ -81,6 +88,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshProfile = async () => {
+    if (session?.user) {
+      console.log('Refreshing profile...');
+      await loadUserProfile(session.user);
     }
   };
 
@@ -115,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
+      console.log('Attempting sign in for:', email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -125,7 +140,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, message: error.message };
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
+        console.log('Sign in successful, loading profile...');
+        await loadUserProfile(data.user);
         return { success: true, message: 'Signed in successfully!' };
       }
 
@@ -148,18 +165,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const checkSubscription = (): boolean => {
-    if (!profile || !profile.is_subscribed) return false;
+    console.log('Checking subscription:', {
+      profile_exists: !!profile,
+      is_subscribed: profile?.is_subscribed,
+      subscription_end_date: profile?.subscription_end_date
+    });
+
+    if (!profile || !profile.is_subscribed) {
+      console.log('Not subscribed');
+      return false;
+    }
     
     if (profile.subscription_end_date) {
       const endDate = new Date(profile.subscription_end_date);
-      return endDate > new Date();
+      const isValid = endDate > new Date();
+      console.log('Subscription end date check:', { endDate, isValid });
+      return isValid;
     }
     
+    console.log('Subscription active (no end date)');
     return true;
   };
 
   const isAdmin = (): boolean => {
-    return profile?.is_admin || false;
+    const adminStatus = profile?.is_admin || false;
+    console.log('Admin status:', adminStatus);
+    return adminStatus;
   };
 
   return (
@@ -170,7 +201,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading, 
       signUp,
       signIn, 
-      signOut, 
+      signOut,
+      refreshProfile,
       checkSubscription,
       isAdmin 
     }}>
