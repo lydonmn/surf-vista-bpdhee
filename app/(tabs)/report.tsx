@@ -43,6 +43,26 @@ export default function ReportScreen() {
     setIsRefreshing(false);
   };
 
+  const getWeatherIcon = (conditions: string | null) => {
+    if (!conditions) return { ios: 'cloud.fill', android: 'cloud' };
+    
+    const lower = conditions.toLowerCase();
+    if (lower.includes('rain') || lower.includes('shower')) {
+      return { ios: 'cloud.rain.fill', android: 'grain' };
+    } else if (lower.includes('storm') || lower.includes('thunder')) {
+      return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
+    } else if (lower.includes('snow')) {
+      return { ios: 'cloud.snow.fill', android: 'ac_unit' };
+    } else if (lower.includes('clear') || lower.includes('sunny')) {
+      return { ios: 'sun.max.fill', android: 'wb_sunny' };
+    } else if (lower.includes('cloud') || lower.includes('overcast')) {
+      return { ios: 'cloud.fill', android: 'cloud' };
+    } else if (lower.includes('partly')) {
+      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+    }
+    return { ios: 'cloud.fill', android: 'cloud' };
+  };
+
   // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
     return (
@@ -183,209 +203,213 @@ export default function ReportScreen() {
         </View>
       ) : (
         <>
-          {surfReports.map((report, index) => (
-            <View 
-              key={index}
-              style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
-            >
-              <View style={styles.reportHeader}>
-                <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-                  {new Date(report.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </Text>
-                <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
-                  <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
-                </View>
-              </View>
-
-              <View style={styles.conditionsGrid}>
-                <View style={styles.conditionRow}>
-                  <View style={styles.conditionItem}>
-                    <IconSymbol
-                      ios_icon_name="water.waves"
-                      android_material_icon_name="waves"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <View style={styles.conditionTextContainer}>
-                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                        Wave Height
-                      </Text>
-                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                        {report.wave_height}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.conditionItem}>
-                    <IconSymbol
-                      ios_icon_name="wind"
-                      android_material_icon_name="air"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <View style={styles.conditionTextContainer}>
-                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                        Wind Speed
-                      </Text>
-                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                        {report.wind_speed}
-                      </Text>
-                    </View>
+          {surfReports.map((report, index) => {
+            const weatherIcon = getWeatherIcon(report.weather_conditions);
+            
+            return (
+              <View 
+                key={index}
+                style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
+              >
+                <View style={styles.reportHeader}>
+                  <Text style={[styles.reportDate, { color: theme.colors.text }]}>
+                    {new Date(report.date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </Text>
+                  <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
+                    <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
                   </View>
                 </View>
 
-                <View style={styles.conditionRow}>
-                  <View style={styles.conditionItem}>
-                    <IconSymbol
-                      ios_icon_name="location.north.fill"
-                      android_material_icon_name="navigation"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <View style={styles.conditionTextContainer}>
-                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                        Wind Direction
-                      </Text>
-                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                        {report.wind_direction}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.conditionItem}>
-                    <IconSymbol
-                      ios_icon_name="thermometer"
-                      android_material_icon_name="thermostat"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <View style={styles.conditionTextContainer}>
-                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                        Water Temp
-                      </Text>
-                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                        {report.water_temp}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {report.wave_period && (
+                <View style={styles.conditionsGrid}>
                   <View style={styles.conditionRow}>
                     <View style={styles.conditionItem}>
                       <IconSymbol
-                        ios_icon_name="timer"
-                        android_material_icon_name="schedule"
+                        ios_icon_name="water.waves"
+                        android_material_icon_name="waves"
                         size={24}
                         color={colors.primary}
                       />
                       <View style={styles.conditionTextContainer}>
                         <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                          Wave Period
+                          Wave Height
                         </Text>
                         <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                          {report.wave_period}
+                          {report.wave_height}
                         </Text>
                       </View>
                     </View>
 
-                    {report.swell_direction && (
+                    <View style={styles.conditionItem}>
+                      <IconSymbol
+                        ios_icon_name="wind"
+                        android_material_icon_name="air"
+                        size={24}
+                        color={colors.primary}
+                      />
+                      <View style={styles.conditionTextContainer}>
+                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                          Wind Speed
+                        </Text>
+                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                          {report.wind_speed}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.conditionRow}>
+                    <View style={styles.conditionItem}>
+                      <IconSymbol
+                        ios_icon_name="location.north.fill"
+                        android_material_icon_name="navigation"
+                        size={24}
+                        color={colors.primary}
+                      />
+                      <View style={styles.conditionTextContainer}>
+                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                          Wind Direction
+                        </Text>
+                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                          {report.wind_direction}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.conditionItem}>
+                      <IconSymbol
+                        ios_icon_name="thermometer"
+                        android_material_icon_name="thermostat"
+                        size={24}
+                        color={colors.primary}
+                      />
+                      <View style={styles.conditionTextContainer}>
+                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                          Water Temp
+                        </Text>
+                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                          {report.water_temp}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {report.wave_period && (
+                    <View style={styles.conditionRow}>
                       <View style={styles.conditionItem}>
                         <IconSymbol
-                          ios_icon_name="arrow.up.right"
-                          android_material_icon_name="trending_up"
+                          ios_icon_name="timer"
+                          android_material_icon_name="schedule"
                           size={24}
                           color={colors.primary}
                         />
                         <View style={styles.conditionTextContainer}>
                           <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                            Swell Direction
+                            Wave Period
                           </Text>
                           <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                            {report.swell_direction}
+                            {report.wave_period}
                           </Text>
                         </View>
                       </View>
-                    )}
-                  </View>
-                )}
 
-                <View style={styles.tideContainer}>
-                  <IconSymbol
-                    ios_icon_name="arrow.up.arrow.down"
-                    android_material_icon_name="swap_vert"
-                    size={24}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Tide
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {report.tide}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
-                <View style={styles.conditionsHeader}>
-                  <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
-                    Conditions
-                  </Text>
-                  {profile?.is_admin && (
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => router.push(`/edit-report?id=${report.id}`)}
-                    >
-                      <IconSymbol
-                        ios_icon_name="pencil"
-                        android_material_icon_name="edit"
-                        size={16}
-                        color={colors.primary}
-                      />
-                      <Text style={[styles.editButtonText, { color: colors.primary }]}>
-                        Edit
-                      </Text>
-                    </TouchableOpacity>
+                      {report.swell_direction && (
+                        <View style={styles.conditionItem}>
+                          <IconSymbol
+                            ios_icon_name="arrow.up.right"
+                            android_material_icon_name="trending_up"
+                            size={24}
+                            color={colors.primary}
+                          />
+                          <View style={styles.conditionTextContainer}>
+                            <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                              Swell Direction
+                            </Text>
+                            <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                              {report.swell_direction}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
                   )}
-                </View>
-                <ReportTextDisplay 
-                  text={report.report_text || report.conditions}
-                  isCustom={!!report.report_text}
-                />
-                {report.report_text && report.edited_at && (
-                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                    Edited {new Date(report.edited_at).toLocaleDateString()}
-                  </Text>
-                )}
-              </View>
 
-              {report.weather_conditions && (
-                <View style={[styles.weatherBox, { backgroundColor: colors.highlight, marginTop: 12 }]}>
-                  <View style={styles.weatherHeader}>
+                  <View style={styles.tideContainer}>
                     <IconSymbol
-                      ios_icon_name="cloud.sun.fill"
-                      android_material_icon_name="wb_sunny"
-                      size={20}
+                      ios_icon_name="arrow.up.arrow.down"
+                      android_material_icon_name="swap_vert"
+                      size={24}
                       color={colors.primary}
                     />
-                    <Text style={[styles.weatherTitle, { color: theme.colors.text }]}>
-                      Weather
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Tide
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {report.tide}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
+                  <View style={styles.conditionsHeader}>
+                    <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
+                      Conditions
+                    </Text>
+                    {profile?.is_admin && (
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => router.push(`/edit-report?id=${report.id}`)}
+                      >
+                        <IconSymbol
+                          ios_icon_name="pencil"
+                          android_material_icon_name="edit"
+                          size={16}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                          Edit
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <ReportTextDisplay 
+                    text={report.report_text || report.conditions}
+                    isCustom={!!report.report_text}
+                  />
+                  {report.report_text && report.edited_at && (
+                    <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                      Edited {new Date(report.edited_at).toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+
+                {report.weather_conditions && (
+                  <View style={[styles.weatherBox, { backgroundColor: colors.highlight, marginTop: 12 }]}>
+                    <View style={styles.weatherHeader}>
+                      <IconSymbol
+                        ios_icon_name={weatherIcon.ios}
+                        android_material_icon_name={weatherIcon.android}
+                        size={20}
+                        color={colors.primary}
+                      />
+                      <Text style={[styles.weatherTitle, { color: theme.colors.text }]}>
+                        Weather
+                      </Text>
+                    </View>
+                    <Text style={[styles.weatherText, { color: theme.colors.text }]}>
+                      {report.weather_conditions}
+                      {report.air_temp && ` • Air: ${report.air_temp}`}
                     </Text>
                   </View>
-                  <Text style={[styles.weatherText, { color: theme.colors.text }]}>
-                    {report.weather_conditions}
-                    {report.air_temp && ` • Air: ${report.air_temp}`}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ))}
+                )}
+              </View>
+            );
+          })}
         </>
       )}
 
