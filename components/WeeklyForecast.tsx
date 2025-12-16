@@ -12,56 +12,89 @@ interface WeeklyForecastProps {
 
 // Helper function to get appropriate weather icon based on conditions
 const getWeatherIcon = (conditions: string | null) => {
-  if (!conditions) return { ios: 'cloud.fill', android: 'cloud' };
+  // Default fallback
+  const defaultIcon = { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+  
+  if (!conditions) {
+    console.log('[WeeklyForecast] No conditions provided, using default icon');
+    return defaultIcon;
+  }
   
   const lower = conditions.toLowerCase();
+  console.log('[WeeklyForecast] Mapping icon for condition:', conditions);
   
-  // Rain conditions
+  // Rain conditions - prioritize rain detection
   if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle')) {
+    console.log('[WeeklyForecast] Detected rain condition');
     return { ios: 'cloud.rain.fill', android: 'water_drop' };
   }
   
   // Storm conditions
-  if (lower.includes('storm') || lower.includes('thunder')) {
+  if (lower.includes('storm') || lower.includes('thunder') || lower.includes('lightning')) {
+    console.log('[WeeklyForecast] Detected storm condition');
     return { ios: 'cloud.bolt.fill', android: 'flash_on' };
   }
   
   // Snow conditions
-  if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice')) {
+  if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice') || lower.includes('flurr')) {
+    console.log('[WeeklyForecast] Detected snow condition');
     return { ios: 'snowflake', android: 'ac_unit' };
   }
   
   // Fog/Mist conditions
   if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) {
-    return { ios: 'cloud.fog.fill', android: 'cloud' };
+    console.log('[WeeklyForecast] Detected fog condition');
+    return { ios: 'cloud.fill', android: 'cloud' };
   }
   
-  // Clear/Sunny conditions
+  // Clear/Sunny conditions - check for clear or sunny
   if (lower.includes('clear') || lower.includes('sunny')) {
+    // Check if it's mostly clear/sunny or fully clear/sunny
+    if (lower.includes('mostly') || lower.includes('partly')) {
+      console.log('[WeeklyForecast] Detected mostly clear/sunny condition');
+      return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+    }
+    console.log('[WeeklyForecast] Detected clear/sunny condition');
     return { ios: 'sun.max.fill', android: 'wb_sunny' };
   }
   
   // Partly cloudy
   if (lower.includes('partly') || lower.includes('partial')) {
+    console.log('[WeeklyForecast] Detected partly cloudy condition');
     return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+  }
+  
+  // Mostly cloudy
+  if (lower.includes('mostly cloudy') || lower.includes('mostly overcast')) {
+    console.log('[WeeklyForecast] Detected mostly cloudy condition');
+    return { ios: 'cloud.fill', android: 'cloud' };
   }
   
   // Cloudy/Overcast
   if (lower.includes('cloud') || lower.includes('overcast')) {
+    console.log('[WeeklyForecast] Detected cloudy condition');
     return { ios: 'cloud.fill', android: 'cloud' };
   }
   
   // Windy
-  if (lower.includes('wind') || lower.includes('breezy')) {
+  if (lower.includes('wind') || lower.includes('breezy') || lower.includes('gust')) {
+    console.log('[WeeklyForecast] Detected windy condition');
     return { ios: 'wind', android: 'air' };
   }
   
   // Default fallback
-  return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
+  console.log('[WeeklyForecast] No specific condition matched, using default icon');
+  return defaultIcon;
 };
 
 export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
   const theme = useTheme();
+
+  console.log('[WeeklyForecast] Rendering with forecast data:', {
+    count: forecast?.length || 0,
+    hasData: !!forecast && forecast.length > 0,
+    firstItem: forecast?.[0]
+  });
 
   if (!forecast || forecast.length === 0) {
     return (
@@ -118,6 +151,14 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
           const icon = getWeatherIcon(day.conditions);
           const date = new Date(day.date);
           const dayName = day.day_name || date.toLocaleDateString('en-US', { weekday: 'short' });
+          
+          console.log('[WeeklyForecast] Rendering day card:', {
+            index,
+            date: day.date,
+            conditions: day.conditions,
+            icon: icon,
+            dayName
+          });
           
           return (
             <View 
