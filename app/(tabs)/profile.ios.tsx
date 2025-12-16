@@ -237,7 +237,7 @@ export default function ProfileScreen() {
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={handleSubscribeNow}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe - $5/month</Text>
+            <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
           </TouchableOpacity>
         )}
 
