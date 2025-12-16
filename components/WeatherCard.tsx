@@ -15,12 +15,34 @@ interface WeatherCardProps {
 export function WeatherCard({ weather }: WeatherCardProps) {
   const theme = useTheme();
 
+  const getWeatherIcon = (conditions: string | null) => {
+    if (!conditions) return { ios: 'cloud.fill', android: 'cloud' };
+    
+    const lower = conditions.toLowerCase();
+    if (lower.includes('rain') || lower.includes('shower')) {
+      return { ios: 'cloud.rain.fill', android: 'grain' };
+    } else if (lower.includes('storm') || lower.includes('thunder')) {
+      return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
+    } else if (lower.includes('snow')) {
+      return { ios: 'cloud.snow.fill', android: 'ac-unit' };
+    } else if (lower.includes('clear') || lower.includes('sunny')) {
+      return { ios: 'sun.max.fill', android: 'wb-sunny' };
+    } else if (lower.includes('cloud') || lower.includes('overcast')) {
+      return { ios: 'cloud.fill', android: 'cloud' };
+    } else if (lower.includes('partly')) {
+      return { ios: 'cloud.sun.fill', android: 'wb-cloudy' };
+    }
+    return { ios: 'cloud.fill', android: 'cloud' };
+  };
+
+  const weatherIcon = getWeatherIcon(weather.conditions);
+
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
       <View style={styles.header}>
         <IconSymbol
-          ios_icon_name="cloud.sun.fill"
-          android_material_icon_name="wb_sunny"
+          ios_icon_name={weatherIcon.ios}
+          android_material_icon_name={weatherIcon.android}
           size={32}
           color={colors.primary}
         />
@@ -64,7 +86,7 @@ export function WeatherCard({ weather }: WeatherCardProps) {
         <View style={styles.detailItem}>
           <IconSymbol
             ios_icon_name="humidity.fill"
-            android_material_icon_name="water_drop"
+            android_material_icon_name="opacity"
             size={20}
             color={colors.primary}
           />
