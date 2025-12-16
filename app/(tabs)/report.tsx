@@ -63,6 +63,59 @@ export default function ReportScreen() {
     return { ios: 'cloud.fill', android: 'cloud' };
   };
 
+  const getSwellDirectionIcon = (direction: string | null) => {
+    if (!direction) return { ios: 'arrow.up', android: 'north' };
+    
+    const upper = direction.toUpperCase().trim();
+    
+    // Handle cardinal and intercardinal directions
+    if (upper === 'N' || upper === 'NORTH') {
+      return { ios: 'arrow.up', android: 'north' };
+    } else if (upper === 'NE' || upper === 'NORTHEAST' || upper.includes('NORTH') && upper.includes('EAST')) {
+      return { ios: 'arrow.up.right', android: 'north_east' };
+    } else if (upper === 'E' || upper === 'EAST') {
+      return { ios: 'arrow.right', android: 'east' };
+    } else if (upper === 'SE' || upper === 'SOUTHEAST' || upper.includes('SOUTH') && upper.includes('EAST')) {
+      return { ios: 'arrow.down.right', android: 'south_east' };
+    } else if (upper === 'S' || upper === 'SOUTH') {
+      return { ios: 'arrow.down', android: 'south' };
+    } else if (upper === 'SW' || upper === 'SOUTHWEST' || upper.includes('SOUTH') && upper.includes('WEST')) {
+      return { ios: 'arrow.down.left', android: 'south_west' };
+    } else if (upper === 'W' || upper === 'WEST') {
+      return { ios: 'arrow.left', android: 'west' };
+    } else if (upper === 'NW' || upper === 'NORTHWEST' || upper.includes('NORTH') && upper.includes('WEST')) {
+      return { ios: 'arrow.up.left', android: 'north_west' };
+    }
+    
+    // Handle degree-based directions (0-360)
+    const degreeMatch = direction.match(/(\d+)/);
+    if (degreeMatch) {
+      const degrees = parseInt(degreeMatch[1]);
+      if (degrees >= 0 && degrees <= 360) {
+        if (degrees >= 337.5 || degrees < 22.5) {
+          return { ios: 'arrow.up', android: 'north' };
+        } else if (degrees >= 22.5 && degrees < 67.5) {
+          return { ios: 'arrow.up.right', android: 'north_east' };
+        } else if (degrees >= 67.5 && degrees < 112.5) {
+          return { ios: 'arrow.right', android: 'east' };
+        } else if (degrees >= 112.5 && degrees < 157.5) {
+          return { ios: 'arrow.down.right', android: 'south_east' };
+        } else if (degrees >= 157.5 && degrees < 202.5) {
+          return { ios: 'arrow.down', android: 'south' };
+        } else if (degrees >= 202.5 && degrees < 247.5) {
+          return { ios: 'arrow.down.left', android: 'south_west' };
+        } else if (degrees >= 247.5 && degrees < 292.5) {
+          return { ios: 'arrow.left', android: 'west' };
+        } else if (degrees >= 292.5 && degrees < 337.5) {
+          return { ios: 'arrow.up.left', android: 'north_west' };
+        }
+      }
+    }
+    
+    // Default to navigation icon if direction format is unknown
+    return { ios: 'location.north.fill', android: 'navigation' };
+  };
+
   // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
     return (
@@ -205,6 +258,7 @@ export default function ReportScreen() {
         <>
           {surfReports.map((report, index) => {
             const weatherIcon = getWeatherIcon(report.weather_conditions);
+            const swellIcon = getSwellDirectionIcon(report.swell_direction);
             
             return (
               <View 
@@ -319,8 +373,8 @@ export default function ReportScreen() {
                       {report.swell_direction && (
                         <View style={styles.conditionItem}>
                           <IconSymbol
-                            ios_icon_name="arrow.up.right"
-                            android_material_icon_name="north_east"
+                            ios_icon_name={swellIcon.ios}
+                            android_material_icon_name={swellIcon.android}
                             size={24}
                             color={colors.primary}
                           />
