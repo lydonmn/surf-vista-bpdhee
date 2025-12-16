@@ -1,15 +1,17 @@
 
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
+import { isSuperwallAvailable, restorePurchases, checkSuperwallConfiguration } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, profile, signOut, checkSubscription, isAdmin } = useAuth();
+  const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
+  const [isRestoring, setIsRestoring] = useState(false);
   const isSubscribed = checkSubscription();
 
   const handleSignOut = () => {
@@ -43,6 +45,74 @@ export default function ProfileScreen() {
             }
           },
         },
+      ]
+    );
+  };
+
+  const handleRestorePurchases = async () => {
+    // Check if Superwall is available
+    if (!isSuperwallAvailable()) {
+      checkSuperwallConfiguration();
+      Alert.alert(
+        'Restore Purchases Unavailable',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsRestoring(true);
+    
+    try {
+      console.log('[ProfileScreen iOS] 🔄 Starting restore purchases...');
+      
+      const result = await restorePurchases();
+      
+      console.log('[ProfileScreen iOS] 📊 Restore result:', result);
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+      if (result.success || result.state === 'restored') {
+        Alert.alert(
+          'Purchases Restored',
+          'Your subscription has been restored successfully!',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Purchases Found',
+          'We couldn\'t find any previous purchases to restore. If you believe this is an error, please contact support.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('[ProfileScreen iOS] ❌ Restore purchases error:', error);
+      Alert.alert(
+        'Restore Failed',
+        error.message || 'Unable to restore purchases at this time. Please try again later or contact support.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleManageSubscription = () => {
+    Alert.alert(
+      'Manage Subscription',
+      'To manage your subscription or cancel:\n\n' +
+      '1. Open Settings on your iPhone\n' +
+      '2. Tap your name at the top\n' +
+      '3. Tap Subscriptions\n' +
+      '4. Select SurfVista\n\n' +
+      'You can also restore your purchases if you\'ve subscribed on another device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore Purchases',
+          onPress: handleRestorePurchases
+        }
       ]
     );
   };
@@ -113,20 +183,55 @@ export default function ProfileScreen() {
             Renews on {new Date(profile.subscription_end_date).toLocaleDateString()}
           </Text>
         )}
-        {!isSubscribed && (
+        
+        {!isSubscribed && !profile.is_admin && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              console.log('Opening subscription flow');
-              Alert.alert(
-                'Subscribe to SurfVista',
-                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
-              );
-            }}
+            onPress={() => router.push('/login')}
           >
             <Text style={styles.subscribeButtonText}>Subscribe - $5/month</Text>
           </TouchableOpacity>
         )}
+
+        {isSubscribed && (
+          <TouchableOpacity
+            style={[styles.manageButton, { borderColor: colors.primary }]}
+            onPress={handleManageSubscription}
+          >
+            <IconSymbol
+              ios_icon_name="gearshape"
+              android_material_icon_name="settings"
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={[styles.manageButtonText, { color: colors.primary }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Restore Purchases Button */}
+        <TouchableOpacity
+          style={[styles.restoreButton, { borderColor: colors.textSecondary }]}
+          onPress={handleRestorePurchases}
+          disabled={isRestoring}
+        >
+          {isRestoring ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <React.Fragment>
+              <IconSymbol
+                ios_icon_name="arrow.clockwise"
+                android_material_icon_name="refresh"
+                size={18}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
+                Restore Purchases
+              </Text>
+            </React.Fragment>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -198,6 +303,18 @@ export default function ProfileScreen() {
         />
         <Text style={styles.signOutButtonText}>Sign Out</Text>
       </TouchableOpacity>
+
+      {/* Debug Info */}
+      {__DEV__ && (
+        <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+            Debug Info
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Superwall Available: {isSuperwallAvailable() ? 'Yes' : 'No'}
+          </Text>
+        </View>
+      )}
 
       <Text style={[styles.version, { color: colors.textSecondary }]}>
         SurfVista v1.0.0
@@ -287,6 +404,7 @@ const styles = StyleSheet.create({
   expiryText: {
     fontSize: 14,
     marginLeft: 36,
+    marginBottom: 8,
   },
   subscribeButton: {
     paddingVertical: 12,
@@ -298,6 +416,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   menuItem: {
     flexDirection: 'row',
@@ -337,6 +483,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  debugCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FFA07A',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    marginBottom: 4,
+    fontFamily: 'monospace',
   },
   version: {
     fontSize: 12,

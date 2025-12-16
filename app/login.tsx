@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isSuperwallAvailable, presentPaywall } from '@/utils/superwallConfig';
+import { isSuperwallAvailable, presentPaywall, checkSuperwallConfiguration } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
-  const { signIn, signUp, user, profile, isLoading: authLoading, checkSubscription } = useAuth();
+  const { signIn, signUp, user, profile, isLoading: authLoading, checkSubscription, refreshProfile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   // Redirect if already logged in with subscription
   useEffect(() => {
@@ -80,73 +81,99 @@ export default function LoginScreen() {
   const handleSubscribe = async () => {
     // Check if Superwall is available
     if (!isSuperwallAvailable()) {
+      console.log('[LoginScreen] Superwall not available, checking configuration...');
+      checkSuperwallConfiguration();
+      
       Alert.alert(
-        'Subscription Not Available',
-        'Subscription features are currently being configured. Please contact support or try again later.',
+        'Subscription Setup Required',
+        'Subscription features are currently being configured.\n\n' +
+        'To enable subscriptions:\n' +
+        '1. Get your API key from superwall.com\n' +
+        '2. Update SUPERWALL_API_KEY in utils/superwallConfig.ts\n' +
+        '3. Restart the app\n\n' +
+        'See docs/SUPERWALL_QUICK_START.md for details.',
         [{ text: 'OK' }]
       );
       return;
     }
 
+    setIsSubscribing(true);
+
     try {
-      console.log('[LoginScreen] Opening Superwall paywall...');
+      console.log('[LoginScreen] 🎨 Opening Superwall paywall...');
       
       // Set user attributes if logged in
       if (user) {
+        console.log('[LoginScreen] 👤 User logged in, presenting paywall with user context');
         const result = await presentPaywall(user.id, user.email || '');
         
-        console.log('[LoginScreen] Paywall result:', result);
+        console.log('[LoginScreen] 📊 Paywall result:', result);
         
         if (result.state === 'purchased') {
+          // Refresh profile to get updated subscription status
+          await refreshProfile();
+          
           Alert.alert(
-            'Success!',
+            'Success! 🎉',
             'Your subscription is now active. Enjoy exclusive content!',
             [
               {
                 text: 'OK',
                 onPress: () => {
-                  // Refresh the profile to get updated subscription status
-                  if (user) {
-                    router.replace('/(tabs)/(home)/');
-                  }
+                  router.replace('/(tabs)/(home)/');
                 }
               }
             ]
           );
         } else if (result.state === 'restored') {
+          // Refresh profile to get updated subscription status
+          await refreshProfile();
+          
           Alert.alert(
-            'Subscription Restored',
+            'Subscription Restored ✅',
             'Your subscription has been restored successfully!',
             [
               {
                 text: 'OK',
                 onPress: () => {
-                  if (user) {
-                    router.replace('/(tabs)/(home)/');
-                  }
+                  router.replace('/(tabs)/(home)/');
                 }
               }
             ]
           );
+        } else if (result.state === 'declined') {
+          console.log('[LoginScreen] ℹ️ User declined purchase');
+          // User cancelled - no need to show alert
         }
       } else {
         // User not logged in - show paywall without user context
+        console.log('[LoginScreen] ⚠️ User not logged in, presenting paywall without user context');
         const result = await presentPaywall();
         
         if (result.state === 'purchased' || result.state === 'restored') {
           Alert.alert(
-            'Success!',
-            'Please sign in or create an account to access your subscription.',
+            'Success! 🎉',
+            'Please sign in or create an account to link your subscription.',
             [{ text: 'OK' }]
           );
         }
       }
     } catch (error: any) {
-      console.error('[LoginScreen] Superwall error:', error);
+      console.error('[LoginScreen] ❌ Superwall error:', error);
+      
+      let errorMessage = 'Unable to process subscription at this time.';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
       Alert.alert(
         'Subscription Error',
-        error.message || 'Unable to process subscription at this time. Please try again later.'
+        errorMessage + '\n\nPlease try again later or contact support if the problem persists.',
+        [{ text: 'OK' }]
       );
+    } finally {
+      setIsSubscribing(false);
     }
   };
 
@@ -249,14 +276,21 @@ export default function LoginScreen() {
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
             onPress={handleSubscribe}
+            disabled={isSubscribing}
           >
-            <IconSymbol
-              ios_icon_name="star.fill"
-              android_material_icon_name="star"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="star.fill"
+                  android_material_icon_name="star"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
         </View>
 

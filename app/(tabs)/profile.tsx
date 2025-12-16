@@ -1,15 +1,17 @@
 
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
+import { isSuperwallAvailable, restorePurchases, checkSuperwallConfiguration } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -47,9 +49,75 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
-    console.log('Refreshing profile data...');
+    console.log('[ProfileScreen] Refreshing profile data...');
     await refreshProfile();
     Alert.alert('Success', 'Profile data refreshed');
+  };
+
+  const handleRestorePurchases = async () => {
+    // Check if Superwall is available
+    if (!isSuperwallAvailable()) {
+      checkSuperwallConfiguration();
+      Alert.alert(
+        'Restore Purchases Unavailable',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsRestoring(true);
+    
+    try {
+      console.log('[ProfileScreen] 🔄 Starting restore purchases...');
+      
+      const result = await restorePurchases();
+      
+      console.log('[ProfileScreen] 📊 Restore result:', result);
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+      if (result.success || result.state === 'restored') {
+        Alert.alert(
+          'Purchases Restored',
+          'Your subscription has been restored successfully!',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Purchases Found',
+          'We couldn\'t find any previous purchases to restore. If you believe this is an error, please contact support.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('[ProfileScreen] ❌ Restore purchases error:', error);
+      Alert.alert(
+        'Restore Failed',
+        error.message || 'Unable to restore purchases at this time. Please try again later or contact support.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleManageSubscription = () => {
+    Alert.alert(
+      'Manage Subscription',
+      'To manage your subscription, cancel, or change your plan:\n\n' +
+      '• iOS: Go to Settings > [Your Name] > Subscriptions\n' +
+      '• Android: Open Play Store > Menu > Subscriptions\n\n' +
+      'You can also restore your purchases if you\'ve subscribed on another device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore Purchases',
+          onPress: handleRestorePurchases
+        }
+      ]
+    );
   };
 
   if (!user || !profile) {
@@ -136,14 +204,14 @@ export default function ProfileScreen() {
             styles.statusValue, 
             { color: isSubscribed ? colors.primary : colors.textSecondary }
           ]}>
-            {isSubscribed ? 'Active' : 'Inactive'}
+            {isSubscribed ? 'Active ✓' : 'Inactive'}
           </Text>
         </View>
 
         {subscriptionEndDate && (
           <View style={styles.statusContainer}>
             <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
-              Expires:
+              {isSubscribed ? 'Renews:' : 'Expired:'}
             </Text>
             <Text style={[styles.statusValue, { color: theme.colors.text }]}>
               {subscriptionEndDate}
@@ -151,19 +219,60 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {!isSubscribed && (
+        {!isSubscribed && !profile.is_admin && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              Alert.alert(
-                'Subscribe to SurfVista',
-                'Get unlimited access to exclusive drone footage and daily surf reports for just $5/month.\n\nPayment integration coming soon with Superwall!'
-              );
-            }}
+            onPress={() => router.push('/login')}
           >
-            <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+            <IconSymbol
+              ios_icon_name="star.fill"
+              android_material_icon_name="star"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
           </TouchableOpacity>
         )}
+
+        {isSubscribed && (
+          <TouchableOpacity
+            style={[styles.manageButton, { borderColor: colors.primary }]}
+            onPress={handleManageSubscription}
+          >
+            <IconSymbol
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings"
+              size={20}
+              color={colors.primary}
+            />
+            <Text style={[styles.manageButtonText, { color: colors.primary }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Restore Purchases Button */}
+        <TouchableOpacity
+          style={[styles.restoreButton, { borderColor: colors.textSecondary }]}
+          onPress={handleRestorePurchases}
+          disabled={isRestoring}
+        >
+          {isRestoring ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <React.Fragment>
+              <IconSymbol
+                ios_icon_name="arrow.clockwise"
+                android_material_icon_name="refresh"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
+                Restore Purchases
+              </Text>
+            </React.Fragment>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.refreshButton, { borderColor: colors.primary }]}
@@ -245,6 +354,9 @@ export default function ProfileScreen() {
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Superwall Available: {isSuperwallAvailable() ? 'Yes' : 'No'}
           </Text>
         </View>
       )}
@@ -366,15 +478,46 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   subscribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
     marginTop: 12,
   },
   subscribeButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    borderWidth: 1,
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   refreshButton: {
     flexDirection: 'row',
@@ -383,7 +526,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    marginTop: 12,
+    marginTop: 8,
     borderWidth: 1,
   },
   refreshButtonText: {
