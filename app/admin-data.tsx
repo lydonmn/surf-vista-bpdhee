@@ -367,9 +367,23 @@ export default function AdminDataScreen() {
         {/* Surf Data Test Card */}
         {testSurfData && (
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-              Surf Report Data (Today)
-            </Text>
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Surf Report Data (Today)
+              </Text>
+              <TouchableOpacity
+                style={[styles.editReportButton, { backgroundColor: colors.accent }]}
+                onPress={() => router.push(`/edit-report?id=${testSurfData.id}`)}
+              >
+                <IconSymbol
+                  ios_icon_name="pencil"
+                  android_material_icon_name="edit"
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.editReportButtonText}>Edit Report</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.surfDataRow}>
               <Text style={[styles.surfDataLabel, { color: colors.textSecondary }]}>
                 Wave Height:
@@ -402,6 +416,17 @@ export default function AdminDataScreen() {
                 {testSurfData.rating || 'N/A'}/10
               </Text>
             </View>
+            {testSurfData.report_text && (
+              <View style={[styles.customTextBadge, { backgroundColor: colors.primary }]}>
+                <IconSymbol
+                  ios_icon_name="checkmark.circle.fill"
+                  android_material_icon_name="check_circle"
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.customTextBadgeText}>Custom text active</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -622,10 +647,43 @@ const styles = StyleSheet.create({
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   cardTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 8,
+  },
+  editReportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editReportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  customTextBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  customTextBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   cardDescription: {
     fontSize: 14,

@@ -93,6 +93,9 @@ export interface Database {
           air_temp: string | null
           weather_conditions: string | null
           tide_times: Json | null
+          report_text: string | null
+          edited_by: string | null
+          edited_at: string | null
         }
         Insert: {
           id?: string
@@ -112,6 +115,9 @@ export interface Database {
           air_temp?: string | null
           weather_conditions?: string | null
           tide_times?: Json | null
+          report_text?: string | null
+          edited_by?: string | null
+          edited_at?: string | null
         }
         Update: {
           id?: string
@@ -131,6 +137,9 @@ export interface Database {
           air_temp?: string | null
           weather_conditions?: string | null
           tide_times?: Json | null
+          report_text?: string | null
+          edited_by?: string | null
+          edited_at?: string | null
         }
       }
       weather_data: {

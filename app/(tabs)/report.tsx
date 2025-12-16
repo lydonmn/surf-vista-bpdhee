@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 
 export default function ReportScreen() {
   const theme = useTheme();
@@ -332,12 +333,36 @@ export default function ReportScreen() {
               </View>
 
               <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
-                <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
-                  Conditions
-                </Text>
-                <Text style={[styles.conditionsText, { color: theme.colors.text }]}>
-                  {report.conditions}
-                </Text>
+                <View style={styles.conditionsHeader}>
+                  <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
+                    Conditions
+                  </Text>
+                  {profile?.is_admin && (
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => router.push(`/edit-report?id=${report.id}`)}
+                    >
+                      <IconSymbol
+                        ios_icon_name="pencil"
+                        android_material_icon_name="edit"
+                        size={16}
+                        color={colors.primary}
+                      />
+                      <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                        Edit
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <ReportTextDisplay 
+                  text={report.report_text || report.conditions}
+                  isCustom={!!report.report_text}
+                />
+                {report.report_text && report.edited_at && (
+                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                    Edited {new Date(report.edited_at).toLocaleDateString()}
+                  </Text>
+                )}
               </View>
 
               {report.weather_conditions && (
@@ -575,14 +600,35 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
   },
+  conditionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   conditionsTitle: {
     fontSize: 14,
     fontWeight: 'bold',
-    marginBottom: 4,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  editButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   conditionsText: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  editedNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   weatherBox: {
     padding: 12,
