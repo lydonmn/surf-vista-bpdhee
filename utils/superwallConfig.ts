@@ -8,6 +8,12 @@ import { supabase } from '@/app/integrations/supabase/client';
 // ============================================
 export const SUPERWALL_API_KEY = 'pk_gHLCe_Tlt8M5kFpi5dBHW';
 
+// Superwall Paywall Identifiers
+export const PAYWALL_IDENTIFIERS = {
+  MONTHLY: 'monthly_subscription_paywall',  // $10.99/month
+  ANNUAL: 'subscription_paywall',           // $100.99/year
+};
+
 let isSuperwallInitialized = false;
 
 export const initializeSuperwall = async () => {
@@ -44,10 +50,24 @@ export const initializeSuperwall = async () => {
           return { success: false, error: 'User not authenticated' };
         }
         
-        // Update user's subscription status in Supabase
+        // Determine subscription duration based on product ID
+        // You'll need to map your actual product IDs from App Store/Play Store
+        // to the appropriate subscription duration
         const subscriptionEndDate = new Date();
-        subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1); // 1 month subscription
+        let subscriptionType = 'monthly';
         
+        // Check if this is an annual subscription (adjust product ID matching as needed)
+        if (productId.toLowerCase().includes('annual') || productId.toLowerCase().includes('year')) {
+          subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+          subscriptionType = 'annual';
+          console.log('[Superwall] 📅 Annual subscription detected');
+        } else {
+          subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
+          subscriptionType = 'monthly';
+          console.log('[Superwall] 📅 Monthly subscription detected');
+        }
+        
+        // Update user's subscription status in Supabase
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -62,6 +82,7 @@ export const initializeSuperwall = async () => {
         }
         
         console.log('[Superwall] ✅ Subscription updated successfully');
+        console.log('[Superwall] 📅 Subscription type:', subscriptionType);
         console.log('[Superwall] 📅 Subscription end date:', subscriptionEndDate.toISOString());
         return { success: true };
       } catch (error: any) {
@@ -123,14 +144,14 @@ export const isSuperwallAvailable = () => {
   return isSuperwallInitialized;
 };
 
-export const presentPaywall = async (userId?: string, userEmail?: string) => {
+export const presentPaywall = async (paywallIdentifier: string = PAYWALL_IDENTIFIERS.MONTHLY, userId?: string, userEmail?: string) => {
   if (!isSuperwallInitialized) {
     console.warn('[Superwall] ⚠️ Cannot present paywall - Superwall not initialized');
     throw new Error('Superwall is not configured. Please contact support.');
   }
 
   try {
-    console.log('[Superwall] 🎨 Presenting paywall...');
+    console.log('[Superwall] 🎨 Presenting paywall:', paywallIdentifier);
     
     // Set user attributes if provided
     if (userId && userEmail) {
@@ -142,7 +163,7 @@ export const presentPaywall = async (userId?: string, userEmail?: string) => {
     }
     
     // Present the paywall
-    const result = await Superwall.presentPaywall('subscription_paywall');
+    const result = await Superwall.presentPaywall(paywallIdentifier);
     console.log('[Superwall] 📊 Paywall result:', result);
     return result;
   } catch (error: any) {
@@ -184,6 +205,9 @@ export const checkSuperwallConfiguration = () => {
     console.log('[Superwall] ✅ Configuration Check:');
     console.log('[Superwall] - API Key: Configured');
     console.log('[Superwall] - Status:', isSuperwallInitialized ? 'Initialized' : 'Not Initialized');
+    console.log('[Superwall] - Paywall Identifiers:');
+    console.log('[Superwall]   - Monthly: ' + PAYWALL_IDENTIFIERS.MONTHLY);
+    console.log('[Superwall]   - Annual: ' + PAYWALL_IDENTIFIERS.ANNUAL);
   }
   
   return isConfigured;

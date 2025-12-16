@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isSuperwallAvailable, presentPaywall, checkSuperwallConfiguration } from '@/utils/superwallConfig';
+import { isSuperwallAvailable, presentPaywall, checkSuperwallConfiguration, PAYWALL_IDENTIFIERS } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -78,7 +78,7 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSubscribe = async () => {
+  const handleSubscribe = async (subscriptionType: 'monthly' | 'annual') => {
     // Check if Superwall is available
     if (!isSuperwallAvailable()) {
       console.log('[LoginScreen] Superwall not available, checking configuration...');
@@ -100,12 +100,19 @@ export default function LoginScreen() {
     setIsSubscribing(true);
 
     try {
-      console.log('[LoginScreen] 🎨 Opening Superwall paywall...');
+      const paywallIdentifier = subscriptionType === 'monthly' 
+        ? PAYWALL_IDENTIFIERS.MONTHLY 
+        : PAYWALL_IDENTIFIERS.ANNUAL;
+      
+      const subscriptionName = subscriptionType === 'monthly' ? 'Monthly' : 'Annual';
+      const subscriptionPrice = subscriptionType === 'monthly' ? '$10.99/month' : '$100.99/year';
+      
+      console.log(`[LoginScreen] 🎨 Opening ${subscriptionName} Superwall paywall...`);
       
       // Set user attributes if logged in
       if (user) {
         console.log('[LoginScreen] 👤 User logged in, presenting paywall with user context');
-        const result = await presentPaywall(user.id, user.email || '');
+        const result = await presentPaywall(paywallIdentifier, user.id, user.email || '');
         
         console.log('[LoginScreen] 📊 Paywall result:', result);
         
@@ -115,7 +122,7 @@ export default function LoginScreen() {
           
           Alert.alert(
             'Success! 🎉',
-            'Your subscription is now active. Enjoy exclusive content!',
+            `Your ${subscriptionName.toLowerCase()} subscription is now active. Enjoy exclusive content!`,
             [
               {
                 text: 'OK',
@@ -148,7 +155,7 @@ export default function LoginScreen() {
       } else {
         // User not logged in - show paywall without user context
         console.log('[LoginScreen] ⚠️ User not logged in, presenting paywall without user context');
-        const result = await presentPaywall();
+        const result = await presentPaywall(paywallIdentifier);
         
         if (result.state === 'purchased' || result.state === 'restored') {
           Alert.alert(
@@ -269,29 +276,62 @@ export default function LoginScreen() {
 
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: colors.textSecondary }]} />
-            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or subscribe</Text>
             <View style={[styles.dividerLine, { backgroundColor: colors.textSecondary }]} />
           </View>
 
-          <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={handleSubscribe}
-            disabled={isSubscribing}
-          >
-            {isSubscribing ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <React.Fragment>
-                <IconSymbol
-                  ios_icon_name="star.fill"
-                  android_material_icon_name="star"
-                  size={20}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
-              </React.Fragment>
-            )}
-          </TouchableOpacity>
+          <View style={styles.subscriptionOptions}>
+            <TouchableOpacity
+              style={[styles.subscribeButton, styles.monthlyButton, { backgroundColor: colors.accent }]}
+              onPress={() => handleSubscribe('monthly')}
+              disabled={isSubscribing}
+            >
+              {isSubscribing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <React.Fragment>
+                  <View style={styles.subscriptionHeader}>
+                    <IconSymbol
+                      ios_icon_name="calendar"
+                      android_material_icon_name="calendar_today"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.subscribeButtonTitle}>Monthly</Text>
+                  </View>
+                  <Text style={styles.subscribeButtonPrice}>$10.99/month</Text>
+                  <Text style={styles.subscribeButtonDescription}>Cancel anytime</Text>
+                </React.Fragment>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.subscribeButton, styles.annualButton, { backgroundColor: colors.primary }]}
+              onPress={() => handleSubscribe('annual')}
+              disabled={isSubscribing}
+            >
+              {isSubscribing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <React.Fragment>
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularBadgeText}>BEST VALUE</Text>
+                  </View>
+                  <View style={styles.subscriptionHeader}>
+                    <IconSymbol
+                      ios_icon_name="star.fill"
+                      android_material_icon_name="star"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.subscribeButtonTitle}>Annual</Text>
+                  </View>
+                  <Text style={styles.subscribeButtonPrice}>$100.99/year</Text>
+                  <Text style={styles.subscribeButtonDescription}>Save $30 per year</Text>
+                </React.Fragment>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
@@ -390,18 +430,56 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     fontSize: 14,
   },
+  subscriptionOptions: {
+    gap: 16,
+  },
   subscribeButton: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    position: 'relative',
+  },
+  monthlyButton: {
+    // Additional styling for monthly button
+  },
+  annualButton: {
+    // Additional styling for annual button
+  },
+  subscriptionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    paddingVertical: 16,
-    borderRadius: 12,
+    marginBottom: 8,
   },
-  subscribeButtonText: {
+  subscribeButtonTitle: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
+  },
+  subscribeButtonPrice: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  subscribeButtonDescription: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  popularBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   infoCard: {
     flexDirection: 'row',
