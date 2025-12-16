@@ -222,14 +222,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [isInitialized, loadUserProfile]);
+  }, [loadUserProfile]);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user, true);
     }
-  };
+  }, [session, loadUserProfile]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
@@ -361,7 +361,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const checkSubscription = (): boolean => {
+  // Memoize checkSubscription to prevent infinite loops
+  const checkSubscription = useCallback((): boolean => {
     // Don't check subscription while loading
     if (isLoading || !profile) {
       console.log('[AuthContext] Subscription check: loading or no profile');
@@ -391,13 +392,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isActive = endDate > new Date();
     console.log('[AuthContext] Subscription check: subscribed with end date -', isActive ? 'GRANTED' : 'EXPIRED');
     return isActive;
-  };
+  }, [isLoading, profile]);
 
-  const isAdmin = (): boolean => {
+  const isAdmin = useCallback((): boolean => {
     const adminStatus = profile?.is_admin || false;
     console.log('[AuthContext] Admin status:', adminStatus);
     return adminStatus;
-  };
+  }, [profile]);
 
   return (
     <AuthContext.Provider value={{ 

@@ -25,20 +25,17 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
-  // Log weather data whenever it changes
+  // Store subscription status in state to avoid recalculating
+  const [hasSubscription, setHasSubscription] = useState(false);
+
+  // Update subscription status when profile changes
   useEffect(() => {
-    console.log('[HomeScreen] Weather data updated:', {
-      hasWeatherData: !!weatherData,
-      weatherData: weatherData ? {
-        date: weatherData.date,
-        temperature: weatherData.temperature,
-        conditions: weatherData.conditions,
-        wind_speed: weatherData.wind_speed,
-        wind_direction: weatherData.wind_direction,
-        humidity: weatherData.humidity,
-      } : null,
-    });
-  }, [weatherData]);
+    if (profile) {
+      const subscriptionStatus = checkSubscription();
+      console.log('[HomeScreen] Subscription status updated:', subscriptionStatus);
+      setHasSubscription(subscriptionStatus);
+    }
+  }, [profile, checkSubscription]);
 
   const loadData = useCallback(async () => {
     if (isLoadingData) {
@@ -102,17 +99,17 @@ export default function HomeScreen() {
         is_admin: profile.is_admin,
         is_subscribed: profile.is_subscribed
       } : null,
-      hasSubscription: checkSubscription()
+      hasSubscription
     });
 
     // Only load data when fully initialized, not loading, has user, profile, and subscription
-    if (isInitialized && !isLoading && user && profile && checkSubscription()) {
+    if (isInitialized && !isLoading && user && profile && hasSubscription) {
       console.log('[HomeScreen] Conditions met, loading content data...');
       loadData();
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [user, session, isInitialized, profile, isLoading, checkSubscription, loadData]);
+  }, [user, session, isInitialized, profile, isLoading, hasSubscription, loadData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -267,7 +264,7 @@ export default function HomeScreen() {
   }
 
   // Logged in but no subscription - show subscribe prompt
-  if (!checkSubscription()) {
+  if (!hasSubscription) {
     console.log('[HomeScreen] Rendering: No subscription');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

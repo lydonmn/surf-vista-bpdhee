@@ -25,30 +25,27 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
-  // Log weather data whenever it changes
+  // Store subscription status in state to avoid recalculating
+  const [hasSubscription, setHasSubscription] = useState(false);
+
+  // Update subscription status when profile changes
   useEffect(() => {
-    console.log('[HomeScreen] Weather data updated:', {
-      hasWeatherData: !!weatherData,
-      weatherData: weatherData ? {
-        date: weatherData.date,
-        temperature: weatherData.temperature,
-        conditions: weatherData.conditions,
-        wind_speed: weatherData.wind_speed,
-        wind_direction: weatherData.wind_direction,
-        humidity: weatherData.humidity,
-      } : null,
-    });
-  }, [weatherData]);
+    if (profile) {
+      const subscriptionStatus = checkSubscription();
+      console.log('[HomeScreen iOS] Subscription status updated:', subscriptionStatus);
+      setHasSubscription(subscriptionStatus);
+    }
+  }, [profile, checkSubscription]);
 
   const loadData = useCallback(async () => {
     if (isLoadingData) {
-      console.log('[HomeScreen] Already loading data, skipping...');
+      console.log('[HomeScreen iOS] Already loading data, skipping...');
       return;
     }
 
     try {
       setIsLoadingData(true);
-      console.log('[HomeScreen] Fetching videos and reports...');
+      console.log('[HomeScreen iOS] Fetching videos and reports...');
       
       // Load latest video
       const { data: videoData, error: videoError } = await supabase
@@ -59,12 +56,12 @@ export default function HomeScreen() {
         .maybeSingle();
 
       if (videoError) {
-        console.log('[HomeScreen] Video fetch error:', videoError.message);
+        console.log('[HomeScreen iOS] Video fetch error:', videoError.message);
       } else if (videoData) {
-        console.log('[HomeScreen] Video loaded:', videoData.title);
+        console.log('[HomeScreen iOS] Video loaded:', videoData.title);
         setLatestVideo(videoData);
       } else {
-        console.log('[HomeScreen] No videos found');
+        console.log('[HomeScreen iOS] No videos found');
       }
 
       // Load today's surf report
@@ -76,22 +73,22 @@ export default function HomeScreen() {
         .maybeSingle();
 
       if (reportError) {
-        console.log('[HomeScreen] Report fetch error:', reportError.message);
+        console.log('[HomeScreen iOS] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen] Report loaded for:', today);
+        console.log('[HomeScreen iOS] Report loaded for:', today);
         setTodayReport(reportData);
       } else {
-        console.log('[HomeScreen] No report found for today');
+        console.log('[HomeScreen iOS] No report found for today');
       }
     } catch (error) {
-      console.error('[HomeScreen] Error loading data:', error);
+      console.error('[HomeScreen iOS] Error loading data:', error);
     } finally {
       setIsLoadingData(false);
     }
   }, [isLoadingData]);
 
   useEffect(() => {
-    console.log('[HomeScreen] State update:', {
+    console.log('[HomeScreen iOS] State update:', {
       isInitialized,
       isLoading,
       hasUser: !!user,
@@ -102,17 +99,17 @@ export default function HomeScreen() {
         is_admin: profile.is_admin,
         is_subscribed: profile.is_subscribed
       } : null,
-      hasSubscription: checkSubscription()
+      hasSubscription
     });
 
     // Only load data when fully initialized, not loading, has user, profile, and subscription
-    if (isInitialized && !isLoading && user && profile && checkSubscription()) {
-      console.log('[HomeScreen] Conditions met, loading content data...');
+    if (isInitialized && !isLoading && user && profile && hasSubscription) {
+      console.log('[HomeScreen iOS] Conditions met, loading content data...');
       loadData();
     } else {
-      console.log('[HomeScreen] Not loading data - conditions not met');
+      console.log('[HomeScreen iOS] Not loading data - conditions not met');
     }
-  }, [user, session, isInitialized, profile, isLoading, checkSubscription, loadData]);
+  }, [user, session, isInitialized, profile, isLoading, hasSubscription, loadData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -151,12 +148,12 @@ export default function HomeScreen() {
     setIsSubscribing(true);
 
     try {
-      console.log('[HomeScreen] 🎨 Opening subscription paywall...');
+      console.log('[HomeScreen iOS] 🎨 Opening subscription paywall...');
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[HomeScreen] 📊 Paywall result:', result);
+      console.log('[HomeScreen iOS] 📊 Paywall result:', result);
       
       // Refresh profile to get updated subscription status
       await refreshProfile();
@@ -177,7 +174,7 @@ export default function HomeScreen() {
       // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
-      console.error('[HomeScreen] ❌ Subscribe error:', error);
+      console.error('[HomeScreen iOS] ❌ Subscribe error:', error);
       Alert.alert(
         'Subscribe Failed',
         error.message || 'Unable to open subscription page. Please try again later.',
@@ -190,7 +187,7 @@ export default function HomeScreen() {
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
-    console.log('[HomeScreen] Rendering: Not initialized');
+    console.log('[HomeScreen iOS] Rendering: Not initialized');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -205,7 +202,7 @@ export default function HomeScreen() {
 
   // Show loading state while profile is being loaded
   if (isLoading) {
-    console.log('[HomeScreen] Rendering: Loading profile');
+    console.log('[HomeScreen iOS] Rendering: Loading profile');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -220,7 +217,7 @@ export default function HomeScreen() {
 
   // Not logged in - show sign in prompt
   if (!user || !session) {
-    console.log('[HomeScreen] Rendering: Not logged in');
+    console.log('[HomeScreen iOS] Rendering: Not logged in');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -240,7 +237,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.primary }]}
             onPress={() => {
-              console.log('[HomeScreen] Navigating to login...');
+              console.log('[HomeScreen iOS] Navigating to login...');
               router.push('/login');
             }}
           >
@@ -253,7 +250,7 @@ export default function HomeScreen() {
 
   // Wait for profile to load
   if (!profile) {
-    console.log('[HomeScreen] Rendering: Waiting for profile');
+    console.log('[HomeScreen iOS] Rendering: Waiting for profile');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -267,8 +264,8 @@ export default function HomeScreen() {
   }
 
   // Logged in but no subscription - show subscribe prompt
-  if (!checkSubscription()) {
-    console.log('[HomeScreen] Rendering: No subscription');
+  if (!hasSubscription) {
+    console.log('[HomeScreen iOS] Rendering: No subscription');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -301,7 +298,7 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
-  console.log('[HomeScreen] Rendering: Subscribed content');
+  console.log('[HomeScreen iOS] Rendering: Subscribed content');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
