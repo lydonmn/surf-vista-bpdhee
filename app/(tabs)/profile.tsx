@@ -6,12 +6,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { isPaymentSystemAvailable, restorePurchases, checkPaymentConfiguration } from '@/utils/superwallConfig';
+import { 
+  isPaymentSystemAvailable, 
+  restorePurchases, 
+  checkPaymentConfiguration,
+  presentCustomerCenter,
+  presentPaywall
+} from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -103,21 +110,100 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleManageSubscription = () => {
-    Alert.alert(
-      'Manage Subscription',
-      'To manage your subscription, cancel, or change your plan:\n\n' +
-      '• iOS: Go to Settings > [Your Name] > Subscriptions\n' +
-      '• Android: Open Play Store > Menu > Subscriptions\n\n' +
-      'You can also restore your purchases if you\'ve subscribed on another device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore Purchases',
-          onPress: handleRestorePurchases
-        }
-      ]
-    );
+  const handleManageSubscription = async () => {
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      checkPaymentConfiguration();
+      Alert.alert(
+        'Manage Subscription Unavailable',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsLoadingCustomerCenter(true);
+    
+    try {
+      console.log('[ProfileScreen] 🏢 Opening Customer Center...');
+      
+      // Present the RevenueCat Customer Center
+      await presentCustomerCenter();
+      
+      console.log('[ProfileScreen] ✅ Customer Center closed');
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+    } catch (error: any) {
+      console.error('[ProfileScreen] ❌ Customer Center error:', error);
+      
+      // Fallback to native subscription management
+      Alert.alert(
+        'Manage Subscription',
+        'To manage your subscription, cancel, or change your plan:\n\n' +
+        '• iOS: Go to Settings > [Your Name] > Subscriptions\n' +
+        '• Android: Open Play Store > Menu > Subscriptions\n\n' +
+        'You can also restore your purchases if you\'ve subscribed on another device.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore Purchases',
+            onPress: handleRestorePurchases
+          }
+        ]
+      );
+    } finally {
+      setIsLoadingCustomerCenter(false);
+    }
+  };
+
+  const handleSubscribeNow = async () => {
+    // Check if payment system is available
+    if (!isPaymentSystemAvailable()) {
+      checkPaymentConfiguration();
+      Alert.alert(
+        'Subscribe Unavailable',
+        'Subscription features are currently being configured. Please contact support or try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    try {
+      console.log('[ProfileScreen] 🎨 Opening subscription paywall...');
+      
+      // Present the RevenueCat Paywall
+      const result = await presentPaywall(user?.id, user?.email || undefined);
+      
+      console.log('[ProfileScreen] 📊 Paywall result:', result);
+      
+      // Refresh profile to get updated subscription status
+      await refreshProfile();
+      
+      if (result.state === 'purchased' || result.state === 'restored') {
+        Alert.alert(
+          'Success!',
+          result.message || 'Subscription activated successfully!',
+          [{ text: 'OK' }]
+        );
+      } else if (result.state === 'error') {
+        Alert.alert(
+          'Purchase Failed',
+          result.message || 'Unable to complete purchase. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+      // If declined, do nothing (user cancelled)
+      
+    } catch (error: any) {
+      console.error('[ProfileScreen] ❌ Subscribe error:', error);
+      Alert.alert(
+        'Subscribe Failed',
+        error.message || 'Unable to open subscription page. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   if (!user || !profile) {
@@ -222,7 +308,7 @@ export default function ProfileScreen() {
         {!isSubscribed && !profile.is_admin && (
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
+            onPress={handleSubscribeNow}
           >
             <IconSymbol
               ios_icon_name="star.fill"
@@ -238,16 +324,23 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.manageButton, { borderColor: colors.primary }]}
             onPress={handleManageSubscription}
+            disabled={isLoadingCustomerCenter}
           >
-            <IconSymbol
-              ios_icon_name="gearshape.fill"
-              android_material_icon_name="settings"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={[styles.manageButtonText, { color: colors.primary }]}>
-              Manage Subscription
-            </Text>
+            {isLoadingCustomerCenter ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="gearshape.fill"
+                  android_material_icon_name="settings"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.manageButtonText, { color: colors.primary }]}>
+                  Manage Subscription
+                </Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
         )}
 

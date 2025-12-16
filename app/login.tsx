@@ -1,363 +1,217 @@
 
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ScrollView, ActivityIndicator } from "react-native";
-import { useTheme } from "@react-navigation/native";
-import { useAuth } from "@/contexts/AuthContext";
-import { router } from "expo-router";
-import { colors } from "@/styles/commonStyles";
-import { IconSymbol } from "@/components/IconSymbol";
-import { isPaymentSystemAvailable, presentPaywall, checkPaymentConfiguration, PAYMENT_CONFIG } from '@/utils/superwallConfig';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useTheme } from '@react-navigation/native';
+import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
+import { colors } from '@/styles/commonStyles';
+import { IconSymbol } from '@/components/IconSymbol';
+import { presentPaywall, isPaymentSystemAvailable } from '@/utils/superwallConfig';
 
 export default function LoginScreen() {
   const theme = useTheme();
-  const { signIn, signUp, user, profile, isLoading: authLoading, checkSubscription, refreshProfile } = useAuth();
+  const { signIn, signUp, user, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in with subscription
+  // Redirect if already logged in
   useEffect(() => {
-    if (user && profile && !authLoading && checkSubscription()) {
-      console.log('[LoginScreen] User already logged in with subscription, redirecting...');
-      router.replace('/(tabs)/(home)/');
+    if (user && !authLoading) {
+      console.log('[LoginScreen] User already logged in, redirecting to home');
+      router.replace('/(tabs)');
     }
-  }, [user, profile, authLoading]);
+  }, [user, authLoading]);
 
-  const handleAuth = async () => {
+  const handleSubmit = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please enter both email and password');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-
     setIsLoading(true);
 
-    if (isSignUp) {
-      const result = await signUp(email, password);
-      setIsLoading(false);
-      
-      Alert.alert(
-        result.success ? 'Success' : 'Error',
-        result.message,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (result.success) {
-                setIsSignUp(false);
-                setPassword('');
-              }
-            }
-          }
-        ]
-      );
-    } else {
-      console.log('[LoginScreen] Starting sign in...');
-      const result = await signIn(email, password);
-      console.log('[LoginScreen] Sign in result:', result);
-      setIsLoading(false);
-
-      if (result.success) {
-        console.log('[LoginScreen] Sign in successful, waiting for profile to load...');
-        // Wait a bit for the profile to load via AuthContext
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Navigate to home - the home screen will handle showing the right content
-        console.log('[LoginScreen] Navigating to home...');
-        router.replace('/(tabs)/(home)/');
-      } else {
-        console.log('[LoginScreen] Sign in failed:', result.message);
-        Alert.alert('Sign In Failed', result.message);
-      }
-    }
-  };
-
-  const handleSubscribe = async (subscriptionType: 'monthly' | 'annual') => {
-    // Check if payment system is available
-    if (!isPaymentSystemAvailable()) {
-      console.log('[LoginScreen] Payment system not available, checking configuration...');
-      const isConfigured = checkPaymentConfiguration();
-      
-      if (!isConfigured) {
-        Alert.alert(
-          'Payment Setup Required',
-          'To enable subscriptions, you need to configure RevenueCat:\n\n' +
-          '1. Create a RevenueCat account\n' +
-          '2. Get your API keys\n' +
-          '3. Update utils/superwallConfig.ts\n' +
-          '4. Restart the app\n\n' +
-          'See docs/PAYMENT_QUICK_START.md for detailed instructions.',
-          [
-            { text: 'OK' },
-            {
-              text: 'View Guide',
-              onPress: () => {
-                console.log('[LoginScreen] User wants to view setup guide');
-                Alert.alert(
-                  'Setup Guide',
-                  'Please check the docs/PAYMENT_QUICK_START.md file in your project for step-by-step instructions.',
-                  [{ text: 'OK' }]
-                );
-              }
-            }
-          ]
-        );
-        return;
-      }
-    }
-
-    setIsSubscribing(true);
-
     try {
-      const subscriptionName = subscriptionType === 'monthly' ? 'Monthly' : 'Annual';
-      const subscriptionPrice = subscriptionType === 'monthly' 
-        ? `$${PAYMENT_CONFIG.MONTHLY_PRICE}/month` 
-        : `$${PAYMENT_CONFIG.ANNUAL_PRICE}/year`;
-      
-      console.log(`[LoginScreen] 🎨 Starting ${subscriptionName} subscription...`);
-      
-      // Present paywall
-      const result = await presentPaywall(
-        subscriptionType,
-        user?.id,
-        user?.email || undefined
-      );
-      
-      console.log('[LoginScreen] 📊 Subscription result:', result);
-      
-      if (result.state === 'purchased') {
-        // Refresh profile to get updated subscription status
-        await refreshProfile();
+      if (isSignUp) {
+        console.log('[LoginScreen] Attempting sign up...');
+        const result = await signUp(email, password);
         
-        Alert.alert(
-          'Success! 🎉',
-          `Your ${subscriptionName.toLowerCase()} subscription is now active. Enjoy exclusive content!`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                router.replace('/(tabs)/(home)/');
+        if (result.success) {
+          Alert.alert(
+            'Success!',
+            result.message,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Switch to sign in mode
+                  setIsSignUp(false);
+                  setPassword('');
+                }
+              }
+            ]
+          );
+        } else {
+          Alert.alert('Sign Up Failed', result.message);
+        }
+      } else {
+        console.log('[LoginScreen] Attempting sign in...');
+        const result = await signIn(email, password);
+        
+        if (result.success) {
+          console.log('[LoginScreen] Sign in successful, navigating to home');
+          
+          // Show paywall after successful login if payment system is available
+          // This is optional - you can remove this if you don't want to show paywall on login
+          setTimeout(async () => {
+            if (isPaymentSystemAvailable()) {
+              try {
+                await presentPaywall(user?.id, email);
+              } catch (error) {
+                console.log('[LoginScreen] Paywall presentation skipped or cancelled');
               }
             }
-          ]
-        );
-      } else if (result.state === 'restored') {
-        // Refresh profile to get updated subscription status
-        await refreshProfile();
-        
-        Alert.alert(
-          'Subscription Restored ✅',
-          'Your subscription has been restored successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                router.replace('/(tabs)/(home)/');
-              }
-            }
-          ]
-        );
-      } else if (result.state === 'declined') {
-        console.log('[LoginScreen] ℹ️ User cancelled purchase');
-        // User cancelled - no need to show alert
-      } else if (result.state === 'error') {
-        Alert.alert(
-          'Subscription Error',
-          result.message || 'Unable to process subscription at this time. Please try again.',
-          [{ text: 'OK' }]
-        );
+          }, 1000);
+          
+          router.replace('/(tabs)');
+        } else {
+          Alert.alert('Sign In Failed', result.message);
+        }
       }
     } catch (error: any) {
-      console.error('[LoginScreen] ❌ Subscription error:', error);
-      
-      let errorMessage = 'Unable to process subscription at this time.';
-      
-      if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert(
-        'Subscription Error',
-        errorMessage,
-        [{ text: 'OK' }]
-      );
+      console.error('[LoginScreen] Error:', error);
+      Alert.alert('Error', error.message || 'An unexpected error occurred');
     } finally {
-      setIsSubscribing(false);
+      setIsLoading(false);
     }
   };
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp);
+    setPassword('');
+  };
+
+  if (authLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={() => router.back()}
-        >
-          <IconSymbol
-            ios_icon_name="xmark.circle.fill"
-            android_material_icon_name="cancel"
-            size={32}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.logoContainer}>
-          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-        </View>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          {isSignUp ? 'Create your account' : 'Sign in to access exclusive content'}
-        </Text>
-
-        <View style={styles.form}>
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.card }]}>
-            <IconSymbol
-              ios_icon_name="envelope.fill"
-              android_material_icon_name="email"
-              size={20}
-              color={colors.textSecondary}
-            />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Email"
-              placeholderTextColor={colors.textSecondary}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.card }]}>
-            <IconSymbol
-              ios_icon_name="lock.fill"
-              android_material_icon_name="lock"
-              size={20}
-              color={colors.textSecondary}
-            />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Password (min 6 characters)"
-              placeholderTextColor={colors.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.authButton, { backgroundColor: colors.primary }]}
-            onPress={handleAuth}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.authButtonText}>
-                {isSignUp ? 'Create Account' : 'Sign In'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.switchModeButton}
-            onPress={() => setIsSignUp(!isSignUp)}
-            disabled={isLoading}
-          >
-            <Text style={[styles.switchModeText, { color: colors.textSecondary }]}>
-              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <Text style={{ color: colors.primary, fontWeight: 'bold' }}>
-                {isSignUp ? 'Sign In' : 'Sign Up'}
-              </Text>
+        <View style={styles.content}>
+          {/* Logo/Header */}
+          <View style={styles.header}>
+            <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
+              <IconSymbol
+                ios_icon_name="water.waves"
+                android_material_icon_name="waves"
+                size={64}
+                color="#FFFFFF"
+              />
+            </View>
+            <Text style={[styles.title, { color: theme.colors.text }]}>
+              SurfVista
             </Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.textSecondary }]} />
-            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or subscribe</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.textSecondary }]} />
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Folly Beach, SC
+            </Text>
           </View>
 
-          <View style={styles.subscriptionOptions}>
+          {/* Form */}
+          <View style={styles.form}>
+            <Text style={[styles.formTitle, { color: theme.colors.text }]}>
+              {isSignUp ? 'Create Account' : 'Welcome Back'}
+            </Text>
+            
+            <View style={styles.inputContainer}>
+              <IconSymbol
+                ios_icon_name="envelope.fill"
+                android_material_icon_name="email"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                style={[styles.input, { color: theme.colors.text }]}
+                placeholder="Email"
+                placeholderTextColor={colors.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                editable={!isLoading}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <IconSymbol
+                ios_icon_name="lock.fill"
+                android_material_icon_name="lock"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                style={[styles.input, { color: theme.colors.text }]}
+                placeholder="Password"
+                placeholderTextColor={colors.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                editable={!isLoading}
+              />
+            </View>
+
             <TouchableOpacity
-              style={[styles.subscribeButton, styles.monthlyButton, { backgroundColor: colors.accent }]}
-              onPress={() => handleSubscribe('monthly')}
-              disabled={isSubscribing}
+              style={[
+                styles.submitButton,
+                { backgroundColor: colors.primary },
+                isLoading && styles.submitButtonDisabled
+              ]}
+              onPress={handleSubmit}
+              disabled={isLoading}
             >
-              {isSubscribing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <React.Fragment>
-                  <View style={styles.subscriptionHeader}>
-                    <IconSymbol
-                      ios_icon_name="calendar"
-                      android_material_icon_name="calendar_today"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.subscribeButtonTitle}>Monthly</Text>
-                  </View>
-                  <Text style={styles.subscribeButtonPrice}>${PAYMENT_CONFIG.MONTHLY_PRICE}/month</Text>
-                  <Text style={styles.subscribeButtonDescription}>Cancel anytime</Text>
-                </React.Fragment>
+                <Text style={styles.submitButtonText}>
+                  {isSignUp ? 'Sign Up' : 'Sign In'}
+                </Text>
               )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.subscribeButton, styles.annualButton, { backgroundColor: colors.primary }]}
-              onPress={() => handleSubscribe('annual')}
-              disabled={isSubscribing}
+              style={styles.toggleButton}
+              onPress={toggleMode}
+              disabled={isLoading}
             >
-              {isSubscribing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <React.Fragment>
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularBadgeText}>BEST VALUE</Text>
-                  </View>
-                  <View style={styles.subscriptionHeader}>
-                    <IconSymbol
-                      ios_icon_name="star.fill"
-                      android_material_icon_name="star"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.subscribeButtonTitle}>Annual</Text>
-                  </View>
-                  <Text style={styles.subscribeButtonPrice}>${PAYMENT_CONFIG.ANNUAL_PRICE}/year</Text>
-                  <Text style={styles.subscribeButtonDescription}>Save ${(PAYMENT_CONFIG.MONTHLY_PRICE * 12 - PAYMENT_CONFIG.ANNUAL_PRICE).toFixed(2)} per year</Text>
-                </React.Fragment>
-              )}
+              <Text style={[styles.toggleButtonText, { color: colors.primary }]}>
+                {isSignUp
+                  ? 'Already have an account? Sign In'
+                  : 'Don\'t have an account? Sign Up'}
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
-          <IconSymbol
-            ios_icon_name="info.circle.fill"
-            android_material_icon_name="info"
-            size={20}
-            color={colors.primary}
-          />
-          <View style={styles.infoTextContainer}>
+          {/* Info */}
+          <View style={styles.infoContainer}>
+            <IconSymbol
+              ios_icon_name="info.circle.fill"
+              android_material_icon_name="info"
+              size={16}
+              color={colors.textSecondary}
+            />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              {isSignUp 
-                ? 'After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.'
-                : 'Subscribe to access exclusive 6K drone footage and daily surf reports from Folly Beach, SC.'}
+              Subscribe for $5/month to access exclusive surf reports and drone footage
             </Text>
           </View>
         </View>
@@ -372,139 +226,91 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 32,
-    paddingTop: 60,
-    paddingBottom: 40,
+    justifyContent: 'center',
+    padding: 24,
   },
-  closeButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 20,
+  content: {
+    maxWidth: 400,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 48,
   },
   logoContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  appTitle: {
-    fontSize: 48,
+  title: {
+    fontSize: 32,
     fontWeight: 'bold',
-    letterSpacing: 1,
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 40,
   },
   form: {
-    width: '100%',
+    marginBottom: 32,
+  },
+  formTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    textAlign: 'center',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(70, 130, 180, 0.1)',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
     marginBottom: 16,
     gap: 12,
   },
   input: {
     flex: 1,
+    paddingVertical: 16,
     fontSize: 16,
   },
-  authButton: {
+  submitButton: {
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
   },
-  authButtonText: {
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  switchModeButton: {
+  toggleButton: {
     paddingVertical: 12,
     alignItems: 'center',
     marginTop: 16,
   },
-  switchModeText: {
+  toggleButtonText: {
     fontSize: 14,
+    fontWeight: '600',
   },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-  },
-  subscriptionOptions: {
-    gap: 16,
-  },
-  subscribeButton: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    position: 'relative',
-  },
-  monthlyButton: {
-    // Additional styling for monthly button
-  },
-  annualButton: {
-    // Additional styling for annual button
-  },
-  subscriptionHeader: {
+  infoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
-  },
-  subscribeButtonTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  subscribeButtonPrice: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  subscribeButtonDescription: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 14,
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  popularBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  infoCard: {
-    flexDirection: 'row',
     padding: 16,
-    borderRadius: 8,
-    marginTop: 24,
-    gap: 12,
-  },
-  infoTextContainer: {
-    flex: 1,
+    backgroundColor: 'rgba(70, 130, 180, 0.1)',
+    borderRadius: 12,
   },
   infoText: {
-    fontSize: 13,
+    flex: 1,
+    fontSize: 12,
     lineHeight: 18,
   },
 });

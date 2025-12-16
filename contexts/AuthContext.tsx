@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
-import { initializePaymentSystem, identifyUser, logoutUser } from '@/utils/superwallConfig';
+import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -41,17 +41,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Initialize payment system (non-blocking)
+        // Initialize RevenueCat (non-blocking)
         try {
-          console.log('[AuthContext] Initializing payment system...');
-          const paymentInitialized = await initializePaymentSystem();
-          if (paymentInitialized) {
-            console.log('[AuthContext] ✅ Payment system initialized');
+          console.log('[AuthContext] Initializing RevenueCat...');
+          const revenueCatInitialized = await initializeRevenueCat();
+          if (revenueCatInitialized) {
+            console.log('[AuthContext] ✅ RevenueCat initialized successfully');
           } else {
-            console.log('[AuthContext] ⚠️ Payment system not configured (non-critical)');
+            console.log('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
           }
-        } catch (paymentError) {
-          console.error('[AuthContext] ⚠️ Payment system initialization failed (non-critical):', paymentError);
+        } catch (revenueCatError) {
+          console.error('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
         }
         
         // Get initial session
@@ -66,11 +66,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Loading initial profile...');
           await loadUserProfile(initialSession.user, mounted);
           
-          // Identify user in payment system
+          // Identify user in RevenueCat
           try {
             await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
           } catch (error) {
-            console.error('[AuthContext] Error identifying user in payment system:', error);
+            console.error('[AuthContext] Error identifying user in RevenueCat:', error);
           }
         } else {
           console.log('[AuthContext] No session, setting loading to false');
@@ -103,11 +103,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_OUT') {
         console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
         
-        // Logout from payment system
+        // Logout from RevenueCat
         try {
           await logoutUser();
         } catch (error) {
-          console.error('[AuthContext] Error logging out from payment system:', error);
+          console.error('[AuthContext] Error logging out from RevenueCat:', error);
         }
         
         setUser(null);
@@ -119,11 +119,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
         
-        // Identify user in payment system
+        // Identify user in RevenueCat
         try {
           await identifyUser(newSession.user.id, newSession.user.email || undefined);
         } catch (error) {
-          console.error('[AuthContext] Error identifying user in payment system:', error);
+          console.error('[AuthContext] Error identifying user in RevenueCat:', error);
         }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event detected');
@@ -302,11 +302,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[AuthContext] Current user state:', user?.email);
     
     try {
-      // Logout from payment system first
+      // Logout from RevenueCat first
       try {
         await logoutUser();
       } catch (error) {
-        console.error('[AuthContext] Error logging out from payment system:', error);
+        console.error('[AuthContext] Error logging out from RevenueCat:', error);
       }
       
       // Clear local state FIRST for immediate UI update
