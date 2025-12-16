@@ -23,6 +23,21 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
 
+  // Log weather data whenever it changes
+  useEffect(() => {
+    console.log('[HomeScreen] Weather data updated:', {
+      hasWeatherData: !!weatherData,
+      weatherData: weatherData ? {
+        date: weatherData.date,
+        temperature: weatherData.temperature,
+        conditions: weatherData.conditions,
+        wind_speed: weatherData.wind_speed,
+        wind_direction: weatherData.wind_direction,
+        humidity: weatherData.humidity,
+      } : null,
+    });
+  }, [weatherData]);
+
   useEffect(() => {
     console.log('[HomeScreen] State update:', {
       isInitialized,

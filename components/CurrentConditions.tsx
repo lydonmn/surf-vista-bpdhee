@@ -13,59 +13,81 @@ interface CurrentConditionsProps {
 
 // Helper function to get appropriate weather icon based on conditions
 const getWeatherIcon = (conditions: string | null) => {
-  if (!conditions) return { ios: 'cloud.fill', android: 'cloud' };
+  console.log('[CurrentConditions] Getting weather icon for conditions:', conditions);
+  
+  if (!conditions) {
+    console.log('[CurrentConditions] No conditions provided, using default cloud icon');
+    return { ios: 'cloud.fill', android: 'cloud' };
+  }
   
   const lower = conditions.toLowerCase();
+  console.log('[CurrentConditions] Lowercase conditions:', lower);
   
   // Rain conditions
   if (lower.includes('rain') || lower.includes('shower') || lower.includes('drizzle')) {
+    console.log('[CurrentConditions] Matched rain condition');
     return { ios: 'cloud.rain.fill', android: 'rainy' };
   }
   
   // Storm conditions
   if (lower.includes('storm') || lower.includes('thunder')) {
+    console.log('[CurrentConditions] Matched storm condition');
     return { ios: 'cloud.bolt.rain.fill', android: 'thunderstorm' };
   }
   
   // Snow conditions
   if (lower.includes('snow') || lower.includes('sleet') || lower.includes('ice')) {
+    console.log('[CurrentConditions] Matched snow condition');
     return { ios: 'cloud.snow.fill', android: 'ac_unit' };
   }
   
   // Fog/Mist conditions
   if (lower.includes('fog') || lower.includes('mist') || lower.includes('haze')) {
+    console.log('[CurrentConditions] Matched fog condition');
     return { ios: 'cloud.fog.fill', android: 'foggy' };
   }
   
   // Clear/Sunny conditions
   if (lower.includes('clear') || lower.includes('sunny')) {
+    console.log('[CurrentConditions] Matched clear/sunny condition');
     return { ios: 'sun.max.fill', android: 'wb_sunny' };
   }
   
   // Partly cloudy
   if (lower.includes('partly') || lower.includes('partial')) {
+    console.log('[CurrentConditions] Matched partly cloudy condition');
     return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
   }
   
   // Cloudy/Overcast
   if (lower.includes('cloud') || lower.includes('overcast')) {
+    console.log('[CurrentConditions] Matched cloudy condition');
     return { ios: 'cloud.fill', android: 'cloud' };
   }
   
   // Windy
   if (lower.includes('wind') || lower.includes('breezy')) {
+    console.log('[CurrentConditions] Matched windy condition');
     return { ios: 'wind', android: 'air' };
   }
   
   // Default fallback
+  console.log('[CurrentConditions] No match found, using default partly cloudy icon');
   return { ios: 'cloud.sun.fill', android: 'wb_cloudy' };
 };
 
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
+  console.log('[CurrentConditions] Rendering with weather:', {
+    hasWeather: !!weather,
+    conditions: weather?.conditions,
+    temperature: weather?.temperature,
+  });
+
   // Get dynamic icon based on current weather conditions
   const weatherIcon = getWeatherIcon(weather?.conditions || null);
+  console.log('[CurrentConditions] Selected weather icon:', weatherIcon);
 
   if (!weather && !surfReport) {
     return (
