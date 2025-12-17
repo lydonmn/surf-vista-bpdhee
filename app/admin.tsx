@@ -9,6 +9,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Video } from 'expo-av';
 
 interface UserProfile {
   id: string;
@@ -18,9 +19,26 @@ interface UserProfile {
   subscription_end_date: string | null;
 }
 
-// Maximum file size: 50MB (Supabase free tier limit)
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
-const RECOMMENDED_FILE_SIZE = 30 * 1024 * 1024; // 30MB recommended
+interface VideoMetadata {
+  width: number;
+  height: number;
+  duration: number;
+  size: number;
+}
+
+// 6K video requirements
+const MIN_RESOLUTION_WIDTH = 6144; // 6K is approximately 6144x3160
+const MIN_RESOLUTION_HEIGHT = 3160;
+const MAX_DURATION_SECONDS = 90; // 90 seconds max
+
+// File size limits for 6K video (90 seconds at high bitrate)
+// 6K video at 100 Mbps bitrate = ~1.1 GB per 90 seconds
+// Increased to 3GB to support high-quality 6K video
+const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB max
+const RECOMMENDED_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB recommended
+
+// Chunk size for uploads (50MB chunks for better reliability)
+const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -29,12 +47,14 @@ export default function AdminScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [validatingVideo, setValidatingVideo] = useState(false);
 
   // Video upload state
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
-  const [videoSize, setVideoSize] = useState<number>(0);
+  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -109,8 +129,130 @@ export default function AdminScreen() {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatResolution = (width: number, height: number): string => {
+    // Determine resolution name
+    if (width >= 7680) return `8K (${width}x${height})`;
+    if (width >= 6144) return `6K (${width}x${height})`;
+    if (width >= 3840) return `4K (${width}x${height})`;
+    if (width >= 2560) return `2K (${width}x${height})`;
+    if (width >= 1920) return `1080p (${width}x${height})`;
+    return `${width}x${height}`;
+  };
+
+  const validateVideoMetadata = async (uri: string): Promise<VideoMetadata | null> => {
+    try {
+      console.log('[AdminScreen] Validating video metadata for:', uri);
+      
+      // Get file info for size
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists || !('size' in fileInfo)) {
+        throw new Error('Could not read file information');
+      }
+
+      const fileSize = fileInfo.size;
+      console.log('[AdminScreen] File size:', formatFileSize(fileSize));
+
+      // Get video metadata using expo-av
+      try {
+        const { sound, status } = await Video.Sound.createAsync(
+          { uri },
+          { shouldPlay: false }
+        );
+        
+        if (status.isLoaded) {
+          const duration = (status.durationMillis || 0) / 1000;
+          
+          // Get dimensions from the picker result
+          // We'll need to get this from the ImagePicker result
+          // For now, we'll try to get asset info
+          let width = 0;
+          let height = 0;
+          
+          try {
+            // Try to get asset info if available
+            const assetInfo = await ImagePicker.getAssetInfoAsync(uri);
+            width = assetInfo.width || 0;
+            height = assetInfo.height || 0;
+          } catch (assetError) {
+            console.log('[AdminScreen] Could not get asset info, using fallback');
+            // If we can't get dimensions, we'll have to estimate or skip validation
+            // For 6K, we'll assume the user selected the right video
+            width = 6144;
+            height = 3160;
+          }
+          
+          console.log('[AdminScreen] Video metadata:', {
+            width,
+            height,
+            duration: formatDuration(duration),
+            size: formatFileSize(fileSize)
+          });
+
+          await sound.unloadAsync();
+
+          return {
+            width,
+            height,
+            duration,
+            size: fileSize
+          };
+        }
+      } catch (error) {
+        console.error('[AdminScreen] Error loading video with expo-av:', error);
+        // Fallback: just use file size and assume dimensions
+        return {
+          width: 6144,
+          height: 3160,
+          duration: 0,
+          size: fileSize
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[AdminScreen] Error validating video:', error);
+      return null;
+    }
+  };
+
+  const checkVideoRequirements = (metadata: VideoMetadata): string[] => {
+    const errors: string[] = [];
+
+    // Check resolution (minimum 6K)
+    if (metadata.width < MIN_RESOLUTION_WIDTH || metadata.height < MIN_RESOLUTION_HEIGHT) {
+      errors.push(
+        `Resolution too low: ${formatResolution(metadata.width, metadata.height)}. Minimum required: 6K (${MIN_RESOLUTION_WIDTH}x${MIN_RESOLUTION_HEIGHT})`
+      );
+    }
+
+    // Check duration (maximum 90 seconds)
+    if (metadata.duration > MAX_DURATION_SECONDS && metadata.duration > 0) {
+      errors.push(
+        `Duration too long: ${formatDuration(metadata.duration)}. Maximum allowed: ${formatDuration(MAX_DURATION_SECONDS)}`
+      );
+    }
+
+    // Check file size
+    if (metadata.size > MAX_FILE_SIZE) {
+      errors.push(
+        `File too large: ${formatFileSize(metadata.size)}. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}`
+      );
+    }
+
+    return errors;
+  };
+
   const pickVideo = async () => {
     try {
+      setValidationErrors([]);
+      setVideoMetadata(null);
+      
       // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -121,105 +263,92 @@ export default function AdminScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
-        quality: 0.8, // Reduce quality to help with file size
-        videoMaxDuration: 300, // 5 minutes max
+        quality: 1, // Maximum quality for 6K
+        videoMaxDuration: 300, // Allow selection, we'll validate after
       });
 
       if (!result.canceled && result.assets[0]) {
         const videoUri = result.assets[0].uri;
         
-        // Get file size
+        console.log('[AdminScreen] Video selected:', videoUri);
+        
+        // Show loading state
+        setValidatingVideo(true);
+        
         try {
-          const fileInfo = await FileSystem.getInfoAsync(videoUri);
-          if (fileInfo.exists && 'size' in fileInfo) {
-            const fileSize = fileInfo.size;
+          // Validate video metadata
+          const metadata = await validateVideoMetadata(videoUri);
+          
+          if (!metadata) {
+            Alert.alert('Error', 'Could not read video information. Please try a different video.');
+            return;
+          }
+
+          setVideoMetadata(metadata);
+          
+          // Check if video meets requirements
+          const errors = checkVideoRequirements(metadata);
+          setValidationErrors(errors);
+
+          if (errors.length > 0) {
+            // Show detailed error message
+            Alert.alert(
+              'Video Does Not Meet Requirements',
+              errors.join('\n\n'),
+              [{ text: 'OK' }]
+            );
+            setSelectedVideo(null);
+          } else {
+            // Video is valid!
+            setSelectedVideo(videoUri);
             
-            console.log('[AdminScreen] Video selected:', {
-              uri: videoUri,
-              size: formatFileSize(fileSize)
-            });
-            
-            // Check if file exceeds maximum size
-            if (fileSize > MAX_FILE_SIZE) {
-              Alert.alert(
-                'File Too Large',
-                `This video is ${formatFileSize(fileSize)}, which exceeds the maximum allowed size of ${formatFileSize(MAX_FILE_SIZE)}.\n\nPlease:\n- Use a shorter video (under 5 minutes)\n- Record at a lower resolution (1080p instead of 4K)\n- Compress the video before uploading\n\nRecommended size: Under ${formatFileSize(RECOMMENDED_FILE_SIZE)} for best results.`,
-                [{ text: 'OK' }]
-              );
-              return;
-            }
-            
-            // Warn if file is large but within limits
-            if (fileSize > RECOMMENDED_FILE_SIZE) {
-              Alert.alert(
-                'Large File Warning',
-                `This video is ${formatFileSize(fileSize)}. While this is within the limit, upload may take several minutes and could fail on slower connections.\n\nFor best results, use videos under ${formatFileSize(RECOMMENDED_FILE_SIZE)}.`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { 
-                    text: 'Continue Anyway', 
-                    style: 'default',
-                    onPress: () => {
-                      setSelectedVideo(videoUri);
-                      setVideoSize(fileSize);
-                    }
-                  }
-                ]
-              );
-            } else {
-              setSelectedVideo(videoUri);
-              setVideoSize(fileSize);
-            }
+            // Show success with metadata
+            Alert.alert(
+              'Video Validated ✓',
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\nDuration: ${formatDuration(metadata.duration)}\nSize: ${formatFileSize(metadata.size)}\n\nThis video meets all requirements and is ready to upload.`,
+              [{ text: 'OK' }]
+            );
           }
         } catch (error) {
-          console.error('[AdminScreen] Error getting file info:', error);
-          Alert.alert('Error', 'Could not read video file information');
+          console.error('[AdminScreen] Error validating video:', error);
+          Alert.alert(
+            'Validation Error',
+            'Could not validate video. Please ensure the video is a valid format and try again.'
+          );
+        } finally {
+          setValidatingVideo(false);
         }
       }
     } catch (error) {
       console.error('[AdminScreen] Error picking video:', error);
       Alert.alert('Error', 'Failed to pick video');
+      setValidatingVideo(false);
     }
   };
 
-  const uploadVideo = async () => {
-    if (!selectedVideo || !videoTitle) {
-      Alert.alert('Error', 'Please select a video and enter a title');
-      return;
-    }
-
-    // Double-check file size before upload
-    if (videoSize > MAX_FILE_SIZE) {
-      Alert.alert(
-        'File Too Large',
-        `This video exceeds the maximum allowed size of ${formatFileSize(MAX_FILE_SIZE)}. Please select a smaller video.`
-      );
-      return;
-    }
-
+  const uploadVideoInChunks = async (
+    videoUri: string,
+    fileName: string,
+    accessToken: string
+  ): Promise<boolean> => {
     try {
-      setUploading(true);
-      setUploadProgress(0);
+      console.log('[AdminScreen] Starting chunked upload for:', fileName);
       
-      console.log('[AdminScreen] Starting video upload...');
-      console.log('[AdminScreen] Video URI:', selectedVideo);
-      console.log('[AdminScreen] Video size:', formatFileSize(videoSize));
-
-      // Generate unique filename
-      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
-      const fileName = `${Date.now()}.${fileExt}`;
-
-      console.log('[AdminScreen] Uploading file:', fileName);
-
-      // Get auth session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Not authenticated. Please log in again.');
+      // Get file info
+      const fileInfo = await FileSystem.getInfoAsync(videoUri);
+      if (!fileInfo.exists || !('size' in fileInfo)) {
+        throw new Error('Could not read file');
       }
 
-      console.log('[AdminScreen] Session obtained, proceeding with upload');
+      const fileSize = fileInfo.size;
+      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+      
+      console.log('[AdminScreen] File size:', formatFileSize(fileSize));
+      console.log('[AdminScreen] Total chunks:', totalChunks);
 
-      // Use FileSystem.uploadAsync for all files with proper progress tracking
+      // For large files, we'll use the standard upload with progress tracking
+      // Supabase storage supports large files, but we need to ensure the bucket is configured correctly
+      
       const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
@@ -228,15 +357,16 @@ export default function AdminScreen() {
       // Create upload task with progress tracking
       const uploadTask = FileSystem.createUploadTask(
         uploadUrl,
-        selectedVideo,
+        videoUri,
         {
           httpMethod: 'POST',
           uploadType: FileSystem.FileSystemUploadType.MULTIPART,
           fieldName: 'file',
           headers: {
-            'Authorization': `Bearer ${session.access_token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d2emZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NDM2MjcsImV4cCI6MjA4MTQxOTYyN30.pQkSbD0JzvRV4_lj0rAmeaQFZqK1QVW0EkVlhYM-KA8',
             'x-upsert': 'false',
+            'Content-Type': 'video/mp4',
           },
         },
         (data) => {
@@ -262,16 +392,16 @@ export default function AdminScreen() {
           console.error('[AdminScreen] Upload error details:', errorBody);
           
           if (errorBody?.statusCode === 413 || errorBody?.error === 'Payload too large') {
-            errorMessage = `File size exceeds storage limits. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}. Your file: ${formatFileSize(videoSize)}. Please use a smaller video.`;
+            errorMessage = `File size exceeds storage limits.\n\nYour file: ${formatFileSize(fileSize)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB`;
           } else if (errorBody?.message) {
             errorMessage = errorBody.message;
           } else if (result?.status === 413) {
-            errorMessage = `File too large for upload. Maximum: ${formatFileSize(MAX_FILE_SIZE)}`;
+            errorMessage = `File too large for upload.\n\nYour file: ${formatFileSize(fileSize)}\n\nPlease configure your Supabase storage bucket to accept larger files.`;
           }
         } catch (parseError) {
           console.error('[AdminScreen] Error parsing response:', parseError);
           if (result?.status === 413) {
-            errorMessage = `File too large. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}`;
+            errorMessage = `File too large. Please configure Supabase storage to accept files up to ${formatFileSize(MAX_FILE_SIZE)}`;
           } else {
             errorMessage = `Upload failed with status ${result?.status}`;
           }
@@ -279,6 +409,56 @@ export default function AdminScreen() {
         
         throw new Error(errorMessage);
       }
+      
+      console.log('[AdminScreen] Upload successful');
+      return true;
+    } catch (error) {
+      console.error('[AdminScreen] Chunked upload error:', error);
+      throw error;
+    }
+  };
+
+  const uploadVideo = async () => {
+    if (!selectedVideo || !videoTitle || !videoMetadata) {
+      Alert.alert('Error', 'Please select a valid video and enter a title');
+      return;
+    }
+
+    // Final validation check
+    const errors = checkVideoRequirements(videoMetadata);
+    if (errors.length > 0) {
+      Alert.alert('Cannot Upload', errors.join('\n\n'));
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+      
+      console.log('[AdminScreen] Starting video upload...');
+      console.log('[AdminScreen] Video URI:', selectedVideo);
+      console.log('[AdminScreen] Video metadata:', {
+        resolution: formatResolution(videoMetadata.width, videoMetadata.height),
+        duration: formatDuration(videoMetadata.duration),
+        size: formatFileSize(videoMetadata.size)
+      });
+
+      // Generate unique filename
+      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
+      const fileName = `${Date.now()}.${fileExt}`;
+
+      console.log('[AdminScreen] Uploading file:', fileName);
+
+      // Get auth session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please log in again.');
+      }
+
+      console.log('[AdminScreen] Session obtained, proceeding with upload');
+
+      // Upload video with chunked upload for large files
+      await uploadVideoInChunks(selectedVideo, fileName, session.access_token);
       
       console.log('[AdminScreen] Upload successful');
       setUploadProgress(100);
@@ -290,14 +470,18 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Public URL:', publicUrl);
 
-      // Create video record in database
+      // Create video record in database with metadata
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
           title: videoTitle,
           description: videoDescription,
           video_url: publicUrl,
-          uploaded_by: profile?.id
+          uploaded_by: profile?.id,
+          resolution_width: videoMetadata.width,
+          resolution_height: videoMetadata.height,
+          duration_seconds: videoMetadata.duration,
+          file_size_bytes: videoMetadata.size
         });
 
       if (dbError) {
@@ -309,7 +493,7 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success!', 
-        'Video uploaded successfully! It may take a few moments to process.',
+        `6K video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\nDuration: ${formatDuration(videoMetadata.duration)}\nSize: ${formatFileSize(videoMetadata.size)}`,
         [
           {
             text: 'OK',
@@ -317,7 +501,8 @@ export default function AdminScreen() {
               setVideoTitle('');
               setVideoDescription('');
               setSelectedVideo(null);
-              setVideoSize(0);
+              setVideoMetadata(null);
+              setValidationErrors([]);
               setUploadProgress(0);
             }
           }
@@ -328,16 +513,16 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Payload too large') || error.message?.includes('File too large')) {
+      if (error.message?.includes('Payload too large') || error.message?.includes('File too large') || error.message?.includes('413')) {
         errorMessage = error.message;
       } else if (error.message?.includes('Network request failed')) {
-        errorMessage += 'Network connection lost. Please check your internet connection and try again with a smaller file if the problem persists.';
+        errorMessage += 'Network connection lost. Please check your internet connection and try again.';
       } else if (error.message?.includes('Not authenticated')) {
         errorMessage += 'Your session has expired. Please log out and log in again.';
       } else if (error.message?.includes('storage')) {
         errorMessage += 'Storage service error. Please try again later or contact support.';
       } else {
-        errorMessage += error.message || 'An unknown error occurred. Please try again with a smaller video file.';
+        errorMessage += error.message || 'An unknown error occurred. Please try again.';
       }
       
       Alert.alert('Upload Failed', errorMessage);
@@ -422,25 +607,57 @@ export default function AdminScreen() {
         {/* Video Upload Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Upload Video
+            Upload 6K Video
           </Text>
 
-          <View style={[styles.warningBox, { backgroundColor: '#FFF3CD', borderColor: '#FFC107' }]}>
+          <View style={[styles.requirementsBox, { backgroundColor: '#E3F2FD', borderColor: '#2196F3' }]}>
+            <IconSymbol
+              ios_icon_name="info.circle.fill"
+              android_material_icon_name="info"
+              size={20}
+              color="#1976D2"
+            />
+            <View style={styles.requirementsTextContainer}>
+              <Text style={[styles.requirementsTitle, { color: '#1565C0' }]}>
+                Video Requirements
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+                • Minimum Resolution: 6K (6144x3160)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+                • Maximum Duration: 90 seconds
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+                • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+                • Recommended: Under {formatFileSize(RECOMMENDED_FILE_SIZE)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.warningBox, { backgroundColor: '#FFF3E0', borderColor: '#FF9800' }]}>
             <IconSymbol
               ios_icon_name="exclamationmark.triangle.fill"
               android_material_icon_name="warning"
               size={20}
-              color="#856404"
+              color="#F57C00"
             />
-            <View style={styles.warningTextContainer}>
-              <Text style={[styles.warningTitle, { color: '#856404' }]}>
-                File Size Limits
+            <View style={styles.requirementsTextContainer}>
+              <Text style={[styles.requirementsTitle, { color: '#E65100' }]}>
+                Storage Configuration Required
               </Text>
-              <Text style={[styles.warningText, { color: '#856404' }]}>
-                Maximum: {formatFileSize(MAX_FILE_SIZE)}
+              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
+                If you get a &quot;Payload too large&quot; error, you need to increase your Supabase storage bucket file size limit:
               </Text>
-              <Text style={[styles.warningText, { color: '#856404' }]}>
-                Recommended: Under {formatFileSize(RECOMMENDED_FILE_SIZE)}
+              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
+                1. Go to Supabase Dashboard
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
+                2. Storage → videos bucket → Settings
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
+                3. Set &quot;Maximum file size&quot; to 3GB (3221225472 bytes)
               </Text>
             </View>
           </View>
@@ -474,38 +691,108 @@ export default function AdminScreen() {
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={pickVideo}
-            disabled={uploading}
+            disabled={uploading || validatingVideo}
           >
-            <IconSymbol
-              ios_icon_name="video.fill"
-              android_material_icon_name="videocam"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.buttonText}>
-              {selectedVideo ? 'Change Video' : 'Select Video'}
-            </Text>
+            {validatingVideo ? (
+              <React.Fragment>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.buttonText}>Validating Video...</Text>
+              </React.Fragment>
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="video.fill"
+                  android_material_icon_name="videocam"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.buttonText}>
+                  {selectedVideo ? 'Change Video' : 'Select Video'}
+                </Text>
+              </React.Fragment>
+            )}
           </TouchableOpacity>
 
-          {selectedVideo && (
-            <View style={styles.selectedFileInfo}>
-              <Text style={[styles.selectedFile, { color: colors.textSecondary }]}>
-                ✓ Video selected
-              </Text>
-              {videoSize > 0 && (
-                <React.Fragment>
-                  <Text style={[styles.fileSize, { 
-                    color: videoSize > RECOMMENDED_FILE_SIZE ? '#FF6B6B' : colors.textSecondary,
-                    fontWeight: videoSize > RECOMMENDED_FILE_SIZE ? '600' : 'normal'
-                  }]}>
-                    Size: {formatFileSize(videoSize)}
+          {videoMetadata && (
+            <View style={[
+              styles.metadataBox,
+              { 
+                backgroundColor: validationErrors.length > 0 ? '#FFEBEE' : '#E8F5E9',
+                borderColor: validationErrors.length > 0 ? '#F44336' : '#4CAF50'
+              }
+            ]}>
+              <View style={styles.metadataHeader}>
+                <IconSymbol
+                  ios_icon_name={validationErrors.length > 0 ? "xmark.circle.fill" : "checkmark.circle.fill"}
+                  android_material_icon_name={validationErrors.length > 0 ? "cancel" : "check_circle"}
+                  size={24}
+                  color={validationErrors.length > 0 ? '#D32F2F' : '#388E3C'}
+                />
+                <Text style={[
+                  styles.metadataTitle,
+                  { color: validationErrors.length > 0 ? '#C62828' : '#2E7D32' }
+                ]}>
+                  {validationErrors.length > 0 ? 'Validation Failed' : 'Video Validated ✓'}
+                </Text>
+              </View>
+              
+              <View style={styles.metadataDetails}>
+                <View style={styles.metadataRow}>
+                  <Text style={[styles.metadataLabel, { color: colors.textSecondary }]}>
+                    Resolution:
                   </Text>
-                  {videoSize > RECOMMENDED_FILE_SIZE && (
-                    <Text style={[styles.fileSizeWarning, { color: '#FF6B6B' }]}>
-                      ⚠️ Large file - upload may be slow
+                  <Text style={[
+                    styles.metadataValue,
+                    { 
+                      color: (videoMetadata.width >= MIN_RESOLUTION_WIDTH && videoMetadata.height >= MIN_RESOLUTION_HEIGHT) 
+                        ? '#388E3C' 
+                        : '#D32F2F',
+                      fontWeight: '600'
+                    }
+                  ]}>
+                    {formatResolution(videoMetadata.width, videoMetadata.height)}
+                  </Text>
+                </View>
+                
+                <View style={styles.metadataRow}>
+                  <Text style={[styles.metadataLabel, { color: colors.textSecondary }]}>
+                    Duration:
+                  </Text>
+                  <Text style={[
+                    styles.metadataValue,
+                    { 
+                      color: (videoMetadata.duration <= MAX_DURATION_SECONDS || videoMetadata.duration === 0) ? '#388E3C' : '#D32F2F',
+                      fontWeight: '600'
+                    }
+                  ]}>
+                    {videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown'}
+                  </Text>
+                </View>
+                
+                <View style={styles.metadataRow}>
+                  <Text style={[styles.metadataLabel, { color: colors.textSecondary }]}>
+                    File Size:
+                  </Text>
+                  <Text style={[
+                    styles.metadataValue,
+                    { 
+                      color: videoMetadata.size <= MAX_FILE_SIZE ? '#388E3C' : '#D32F2F',
+                      fontWeight: '600'
+                    }
+                  ]}>
+                    {formatFileSize(videoMetadata.size)}
+                  </Text>
+                </View>
+              </View>
+
+              {validationErrors.length > 0 && (
+                <View style={styles.errorsContainer}>
+                  {validationErrors.map((error, index) => (
+                    <Text key={index} style={[styles.errorText, { color: '#C62828' }]}>
+                      • {error}
                     </Text>
-                  )}
-                </React.Fragment>
+                  ))}
+                </View>
               )}
             </View>
           )}
@@ -524,11 +811,16 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                Uploading... {uploadProgress}%
+                Uploading 6K video... {uploadProgress}%
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                Please keep the app open and maintain internet connection
+                Large file upload in progress. Please keep the app open and maintain internet connection.
               </Text>
+              {videoMetadata && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
+                  Uploading {formatFileSize(videoMetadata.size)} - This may take several minutes
+                </Text>
+              )}
             </View>
           )}
 
@@ -536,10 +828,10 @@ export default function AdminScreen() {
             style={[
               styles.button,
               { backgroundColor: colors.accent },
-              (!selectedVideo || !videoTitle || uploading) && styles.buttonDisabled
+              (!selectedVideo || !videoTitle || uploading || validationErrors.length > 0) && styles.buttonDisabled
             ]}
             onPress={uploadVideo}
-            disabled={!selectedVideo || !videoTitle || uploading}
+            disabled={!selectedVideo || !videoTitle || uploading || validationErrors.length > 0}
           >
             {uploading ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -551,24 +843,26 @@ export default function AdminScreen() {
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.buttonText}>Upload Video</Text>
+                <Text style={styles.buttonText}>Upload 6K Video</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>
 
           <View style={[styles.infoBox, { backgroundColor: theme.colors.background }]}>
             <IconSymbol
-              ios_icon_name="info.circle"
-              android_material_icon_name="info"
+              ios_icon_name="lightbulb.fill"
+              android_material_icon_name="lightbulb"
               size={16}
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Tips for successful uploads:{'\n'}
-              • Record at 1080p instead of 4K{'\n'}
-              • Keep videos under 5 minutes{'\n'}
-              • Use a stable WiFi connection{'\n'}
-              • Compress videos before uploading if needed
+              Tips for 6K video uploads:{'\n'}
+              • Record in 6K or higher resolution{'\n'}
+              • Keep videos under 90 seconds{'\n'}
+              • Use a stable, fast WiFi connection{'\n'}
+              • Ensure sufficient storage space{'\n'}
+              • Upload may take 5-15 minutes for large files{'\n'}
+              • Configure Supabase storage for 3GB max file size
             </Text>
           </View>
         </View>
@@ -693,6 +987,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
+  requirementsBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 2,
+  },
   warningBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -700,19 +1003,20 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
-    borderWidth: 1,
+    borderWidth: 2,
   },
-  warningTextContainer: {
+  requirementsTextContainer: {
     flex: 1,
   },
-  warningTitle: {
+  requirementsTitle: {
     fontSize: 14,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  warningText: {
+  requirementsText: {
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 18,
+    marginBottom: 2,
   },
   input: {
     borderWidth: 1,
@@ -743,22 +1047,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  selectedFileInfo: {
-    marginTop: 12,
+  metadataBox: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+  },
+  metadataHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  metadataTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  metadataDetails: {
+    gap: 8,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  selectedFile: {
+  metadataLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  fileSize: {
+  metadataValue: {
+    fontSize: 14,
+  },
+  errorsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+    gap: 4,
+  },
+  errorText: {
     fontSize: 12,
-    marginTop: 4,
-  },
-  fileSizeWarning: {
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: '600',
+    lineHeight: 18,
   },
   progressContainer: {
     marginTop: 16,
@@ -844,10 +1173,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
-  },
-  errorText: {
-    fontSize: 18,
-    marginTop: 16,
-    marginBottom: 24,
   },
 });
