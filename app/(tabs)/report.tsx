@@ -235,13 +235,14 @@ export default function ReportScreen() {
           )}
         </View>
       ) : (
-        <>
+        <React.Fragment>
           {surfReports.map((report, index) => {
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
+            const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
             
             return (
               <View 
-                key={`report-${report.id || index}`}
+                key={reportKey}
                 style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
               >
                 <View style={styles.reportHeader}>
@@ -419,7 +420,7 @@ export default function ReportScreen() {
               </View>
             );
           })}
-        </>
+        </React.Fragment>
       )}
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
