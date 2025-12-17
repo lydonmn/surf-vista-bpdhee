@@ -26,12 +26,10 @@ interface VideoMetadata {
   size: number;
 }
 
-// 6K video requirements
-const MIN_RESOLUTION_WIDTH = 6144; // 6K is approximately 6144x3160
-const MIN_RESOLUTION_HEIGHT = 3160;
+// Video upload limits (no minimum quality requirement)
 const MAX_DURATION_SECONDS = 90; // 90 seconds max
 
-// File size limits for 6K video (90 seconds at high bitrate)
+// File size limits - support up to 6K video (90 seconds at high bitrate)
 // 6K video at 100 Mbps bitrate = ~1.1 GB per 90 seconds
 // Increased to 3GB to support high-quality 6K video
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB max
@@ -142,6 +140,7 @@ export default function AdminScreen() {
     if (width >= 3840) return `4K (${width}x${height})`;
     if (width >= 2560) return `2K (${width}x${height})`;
     if (width >= 1920) return `1080p (${width}x${height})`;
+    if (width >= 1280) return `720p (${width}x${height})`;
     return `${width}x${height}`;
   };
 
@@ -188,9 +187,9 @@ export default function AdminScreen() {
 
       // If we still don't have dimensions, use fallback
       if (width === 0 || height === 0) {
-        console.log('[AdminScreen] Using fallback dimensions for 6K');
-        width = 6144;
-        height = 3160;
+        console.log('[AdminScreen] Using fallback dimensions');
+        width = 1920;
+        height = 1080;
       }
 
       return {
@@ -208,12 +207,8 @@ export default function AdminScreen() {
   const checkVideoRequirements = (metadata: VideoMetadata): string[] => {
     const errors: string[] = [];
 
-    // Check resolution (minimum 6K)
-    if (metadata.width < MIN_RESOLUTION_WIDTH || metadata.height < MIN_RESOLUTION_HEIGHT) {
-      errors.push(
-        `Resolution too low: ${formatResolution(metadata.width, metadata.height)}. Minimum required: 6K (${MIN_RESOLUTION_WIDTH}x${MIN_RESOLUTION_HEIGHT})`
-      );
-    }
+    // NO MINIMUM RESOLUTION REQUIREMENT - Accept any quality
+    // Videos will play at their uploaded resolution
 
     // Check duration (maximum 90 seconds)
     if (metadata.duration > MAX_DURATION_SECONDS && metadata.duration > 0) {
@@ -247,7 +242,7 @@ export default function AdminScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
-        quality: 1, // Maximum quality for 6K
+        quality: 1, // Maximum quality - preserve original
         videoMaxDuration: 300, // Allow selection, we'll validate after
       });
 
@@ -281,7 +276,7 @@ export default function AdminScreen() {
 
           setVideoMetadata(metadata);
           
-          // Check if video meets requirements
+          // Check if video meets requirements (duration and file size only)
           const errors = checkVideoRequirements(metadata);
           setValidationErrors(errors);
 
@@ -300,7 +295,7 @@ export default function AdminScreen() {
             // Show success with metadata
             Alert.alert(
               'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\nDuration: ${formatDuration(metadata.duration)}\nSize: ${formatFileSize(metadata.size)}\n\nThis video meets all requirements and is ready to upload.`,
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\nDuration: ${formatDuration(metadata.duration)}\nSize: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload and will play at its original quality.`,
               [{ text: 'OK' }]
             );
           }
@@ -488,7 +483,7 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success!', 
-        `6K video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\nDuration: ${formatDuration(videoMetadata.duration)}\nSize: ${formatFileSize(videoMetadata.size)}`,
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\nDuration: ${formatDuration(videoMetadata.duration)}\nSize: ${formatFileSize(videoMetadata.size)}\n\nYour video will play at its original quality.`,
         [
           {
             text: 'OK',
@@ -602,31 +597,34 @@ export default function AdminScreen() {
         {/* Video Upload Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Upload 6K Video
+            Upload Video
           </Text>
 
-          <View style={[styles.requirementsBox, { backgroundColor: '#E3F2FD', borderColor: '#2196F3' }]}>
+          <View style={[styles.requirementsBox, { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' }]}>
             <IconSymbol
-              ios_icon_name="info.circle.fill"
-              android_material_icon_name="info"
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check_circle"
               size={20}
-              color="#1976D2"
+              color="#388E3C"
             />
             <View style={styles.requirementsTextContainer}>
-              <Text style={[styles.requirementsTitle, { color: '#1565C0' }]}>
-                Video Requirements
+              <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
+                Upload Any Quality Video
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
-                • Minimum Resolution: 6K (6144x3160)
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • No minimum resolution required
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Supports up to 6K and beyond
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Videos play at original quality
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1976D2' }]}>
-                • Recommended: Under {formatFileSize(RECOMMENDED_FILE_SIZE)}
               </Text>
             </View>
           </View>
@@ -739,9 +737,7 @@ export default function AdminScreen() {
                   <Text style={[
                     styles.metadataValue,
                     { 
-                      color: (videoMetadata.width >= MIN_RESOLUTION_WIDTH && videoMetadata.height >= MIN_RESOLUTION_HEIGHT) 
-                        ? '#388E3C' 
-                        : '#D32F2F',
+                      color: '#388E3C',
                       fontWeight: '600'
                     }
                   ]}>
@@ -806,7 +802,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                Uploading 6K video... {uploadProgress}%
+                Uploading video... {uploadProgress}%
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 Large file upload in progress. Please keep the app open and maintain internet connection.
@@ -838,7 +834,7 @@ export default function AdminScreen() {
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.buttonText}>Upload 6K Video</Text>
+                <Text style={styles.buttonText}>Upload Video</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>
@@ -851,12 +847,13 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Tips for 6K video uploads:{'\n'}
-              • Record in 6K or higher resolution{'\n'}
+              Tips for video uploads:{'\n'}
+              • Upload any resolution - from 720p to 6K+{'\n'}
+              • Videos play at their original quality{'\n'}
               • Keep videos under 90 seconds{'\n'}
               • Use a stable, fast WiFi connection{'\n'}
               • Ensure sufficient storage space{'\n'}
-              • Upload may take 5-15 minutes for large files{'\n'}
+              • Large uploads may take 5-15 minutes{'\n'}
               • Configure Supabase storage for 3GB max file size
             </Text>
           </View>
