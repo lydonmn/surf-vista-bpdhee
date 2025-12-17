@@ -17,87 +17,100 @@ export default function VideoPlayerScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   const loadVideo = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
+      setDebugInfo('');
       console.log('[VideoPlayer] Loading video:', videoId);
 
-      const { data, error } = await supabase
+      // Check authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please log in again.');
+      }
+      console.log('[VideoPlayer] User authenticated:', session.user.email);
+
+      const { data, error: fetchError } = await supabase
         .from('videos')
         .select('*')
         .eq('id', videoId)
         .single();
 
-      if (error) {
-        console.error('[VideoPlayer] Error loading video:', error);
-        throw error;
+      if (fetchError) {
+        console.error('[VideoPlayer] Error loading video:', fetchError);
+        throw fetchError;
       }
 
       console.log('[VideoPlayer] Video loaded:', data.title);
       console.log('[VideoPlayer] Video URL from DB:', data.video_url);
       setVideo(data);
 
-      // Try multiple methods to get a working video URL
-      let workingUrl: string | null = null;
-
-      // Method 1: Try to extract filename and create signed URL
+      // Extract filename from the stored URL
+      let fileName = '';
       try {
         const urlParts = data.video_url.split('/videos/');
         if (urlParts.length === 2) {
-          const fileName = urlParts[1];
+          fileName = urlParts[1].split('?')[0]; // Remove any query params
           console.log('[VideoPlayer] Extracted filename:', fileName);
-          
-          // Get a fresh signed URL for the video (valid for 1 hour)
-          const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-            .from('videos')
-            .createSignedUrl(fileName, 3600); // 1 hour expiry
-
-          if (signedUrlError) {
-            console.error('[VideoPlayer] Error creating signed URL:', signedUrlError);
-          } else if (signedUrlData?.signedUrl) {
-            console.log('[VideoPlayer] Signed URL created successfully');
-            workingUrl = signedUrlData.signedUrl;
-          }
+        } else {
+          // Try alternative parsing
+          const url = new URL(data.video_url);
+          const pathParts = url.pathname.split('/');
+          fileName = pathParts[pathParts.length - 1];
+          console.log('[VideoPlayer] Extracted filename (alternative):', fileName);
         }
       } catch (e) {
-        console.error('[VideoPlayer] Error in signed URL method:', e);
+        console.error('[VideoPlayer] Error parsing URL:', e);
+        throw new Error('Invalid video URL format');
       }
 
-      // Method 2: Try to get public URL directly from storage
-      if (!workingUrl) {
-        try {
-          const urlParts = data.video_url.split('/videos/');
-          if (urlParts.length === 2) {
-            const fileName = urlParts[1];
-            console.log('[VideoPlayer] Trying public URL for:', fileName);
-            
-            const { data: publicUrlData } = supabase.storage
-              .from('videos')
-              .getPublicUrl(fileName);
-
-            if (publicUrlData?.publicUrl) {
-              console.log('[VideoPlayer] Public URL obtained:', publicUrlData.publicUrl);
-              workingUrl = publicUrlData.publicUrl;
-            }
-          }
-        } catch (e) {
-          console.error('[VideoPlayer] Error in public URL method:', e);
-        }
+      if (!fileName) {
+        throw new Error('Could not extract filename from video URL');
       }
 
-      // Method 3: Use the URL from database as-is
-      if (!workingUrl) {
-        console.log('[VideoPlayer] Using database URL as fallback');
-        workingUrl = data.video_url;
+      // Try public URL first (simplest and most reliable)
+      console.log('[VideoPlayer] Trying public URL for:', fileName);
+      const { data: publicUrlData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      if (publicUrlData?.publicUrl) {
+        console.log('[VideoPlayer] Public URL obtained:', publicUrlData.publicUrl);
+        setVideoUrl(publicUrlData.publicUrl);
+        setDebugInfo('Using public URL');
+        return; // Success!
       }
 
-      console.log('[VideoPlayer] Final video URL:', workingUrl);
-      setVideoUrl(workingUrl);
+      // If public URL doesn't work, try signed URL
+      console.log('[VideoPlayer] Public URL failed, trying signed URL');
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('videos')
+        .createSignedUrl(fileName, 3600);
+
+      if (signedUrlError) {
+        console.error('[VideoPlayer] Signed URL error:', signedUrlError);
+        throw new Error(
+          `Cannot access video. Please ensure:\n` +
+          `1. Storage bucket "videos" is public OR\n` +
+          `2. RLS policies are configured correctly\n\n` +
+          `Error: ${signedUrlError.message}`
+        );
+      }
+
+      if (signedUrlData?.signedUrl) {
+        console.log('[VideoPlayer] Signed URL created successfully');
+        setVideoUrl(signedUrlData.signedUrl);
+        setDebugInfo('Using signed URL (expires in 1 hour)');
+      } else {
+        throw new Error('Failed to generate video URL');
+      }
     } catch (error: any) {
       console.error('[VideoPlayer] Exception loading video:', error);
       setError(error.message || 'Failed to load video');
+      setDebugInfo(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -107,30 +120,36 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, [loadVideo]);
 
-  // Create video player with proper error handling
+  // Create video player
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
       player.loop = false;
+      player.muted = false;
       
-      // Add error listener
+      // Add status change listener
       player.addListener('statusChange', (status) => {
         console.log('[VideoPlayer] Status changed:', status);
+        
         if (status.error) {
           console.error('[VideoPlayer] Player error:', status.error);
-          setError(`Video playback error: ${status.error}`);
+          setError(`Playback error: ${status.error}`);
+        }
+        
+        if (status.status === 'readyToPlay') {
+          console.log('[VideoPlayer] Video ready to play');
+        }
+        
+        if (status.status === 'loading') {
+          console.log('[VideoPlayer] Video loading...');
         }
       });
 
-      // Try to play
-      try {
-        player.play();
-        setIsPlaying(true);
-        console.log('[VideoPlayer] Started playback');
-      } catch (e) {
-        console.error('[VideoPlayer] Error starting playback:', e);
-        setError('Failed to start video playback');
-      }
+      // Add playback status listener
+      player.addListener('playingChange', (isPlaying) => {
+        console.log('[VideoPlayer] Playing state changed:', isPlaying);
+        setIsPlaying(isPlaying);
+      });
     }
   });
 
@@ -141,6 +160,12 @@ export default function VideoPlayerScreen() {
       try {
         player.replace(videoUrl);
         console.log('[VideoPlayer] Player source updated successfully');
+        
+        // Auto-play after a short delay
+        setTimeout(() => {
+          console.log('[VideoPlayer] Attempting auto-play');
+          player.play();
+        }, 500);
       } catch (e) {
         console.error('[VideoPlayer] Error updating player source:', e);
         setError('Failed to load video source');
@@ -164,7 +189,7 @@ export default function VideoPlayerScreen() {
   if (error || !video) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
+        <ScrollView contentContainerStyle={styles.centerContent}>
           <IconSymbol
             ios_icon_name="exclamationmark.triangle.fill"
             android_material_icon_name="warning"
@@ -178,14 +203,29 @@ export default function VideoPlayerScreen() {
             This could be due to:
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            • Storage bucket permissions (RLS policies)
+            - Storage bucket RLS policies not configured
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            • Video file not accessible
+            - Video file not accessible or deleted
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            • Network connectivity issues
+            - Network connectivity issues
           </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            - CORS configuration on storage bucket
+          </Text>
+          
+          {debugInfo && (
+            <View style={[styles.debugCard, { backgroundColor: theme.colors.card, marginTop: 16 }]}>
+              <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+                Debug Info
+              </Text>
+              <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+                {debugInfo}
+              </Text>
+            </View>
+          )}
+          
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={loadVideo}
@@ -204,7 +244,7 @@ export default function VideoPlayerScreen() {
           >
             <Text style={[styles.backButtonText, { color: colors.text }]}>Go Back</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -244,11 +284,9 @@ export default function VideoPlayerScreen() {
           onPress={() => {
             if (isPlaying) {
               player.pause();
-              setIsPlaying(false);
               console.log('[VideoPlayer] Paused');
             } else {
               player.play();
-              setIsPlaying(true);
               console.log('[VideoPlayer] Playing');
             }
           }}
@@ -266,7 +304,6 @@ export default function VideoPlayerScreen() {
           onPress={() => {
             player.currentTime = 0;
             player.play();
-            setIsPlaying(true);
             console.log('[VideoPlayer] Restarted');
           }}
         >
@@ -322,17 +359,22 @@ export default function VideoPlayerScreen() {
         </Text>
       </View>
 
-      <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
-          Debug Info
-        </Text>
-        <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-          Video ID: {videoId}
-        </Text>
-        <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={2}>
-          URL: {videoUrl}
-        </Text>
-      </View>
+      {debugInfo && (
+        <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+            Debug Info
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Video ID: {videoId}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={3}>
+            URL: {videoUrl}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Status: {debugInfo}
+          </Text>
+        </View>
+      )}
 
       <TouchableOpacity
         style={[styles.backButtonLarge, { backgroundColor: colors.secondary }]}
