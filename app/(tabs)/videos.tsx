@@ -1,18 +1,20 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
+import { supabase } from "@/app/integrations/supabase/client";
 
 export default function VideosScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
   const isSubscribed = checkSubscription();
 
   useEffect(() => {
@@ -34,6 +36,66 @@ export default function VideosScreen() {
     setIsRefreshing(true);
     await refreshVideos();
     setIsRefreshing(false);
+  };
+
+  const handleDeleteVideo = async (videoId: string, videoTitle: string, videoUrl: string) => {
+    Alert.alert(
+      'Delete Video',
+      `Are you sure you want to delete "${videoTitle}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingVideoId(videoId);
+              console.log('[VideosScreen] Deleting video:', videoId);
+
+              // Extract filename from URL
+              const urlParts = videoUrl.split('/videos/');
+              if (urlParts.length === 2) {
+                const fileName = urlParts[1];
+                console.log('[VideosScreen] Deleting file from storage:', fileName);
+
+                // Delete from storage
+                const { error: storageError } = await supabase.storage
+                  .from('videos')
+                  .remove([fileName]);
+
+                if (storageError) {
+                  console.error('[VideosScreen] Error deleting from storage:', storageError);
+                  // Continue anyway to delete from database
+                }
+              }
+
+              // Delete from database
+              const { error: dbError } = await supabase
+                .from('videos')
+                .delete()
+                .eq('id', videoId);
+
+              if (dbError) {
+                console.error('[VideosScreen] Error deleting from database:', dbError);
+                throw dbError;
+              }
+
+              console.log('[VideosScreen] Video deleted successfully');
+              Alert.alert('Success', 'Video deleted successfully');
+              await refreshVideos();
+            } catch (error: any) {
+              console.error('[VideosScreen] Error deleting video:', error);
+              Alert.alert('Error', `Failed to delete video: ${error.message}`);
+            } finally {
+              setDeletingVideoId(null);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Show loading state while auth is initializing or profile is being loaded
@@ -160,54 +222,81 @@ export default function VideosScreen() {
           {videos.map((video, index) => {
             // Use thumbnail if available, otherwise use a default surf image
             const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800';
+            const isDeleting = deletingVideoId === video.id;
             
             return (
-              <TouchableOpacity
-                key={index}
-                style={[styles.videoCard, { backgroundColor: theme.colors.card }]}
-                onPress={() => router.push({
-                  pathname: '/video-player',
-                  params: { videoId: video.id }
-                })}
-              >
-                <Image
-                  source={{ uri: thumbnailUrl }}
-                  style={styles.thumbnail}
-                />
-                <View style={styles.playOverlay}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play_circle"
-                    size={64}
-                    color="#FFFFFF"
+              <View key={index} style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
+                <TouchableOpacity
+                  style={styles.videoTouchable}
+                  onPress={() => router.push({
+                    pathname: '/video-player',
+                    params: { videoId: video.id }
+                  })}
+                  disabled={isDeleting}
+                >
+                  <Image
+                    source={{ uri: thumbnailUrl }}
+                    style={styles.thumbnail}
                   />
-                </View>
-                {video.duration && (
-                  <View style={styles.durationBadge}>
-                    <Text style={styles.durationText}>{video.duration}</Text>
+                  <View style={styles.playOverlay}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play_circle"
+                      size={64}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  {video.duration && (
+                    <View style={styles.durationBadge}>
+                      <Text style={styles.durationText}>{video.duration}</Text>
+                    </View>
+                  )}
+                  <View style={styles.videoInfo}>
+                    <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                      {video.title}
+                    </Text>
+                    <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                      {new Date(video.created_at).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </Text>
+                    {video.description && (
+                      <Text 
+                        style={[styles.videoDescription, { color: colors.textSecondary }]}
+                        numberOfLines={2}
+                      >
+                        {video.description}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+
+                {profile?.is_admin && (
+                  <View style={styles.adminActions}>
+                    <TouchableOpacity
+                      style={[styles.deleteButton, { backgroundColor: '#FF6B6B' }]}
+                      onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <React.Fragment>
+                          <IconSymbol
+                            ios_icon_name="trash.fill"
+                            android_material_icon_name="delete"
+                            size={16}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.deleteButtonText}>Delete</Text>
+                        </React.Fragment>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 )}
-                <View style={styles.videoInfo}>
-                  <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                    {video.title}
-                  </Text>
-                  <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                    {new Date(video.created_at).toLocaleDateString('en-US', {
-                      month: 'long',
-                      day: 'numeric',
-                      year: 'numeric'
-                    })}
-                  </Text>
-                  {video.description && (
-                    <Text 
-                      style={[styles.videoDescription, { color: colors.textSecondary }]}
-                      numberOfLines={2}
-                    >
-                      {video.description}
-                    </Text>
-                  )}
-                </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
         </>
@@ -344,6 +433,9 @@ const styles = StyleSheet.create({
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
+  videoTouchable: {
+    width: '100%',
+  },
   thumbnail: {
     width: '100%',
     height: 200,
@@ -387,6 +479,27 @@ const styles = StyleSheet.create({
   videoDescription: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  adminActions: {
+    flexDirection: 'row',
+    padding: 12,
+    paddingTop: 0,
+    gap: 8,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    flex: 1,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   adminButton: {
     flexDirection: 'row',

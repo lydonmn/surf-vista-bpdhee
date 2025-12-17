@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform, Image } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
+import { useVideos } from '@/hooks/useVideos';
 
 interface UserProfile {
   id: string;
@@ -38,11 +39,13 @@ const RECOMMENDED_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB recommended
 export default function AdminScreen() {
   const theme = useTheme();
   const { profile } = useAuth();
+  const { videos, refreshVideos } = useVideos();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [validatingVideo, setValidatingVideo] = useState(false);
+  const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
 
   // Video upload state
   const [videoTitle, setVideoTitle] = useState('');
@@ -114,6 +117,66 @@ export default function AdminScreen() {
       console.error('Error toggling admin:', error);
       Alert.alert('Error', 'Failed to update admin status');
     }
+  };
+
+  const handleDeleteVideo = async (videoId: string, videoTitle: string, videoUrl: string) => {
+    Alert.alert(
+      'Delete Video',
+      `Are you sure you want to delete "${videoTitle}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingVideoId(videoId);
+              console.log('[AdminScreen] Deleting video:', videoId);
+
+              // Extract filename from URL
+              const urlParts = videoUrl.split('/videos/');
+              if (urlParts.length === 2) {
+                const fileName = urlParts[1];
+                console.log('[AdminScreen] Deleting file from storage:', fileName);
+
+                // Delete from storage
+                const { error: storageError } = await supabase.storage
+                  .from('videos')
+                  .remove([fileName]);
+
+                if (storageError) {
+                  console.error('[AdminScreen] Error deleting from storage:', storageError);
+                  // Continue anyway to delete from database
+                }
+              }
+
+              // Delete from database
+              const { error: dbError } = await supabase
+                .from('videos')
+                .delete()
+                .eq('id', videoId);
+
+              if (dbError) {
+                console.error('[AdminScreen] Error deleting from database:', dbError);
+                throw dbError;
+              }
+
+              console.log('[AdminScreen] Video deleted successfully');
+              Alert.alert('Success', 'Video deleted successfully');
+              await refreshVideos();
+            } catch (error: any) {
+              console.error('[AdminScreen] Error deleting video:', error);
+              Alert.alert('Error', `Failed to delete video: ${error.message}`);
+            } finally {
+              setDeletingVideoId(null);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -508,6 +571,7 @@ export default function AdminScreen() {
               setVideoMetadata(null);
               setValidationErrors([]);
               setUploadProgress(0);
+              refreshVideos();
             }
           }
         ]
@@ -873,6 +937,61 @@ export default function AdminScreen() {
           </View>
         </View>
 
+        {/* Video Management Section */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Video Management
+          </Text>
+          
+          {videos.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No videos uploaded yet
+            </Text>
+          ) : (
+            videos.map((video, index) => {
+              const isDeleting = deletingVideoId === video.id;
+              const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=400';
+              
+              return (
+                <View key={index} style={[styles.videoManagementCard, { borderColor: colors.textSecondary }]}>
+                  <Image
+                    source={{ uri: thumbnailUrl }}
+                    style={styles.videoThumbnail}
+                  />
+                  <View style={styles.videoManagementInfo}>
+                    <Text style={[styles.videoManagementTitle, { color: theme.colors.text }]}>
+                      {video.title}
+                    </Text>
+                    <Text style={[styles.videoManagementDate, { color: colors.textSecondary }]}>
+                      {new Date(video.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.deleteIconButton, { backgroundColor: '#FF6B6B' }]}
+                    onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <IconSymbol
+                        ios_icon_name="trash.fill"
+                        android_material_icon_name="delete"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
+        </View>
+
         {/* User Management Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
@@ -882,8 +1001,8 @@ export default function AdminScreen() {
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
           ) : (
-            users.map((user) => (
-              <View key={user.id} style={[styles.userCard, { borderColor: colors.textSecondary }]}>
+            users.map((user, index) => (
+              <View key={index} style={[styles.userCard, { borderColor: colors.textSecondary }]}>
                 <View style={styles.userInfo}>
                   <Text style={[styles.userEmail, { color: theme.colors.text }]}>
                     {user.email}
@@ -1132,6 +1251,44 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 20,
+  },
+  videoManagementCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 12,
+    gap: 12,
+  },
+  videoThumbnail: {
+    width: 80,
+    height: 60,
+    borderRadius: 6,
+    resizeMode: 'cover',
+  },
+  videoManagementInfo: {
+    flex: 1,
+  },
+  videoManagementTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  videoManagementDate: {
+    fontSize: 12,
+  },
+  deleteIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loader: {
     marginVertical: 20,

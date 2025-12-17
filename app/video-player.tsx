@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -15,10 +15,13 @@ export default function VideoPlayerScreen() {
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadVideo = useCallback(async () => {
     try {
       setIsLoading(true);
+      setError(null);
       console.log('[VideoPlayer] Loading video:', videoId);
 
       const { data, error } = await supabase
@@ -33,9 +36,38 @@ export default function VideoPlayerScreen() {
       }
 
       console.log('[VideoPlayer] Video loaded:', data.title);
+      console.log('[VideoPlayer] Video URL from DB:', data.video_url);
       setVideo(data);
-    } catch (error) {
+
+      // Extract the file path from the public URL
+      // The URL format is: https://[project].supabase.co/storage/v1/object/public/videos/[filename]
+      const urlParts = data.video_url.split('/videos/');
+      if (urlParts.length === 2) {
+        const fileName = urlParts[1];
+        console.log('[VideoPlayer] Extracted filename:', fileName);
+        
+        // Get a fresh signed URL for the video (valid for 1 hour)
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('videos')
+          .createSignedUrl(fileName, 3600); // 1 hour expiry
+
+        if (signedUrlError) {
+          console.error('[VideoPlayer] Error creating signed URL:', signedUrlError);
+          // Fall back to public URL if signed URL fails
+          console.log('[VideoPlayer] Falling back to public URL');
+          setVideoUrl(data.video_url);
+        } else {
+          console.log('[VideoPlayer] Using signed URL:', signedUrlData.signedUrl);
+          setVideoUrl(signedUrlData.signedUrl);
+        }
+      } else {
+        // Use the URL as-is if we can't parse it
+        console.log('[VideoPlayer] Using URL as-is');
+        setVideoUrl(data.video_url);
+      }
+    } catch (error: any) {
       console.error('[VideoPlayer] Exception loading video:', error);
+      setError(error.message || 'Failed to load video');
     } finally {
       setIsLoading(false);
     }
@@ -45,11 +77,22 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, [loadVideo]);
 
-  const player = useVideoPlayer(video?.video_url || '', player => {
-    player.loop = false;
-    player.play();
-    setIsPlaying(true);
+  const player = useVideoPlayer(videoUrl || '', player => {
+    if (videoUrl) {
+      console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
+      player.loop = false;
+      player.play();
+      setIsPlaying(true);
+    }
   });
+
+  // Update player source when videoUrl changes
+  useEffect(() => {
+    if (videoUrl && player) {
+      console.log('[VideoPlayer] Updating player source to:', videoUrl);
+      player.replace(videoUrl);
+    }
+  }, [videoUrl, player]);
 
   if (isLoading) {
     return (
@@ -64,7 +107,7 @@ export default function VideoPlayerScreen() {
     );
   }
 
-  if (!video) {
+  if (error || !video) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -75,7 +118,7 @@ export default function VideoPlayerScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Video not found
+            {error || 'Video not found'}
           </Text>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.primary }]}
@@ -83,6 +126,19 @@ export default function VideoPlayerScreen() {
           >
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (!videoUrl) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Preparing video...
+          </Text>
         </View>
       </View>
     );
@@ -100,6 +156,7 @@ export default function VideoPlayerScreen() {
           allowsFullscreen
           allowsPictureInPicture
           contentFit="contain"
+          nativeControls={false}
         />
       </View>
 
