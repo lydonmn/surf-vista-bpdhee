@@ -39,32 +39,62 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] Video URL from DB:', data.video_url);
       setVideo(data);
 
-      // Extract the file path from the public URL
-      // The URL format is: https://[project].supabase.co/storage/v1/object/public/videos/[filename]
-      const urlParts = data.video_url.split('/videos/');
-      if (urlParts.length === 2) {
-        const fileName = urlParts[1];
-        console.log('[VideoPlayer] Extracted filename:', fileName);
-        
-        // Get a fresh signed URL for the video (valid for 1 hour)
-        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-          .from('videos')
-          .createSignedUrl(fileName, 3600); // 1 hour expiry
+      // Try multiple methods to get a working video URL
+      let workingUrl: string | null = null;
 
-        if (signedUrlError) {
-          console.error('[VideoPlayer] Error creating signed URL:', signedUrlError);
-          // Fall back to public URL if signed URL fails
-          console.log('[VideoPlayer] Falling back to public URL');
-          setVideoUrl(data.video_url);
-        } else {
-          console.log('[VideoPlayer] Using signed URL:', signedUrlData.signedUrl);
-          setVideoUrl(signedUrlData.signedUrl);
+      // Method 1: Try to extract filename and create signed URL
+      try {
+        const urlParts = data.video_url.split('/videos/');
+        if (urlParts.length === 2) {
+          const fileName = urlParts[1];
+          console.log('[VideoPlayer] Extracted filename:', fileName);
+          
+          // Get a fresh signed URL for the video (valid for 1 hour)
+          const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+            .from('videos')
+            .createSignedUrl(fileName, 3600); // 1 hour expiry
+
+          if (signedUrlError) {
+            console.error('[VideoPlayer] Error creating signed URL:', signedUrlError);
+          } else if (signedUrlData?.signedUrl) {
+            console.log('[VideoPlayer] Signed URL created successfully');
+            workingUrl = signedUrlData.signedUrl;
+          }
         }
-      } else {
-        // Use the URL as-is if we can't parse it
-        console.log('[VideoPlayer] Using URL as-is');
-        setVideoUrl(data.video_url);
+      } catch (e) {
+        console.error('[VideoPlayer] Error in signed URL method:', e);
       }
+
+      // Method 2: Try to get public URL directly from storage
+      if (!workingUrl) {
+        try {
+          const urlParts = data.video_url.split('/videos/');
+          if (urlParts.length === 2) {
+            const fileName = urlParts[1];
+            console.log('[VideoPlayer] Trying public URL for:', fileName);
+            
+            const { data: publicUrlData } = supabase.storage
+              .from('videos')
+              .getPublicUrl(fileName);
+
+            if (publicUrlData?.publicUrl) {
+              console.log('[VideoPlayer] Public URL obtained:', publicUrlData.publicUrl);
+              workingUrl = publicUrlData.publicUrl;
+            }
+          }
+        } catch (e) {
+          console.error('[VideoPlayer] Error in public URL method:', e);
+        }
+      }
+
+      // Method 3: Use the URL from database as-is
+      if (!workingUrl) {
+        console.log('[VideoPlayer] Using database URL as fallback');
+        workingUrl = data.video_url;
+      }
+
+      console.log('[VideoPlayer] Final video URL:', workingUrl);
+      setVideoUrl(workingUrl);
     } catch (error: any) {
       console.error('[VideoPlayer] Exception loading video:', error);
       setError(error.message || 'Failed to load video');
@@ -77,12 +107,30 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, [loadVideo]);
 
-  const player = useVideoPlayer(videoUrl || '', player => {
+  // Create video player with proper error handling
+  const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
       player.loop = false;
-      player.play();
-      setIsPlaying(true);
+      
+      // Add error listener
+      player.addListener('statusChange', (status) => {
+        console.log('[VideoPlayer] Status changed:', status);
+        if (status.error) {
+          console.error('[VideoPlayer] Player error:', status.error);
+          setError(`Video playback error: ${status.error}`);
+        }
+      });
+
+      // Try to play
+      try {
+        player.play();
+        setIsPlaying(true);
+        console.log('[VideoPlayer] Started playback');
+      } catch (e) {
+        console.error('[VideoPlayer] Error starting playback:', e);
+        setError('Failed to start video playback');
+      }
     }
   });
 
@@ -90,7 +138,13 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (videoUrl && player) {
       console.log('[VideoPlayer] Updating player source to:', videoUrl);
-      player.replace(videoUrl);
+      try {
+        player.replace(videoUrl);
+        console.log('[VideoPlayer] Player source updated successfully');
+      } catch (e) {
+        console.error('[VideoPlayer] Error updating player source:', e);
+        setError('Failed to load video source');
+      }
     }
   }, [videoUrl, player]);
 
@@ -120,11 +174,35 @@ export default function VideoPlayerScreen() {
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
             {error || 'Video not found'}
           </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            This could be due to:
+          </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            • Storage bucket permissions (RLS policies)
+          </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            • Video file not accessible
+          </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            • Network connectivity issues
+          </Text>
           <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: colors.primary }]}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={loadVideo}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.secondary }]}
             onPress={() => router.back()}
           >
-            <Text style={styles.backButtonText}>Go Back</Text>
+            <Text style={[styles.backButtonText, { color: colors.text }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -156,7 +234,7 @@ export default function VideoPlayerScreen() {
           allowsFullscreen
           allowsPictureInPicture
           contentFit="contain"
-          nativeControls={false}
+          nativeControls={true}
         />
       </View>
 
@@ -167,9 +245,11 @@ export default function VideoPlayerScreen() {
             if (isPlaying) {
               player.pause();
               setIsPlaying(false);
+              console.log('[VideoPlayer] Paused');
             } else {
               player.play();
               setIsPlaying(true);
+              console.log('[VideoPlayer] Playing');
             }
           }}
         >
@@ -187,6 +267,7 @@ export default function VideoPlayerScreen() {
             player.currentTime = 0;
             player.play();
             setIsPlaying(true);
+            console.log('[VideoPlayer] Restarted');
           }}
         >
           <IconSymbol
@@ -238,6 +319,18 @@ export default function VideoPlayerScreen() {
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
           High-resolution drone footage captured at Folly Beach, South Carolina. 
           This exclusive content is available only to SurfVista subscribers.
+        </Text>
+      </View>
+
+      <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
+        <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+          Debug Info
+        </Text>
+        <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+          Video ID: {videoId}
+        </Text>
+        <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={2}>
+          URL: {videoUrl}
         </Text>
       </View>
 
@@ -301,9 +394,29 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
+    fontWeight: 'bold',
     textAlign: 'center',
     marginTop: 16,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 24,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   infoCard: {
     marginHorizontal: 16,
@@ -356,6 +469,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  debugCard: {
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  debugTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    marginBottom: 4,
+    fontFamily: 'monospace',
+  },
   backButton: {
     paddingHorizontal: 32,
     paddingVertical: 12,
@@ -363,7 +494,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   backButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
