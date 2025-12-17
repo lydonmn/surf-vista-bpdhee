@@ -86,8 +86,8 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
             precipChance: day.precipitation_chance
           });
           
-          // Create a truly unique key by combining date and index - USING BACKTICKS!
-          const uniqueKey = `forecast-${day.date || 'unknown'}-${index}`;
+          // Create a truly unique key by combining date and index
+          const uniqueKey = `forecast-${day.date || `unknown-${index}`}-${index}`;
           
           return (
             <View 
