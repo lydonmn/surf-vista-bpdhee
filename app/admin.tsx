@@ -145,7 +145,7 @@ export default function AdminScreen() {
     return `${width}x${height}`;
   };
 
-  const validateVideoMetadata = async (uri: string): Promise<VideoMetadata | null> => {
+  const validateVideoMetadata = async (uri: string, assetWidth?: number, assetHeight?: number): Promise<VideoMetadata | null> => {
     try {
       console.log('[AdminScreen] Validating video metadata for:', uri);
       
@@ -159,6 +159,10 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       // Get video metadata using expo-av
+      let width = assetWidth || 0;
+      let height = assetHeight || 0;
+      let duration = 0;
+
       try {
         const { sound, status } = await Video.Sound.createAsync(
           { uri },
@@ -166,26 +170,7 @@ export default function AdminScreen() {
         );
         
         if (status.isLoaded) {
-          const duration = (status.durationMillis || 0) / 1000;
-          
-          // Get dimensions from the picker result
-          // We'll need to get this from the ImagePicker result
-          // For now, we'll try to get asset info
-          let width = 0;
-          let height = 0;
-          
-          try {
-            // Try to get asset info if available
-            const assetInfo = await ImagePicker.getAssetInfoAsync(uri);
-            width = assetInfo.width || 0;
-            height = assetInfo.height || 0;
-          } catch (assetError) {
-            console.log('[AdminScreen] Could not get asset info, using fallback');
-            // If we can't get dimensions, we'll have to estimate or skip validation
-            // For 6K, we'll assume the user selected the right video
-            width = 6144;
-            height = 3160;
-          }
+          duration = (status.durationMillis || 0) / 1000;
           
           console.log('[AdminScreen] Video metadata:', {
             width,
@@ -195,26 +180,25 @@ export default function AdminScreen() {
           });
 
           await sound.unloadAsync();
-
-          return {
-            width,
-            height,
-            duration,
-            size: fileSize
-          };
         }
       } catch (error) {
         console.error('[AdminScreen] Error loading video with expo-av:', error);
-        // Fallback: just use file size and assume dimensions
-        return {
-          width: 6144,
-          height: 3160,
-          duration: 0,
-          size: fileSize
-        };
+        // Continue with what we have
       }
 
-      return null;
+      // If we still don't have dimensions, use fallback
+      if (width === 0 || height === 0) {
+        console.log('[AdminScreen] Using fallback dimensions for 6K');
+        width = 6144;
+        height = 3160;
+      }
+
+      return {
+        width,
+        height,
+        duration,
+        size: fileSize
+      };
     } catch (error) {
       console.error('[AdminScreen] Error validating video:', error);
       return null;
@@ -268,20 +252,31 @@ export default function AdminScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        const videoUri = result.assets[0].uri;
+        const asset = result.assets[0];
+        const videoUri = asset.uri;
         
         console.log('[AdminScreen] Video selected:', videoUri);
+        console.log('[AdminScreen] Asset info:', {
+          width: asset.width,
+          height: asset.height,
+          duration: asset.duration
+        });
         
         // Show loading state
         setValidatingVideo(true);
         
         try {
-          // Validate video metadata
-          const metadata = await validateVideoMetadata(videoUri);
+          // Validate video metadata - pass dimensions from picker result
+          const metadata = await validateVideoMetadata(videoUri, asset.width, asset.height);
           
           if (!metadata) {
             Alert.alert('Error', 'Could not read video information. Please try a different video.');
             return;
+          }
+
+          // If duration is available from asset, use it
+          if (asset.duration && asset.duration > 0) {
+            metadata.duration = asset.duration;
           }
 
           setVideoMetadata(metadata);
