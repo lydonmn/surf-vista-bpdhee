@@ -171,14 +171,17 @@ export default function AdminScreen() {
       let width = assetWidth || 0;
       let height = assetHeight || 0;
       
-      // IMPORTANT: Prioritize duration from expo-image-picker as it's more reliable
-      // The picker returns duration in SECONDS, which is what we need
-      let duration = assetDuration || 0;
-      
-      console.log('[AdminScreen] Using duration from picker:', duration, 'seconds');
+      // CRITICAL FIX: expo-image-picker returns duration in MILLISECONDS, not seconds!
+      // We need to convert it to seconds
+      let duration = 0;
+      if (assetDuration && assetDuration > 0) {
+        // Convert milliseconds to seconds
+        duration = assetDuration / 1000;
+        console.log('[AdminScreen] Duration from picker:', assetDuration, 'ms =', duration, 'seconds');
+      }
 
       // Only try to get duration from expo-av if picker didn't provide it
-      if (duration === 0 || !duration) {
+      if (duration === 0) {
         console.log('[AdminScreen] Duration not available from picker, trying expo-av as fallback');
         try {
           const { sound, status } = await Video.Sound.createAsync(
@@ -287,12 +290,12 @@ export default function AdminScreen() {
         
         try {
           // Validate video metadata - pass all info from picker result
-          // expo-image-picker returns duration in SECONDS
+          // IMPORTANT: expo-image-picker returns duration in MILLISECONDS
           const metadata = await validateVideoMetadata(
             videoUri, 
             asset.width, 
             asset.height, 
-            asset.duration
+            asset.duration // This is in milliseconds, will be converted in validateVideoMetadata
           );
           
           if (!metadata) {
