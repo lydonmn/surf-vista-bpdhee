@@ -176,49 +176,57 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `videos/${fileName}`;
 
-      console.log('[AdminScreen] Reading file...');
-      setUploadProgress(10);
+      console.log('[AdminScreen] Uploading file:', filePath);
+      setUploadProgress(20);
 
-      // Read the file as binary using FileSystem
-      // This is the correct approach for React Native
-      const fileUri = selectedVideo.startsWith('file://') ? selectedVideo : `file://${selectedVideo}`;
-      
-      console.log('[AdminScreen] Reading from URI:', fileUri);
-      
-      // Read file as base64 first (more reliable in RN)
-      const base64Data = await FileSystem.readAsStringAsync(fileUri, {
+      // For React Native, we need to use fetch with FormData
+      // First, get the Supabase storage URL
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      // Read file as base64
+      const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      
-      console.log('[AdminScreen] File read successfully, converting to binary...');
-      setUploadProgress(30);
 
-      // Convert base64 to binary for upload
-      // We need to decode base64 to binary ArrayBuffer
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      console.log('[AdminScreen] Uploading to Supabase Storage...');
+      console.log('[AdminScreen] File read as base64, length:', base64.length);
       setUploadProgress(40);
 
-      // Upload to Supabase Storage with proper content type
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(filePath, bytes.buffer, {
-          contentType: `video/${fileExt}`,
-          upsert: false,
-          cacheControl: '3600',
-        });
+      // Convert base64 to blob
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
 
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw uploadError;
+      console.log('[AdminScreen] Blob created, size:', blob.size);
+      setUploadProgress(60);
+
+      // Upload using fetch directly to Supabase Storage
+      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${filePath}`;
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': `video/${fileExt}`,
+          'x-upsert': 'false',
+        },
+        body: blob,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('[AdminScreen] Upload failed:', errorText);
+        throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
       }
 
-      console.log('[AdminScreen] Upload successful, getting public URL...');
+      console.log('[AdminScreen] Upload successful');
       setUploadProgress(80);
 
       // Get public URL
