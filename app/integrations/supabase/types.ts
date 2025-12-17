@@ -47,6 +47,10 @@ export interface Database {
           video_url: string
           thumbnail_url: string | null
           duration: string | null
+          duration_seconds: number | null
+          resolution_width: number | null
+          resolution_height: number | null
+          file_size_bytes: number | null
           uploaded_by: string | null
           created_at: string
           updated_at: string
@@ -58,6 +62,10 @@ export interface Database {
           video_url: string
           thumbnail_url?: string | null
           duration?: string | null
+          duration_seconds?: number | null
+          resolution_width?: number | null
+          resolution_height?: number | null
+          file_size_bytes?: number | null
           uploaded_by?: string | null
           created_at?: string
           updated_at?: string
@@ -69,6 +77,10 @@ export interface Database {
           video_url?: string
           thumbnail_url?: string | null
           duration?: string | null
+          duration_seconds?: number | null
+          resolution_width?: number | null
+          resolution_height?: number | null
+          file_size_bytes?: number | null
           uploaded_by?: string | null
           created_at?: string
           updated_at?: string
