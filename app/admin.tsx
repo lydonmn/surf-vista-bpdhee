@@ -18,6 +18,10 @@ interface UserProfile {
   subscription_end_date: string | null;
 }
 
+// Maximum file size: 50MB (Supabase free tier limit)
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
+const RECOMMENDED_FILE_SIZE = 30 * 1024 * 1024; // 30MB recommended
+
 export default function AdminScreen() {
   const theme = useTheme();
   const { profile } = useAuth();
@@ -117,38 +121,59 @@ export default function AdminScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
-        quality: 1,
-        videoMaxDuration: 600, // 10 minutes max
+        quality: 0.8, // Reduce quality to help with file size
+        videoMaxDuration: 300, // 5 minutes max
       });
 
       if (!result.canceled && result.assets[0]) {
         const videoUri = result.assets[0].uri;
-        setSelectedVideo(videoUri);
         
         // Get file size
         try {
           const fileInfo = await FileSystem.getInfoAsync(videoUri);
           if (fileInfo.exists && 'size' in fileInfo) {
-            setVideoSize(fileInfo.size);
+            const fileSize = fileInfo.size;
+            
             console.log('[AdminScreen] Video selected:', {
               uri: videoUri,
-              size: formatFileSize(fileInfo.size)
+              size: formatFileSize(fileSize)
             });
             
-            // Warn if file is very large
-            if (fileInfo.size > 500 * 1024 * 1024) { // 500MB
+            // Check if file exceeds maximum size
+            if (fileSize > MAX_FILE_SIZE) {
               Alert.alert(
-                'Large File',
-                `This video is ${formatFileSize(fileInfo.size)}. Upload may take several minutes. Consider using a shorter video or lower resolution for faster uploads.`,
+                'File Too Large',
+                `This video is ${formatFileSize(fileSize)}, which exceeds the maximum allowed size of ${formatFileSize(MAX_FILE_SIZE)}.\n\nPlease:\n- Use a shorter video (under 5 minutes)\n- Record at a lower resolution (1080p instead of 4K)\n- Compress the video before uploading\n\nRecommended size: Under ${formatFileSize(RECOMMENDED_FILE_SIZE)} for best results.`,
+                [{ text: 'OK' }]
+              );
+              return;
+            }
+            
+            // Warn if file is large but within limits
+            if (fileSize > RECOMMENDED_FILE_SIZE) {
+              Alert.alert(
+                'Large File Warning',
+                `This video is ${formatFileSize(fileSize)}. While this is within the limit, upload may take several minutes and could fail on slower connections.\n\nFor best results, use videos under ${formatFileSize(RECOMMENDED_FILE_SIZE)}.`,
                 [
-                  { text: 'Cancel', onPress: () => setSelectedVideo(null), style: 'cancel' },
-                  { text: 'Continue', style: 'default' }
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Continue Anyway', 
+                    style: 'default',
+                    onPress: () => {
+                      setSelectedVideo(videoUri);
+                      setVideoSize(fileSize);
+                    }
+                  }
                 ]
               );
+            } else {
+              setSelectedVideo(videoUri);
+              setVideoSize(fileSize);
             }
           }
         } catch (error) {
           console.error('[AdminScreen] Error getting file info:', error);
+          Alert.alert('Error', 'Could not read video file information');
         }
       }
     } catch (error) {
@@ -160,6 +185,15 @@ export default function AdminScreen() {
   const uploadVideo = async () => {
     if (!selectedVideo || !videoTitle) {
       Alert.alert('Error', 'Please select a video and enter a title');
+      return;
+    }
+
+    // Double-check file size before upload
+    if (videoSize > MAX_FILE_SIZE) {
+      Alert.alert(
+        'File Too Large',
+        `This video exceeds the maximum allowed size of ${formatFileSize(MAX_FILE_SIZE)}. Please select a smaller video.`
+      );
       return;
     }
 
@@ -183,89 +217,70 @@ export default function AdminScreen() {
         throw new Error('Not authenticated. Please log in again.');
       }
 
-      console.log('[AdminScreen] Session obtained, access token available');
+      console.log('[AdminScreen] Session obtained, proceeding with upload');
 
-      // Read file as base64 for smaller files, or use direct upload for larger files
-      let uploadResult;
+      // Use FileSystem.uploadAsync for all files with proper progress tracking
+      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
-      if (videoSize < 50 * 1024 * 1024) { // Less than 50MB - use base64
-        console.log('[AdminScreen] Using base64 upload method for smaller file');
-        
-        // Read file as base64
-        const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        console.log('[AdminScreen] File read as base64, length:', base64.length);
-        
-        // Convert base64 to blob
-        const byteCharacters = atob(base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: `video/${fileExt}` });
-        
-        console.log('[AdminScreen] Blob created, uploading to Supabase...');
-        
-        // Upload using Supabase client
-        const { data, error } = await supabase.storage
-          .from('videos')
-          .upload(fileName, blob, {
-            contentType: `video/${fileExt}`,
-            upsert: false,
-          });
-        
-        if (error) {
-          console.error('[AdminScreen] Supabase upload error:', error);
-          throw error;
-        }
-        
-        uploadResult = data;
-        console.log('[AdminScreen] Upload successful:', uploadResult);
-        
-      } else { // Larger files - use multipart upload
-        console.log('[AdminScreen] Using multipart upload method for larger file');
-        
-        const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-        
-        console.log('[AdminScreen] Upload URL:', uploadUrl);
-        
-        // Create a download resumable for progress tracking
-        const uploadTask = FileSystem.createUploadTask(
-          uploadUrl,
-          selectedVideo,
-          {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            fieldName: 'file',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': `video/${fileExt}`,
-            },
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      
+      // Create upload task with progress tracking
+      const uploadTask = FileSystem.createUploadTask(
+        uploadUrl,
+        selectedVideo,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d2emZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NDM2MjcsImV4cCI6MjA4MTQxOTYyN30.pQkSbD0JzvRV4_lj0rAmeaQFZqK1QVW0EkVlhYM-KA8',
+            'x-upsert': 'false',
           },
-          (data) => {
-            const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
-            const percentComplete = Math.round(progress * 100);
-            console.log('[AdminScreen] Upload progress:', percentComplete + '%');
-            setUploadProgress(percentComplete);
+        },
+        (data) => {
+          const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+          const percentComplete = Math.round(progress * 100);
+          console.log('[AdminScreen] Upload progress:', percentComplete + '%');
+          setUploadProgress(percentComplete);
+        }
+      );
+      
+      const result = await uploadTask.uploadAsync();
+      
+      console.log('[AdminScreen] Upload result:', {
+        status: result?.status,
+        body: result?.body
+      });
+      
+      if (!result || result.status < 200 || result.status >= 300) {
+        let errorMessage = 'Upload failed';
+        
+        try {
+          const errorBody = result?.body ? JSON.parse(result.body) : null;
+          console.error('[AdminScreen] Upload error details:', errorBody);
+          
+          if (errorBody?.statusCode === 413 || errorBody?.error === 'Payload too large') {
+            errorMessage = `File size exceeds storage limits. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}. Your file: ${formatFileSize(videoSize)}. Please use a smaller video.`;
+          } else if (errorBody?.message) {
+            errorMessage = errorBody.message;
+          } else if (result?.status === 413) {
+            errorMessage = `File too large for upload. Maximum: ${formatFileSize(MAX_FILE_SIZE)}`;
           }
-        );
-        
-        const result = await uploadTask.uploadAsync();
-        
-        if (!result || result.status < 200 || result.status >= 300) {
-          console.error('[AdminScreen] Upload failed with status:', result?.status);
-          console.error('[AdminScreen] Response body:', result?.body);
-          throw new Error(`Upload failed with status ${result?.status}: ${result?.body || 'Unknown error'}`);
+        } catch (parseError) {
+          console.error('[AdminScreen] Error parsing response:', parseError);
+          if (result?.status === 413) {
+            errorMessage = `File too large. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}`;
+          } else {
+            errorMessage = `Upload failed with status ${result?.status}`;
+          }
         }
         
-        console.log('[AdminScreen] Upload successful');
-        uploadResult = { path: fileName };
+        throw new Error(errorMessage);
       }
-
+      
+      console.log('[AdminScreen] Upload successful');
       setUploadProgress(100);
 
       // Get public URL
@@ -313,14 +328,16 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Network request failed')) {
-        errorMessage += 'Please check your internet connection and try again. If the problem persists, try using a smaller video file or connecting to a different network.';
+      if (error.message?.includes('Payload too large') || error.message?.includes('File too large')) {
+        errorMessage = error.message;
+      } else if (error.message?.includes('Network request failed')) {
+        errorMessage += 'Network connection lost. Please check your internet connection and try again with a smaller file if the problem persists.';
       } else if (error.message?.includes('Not authenticated')) {
         errorMessage += 'Your session has expired. Please log out and log in again.';
       } else if (error.message?.includes('storage')) {
-        errorMessage += 'There was a problem with the storage service. Please try again later.';
+        errorMessage += 'Storage service error. Please try again later or contact support.';
       } else {
-        errorMessage += error.message || 'An unknown error occurred. Please try again.';
+        errorMessage += error.message || 'An unknown error occurred. Please try again with a smaller video file.';
       }
       
       Alert.alert('Upload Failed', errorMessage);
@@ -408,6 +425,26 @@ export default function AdminScreen() {
             Upload Video
           </Text>
 
+          <View style={[styles.warningBox, { backgroundColor: '#FFF3CD', borderColor: '#FFC107' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={20}
+              color="#856404"
+            />
+            <View style={styles.warningTextContainer}>
+              <Text style={[styles.warningTitle, { color: '#856404' }]}>
+                File Size Limits
+              </Text>
+              <Text style={[styles.warningText, { color: '#856404' }]}>
+                Maximum: {formatFileSize(MAX_FILE_SIZE)}
+              </Text>
+              <Text style={[styles.warningText, { color: '#856404' }]}>
+                Recommended: Under {formatFileSize(RECOMMENDED_FILE_SIZE)}
+              </Text>
+            </View>
+          </View>
+
           <TextInput
             style={[styles.input, { 
               backgroundColor: theme.colors.background,
@@ -456,9 +493,19 @@ export default function AdminScreen() {
                 ✓ Video selected
               </Text>
               {videoSize > 0 && (
-                <Text style={[styles.fileSize, { color: colors.textSecondary }]}>
-                  Size: {formatFileSize(videoSize)}
-                </Text>
+                <React.Fragment>
+                  <Text style={[styles.fileSize, { 
+                    color: videoSize > RECOMMENDED_FILE_SIZE ? '#FF6B6B' : colors.textSecondary,
+                    fontWeight: videoSize > RECOMMENDED_FILE_SIZE ? '600' : 'normal'
+                  }]}>
+                    Size: {formatFileSize(videoSize)}
+                  </Text>
+                  {videoSize > RECOMMENDED_FILE_SIZE && (
+                    <Text style={[styles.fileSizeWarning, { color: '#FF6B6B' }]}>
+                      ⚠️ Large file - upload may be slow
+                    </Text>
+                  )}
+                </React.Fragment>
               )}
             </View>
           )}
@@ -480,7 +527,7 @@ export default function AdminScreen() {
                 Uploading... {uploadProgress}%
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                Please keep the app open
+                Please keep the app open and maintain internet connection
               </Text>
             </View>
           )}
@@ -517,7 +564,11 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              For best results, use videos under 50MB for faster uploads. Larger files may take several minutes. Keep the app open during upload and ensure you have a stable internet connection.
+              Tips for successful uploads:{'\n'}
+              • Record at 1080p instead of 4K{'\n'}
+              • Keep videos under 5 minutes{'\n'}
+              • Use a stable WiFi connection{'\n'}
+              • Compress videos before uploading if needed
             </Text>
           </View>
         </View>
@@ -642,6 +693,27 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  warningTextContainer: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  warningText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 8,
@@ -683,6 +755,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
+  fileSizeWarning: {
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: '600',
+  },
   progressContainer: {
     marginTop: 16,
     marginBottom: 8,
@@ -719,7 +796,7 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   loader: {
     marginVertical: 20,
