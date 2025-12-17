@@ -240,10 +240,10 @@ export default function ReportScreen() {
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
             
             return (
-              <React.Fragment key={`report-${report.id || index}`}>
-                <View 
-                  style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
-                >
+              <View 
+                key={`report-${report.id || index}`}
+                style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
+              >
                 <View style={styles.reportHeader}>
                   <Text style={[styles.reportDate, { color: theme.colors.text }]}>
                     {new Date(report.date).toLocaleDateString('en-US', {
@@ -331,9 +331,9 @@ export default function ReportScreen() {
                   </View>
 
                   {(report.wave_period || report.swell_direction) && (
-                    <View key={`extra-row-${report.id || index}`} style={styles.conditionRow}>
+                    <View style={styles.conditionRow}>
                       {report.wave_period && (
-                        <View key={`wave-period-${report.id || index}`} style={styles.conditionItem}>
+                        <View style={styles.conditionItem}>
                           <IconSymbol
                             ios_icon_name="timer"
                             android_material_icon_name="schedule"
@@ -352,7 +352,7 @@ export default function ReportScreen() {
                       )}
 
                       {report.swell_direction && (
-                        <View key={`swell-direction-${report.id || index}`} style={styles.conditionItem}>
+                        <View style={styles.conditionItem}>
                           <IconSymbol
                             ios_icon_name={swellIcon.ios}
                             android_material_icon_name={swellIcon.android}
@@ -417,7 +417,6 @@ export default function ReportScreen() {
                   )}
                 </View>
               </View>
-              </React.Fragment>
             );
           })}
         </React.Fragment>
