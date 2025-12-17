@@ -35,9 +35,6 @@ const MAX_DURATION_SECONDS = 90; // 90 seconds max
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB max
 const RECOMMENDED_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB recommended
 
-// Chunk size for uploads (50MB chunks for better reliability)
-const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB
-
 export default function AdminScreen() {
   const theme = useTheme();
   const { profile } = useAuth();
@@ -349,98 +346,6 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideoInChunks = async (
-    videoUri: string,
-    fileName: string,
-    accessToken: string
-  ): Promise<boolean> => {
-    try {
-      console.log('[AdminScreen] Starting chunked upload for:', fileName);
-      
-      // Get file info
-      const fileInfo = await FileSystem.getInfoAsync(videoUri);
-      if (!fileInfo.exists || !('size' in fileInfo)) {
-        throw new Error('Could not read file');
-      }
-
-      const fileSize = fileInfo.size;
-      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
-      
-      console.log('[AdminScreen] File size:', formatFileSize(fileSize));
-      console.log('[AdminScreen] Total chunks:', totalChunks);
-
-      // For large files, we'll use the standard upload with progress tracking
-      // Supabase storage supports large files, but we need to ensure the bucket is configured correctly
-      
-      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      
-      // Create upload task with progress tracking
-      const uploadTask = FileSystem.createUploadTask(
-        uploadUrl,
-        videoUri,
-        {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d2emZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NDM2MjcsImV4cCI6MjA4MTQxOTYyN30.pQkSbD0JzvRV4_lj0rAmeaQFZqK1QVW0EkVlhYM-KA8',
-            'x-upsert': 'false',
-            'Content-Type': 'video/mp4',
-          },
-        },
-        (data) => {
-          const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
-          const percentComplete = Math.round(progress * 100);
-          console.log('[AdminScreen] Upload progress:', percentComplete + '%');
-          setUploadProgress(percentComplete);
-        }
-      );
-      
-      const result = await uploadTask.uploadAsync();
-      
-      console.log('[AdminScreen] Upload result:', {
-        status: result?.status,
-        body: result?.body
-      });
-      
-      if (!result || result.status < 200 || result.status >= 300) {
-        let errorMessage = 'Upload failed';
-        
-        try {
-          const errorBody = result?.body ? JSON.parse(result.body) : null;
-          console.error('[AdminScreen] Upload error details:', errorBody);
-          
-          if (errorBody?.statusCode === 413 || errorBody?.error === 'Payload too large') {
-            errorMessage = `File size exceeds storage limits.\n\nYour file: ${formatFileSize(fileSize)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB`;
-          } else if (errorBody?.message) {
-            errorMessage = errorBody.message;
-          } else if (result?.status === 413) {
-            errorMessage = `File too large for upload.\n\nYour file: ${formatFileSize(fileSize)}\n\nPlease configure your Supabase storage bucket to accept larger files.`;
-          }
-        } catch (parseError) {
-          console.error('[AdminScreen] Error parsing response:', parseError);
-          if (result?.status === 413) {
-            errorMessage = `File too large. Please configure Supabase storage to accept files up to ${formatFileSize(MAX_FILE_SIZE)}`;
-          } else {
-            errorMessage = `Upload failed with status ${result?.status}`;
-          }
-        }
-        
-        throw new Error(errorMessage);
-      }
-      
-      console.log('[AdminScreen] Upload successful');
-      return true;
-    } catch (error) {
-      console.error('[AdminScreen] Chunked upload error:', error);
-      throw error;
-    }
-  };
-
   const uploadVideo = async () => {
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -481,11 +386,82 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Session obtained, proceeding with upload');
 
-      // Upload video with chunked upload for large files
-      await uploadVideoInChunks(selectedVideo, fileName, session.access_token);
+      // Read the file as base64 for smaller files, or use direct upload for larger files
+      const fileSize = videoMetadata.size;
       
-      console.log('[AdminScreen] Upload successful');
-      setUploadProgress(100);
+      // For files under 50MB, use base64 encoding
+      // For larger files, use ArrayBuffer/Blob approach
+      if (fileSize < 50 * 1024 * 1024) {
+        console.log('[AdminScreen] Using base64 upload for small file');
+        
+        // Read file as base64
+        const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        // Convert base64 to blob
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'video/mp4' });
+        
+        console.log('[AdminScreen] Uploading blob, size:', formatFileSize(blob.size));
+        
+        // Upload using Supabase client
+        const { data, error } = await supabase.storage
+          .from('videos')
+          .upload(fileName, blob, {
+            contentType: 'video/mp4',
+            upsert: false,
+          });
+
+        if (error) {
+          console.error('[AdminScreen] Upload error:', error);
+          throw error;
+        }
+        
+        console.log('[AdminScreen] Upload successful:', data);
+        setUploadProgress(100);
+      } else {
+        console.log('[AdminScreen] Using direct file upload for large file');
+        
+        // For large files, we need to use fetch with the file
+        // Read file as binary
+        const fileUri = selectedVideo;
+        
+        // Use fetch to upload the file directly
+        const response = await fetch(fileUri);
+        const blob = await response.blob();
+        
+        console.log('[AdminScreen] Created blob from file, size:', formatFileSize(blob.size));
+        
+        // Upload using Supabase client with the blob
+        const { data, error } = await supabase.storage
+          .from('videos')
+          .upload(fileName, blob, {
+            contentType: 'video/mp4',
+            upsert: false,
+          });
+
+        if (error) {
+          console.error('[AdminScreen] Upload error:', error);
+          
+          // Check for specific error types
+          if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
+            throw new Error(
+              `File size exceeds storage limits.\n\nYour file: ${formatFileSize(fileSize)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
+            );
+          }
+          
+          throw error;
+        }
+        
+        console.log('[AdminScreen] Upload successful:', data);
+        setUploadProgress(100);
+      }
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -843,7 +819,7 @@ export default function AdminScreen() {
                 Uploading video... {uploadProgress}%
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                Large file upload in progress. Please keep the app open and maintain internet connection.
+                Please keep the app open and maintain internet connection.
               </Text>
               {videoMetadata && (
                 <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
