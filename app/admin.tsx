@@ -177,34 +177,30 @@ export default function AdminScreen() {
       const filePath = `videos/${fileName}`;
 
       console.log('[AdminScreen] Uploading file:', filePath);
-      setUploadProgress(20);
+      setUploadProgress(10);
 
-      // For React Native, we need to use fetch with FormData
-      // First, get the Supabase storage URL
+      // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      // Read file as base64
-      const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      setUploadProgress(20);
 
-      console.log('[AdminScreen] File read as base64, length:', base64.length);
-      setUploadProgress(40);
+      // Use fetch with FormData to upload the file
+      const formData = new FormData();
+      
+      // For React Native, we need to create a file object from the URI
+      const fileToUpload: any = {
+        uri: selectedVideo,
+        type: `video/${fileExt}`,
+        name: fileName,
+      };
+      
+      formData.append('file', fileToUpload);
 
-      // Convert base64 to blob
-      const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
-
-      console.log('[AdminScreen] Blob created, size:', blob.size);
-      setUploadProgress(60);
+      console.log('[AdminScreen] Uploading to Supabase Storage...');
+      setUploadProgress(30);
 
       // Upload using fetch directly to Supabase Storage
       const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
@@ -214,11 +210,11 @@ export default function AdminScreen() {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': `video/${fileExt}`,
-          'x-upsert': 'false',
         },
-        body: blob,
+        body: formData,
       });
+
+      setUploadProgress(70);
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text();
