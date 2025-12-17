@@ -235,191 +235,189 @@ export default function ReportScreen() {
           )}
         </View>
       ) : (
-        <React.Fragment>
-          {surfReports.map((report, index) => {
-            const swellIcon = getSwellDirectionIcon(report.swell_direction);
-            
-            return (
-              <View 
-                key={`report-${report.id || index}`}
-                style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
-              >
-                <View style={styles.reportHeader}>
-                  <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-                    {new Date(report.date).toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </Text>
-                  <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
-                    <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
-                  </View>
-                </View>
-
-                <View style={styles.conditionsGrid}>
-                  <View style={styles.conditionRow}>
-                    <View style={styles.conditionItem}>
-                      <IconSymbol
-                        ios_icon_name="water.waves"
-                        android_material_icon_name="waves"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <View style={styles.conditionTextContainer}>
-                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                          Wave Height
-                        </Text>
-                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                          {report.wave_height}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.conditionItem}>
-                      <IconSymbol
-                        ios_icon_name="wind"
-                        android_material_icon_name="air"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <View style={styles.conditionTextContainer}>
-                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                          Wind Speed
-                        </Text>
-                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                          {report.wind_speed}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.conditionRow}>
-                    <View style={styles.conditionItem}>
-                      <IconSymbol
-                        ios_icon_name="location.north.fill"
-                        android_material_icon_name="navigation"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <View style={styles.conditionTextContainer}>
-                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                          Wind Direction
-                        </Text>
-                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                          {report.wind_direction}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.conditionItem}>
-                      <IconSymbol
-                        ios_icon_name="thermometer"
-                        android_material_icon_name="thermostat"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <View style={styles.conditionTextContainer}>
-                        <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                          Water Temp
-                        </Text>
-                        <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                          {report.water_temp}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {(report.wave_period || report.swell_direction) && (
-                    <View style={styles.conditionRow}>
-                      {report.wave_period && (
-                        <View style={styles.conditionItem}>
-                          <IconSymbol
-                            ios_icon_name="timer"
-                            android_material_icon_name="schedule"
-                            size={24}
-                            color={colors.primary}
-                          />
-                          <View style={styles.conditionTextContainer}>
-                            <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                              Wave Period
-                            </Text>
-                            <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                              {report.wave_period}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-
-                      {report.swell_direction && (
-                        <View style={styles.conditionItem}>
-                          <IconSymbol
-                            ios_icon_name={swellIcon.ios}
-                            android_material_icon_name={swellIcon.android}
-                            size={24}
-                            color={colors.primary}
-                          />
-                          <View style={styles.conditionTextContainer}>
-                            <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                              Swell Direction
-                            </Text>
-                            <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                              {report.swell_direction}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  <View style={styles.tideContainer}>
-                    <View style={styles.conditionTextContainer}>
-                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                        Tide
-                      </Text>
-                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                        {report.tide}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
-                  <View style={styles.conditionsHeader}>
-                    <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
-                      Conditions
-                    </Text>
-                    {profile?.is_admin && (
-                      <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={() => router.push(`/edit-report?id=${report.id}`)}
-                      >
-                        <IconSymbol
-                          ios_icon_name="pencil"
-                          android_material_icon_name="edit"
-                          size={16}
-                          color={colors.primary}
-                        />
-                        <Text style={[styles.editButtonText, { color: colors.primary }]}>
-                          Edit
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <ReportTextDisplay 
-                    text={report.report_text || report.conditions}
-                    isCustom={!!report.report_text}
-                  />
-                  {report.report_text && report.edited_at && (
-                    <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                      Edited {new Date(report.edited_at).toLocaleDateString()}
-                    </Text>
-                  )}
+        surfReports.map((report, index) => {
+          const swellIcon = getSwellDirectionIcon(report.swell_direction);
+          
+          return (
+            <View 
+              key={`report-${report.id || index}`}
+              style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
+            >
+              <View style={styles.reportHeader}>
+                <Text style={[styles.reportDate, { color: theme.colors.text }]}>
+                  {new Date(report.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Text>
+                <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
+                  <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
                 </View>
               </View>
-            );
-          })}
-        </React.Fragment>
+
+              <View style={styles.conditionsGrid}>
+                <View style={styles.conditionRow}>
+                  <View style={styles.conditionItem}>
+                    <IconSymbol
+                      ios_icon_name="water.waves"
+                      android_material_icon_name="waves"
+                      size={24}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Wave Height
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {report.wave_height}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.conditionItem}>
+                    <IconSymbol
+                      ios_icon_name="wind"
+                      android_material_icon_name="air"
+                      size={24}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Wind Speed
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {report.wind_speed}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.conditionRow}>
+                  <View style={styles.conditionItem}>
+                    <IconSymbol
+                      ios_icon_name="location.north.fill"
+                      android_material_icon_name="navigation"
+                      size={24}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Wind Direction
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {report.wind_direction}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.conditionItem}>
+                    <IconSymbol
+                      ios_icon_name="thermometer"
+                      android_material_icon_name="thermostat"
+                      size={24}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Water Temp
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {report.water_temp}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {(report.wave_period || report.swell_direction) && (
+                  <View style={styles.conditionRow}>
+                    {report.wave_period && (
+                      <View style={styles.conditionItem}>
+                        <IconSymbol
+                          ios_icon_name="timer"
+                          android_material_icon_name="schedule"
+                          size={24}
+                          color={colors.primary}
+                        />
+                        <View style={styles.conditionTextContainer}>
+                          <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                            Wave Period
+                          </Text>
+                          <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                            {report.wave_period}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {report.swell_direction && (
+                      <View style={styles.conditionItem}>
+                        <IconSymbol
+                          ios_icon_name={swellIcon.ios}
+                          android_material_icon_name={swellIcon.android}
+                          size={24}
+                          color={colors.primary}
+                        />
+                        <View style={styles.conditionTextContainer}>
+                          <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                            Swell Direction
+                          </Text>
+                          <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                            {report.swell_direction}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <View style={styles.tideContainer}>
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Tide
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                      {report.tide}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
+                <View style={styles.conditionsHeader}>
+                  <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
+                    Conditions
+                  </Text>
+                  {profile?.is_admin && (
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => router.push(`/edit-report?id=${report.id}`)}
+                    >
+                      <IconSymbol
+                        ios_icon_name="pencil"
+                        android_material_icon_name="edit"
+                        size={16}
+                        color={colors.primary}
+                      />
+                      <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                        Edit
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <ReportTextDisplay 
+                  text={report.report_text || report.conditions}
+                  isCustom={!!report.report_text}
+                />
+                {report.report_text && report.edited_at && (
+                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                    Edited {new Date(report.edited_at).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            </View>
+          );
+        })
       )}
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
