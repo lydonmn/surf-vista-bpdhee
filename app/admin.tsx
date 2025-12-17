@@ -144,9 +144,19 @@ export default function AdminScreen() {
     return `${width}x${height}`;
   };
 
-  const validateVideoMetadata = async (uri: string, assetWidth?: number, assetHeight?: number): Promise<VideoMetadata | null> => {
+  const validateVideoMetadata = async (
+    uri: string, 
+    assetWidth?: number, 
+    assetHeight?: number, 
+    assetDuration?: number
+  ): Promise<VideoMetadata | null> => {
     try {
       console.log('[AdminScreen] Validating video metadata for:', uri);
+      console.log('[AdminScreen] Asset info from picker:', {
+        width: assetWidth,
+        height: assetHeight,
+        duration: assetDuration
+      });
       
       // Get file info for size
       const fileInfo = await FileSystem.getInfoAsync(uri);
@@ -157,32 +167,36 @@ export default function AdminScreen() {
       const fileSize = fileInfo.size;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
-      // Get video metadata using expo-av
+      // Use dimensions from picker result
       let width = assetWidth || 0;
       let height = assetHeight || 0;
-      let duration = 0;
+      
+      // IMPORTANT: Prioritize duration from expo-image-picker as it's more reliable
+      // The picker returns duration in SECONDS, which is what we need
+      let duration = assetDuration || 0;
+      
+      console.log('[AdminScreen] Using duration from picker:', duration, 'seconds');
 
-      try {
-        const { sound, status } = await Video.Sound.createAsync(
-          { uri },
-          { shouldPlay: false }
-        );
-        
-        if (status.isLoaded) {
-          duration = (status.durationMillis || 0) / 1000;
+      // Only try to get duration from expo-av if picker didn't provide it
+      if (duration === 0 || !duration) {
+        console.log('[AdminScreen] Duration not available from picker, trying expo-av as fallback');
+        try {
+          const { sound, status } = await Video.Sound.createAsync(
+            { uri },
+            { shouldPlay: false }
+          );
           
-          console.log('[AdminScreen] Video metadata:', {
-            width,
-            height,
-            duration: formatDuration(duration),
-            size: formatFileSize(fileSize)
-          });
+          if (status.isLoaded && status.durationMillis) {
+            // Convert milliseconds to seconds
+            duration = status.durationMillis / 1000;
+            console.log('[AdminScreen] Duration from expo-av:', duration, 'seconds (converted from', status.durationMillis, 'ms)');
+          }
 
           await sound.unloadAsync();
+        } catch (error) {
+          console.error('[AdminScreen] Error loading video with expo-av:', error);
+          console.log('[AdminScreen] Continuing without duration information');
         }
-      } catch (error) {
-        console.error('[AdminScreen] Error loading video with expo-av:', error);
-        // Continue with what we have
       }
 
       // If we still don't have dimensions, use fallback
@@ -192,12 +206,21 @@ export default function AdminScreen() {
         height = 1080;
       }
 
-      return {
+      const metadata = {
         width,
         height,
         duration,
         size: fileSize
       };
+
+      console.log('[AdminScreen] Final video metadata:', {
+        resolution: formatResolution(width, height),
+        duration: duration > 0 ? formatDuration(duration) : 'Unknown',
+        durationSeconds: duration,
+        size: formatFileSize(fileSize)
+      });
+
+      return metadata;
     } catch (error) {
       console.error('[AdminScreen] Error validating video:', error);
       return null;
@@ -211,7 +234,8 @@ export default function AdminScreen() {
     // Videos will play at their uploaded resolution
 
     // Check duration (maximum 90 seconds)
-    if (metadata.duration > MAX_DURATION_SECONDS && metadata.duration > 0) {
+    // Only validate if we have a valid duration
+    if (metadata.duration > 0 && metadata.duration > MAX_DURATION_SECONDS) {
       errors.push(
         `Duration too long: ${formatDuration(metadata.duration)}. Maximum allowed: ${formatDuration(MAX_DURATION_SECONDS)}`
       );
@@ -251,27 +275,29 @@ export default function AdminScreen() {
         const videoUri = asset.uri;
         
         console.log('[AdminScreen] Video selected:', videoUri);
-        console.log('[AdminScreen] Asset info:', {
+        console.log('[AdminScreen] Asset info from picker:', {
           width: asset.width,
           height: asset.height,
-          duration: asset.duration
+          duration: asset.duration,
+          type: asset.type
         });
         
         // Show loading state
         setValidatingVideo(true);
         
         try {
-          // Validate video metadata - pass dimensions from picker result
-          const metadata = await validateVideoMetadata(videoUri, asset.width, asset.height);
+          // Validate video metadata - pass all info from picker result
+          // expo-image-picker returns duration in SECONDS
+          const metadata = await validateVideoMetadata(
+            videoUri, 
+            asset.width, 
+            asset.height, 
+            asset.duration
+          );
           
           if (!metadata) {
             Alert.alert('Error', 'Could not read video information. Please try a different video.');
             return;
-          }
-
-          // If duration is available from asset, use it
-          if (asset.duration && asset.duration > 0) {
-            metadata.duration = asset.duration;
           }
 
           setVideoMetadata(metadata);
@@ -293,9 +319,13 @@ export default function AdminScreen() {
             setSelectedVideo(videoUri);
             
             // Show success with metadata
+            const durationText = metadata.duration > 0 
+              ? `Duration: ${formatDuration(metadata.duration)}\n` 
+              : 'Duration: Unknown (will be determined during upload)\n';
+            
             Alert.alert(
               'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\nDuration: ${formatDuration(metadata.duration)}\nSize: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload and will play at its original quality.`,
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload and will play at its original quality.`,
               [{ text: 'OK' }]
             );
           }
@@ -429,7 +459,8 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
         resolution: formatResolution(videoMetadata.width, videoMetadata.height),
-        duration: formatDuration(videoMetadata.duration),
+        duration: videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown',
+        durationSeconds: videoMetadata.duration,
         size: formatFileSize(videoMetadata.size)
       });
 
@@ -470,7 +501,7 @@ export default function AdminScreen() {
           uploaded_by: profile?.id,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          duration_seconds: videoMetadata.duration,
+          duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           file_size_bytes: videoMetadata.size
         });
 
@@ -481,9 +512,13 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Video record created successfully');
 
+      const durationText = videoMetadata.duration > 0 
+        ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
+        : '';
+
       Alert.alert(
         'Success!', 
-        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\nDuration: ${formatDuration(videoMetadata.duration)}\nSize: ${formatFileSize(videoMetadata.size)}\n\nYour video will play at its original quality.`,
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\n\nYour video will play at its original quality.`,
         [
           {
             text: 'OK',
