@@ -219,13 +219,13 @@ export default function VideosScreen() {
         </View>
       ) : (
         <>
-          {videos.map((video, index) => {
+          {videos.map((video) => {
             // Use thumbnail if available, otherwise use a default surf image
             const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800';
             const isDeleting = deletingVideoId === video.id;
             
             return (
-              <View key={index} style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
+              <View key={video.id} style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
                 <TouchableOpacity
                   style={styles.videoTouchable}
                   onPress={() => router.push({
@@ -283,7 +283,7 @@ export default function VideosScreen() {
                       {isDeleting ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <React.Fragment>
+                        <>
                           <IconSymbol
                             ios_icon_name="trash.fill"
                             android_material_icon_name="delete"
@@ -291,7 +291,7 @@ export default function VideosScreen() {
                             color="#FFFFFF"
                           />
                           <Text style={styles.deleteButtonText}>Delete</Text>
-                        </React.Fragment>
+                        </>
                       )}
                     </TouchableOpacity>
                   </View>
