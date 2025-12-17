@@ -157,37 +157,36 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideoWithFileSystem = async (
+  const uploadVideoWithFileSystem = (
     videoUri: string,
     fileName: string,
     accessToken: string
   ): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        console.log('[AdminScreen] Starting FileSystem upload...');
-        
-        const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-        
-        console.log('[AdminScreen] Upload URL:', uploadUrl);
-        console.log('[AdminScreen] Video URI:', videoUri);
-        
-        // Use FileSystem.uploadAsync for better handling of large files
-        const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoUri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          // Progress callback
-          uploadProgressCallback: (progress) => {
-            const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
-            console.log('[AdminScreen] Upload progress:', percentComplete + '%');
-            setUploadProgress(percentComplete);
-          },
-        });
-        
+    return new Promise((resolve, reject) => {
+      console.log('[AdminScreen] Starting FileSystem upload...');
+      
+      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+      
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] Video URI:', videoUri);
+      
+      // Use FileSystem.uploadAsync for better handling of large files
+      FileSystem.uploadAsync(uploadUrl, videoUri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        // Progress callback
+        uploadProgressCallback: (progress) => {
+          const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
+          console.log('[AdminScreen] Upload progress:', percentComplete + '%');
+          setUploadProgress(percentComplete);
+        },
+      })
+      .then((uploadResult) => {
         console.log('[AdminScreen] Upload result:', uploadResult);
         
         if (uploadResult.status >= 200 && uploadResult.status < 300) {
@@ -198,11 +197,11 @@ export default function AdminScreen() {
           console.error('[AdminScreen] Response body:', uploadResult.body);
           reject(new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`));
         }
-        
-      } catch (error) {
+      })
+      .catch((error) => {
         console.error('[AdminScreen] Upload error:', error);
         reject(error);
-      }
+      });
     });
   };
 
