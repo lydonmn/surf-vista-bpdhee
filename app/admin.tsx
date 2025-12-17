@@ -449,46 +449,49 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Session obtained, proceeding with upload');
 
-      // Read the file as base64
-      console.log('[AdminScreen] Reading file...');
-      const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Get the upload URL from Supabase
+      const { data: uploadData, error: uploadUrlError } = await supabase.storage
+        .from('videos')
+        .createSignedUploadUrl(fileName);
 
-      console.log('[AdminScreen] File read successfully, size:', base64.length, 'characters');
-
-      // Convert base64 to ArrayBuffer for upload
-      const binaryString = atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      if (uploadUrlError) {
+        console.error('[AdminScreen] Error creating signed upload URL:', uploadUrlError);
+        throw uploadUrlError;
       }
 
-      console.log('[AdminScreen] Uploading to Supabase Storage...');
-      setUploadProgress(50);
+      if (!uploadData?.signedUrl) {
+        throw new Error('Failed to get upload URL from Supabase');
+      }
 
-      // Upload using Supabase client
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, bytes.buffer, {
-          contentType: `video/${fileExt}`,
-          cacheControl: '3600',
-          upsert: false
-        });
+      console.log('[AdminScreen] Got signed upload URL, starting FileSystem upload...');
 
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
+      // Use FileSystem.uploadAsync with progress tracking
+      const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': `video/${fileExt}`,
+          'x-upsert': 'false',
+        },
+        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      });
+
+      console.log('[AdminScreen] Upload result:', uploadResult);
+
+      if (uploadResult.status !== 200) {
+        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
         
-        if (uploadError.message?.includes('Payload too large') || uploadError.message?.includes('413')) {
+        if (uploadResult.status === 413) {
           throw new Error(
             `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
           );
         }
         
-        throw uploadError;
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
       }
 
-      console.log('[AdminScreen] Upload successful:', uploadData);
+      console.log('[AdminScreen] Upload successful');
       setUploadProgress(100);
 
       // Get public URL
