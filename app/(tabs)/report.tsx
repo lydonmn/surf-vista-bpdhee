@@ -241,7 +241,7 @@ export default function ReportScreen() {
             
             return (
               <View 
-                key={report.id ? `report-${report.id}` : `report-index-${index}`}
+                key={`report-${report.id || index}`}
                 style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
               >
                 <View style={styles.reportHeader}>
