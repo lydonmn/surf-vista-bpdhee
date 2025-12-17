@@ -171,42 +171,32 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video size:', formatFileSize(videoSize));
 
-      // Read the file as base64 for better compatibility with iOS
+      // Generate unique filename
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `videos/${fileName}`;
 
-      console.log('[AdminScreen] Reading file...');
-      
-      // For iOS, we need to handle the file differently
-      let fileData: ArrayBuffer;
-      
-      if (Platform.OS === 'ios') {
-        // On iOS, read as base64 and convert to ArrayBuffer
-        const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        fileData = bytes.buffer;
-      } else {
-        // On Android, fetch should work fine
-        const response = await fetch(selectedVideo);
-        fileData = await response.arrayBuffer();
-      }
+      console.log('[AdminScreen] Uploading file...');
+      setUploadProgress(10);
 
-      console.log('[AdminScreen] File read successfully, uploading to Supabase...');
+      // Use fetch to get the file as a blob/arraybuffer
+      // This is more memory efficient than base64 conversion
+      const response = await fetch(selectedVideo);
+      const blob = await response.blob();
+      
+      console.log('[AdminScreen] File loaded as blob, size:', blob.size);
       setUploadProgress(30);
+
+      // Convert blob to ArrayBuffer for Supabase
+      const arrayBuffer = await blob.arrayBuffer();
+      
+      console.log('[AdminScreen] Uploading to Supabase Storage...');
+      setUploadProgress(40);
 
       // Upload to Supabase Storage with proper content type
       const { error: uploadError } = await supabase.storage
         .from('videos')
-        .upload(filePath, fileData, {
+        .upload(filePath, arrayBuffer, {
           contentType: `video/${fileExt}`,
           upsert: false,
           cacheControl: '3600',
@@ -218,7 +208,7 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Upload successful, getting public URL...');
-      setUploadProgress(70);
+      setUploadProgress(80);
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -226,7 +216,7 @@ export default function AdminScreen() {
         .getPublicUrl(filePath);
 
       console.log('[AdminScreen] Public URL:', publicUrl);
-      setUploadProgress(85);
+      setUploadProgress(90);
 
       // Create video record in database
       const { error: dbError } = await supabase
