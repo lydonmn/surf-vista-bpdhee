@@ -218,88 +218,90 @@ export default function VideosScreen() {
           )}
         </View>
       ) : (
-        <>
+        <React.Fragment>
           {videos.map((video) => {
             // Use thumbnail if available, otherwise use a default surf image
             const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800';
             const isDeleting = deletingVideoId === video.id;
             
             return (
-              <View key={video.id} style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
-                <TouchableOpacity
-                  style={styles.videoTouchable}
-                  onPress={() => router.push({
-                    pathname: '/video-player',
-                    params: { videoId: video.id }
-                  })}
-                  disabled={isDeleting}
-                >
-                  <Image
-                    source={{ uri: thumbnailUrl }}
-                    style={styles.thumbnail}
-                  />
-                  <View style={styles.playOverlay}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play_circle"
-                      size={64}
-                      color="#FFFFFF"
+              <React.Fragment key={video.id}>
+                <View style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
+                  <TouchableOpacity
+                    style={styles.videoTouchable}
+                    onPress={() => router.push({
+                      pathname: '/video-player',
+                      params: { videoId: video.id }
+                    })}
+                    disabled={isDeleting}
+                  >
+                    <Image
+                      source={{ uri: thumbnailUrl }}
+                      style={styles.thumbnail}
                     />
-                  </View>
-                  {video.duration && (
-                    <View style={styles.durationBadge}>
-                      <Text style={styles.durationText}>{video.duration}</Text>
+                    <View style={styles.playOverlay}>
+                      <IconSymbol
+                        ios_icon_name="play.circle.fill"
+                        android_material_icon_name="play_circle"
+                        size={64}
+                        color="#FFFFFF"
+                      />
+                    </View>
+                    {video.duration && (
+                      <View style={styles.durationBadge}>
+                        <Text style={styles.durationText}>{video.duration}</Text>
+                      </View>
+                    )}
+                    <View style={styles.videoInfo}>
+                      <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                        {video.title}
+                      </Text>
+                      <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                        {new Date(video.created_at).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                      {video.description && (
+                        <Text 
+                          style={[styles.videoDescription, { color: colors.textSecondary }]}
+                          numberOfLines={2}
+                        >
+                          {video.description}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+
+                  {profile?.is_admin && (
+                    <View style={styles.adminActions}>
+                      <TouchableOpacity
+                        style={[styles.deleteButton, { backgroundColor: '#FF6B6B' }]}
+                        onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <React.Fragment>
+                            <IconSymbol
+                              ios_icon_name="trash.fill"
+                              android_material_icon_name="delete"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.deleteButtonText}>Delete</Text>
+                          </React.Fragment>
+                        )}
+                      </TouchableOpacity>
                     </View>
                   )}
-                  <View style={styles.videoInfo}>
-                    <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                      {video.title}
-                    </Text>
-                    <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                      {new Date(video.created_at).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </Text>
-                    {video.description && (
-                      <Text 
-                        style={[styles.videoDescription, { color: colors.textSecondary }]}
-                        numberOfLines={2}
-                      >
-                        {video.description}
-                      </Text>
-                    )}
-                  </View>
-                </TouchableOpacity>
-
-                {profile?.is_admin && (
-                  <View style={styles.adminActions}>
-                    <TouchableOpacity
-                      style={[styles.deleteButton, { backgroundColor: '#FF6B6B' }]}
-                      onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <>
-                          <IconSymbol
-                            ios_icon_name="trash.fill"
-                            android_material_icon_name="delete"
-                            size={16}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.deleteButtonText}>Delete</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
+                </View>
+              </React.Fragment>
             );
           })}
-        </>
+        </React.Fragment>
       )}
 
       {profile?.is_admin && videos.length > 0 && (

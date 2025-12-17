@@ -825,9 +825,11 @@ export default function AdminScreen() {
               {validationErrors.length > 0 && (
                 <View style={styles.errorsContainer}>
                   {validationErrors.map((error, index) => (
-                    <Text key={index} style={[styles.errorText, { color: '#C62828' }]}>
-                      • {error}
-                    </Text>
+                    <React.Fragment key={`error-${index}`}>
+                      <Text style={[styles.errorText, { color: '#C62828' }]}>
+                        • {error}
+                      </Text>
+                    </React.Fragment>
                   ))}
                 </View>
               )}
@@ -916,47 +918,51 @@ export default function AdminScreen() {
               No videos uploaded yet
             </Text>
           ) : (
-            videos.map((video, index) => {
-              const isDeleting = deletingVideoId === video.id;
-              const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=400';
-              
-              return (
-                <View key={index} style={[styles.videoManagementCard, { borderColor: colors.textSecondary }]}>
-                  <Image
-                    source={{ uri: thumbnailUrl }}
-                    style={styles.videoThumbnail}
-                  />
-                  <View style={styles.videoManagementInfo}>
-                    <Text style={[styles.videoManagementTitle, { color: theme.colors.text }]}>
-                      {video.title}
-                    </Text>
-                    <Text style={[styles.videoManagementDate, { color: colors.textSecondary }]}>
-                      {new Date(video.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.deleteIconButton, { backgroundColor: '#FF6B6B' }]}
-                    onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <IconSymbol
-                        ios_icon_name="trash.fill"
-                        android_material_icon_name="delete"
-                        size={20}
-                        color="#FFFFFF"
+            <React.Fragment>
+              {videos.map((video, index) => {
+                const isDeleting = deletingVideoId === video.id;
+                const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=400';
+                
+                return (
+                  <React.Fragment key={`video-${video.id || index}`}>
+                    <View style={[styles.videoManagementCard, { borderColor: colors.textSecondary }]}>
+                      <Image
+                        source={{ uri: thumbnailUrl }}
+                        style={styles.videoThumbnail}
                       />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              );
-            })
+                      <View style={styles.videoManagementInfo}>
+                        <Text style={[styles.videoManagementTitle, { color: theme.colors.text }]}>
+                          {video.title}
+                        </Text>
+                        <Text style={[styles.videoManagementDate, { color: colors.textSecondary }]}>
+                          {new Date(video.created_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.deleteIconButton, { backgroundColor: '#FF6B6B' }]}
+                        onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <IconSymbol
+                            ios_icon_name="trash.fill"
+                            android_material_icon_name="delete"
+                            size={20}
+                            color="#FFFFFF"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </React.Fragment>
+                );
+              })}
+            </React.Fragment>
           )}
         </View>
 
@@ -969,51 +975,55 @@ export default function AdminScreen() {
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
           ) : (
-            users.map((user, index) => (
-              <View key={index} style={[styles.userCard, { borderColor: colors.textSecondary }]}>
-                <View style={styles.userInfo}>
-                  <Text style={[styles.userEmail, { color: theme.colors.text }]}>
-                    {user.email}
-                  </Text>
-                  <View style={styles.badges}>
-                    {user.is_admin && (
-                      <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.badgeText}>Admin</Text>
+            <React.Fragment>
+              {users.map((user, index) => (
+                <React.Fragment key={`user-${user.id || index}`}>
+                  <View style={[styles.userCard, { borderColor: colors.textSecondary }]}>
+                    <View style={styles.userInfo}>
+                      <Text style={[styles.userEmail, { color: theme.colors.text }]}>
+                        {user.email}
+                      </Text>
+                      <View style={styles.badges}>
+                        {user.is_admin && (
+                          <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                            <Text style={styles.badgeText}>Admin</Text>
+                          </View>
+                        )}
+                        {user.is_subscribed && (
+                          <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.badgeText}>Subscribed</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                    {user.is_subscribed && (
-                      <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                        <Text style={styles.badgeText}>Subscribed</Text>
-                      </View>
-                    )}
+                    </View>
+
+                    <View style={styles.userActions}>
+                      <TouchableOpacity
+                        style={[styles.actionButton, { 
+                          backgroundColor: user.is_subscribed ? colors.textSecondary : colors.primary 
+                        }]}
+                        onPress={() => toggleSubscription(user.id, user.is_subscribed)}
+                      >
+                        <Text style={styles.actionButtonText}>
+                          {user.is_subscribed ? 'Revoke Sub' : 'Grant Sub'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.actionButton, { 
+                          backgroundColor: user.is_admin ? colors.textSecondary : colors.accent 
+                        }]}
+                        onPress={() => toggleAdmin(user.id, user.is_admin)}
+                      >
+                        <Text style={styles.actionButtonText}>
+                          {user.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-
-                <View style={styles.userActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { 
-                      backgroundColor: user.is_subscribed ? colors.textSecondary : colors.primary 
-                    }]}
-                    onPress={() => toggleSubscription(user.id, user.is_subscribed)}
-                  >
-                    <Text style={styles.actionButtonText}>
-                      {user.is_subscribed ? 'Revoke Sub' : 'Grant Sub'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, { 
-                      backgroundColor: user.is_admin ? colors.textSecondary : colors.accent 
-                    }]}
-                    onPress={() => toggleAdmin(user.id, user.is_admin)}
-                  >
-                    <Text style={styles.actionButtonText}>
-                      {user.is_admin ? 'Revoke Admin' : 'Grant Admin'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+                </React.Fragment>
+              ))}
+            </React.Fragment>
           )}
         </View>
       </ScrollView>

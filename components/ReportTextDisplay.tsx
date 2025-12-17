@@ -53,9 +53,12 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     <View style={styles.container}>
       {sentences.map((sentence, index) => {
         const parts = parseTextWithBold(sentence.trim());
+        // Create a unique key using a combination of index and a hash of the sentence
+        const sentenceKey = `sentence-${index}-${sentence.trim().substring(0, 20).replace(/\s/g, '-')}`;
+        
         return (
           <Text
-            key={index}
+            key={sentenceKey}
             style={[
               styles.sentence,
               { color: theme.colors.text },
@@ -64,7 +67,7 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
           >
             {parts.map((part, partIndex) => (
               <Text
-                key={partIndex}
+                key={`${sentenceKey}-part-${partIndex}`}
                 style={part.bold ? styles.boldText : undefined}
               >
                 {part.text}

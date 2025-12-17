@@ -240,10 +240,10 @@ export default function ReportScreen() {
             const swellIcon = getSwellDirectionIcon(report.swell_direction);
             
             return (
-              <View 
-                key={`report-${report.id || index}`}
-                style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
-              >
+              <React.Fragment key={`report-${report.id || index}`}>
+                <View 
+                  style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
+                >
                 <View style={styles.reportHeader}>
                   <Text style={[styles.reportDate, { color: theme.colors.text }]}>
                     {new Date(report.date).toLocaleDateString('en-US', {
@@ -417,6 +417,7 @@ export default function ReportScreen() {
                   )}
                 </View>
               </View>
+              </React.Fragment>
             );
           })}
         </React.Fragment>
