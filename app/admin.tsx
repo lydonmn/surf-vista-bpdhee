@@ -157,54 +157,6 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideoWithFileSystem = (
-    videoUri: string,
-    fileName: string,
-    accessToken: string
-  ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      console.log('[AdminScreen] Starting FileSystem upload...');
-      
-      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      console.log('[AdminScreen] Video URI:', videoUri);
-      
-      // Use FileSystem.uploadAsync for better handling of large files
-      FileSystem.uploadAsync(uploadUrl, videoUri, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        // Progress callback
-        uploadProgressCallback: (progress) => {
-          const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
-          console.log('[AdminScreen] Upload progress:', percentComplete + '%');
-          setUploadProgress(percentComplete);
-        },
-      })
-      .then((uploadResult) => {
-        console.log('[AdminScreen] Upload result:', uploadResult);
-        
-        if (uploadResult.status >= 200 && uploadResult.status < 300) {
-          console.log('[AdminScreen] Upload completed successfully');
-          resolve();
-        } else {
-          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          reject(new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`));
-        }
-      })
-      .catch((error) => {
-        console.error('[AdminScreen] Upload error:', error);
-        reject(error);
-      });
-    });
-  };
-
   const uploadVideo = async () => {
     if (!selectedVideo || !videoTitle) {
       Alert.alert('Error', 'Please select a video and enter a title');
@@ -222,25 +174,104 @@ export default function AdminScreen() {
       // Generate unique filename
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = fileName;
 
-      console.log('[AdminScreen] Uploading file:', filePath);
+      console.log('[AdminScreen] Uploading file:', fileName);
 
       // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        throw new Error('Not authenticated');
+        throw new Error('Not authenticated. Please log in again.');
       }
 
-      // Use FileSystem.uploadAsync for efficient upload with progress tracking
-      await uploadVideoWithFileSystem(selectedVideo, filePath, session.access_token);
+      console.log('[AdminScreen] Session obtained, access token available');
 
-      console.log('[AdminScreen] Upload successful');
+      // Read file as base64 for smaller files, or use direct upload for larger files
+      let uploadResult;
+      
+      if (videoSize < 50 * 1024 * 1024) { // Less than 50MB - use base64
+        console.log('[AdminScreen] Using base64 upload method for smaller file');
+        
+        // Read file as base64
+        const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        console.log('[AdminScreen] File read as base64, length:', base64.length);
+        
+        // Convert base64 to blob
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: `video/${fileExt}` });
+        
+        console.log('[AdminScreen] Blob created, uploading to Supabase...');
+        
+        // Upload using Supabase client
+        const { data, error } = await supabase.storage
+          .from('videos')
+          .upload(fileName, blob, {
+            contentType: `video/${fileExt}`,
+            upsert: false,
+          });
+        
+        if (error) {
+          console.error('[AdminScreen] Supabase upload error:', error);
+          throw error;
+        }
+        
+        uploadResult = data;
+        console.log('[AdminScreen] Upload successful:', uploadResult);
+        
+      } else { // Larger files - use multipart upload
+        console.log('[AdminScreen] Using multipart upload method for larger file');
+        
+        const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+        
+        console.log('[AdminScreen] Upload URL:', uploadUrl);
+        
+        // Create a download resumable for progress tracking
+        const uploadTask = FileSystem.createUploadTask(
+          uploadUrl,
+          selectedVideo,
+          {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: 'file',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': `video/${fileExt}`,
+            },
+          },
+          (data) => {
+            const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+            const percentComplete = Math.round(progress * 100);
+            console.log('[AdminScreen] Upload progress:', percentComplete + '%');
+            setUploadProgress(percentComplete);
+          }
+        );
+        
+        const result = await uploadTask.uploadAsync();
+        
+        if (!result || result.status < 200 || result.status >= 300) {
+          console.error('[AdminScreen] Upload failed with status:', result?.status);
+          console.error('[AdminScreen] Response body:', result?.body);
+          throw new Error(`Upload failed with status ${result?.status}: ${result?.body || 'Unknown error'}`);
+        }
+        
+        console.log('[AdminScreen] Upload successful');
+        uploadResult = { path: fileName };
+      }
+
+      setUploadProgress(100);
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
       console.log('[AdminScreen] Public URL:', publicUrl);
 
@@ -279,10 +310,20 @@ export default function AdminScreen() {
       );
     } catch (error: any) {
       console.error('[AdminScreen] Upload error:', error);
-      Alert.alert(
-        'Upload Failed', 
-        error.message || 'Failed to upload video. Please check your internet connection and try again.'
-      );
+      
+      let errorMessage = 'Failed to upload video. ';
+      
+      if (error.message?.includes('Network request failed')) {
+        errorMessage += 'Please check your internet connection and try again. If the problem persists, try using a smaller video file or connecting to a different network.';
+      } else if (error.message?.includes('Not authenticated')) {
+        errorMessage += 'Your session has expired. Please log out and log in again.';
+      } else if (error.message?.includes('storage')) {
+        errorMessage += 'There was a problem with the storage service. Please try again later.';
+      } else {
+        errorMessage += error.message || 'An unknown error occurred. Please try again.';
+      }
+      
+      Alert.alert('Upload Failed', errorMessage);
     } finally {
       setUploading(false);
     }
@@ -476,7 +517,7 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              For best results, use videos under 500MB. Large files may take several minutes to upload. Keep the app open during upload.
+              For best results, use videos under 50MB for faster uploads. Larger files may take several minutes. Keep the app open during upload and ensure you have a stable internet connection.
             </Text>
           </View>
         </View>
