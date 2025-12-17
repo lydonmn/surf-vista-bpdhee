@@ -87,59 +87,60 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
           });
           
           return (
-            <View 
-              key={index}
-              style={[
-                styles.dayCard,
-                { backgroundColor: colors.highlight }
-              ]}
-            >
-              <Text style={[styles.dayName, { color: theme.colors.text }]}>
-                {index === 0 ? 'Today' : dayName}
-              </Text>
-              
-              {/* Display swell size instead of weather icon */}
-              <View style={styles.swellContainer}>
-                <Text style={[styles.swellSize, { color: colors.primary }]}>
-                  {swellRange}
+            <React.Fragment key={index}>
+              <View 
+                style={[
+                  styles.dayCard,
+                  { backgroundColor: colors.highlight }
+                ]}
+              >
+                <Text style={[styles.dayName, { color: theme.colors.text }]}>
+                  {index === 0 ? 'Today' : dayName}
                 </Text>
-                <Text style={[styles.swellLabel, { color: colors.textSecondary }]}>
-                  swell
-                </Text>
-              </View>
-              
-              <View style={styles.tempContainer}>
-                <Text style={[styles.highTemp, { color: theme.colors.text }]}>
-                  {day.high_temp ? `${Math.round(Number(day.high_temp))}°` : '--'}
-                </Text>
-                <Text style={[styles.lowTemp, { color: colors.textSecondary }]}>
-                  {day.low_temp ? `${Math.round(Number(day.low_temp))}°` : '--'}
-                </Text>
-              </View>
-
-              {day.precipitation_chance !== null && day.precipitation_chance > 0 && (
-                <View style={styles.precipContainer}>
-                  <IconSymbol
-                    ios_icon_name="cloud.rain.fill"
-                    android_material_icon_name="umbrella"
-                    size={14}
-                    color={colors.primary}
-                  />
-                  <Text style={[styles.precipText, { color: colors.textSecondary }]}>
-                    {day.precipitation_chance}%
+                
+                {/* Display swell size instead of weather icon */}
+                <View style={styles.swellContainer}>
+                  <Text style={[styles.swellSize, { color: colors.primary }]}>
+                    {swellRange}
+                  </Text>
+                  <Text style={[styles.swellLabel, { color: colors.textSecondary }]}>
+                    swell
                   </Text>
                 </View>
-              )}
+                
+                <View style={styles.tempContainer}>
+                  <Text style={[styles.highTemp, { color: theme.colors.text }]}>
+                    {day.high_temp ? `${Math.round(Number(day.high_temp))}°` : '--'}
+                  </Text>
+                  <Text style={[styles.lowTemp, { color: colors.textSecondary }]}>
+                    {day.low_temp ? `${Math.round(Number(day.low_temp))}°` : '--'}
+                  </Text>
+                </View>
 
-              {day.conditions && (
-                <Text 
-                  style={[styles.conditions, { color: colors.textSecondary }]}
-                  numberOfLines={2}
-                >
-                  {day.conditions}
-                </Text>
-              )}
-            </View>
+                {day.precipitation_chance !== null && day.precipitation_chance > 0 && (
+                  <View style={styles.precipContainer}>
+                    <IconSymbol
+                      ios_icon_name="cloud.rain.fill"
+                      android_material_icon_name="umbrella"
+                      size={14}
+                      color={colors.primary}
+                    />
+                    <Text style={[styles.precipText, { color: colors.textSecondary }]}>
+                      {day.precipitation_chance}%
+                    </Text>
+                  </View>
+                )}
+
+                {day.conditions && (
+                  <Text 
+                    style={[styles.conditions, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {day.conditions}
+                  </Text>
+                )}
+              </View>
+            </React.Fragment>
           );
         })}
       </ScrollView>
