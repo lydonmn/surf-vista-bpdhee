@@ -785,7 +785,7 @@ export default function AdminScreen() {
                     }
                   ]}>
                     {formatResolution(videoMetadata.width, videoMetadata.height)}
-                  Text>
+                  </Text>
                 </View>
                 
                 <View style={styles.metadataRow}>
