@@ -449,46 +449,46 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Session obtained, proceeding with upload');
 
-      // Get the Supabase storage URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      
-      const uploadUrl = publicUrl.replace('/dummy', `/${fileName}`);
-      const storageUrl = uploadUrl.replace('/public/', '/upload/resumable/');
-
-      console.log('[AdminScreen] Upload URL:', storageUrl);
-
-      // Use FileSystem.uploadAsync for efficient streaming upload
-      const uploadResult = await FileSystem.uploadAsync(storageUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': supabase.supabaseKey,
-        },
-        parameters: {
-          cacheControl: '3600',
-        },
+      // Read the file as base64
+      console.log('[AdminScreen] Reading file...');
+      const base64 = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
-      console.log('[AdminScreen] Upload result:', uploadResult);
+      console.log('[AdminScreen] File read successfully, size:', base64.length, 'characters');
 
-      if (uploadResult.status !== 200) {
-        const errorBody = uploadResult.body;
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Error body:', errorBody);
+      // Convert base64 to ArrayBuffer for upload
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      console.log('[AdminScreen] Uploading to Supabase Storage...');
+      setUploadProgress(50);
+
+      // Upload using Supabase client
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, bytes.buffer, {
+          contentType: `video/${fileExt}`,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
         
-        if (uploadResult.status === 413) {
+        if (uploadError.message?.includes('Payload too large') || uploadError.message?.includes('413')) {
           throw new Error(
             `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
           );
         }
         
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${errorBody}`);
+        throw uploadError;
       }
 
+      console.log('[AdminScreen] Upload successful:', uploadData);
       setUploadProgress(100);
 
       // Get public URL
@@ -785,7 +785,7 @@ export default function AdminScreen() {
                     }
                   ]}>
                     {formatResolution(videoMetadata.width, videoMetadata.height)}
-                  </Text>
+                  Text>
                 </View>
                 
                 <View style={styles.metadataRow}>
