@@ -157,6 +157,55 @@ export default function AdminScreen() {
     }
   };
 
+  const uploadVideoWithFileSystem = async (
+    videoUri: string,
+    fileName: string,
+    accessToken: string
+  ): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        console.log('[AdminScreen] Starting FileSystem upload...');
+        
+        const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+        
+        console.log('[AdminScreen] Upload URL:', uploadUrl);
+        console.log('[AdminScreen] Video URI:', videoUri);
+        
+        // Use FileSystem.uploadAsync for better handling of large files
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoUri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          // Progress callback
+          uploadProgressCallback: (progress) => {
+            const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
+            console.log('[AdminScreen] Upload progress:', percentComplete + '%');
+            setUploadProgress(percentComplete);
+          },
+        });
+        
+        console.log('[AdminScreen] Upload result:', uploadResult);
+        
+        if (uploadResult.status >= 200 && uploadResult.status < 300) {
+          console.log('[AdminScreen] Upload completed successfully');
+          resolve();
+        } else {
+          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          reject(new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`));
+        }
+        
+      } catch (error) {
+        console.error('[AdminScreen] Upload error:', error);
+        reject(error);
+      }
+    });
+  };
+
   const uploadVideo = async () => {
     if (!selectedVideo || !videoTitle) {
       Alert.alert('Error', 'Please select a video and enter a title');
@@ -174,10 +223,9 @@ export default function AdminScreen() {
       // Generate unique filename
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `videos/${fileName}`;
+      const filePath = fileName;
 
       console.log('[AdminScreen] Uploading file:', filePath);
-      setUploadProgress(10);
 
       // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
@@ -185,45 +233,10 @@ export default function AdminScreen() {
         throw new Error('Not authenticated');
       }
 
-      setUploadProgress(20);
-
-      // Use fetch with FormData to upload the file
-      const formData = new FormData();
-      
-      // For React Native, we need to create a file object from the URI
-      const fileToUpload: any = {
-        uri: selectedVideo,
-        type: `video/${fileExt}`,
-        name: fileName,
-      };
-      
-      formData.append('file', fileToUpload);
-
-      console.log('[AdminScreen] Uploading to Supabase Storage...');
-      setUploadProgress(30);
-
-      // Upload using fetch directly to Supabase Storage
-      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${filePath}`;
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
-
-      setUploadProgress(70);
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('[AdminScreen] Upload failed:', errorText);
-        throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
-      }
+      // Use FileSystem.uploadAsync for efficient upload with progress tracking
+      await uploadVideoWithFileSystem(selectedVideo, filePath, session.access_token);
 
       console.log('[AdminScreen] Upload successful');
-      setUploadProgress(80);
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -231,7 +244,6 @@ export default function AdminScreen() {
         .getPublicUrl(filePath);
 
       console.log('[AdminScreen] Public URL:', publicUrl);
-      setUploadProgress(90);
 
       // Create video record in database
       const { error: dbError } = await supabase
@@ -249,7 +261,6 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Video record created successfully');
-      setUploadProgress(100);
 
       Alert.alert(
         'Success!', 
@@ -428,6 +439,9 @@ export default function AdminScreen() {
               <Text style={[styles.progressText, { color: colors.textSecondary }]}>
                 Uploading... {uploadProgress}%
               </Text>
+              <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
+                Please keep the app open
+              </Text>
             </View>
           )}
 
@@ -463,7 +477,7 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              For best results, use videos under 500MB. Large files may take several minutes to upload.
+              For best results, use videos under 500MB. Large files may take several minutes to upload. Keep the app open during upload.
             </Text>
           </View>
         </View>
@@ -644,9 +658,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
+    fontWeight: '600',
+  },
+  progressSubtext: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
   },
   infoBox: {
     flexDirection: 'row',
