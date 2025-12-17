@@ -176,19 +176,30 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `videos/${fileName}`;
 
-      console.log('[AdminScreen] Uploading file...');
+      console.log('[AdminScreen] Reading file...');
       setUploadProgress(10);
 
-      // Use fetch to get the file as a blob/arraybuffer
-      // This is more memory efficient than base64 conversion
-      const response = await fetch(selectedVideo);
-      const blob = await response.blob();
+      // Read the file as binary using FileSystem
+      // This is the correct approach for React Native
+      const fileUri = selectedVideo.startsWith('file://') ? selectedVideo : `file://${selectedVideo}`;
       
-      console.log('[AdminScreen] File loaded as blob, size:', blob.size);
+      console.log('[AdminScreen] Reading from URI:', fileUri);
+      
+      // Read file as base64 first (more reliable in RN)
+      const base64Data = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      console.log('[AdminScreen] File read successfully, converting to binary...');
       setUploadProgress(30);
 
-      // Convert blob to ArrayBuffer for Supabase
-      const arrayBuffer = await blob.arrayBuffer();
+      // Convert base64 to binary for upload
+      // We need to decode base64 to binary ArrayBuffer
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
       
       console.log('[AdminScreen] Uploading to Supabase Storage...');
       setUploadProgress(40);
@@ -196,7 +207,7 @@ export default function AdminScreen() {
       // Upload to Supabase Storage with proper content type
       const { error: uploadError } = await supabase.storage
         .from('videos')
-        .upload(filePath, arrayBuffer, {
+        .upload(filePath, bytes.buffer, {
           contentType: `video/${fileExt}`,
           upsert: false,
           cacheControl: '3600',
