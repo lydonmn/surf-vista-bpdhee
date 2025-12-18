@@ -134,9 +134,12 @@ export default function WeatherScreen() {
             />
             <View style={styles.infoTextContainer}>
               <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                Weather and tide data is automatically updated daily from NOAA sources.
+                Weather and tide data is automatically updated from official NOAA sources - the most reliable data available.
               </Text>
-              <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
+              <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
+                <Text style={{ fontWeight: 'bold' }}>Sources:</Text> NOAA Weather Service API, NOAA Tides & Currents (Charleston Station 8665530)
+              </Text>
+              <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Pull down to refresh for the latest information.
               </Text>
             </View>

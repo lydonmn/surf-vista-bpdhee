@@ -154,20 +154,65 @@ export interface Database {
           edited_at?: string | null
         }
       }
+      surf_conditions: {
+        Row: {
+          id: string
+          date: string
+          wave_height: string | null
+          wave_period: string | null
+          swell_direction: string | null
+          wind_speed: string | null
+          wind_direction: string | null
+          water_temp: string | null
+          buoy_id: string | null
+          updated_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          date: string
+          wave_height?: string | null
+          wave_period?: string | null
+          swell_direction?: string | null
+          wind_speed?: string | null
+          wind_direction?: string | null
+          water_temp?: string | null
+          buoy_id?: string | null
+          updated_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          date?: string
+          wave_height?: string | null
+          wave_period?: string | null
+          swell_direction?: string | null
+          wind_speed?: string | null
+          wind_direction?: string | null
+          water_temp?: string | null
+          buoy_id?: string | null
+          updated_at?: string
+          created_at?: string
+        }
+      }
       weather_data: {
         Row: {
           id: string
           date: string
           temperature: number | null
+          temperature_unit: string | null
           feels_like: number | null
           humidity: number | null
-          wind_speed: number | null
+          wind_speed: string | null
           wind_direction: string | null
           wind_gust: number | null
           pressure: number | null
           visibility: number | null
           conditions: string | null
+          short_forecast: string | null
+          detailed_forecast: string | null
           forecast: string | null
+          icon: string | null
           raw_data: Json | null
           created_at: string
           updated_at: string
@@ -176,15 +221,19 @@ export interface Database {
           id?: string
           date: string
           temperature?: number | null
+          temperature_unit?: string | null
           feels_like?: number | null
           humidity?: number | null
-          wind_speed?: number | null
+          wind_speed?: string | null
           wind_direction?: string | null
           wind_gust?: number | null
           pressure?: number | null
           visibility?: number | null
           conditions?: string | null
+          short_forecast?: string | null
+          detailed_forecast?: string | null
           forecast?: string | null
+          icon?: string | null
           raw_data?: Json | null
           created_at?: string
           updated_at?: string
@@ -193,15 +242,19 @@ export interface Database {
           id?: string
           date?: string
           temperature?: number | null
+          temperature_unit?: string | null
           feels_like?: number | null
           humidity?: number | null
-          wind_speed?: number | null
+          wind_speed?: string | null
           wind_direction?: string | null
           wind_gust?: number | null
           pressure?: number | null
           visibility?: number | null
           conditions?: string | null
+          short_forecast?: string | null
+          detailed_forecast?: string | null
           forecast?: string | null
+          icon?: string | null
           raw_data?: Json | null
           created_at?: string
           updated_at?: string
@@ -211,13 +264,19 @@ export interface Database {
         Row: {
           id: string
           date: string
+          period_name: string | null
           day_name: string | null
+          temperature: number | null
+          temperature_unit: string | null
           high_temp: number | null
           low_temp: number | null
+          wind_speed: string | null
+          wind_direction: string | null
+          short_forecast: string | null
+          detailed_forecast: string | null
           conditions: string | null
           icon: string | null
-          wind_speed: number | null
-          wind_direction: string | null
+          is_daytime: boolean | null
           precipitation_chance: number | null
           humidity: number | null
           swell_height_min: number | null
@@ -229,13 +288,19 @@ export interface Database {
         Insert: {
           id?: string
           date: string
+          period_name?: string | null
           day_name?: string | null
+          temperature?: number | null
+          temperature_unit?: string | null
           high_temp?: number | null
           low_temp?: number | null
+          wind_speed?: string | null
+          wind_direction?: string | null
+          short_forecast?: string | null
+          detailed_forecast?: string | null
           conditions?: string | null
           icon?: string | null
-          wind_speed?: number | null
-          wind_direction?: string | null
+          is_daytime?: boolean | null
           precipitation_chance?: number | null
           humidity?: number | null
           swell_height_min?: number | null
@@ -247,13 +312,19 @@ export interface Database {
         Update: {
           id?: string
           date?: string
+          period_name?: string | null
           day_name?: string | null
+          temperature?: number | null
+          temperature_unit?: string | null
           high_temp?: number | null
           low_temp?: number | null
+          wind_speed?: string | null
+          wind_direction?: string | null
+          short_forecast?: string | null
+          detailed_forecast?: string | null
           conditions?: string | null
           icon?: string | null
-          wind_speed?: number | null
-          wind_direction?: string | null
+          is_daytime?: boolean | null
           precipitation_chance?: number | null
           humidity?: number | null
           swell_height_min?: number | null
@@ -270,6 +341,7 @@ export interface Database {
           time: string
           type: string
           height: number
+          height_unit: string | null
           created_at: string
           updated_at: string
         }
@@ -279,6 +351,7 @@ export interface Database {
           time: string
           type: string
           height: number
+          height_unit?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -288,6 +361,7 @@ export interface Database {
           time?: string
           type?: string
           height?: number
+          height_unit?: string | null
           created_at?: string
           updated_at?: string
         }

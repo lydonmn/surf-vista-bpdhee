@@ -619,13 +619,22 @@ export default function ReportScreen() {
         />
         <View style={styles.infoTextContainer}>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Reports are automatically generated from NOAA weather data, buoy readings, and tide schedules for Folly Beach, SC.
-          </Text>
-          <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-            Data sources: NOAA Weather Service, NOAA Buoy 41004, NOAA Tides & Currents
+            Reports are automatically generated from official NOAA data sources - the most reliable and accurate surf and weather data available.
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            Previous day&apos;s reports are automatically removed after midnight EST.
+            <Text style={{ fontWeight: 'bold' }}>Data Sources:</Text>
+          </Text>
+          <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
+            • NOAA Buoy 41004 (Edisto, SC) - Wave height, period, swell direction
+          </Text>
+          <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
+            • NOAA Weather Service - Forecasts and wind conditions
+          </Text>
+          <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
+            • NOAA Tides & Currents (Charleston) - Tide predictions
+          </Text>
+          <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
+            Data updates hourly. Previous day&apos;s reports removed after midnight EST.
           </Text>
         </View>
       </View>
