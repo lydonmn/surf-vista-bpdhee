@@ -637,13 +637,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
-  videoPlaceholder: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   videoInfo: {
     gap: 4,
   },

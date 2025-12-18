@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,6 +12,7 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -21,6 +22,7 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const videoRef = useRef<ExpoVideo>(null);
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
@@ -187,6 +189,17 @@ export default function HomeScreen() {
       });
     }
   }, [latestVideo]);
+
+  const handleVideoPlaybackStatusUpdate = useCallback((status: any) => {
+    // Stop video after it finishes playing once
+    if (status.didJustFinish) {
+      console.log('[HomeScreen iOS] Video finished playing');
+      if (videoRef.current) {
+        videoRef.current.setPositionAsync(0);
+        videoRef.current.pauseAsync();
+      }
+    }
+  }, []);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -394,13 +407,25 @@ export default function HomeScreen() {
             onPress={handleVideoPress}
             activeOpacity={0.7}
           >
-            <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
-              <IconSymbol
-                ios_icon_name="play.circle.fill"
-                android_material_icon_name="play_circle"
-                size={64}
-                color={colors.primary}
+            <View style={styles.videoPreviewContainer}>
+              <ExpoVideo
+                ref={videoRef}
+                source={{ uri: latestVideo.video_url }}
+                style={styles.videoPreview}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={false}
+                isMuted={true}
+                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
               />
+              <View style={styles.videoOverlay}>
+                <IconSymbol
+                  ios_icon_name="play.circle.fill"
+                  android_material_icon_name="play_circle"
+                  size={64}
+                  color="rgba(255, 255, 255, 0.9)"
+                />
+              </View>
             </View>
             <View style={styles.videoInfo}>
               <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
@@ -591,12 +616,26 @@ const styles = StyleSheet.create({
   videoCard: {
     gap: 12,
   },
-  videoPlaceholder: {
+  videoPreviewContainer: {
     width: '100%',
     height: 200,
     borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   videoInfo: {
     gap: 4,

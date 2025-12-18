@@ -1,6 +1,6 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -8,6 +8,7 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 export default function VideosScreen() {
   const theme = useTheme();
@@ -16,6 +17,7 @@ export default function VideosScreen() {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
   const isSubscribed = checkSubscription();
+  const videoRefs = React.useRef<{ [key: string]: ExpoVideo | null }>({});
 
   useEffect(() => {
     console.log('VideosScreen - Auth state:', {
@@ -97,6 +99,26 @@ export default function VideosScreen() {
       ]
     );
   };
+
+  const handleVideoPlaybackStatusUpdate = React.useCallback((videoId: string) => (status: any) => {
+    // Stop video after it finishes playing once
+    if (status.didJustFinish) {
+      console.log('[VideosScreen] Video finished playing:', videoId);
+      const videoRef = videoRefs.current[videoId];
+      if (videoRef) {
+        videoRef.setPositionAsync(0);
+        videoRef.pauseAsync();
+      }
+    }
+  }, []);
+
+  const handleVideoPress = React.useCallback((videoId: string) => {
+    console.log('[VideosScreen] Opening video player for:', videoId);
+    router.push({
+      pathname: '/video-player',
+      params: { videoId }
+    });
+  }, []);
 
   // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
@@ -220,8 +242,6 @@ export default function VideosScreen() {
       ) : (
         <React.Fragment>
           {videos.map((video) => {
-            // Use thumbnail if available, otherwise use a default surf image
-            const thumbnailUrl = video.thumbnail_url || 'https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800';
             const isDeleting = deletingVideoId === video.id;
             
             return (
@@ -229,23 +249,29 @@ export default function VideosScreen() {
                 <View style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
                   <TouchableOpacity
                     style={styles.videoTouchable}
-                    onPress={() => router.push({
-                      pathname: '/video-player',
-                      params: { videoId: video.id }
-                    })}
+                    onPress={() => handleVideoPress(video.id)}
                     disabled={isDeleting}
+                    activeOpacity={0.7}
                   >
-                    <Image
-                      source={{ uri: thumbnailUrl }}
-                      style={styles.thumbnail}
-                    />
-                    <View style={styles.playOverlay}>
-                      <IconSymbol
-                        ios_icon_name="play.circle.fill"
-                        android_material_icon_name="play_circle"
-                        size={64}
-                        color="#FFFFFF"
+                    <View style={styles.videoPreviewContainer}>
+                      <ExpoVideo
+                        ref={(ref) => { videoRefs.current[video.id] = ref; }}
+                        source={{ uri: video.video_url }}
+                        style={styles.videoPreview}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay={true}
+                        isLooping={false}
+                        isMuted={true}
+                        onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate(video.id)}
                       />
+                      <View style={styles.videoOverlay}>
+                        <IconSymbol
+                          ios_icon_name="play.circle.fill"
+                          android_material_icon_name="play_circle"
+                          size={64}
+                          color="rgba(255, 255, 255, 0.9)"
+                        />
+                      </View>
                     </View>
                     {video.duration && (
                       <View style={styles.durationBadge}>
@@ -438,23 +464,28 @@ const styles = StyleSheet.create({
   videoTouchable: {
     width: '100%',
   },
-  thumbnail: {
+  videoPreviewContainer: {
     width: '100%',
     height: 200,
-    resizeMode: 'cover',
+    position: 'relative',
   },
-  playOverlay: {
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: 60,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   durationBadge: {
     position: 'absolute',
-    bottom: 70,
+    top: 170,
     right: 12,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: 8,
