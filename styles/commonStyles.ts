@@ -4,7 +4,7 @@ import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
 export const colors = {
   background: '#F0F8FF',        // AliceBlue - a light, airy blue
   text: '#2F4F4F',              // DarkSlateGray - a deep, sophisticated gray
-  textSecondary: '#696969',     // DimGray - a muted gray for less important text
+  textSecondary: '#8B9DA8',     // Lighter gray-blue for better contrast on dark backgrounds
   primary: '#4682B4',           // SteelBlue - a classic, reliable blue
   secondary: '#B0C4DE',         // LightSteelBlue - a softer shade of blue for accents
   accent: '#FFA07A',            // LightSalmon - a warm, inviting coral
@@ -14,7 +14,8 @@ export const colors = {
   // Enhanced colors for report readability
   reportBackground: '#E8F4F8',  // Very light blue-gray for report text background
   reportText: '#1A3A4A',        // Darker blue-gray for better contrast
-  reportBoldText: '#0D2838',    // Even darker for bold text emphasis
+  reportBoldText: '#E8F4F8',    // Light blue-gray for bold text on dark backgrounds
+  reportLabel: '#B8D4E0',       // Light blue-gray for labels on dark backgrounds
   errorBackground: '#FF6B6B',   // Bright red for errors
 };
 

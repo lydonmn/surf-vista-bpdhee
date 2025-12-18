@@ -218,7 +218,7 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                   Wave Height
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -235,7 +235,7 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                   Wind Speed
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -254,7 +254,7 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                   Wind Direction
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -271,7 +271,7 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                   Water Temp
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -292,7 +292,7 @@ export default function ReportScreen() {
                     color={colors.primary}
                   />
                   <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                    <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                       Wave Period
                     </Text>
                     <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -311,7 +311,7 @@ export default function ReportScreen() {
                     color={colors.primary}
                   />
                   <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                    <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                       Swell Direction
                     </Text>
                     <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -325,7 +325,7 @@ export default function ReportScreen() {
 
           <View style={styles.tideContainer}>
             <View style={styles.conditionTextContainer}>
-              <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+              <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
                 Tide
               </Text>
               <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
@@ -337,7 +337,7 @@ export default function ReportScreen() {
 
         <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
           <View style={styles.conditionsHeader}>
-            <Text style={[styles.conditionsTitle, { color: colors.reportBoldText }]}>
+            <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
               Surf Conditions
             </Text>
             {profile?.is_admin && (
