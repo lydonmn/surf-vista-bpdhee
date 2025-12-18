@@ -10,6 +10,12 @@ export const colors = {
   accent: '#FFA07A',            // LightSalmon - a warm, inviting coral
   card: '#FFFFFF',              // White - clean and crisp for content cards
   highlight: '#ADD8E6',         // LightBlue - a subtle highlight color
+  
+  // Enhanced colors for report readability
+  reportBackground: '#E8F4F8',  // Very light blue-gray for report text background
+  reportText: '#1A3A4A',        // Darker blue-gray for better contrast
+  reportBoldText: '#0D2838',    // Even darker for bold text emphasis
+  errorBackground: '#FF6B6B',   // Bright red for errors
 };
 
 export const buttonStyles = StyleSheet.create({

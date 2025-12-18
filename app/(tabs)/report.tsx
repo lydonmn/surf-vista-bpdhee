@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +15,18 @@ export default function ReportScreen() {
   const isSubscribed = checkSubscription();
   const { surfReports, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Filter to show only today's report (EST timezone)
+  const todaysReport = useMemo(() => {
+    // Get current date in EST timezone
+    const estDate = new Date().toLocaleString('en-US', { 
+      timeZone: 'America/New_York' 
+    });
+    const today = new Date(estDate).toISOString().split('T')[0];
+    
+    console.log('Filtering reports for EST date:', today);
+    return surfReports.filter(report => report.date === today);
+  }, [surfReports]);
 
   useEffect(() => {
     console.log('ReportScreen - Auth state:', {
@@ -131,7 +143,7 @@ export default function ReportScreen() {
                 <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                   Wave Height
                 </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                   {report.wave_height}
                 </Text>
               </View>
@@ -148,7 +160,7 @@ export default function ReportScreen() {
                 <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                   Wind Speed
                 </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                   {report.wind_speed}
                 </Text>
               </View>
@@ -167,7 +179,7 @@ export default function ReportScreen() {
                 <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                   Wind Direction
                 </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                   {report.wind_direction}
                 </Text>
               </View>
@@ -184,7 +196,7 @@ export default function ReportScreen() {
                 <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                   Water Temp
                 </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                   {report.water_temp}
                 </Text>
               </View>
@@ -205,7 +217,7 @@ export default function ReportScreen() {
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                       Wave Period
                     </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                       {report.wave_period}
                     </Text>
                   </View>
@@ -224,7 +236,7 @@ export default function ReportScreen() {
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                       Swell Direction
                     </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                       {report.swell_direction}
                     </Text>
                   </View>
@@ -238,16 +250,16 @@ export default function ReportScreen() {
               <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                 Tide
               </Text>
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+              <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                 {report.tide}
               </Text>
             </View>
           </View>
         </View>
 
-        <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
+        <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
           <View style={styles.conditionsHeader}>
-            <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
+            <Text style={[styles.conditionsTitle, { color: colors.reportBoldText }]}>
               Conditions
             </Text>
             {profile?.is_admin && (
@@ -345,7 +357,7 @@ export default function ReportScreen() {
     >
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Surf Report
+          Today&apos;s Surf Report
         </Text>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
           Folly Beach, South Carolina
@@ -376,7 +388,7 @@ export default function ReportScreen() {
       )}
 
       {error && (
-        <View style={[styles.errorCard, { backgroundColor: '#FF6B6B' }]}>
+        <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
           <IconSymbol
             ios_icon_name="exclamationmark.triangle.fill"
             android_material_icon_name="warning"
@@ -394,7 +406,7 @@ export default function ReportScreen() {
             Loading surf reports...
           </Text>
         </View>
-      ) : surfReports.length === 0 ? (
+      ) : todaysReport.length === 0 ? (
         <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
             ios_icon_name="water.waves"
@@ -403,10 +415,10 @@ export default function ReportScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No Reports Available
+            No Report Available Today
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Surf reports will be generated automatically from NOAA data.
+            Today&apos;s surf report will be generated automatically from NOAA data.
           </Text>
           {profile?.is_admin && (
             <TouchableOpacity
@@ -414,13 +426,13 @@ export default function ReportScreen() {
               onPress={handleUpdateData}
             >
               <Text style={styles.generateButtonText}>
-                Generate First Report
+                Generate Today&apos;s Report
               </Text>
             </TouchableOpacity>
           )}
         </View>
       ) : (
-        surfReports.map((report, index) => renderReportCard(report, index))
+        todaysReport.map((report, index) => renderReportCard(report, index))
       )}
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
@@ -437,6 +449,9 @@ export default function ReportScreen() {
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
             Data sources: NOAA Weather Service, NOAA Buoy 41004, NOAA Tides & Currents
           </Text>
+          <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
+            Previous day&apos;s reports are automatically removed after midnight EST.
+          </Text>
         </View>
       </View>
     </ScrollView>
@@ -444,10 +459,10 @@ export default function ReportScreen() {
 }
 
 function getRatingColor(rating: number): string {
-  if (rating >= 8) return '#4CAF50'; // Green
-  if (rating >= 6) return '#FFC107'; // Yellow
-  if (rating >= 4) return '#FF9800'; // Orange
-  return '#F44336'; // Red
+  if (rating >= 8) return '#22C55E'; // Vibrant Green
+  if (rating >= 6) return '#FFC107'; // Bright Yellow
+  if (rating >= 4) return '#FF9800'; // Warm Orange
+  return '#F44336'; // Bold Red
 }
 
 const styles = StyleSheet.create({
@@ -630,17 +645,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   conditionsBox: {
-    padding: 12,
+    padding: 16,
     borderRadius: 8,
   },
   conditionsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   conditionsTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   editButton: {

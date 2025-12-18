@@ -61,14 +61,17 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
             key={sentenceKey}
             style={[
               styles.sentence,
-              { color: theme.colors.text },
+              { color: colors.reportText },
               isCustom && styles.customSentence
             ]}
           >
             {parts.map((part, partIndex) => (
               <Text
                 key={`${sentenceKey}-part-${partIndex}`}
-                style={part.bold ? styles.boldText : undefined}
+                style={[
+                  part.bold && styles.boldText,
+                  part.bold && { color: colors.reportBoldText }
+                ]}
               >
                 {part.text}
               </Text>
@@ -82,16 +85,18 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
 
 const styles = StyleSheet.create({
   container: {
-    gap: 8,
+    gap: 10,
   },
   sentence: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 24,
+    marginBottom: 4,
   },
   customSentence: {
     fontWeight: '500',
   },
   boldText: {
     fontWeight: '700',
+    fontSize: 15,
   },
 });
