@@ -82,7 +82,7 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingData(false);
     }
-  }, []);
+  }, [isLoadingData]);
 
   // Only load data when conditions are met - use separate effect
   useEffect(() => {
@@ -102,7 +102,7 @@ export default function HomeScreen() {
     } else {
       console.log('[HomeScreen iOS] Not loading data - conditions not met');
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, session]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
