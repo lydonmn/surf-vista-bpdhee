@@ -36,10 +36,13 @@ export default function ReportScreen() {
       });
       
       // Parse the EST date string (format: MM/DD/YYYY)
-      const [month, day, year] = estDateString.split(',')[0].split('/');
+      const [month, day, year] = estDateString.split('/');
       const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
       
+      console.log('Current EST date string:', estDateString);
       console.log('Filtering reports for EST date:', today);
+      console.log('Available reports:', surfReports.map(r => ({ date: r.date, id: r.id })));
+      
       return surfReports.filter(report => {
         if (!report.date) return false;
         return report.date === today;
