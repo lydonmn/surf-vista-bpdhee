@@ -22,8 +22,6 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-  const [videoLoaded, setVideoLoaded] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<ExpoVideo>(null);
   
   // Use the surf data hook for weather and forecast
@@ -44,8 +42,6 @@ export default function HomeScreen() {
 
     try {
       setIsLoadingData(true);
-      setVideoLoaded(false);
-      setVideoReady(false);
       console.log('[HomeScreen iOS] Fetching videos and reports...');
       
       // Load latest video
@@ -195,17 +191,6 @@ export default function HomeScreen() {
   }, [latestVideo]);
 
   const handleVideoPlaybackStatusUpdate = useCallback((status: any) => {
-    // Mark video as loaded when it's ready to play
-    if (status.isLoaded && !videoLoaded) {
-      console.log('[HomeScreen iOS] Video loaded and ready');
-      setVideoLoaded(true);
-      
-      // Small delay to ensure smooth transition
-      setTimeout(() => {
-        setVideoReady(true);
-      }, 100);
-    }
-
     // Stop video after it finishes playing once
     if (status.didJustFinish) {
       console.log('[HomeScreen iOS] Video finished playing');
@@ -214,7 +199,7 @@ export default function HomeScreen() {
         videoRef.current.pauseAsync();
       }
     }
-  }, [videoLoaded]);
+  }, []);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -423,45 +408,24 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {/* Always show loading overlay until video is ready */}
-              {!videoReady && (
-                <View style={styles.videoLoadingOverlay}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                  <Text style={styles.loadingVideoText}>Loading preview...</Text>
-                </View>
-              )}
-              
-              {/* Only render video component when we have a video */}
-              {latestVideo && (
-                <ExpoVideo
-                  ref={videoRef}
-                  source={{ uri: latestVideo.video_url }}
-                  style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                  resizeMode={ResizeMode.COVER}
-                  shouldPlay={false}
-                  isLooping={false}
-                  isMuted={true}
-                  onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
-                  onLoad={() => {
-                    console.log('[HomeScreen iOS] Video onLoad triggered');
-                    if (videoRef.current) {
-                      videoRef.current.playAsync();
-                    }
-                  }}
+              <ExpoVideo
+                ref={videoRef}
+                source={{ uri: latestVideo.video_url }}
+                style={styles.videoPreview}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={false}
+                isMuted={true}
+                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
+              />
+              <View style={styles.videoOverlay}>
+                <IconSymbol
+                  ios_icon_name="play.circle.fill"
+                  android_material_icon_name="play_circle"
+                  size={64}
+                  color="rgba(255, 255, 255, 0.9)"
                 />
-              )}
-              
-              {/* Show play icon overlay when video is ready */}
-              {videoReady && (
-                <View style={styles.videoOverlay}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play_circle"
-                    size={64}
-                    color="rgba(255, 255, 255, 0.9)"
-                  />
-                </View>
-              )}
+              </View>
             </View>
             <View style={styles.videoInfo}>
               <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
@@ -658,30 +622,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#000000',
   },
   videoPreview: {
     width: '100%',
     height: '100%',
-  },
-  videoHidden: {
-    opacity: 0,
-  },
-  videoLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    zIndex: 10,
-  },
-  loadingVideoText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    marginTop: 12,
   },
   videoOverlay: {
     position: 'absolute',
