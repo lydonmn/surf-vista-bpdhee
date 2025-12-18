@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,23 +7,19 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
-import { Video, SurfReport } from "@/types";
+import { SurfReport } from "@/types";
 import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
-  const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
-  const videoRef = useRef<ExpoVideo>(null);
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
@@ -43,26 +39,7 @@ export default function HomeScreen() {
 
     try {
       setIsLoadingData(true);
-      setVideoReady(false);
-      console.log('[HomeScreen] Fetching videos and reports...');
-      
-      // Load latest video
-      const { data: videoData, error: videoError } = await supabase
-        .from('videos')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (videoError) {
-        console.log('[HomeScreen] Video fetch error:', videoError.message);
-      } else if (videoData) {
-        console.log('[HomeScreen] Video loaded:', videoData.title);
-        setLatestVideo(videoData);
-      } else {
-        console.log('[HomeScreen] No videos found');
-        setLatestVideo(null);
-      }
+      console.log('[HomeScreen] Fetching reports...');
 
       // Load today's surf report
       const today = new Date().toISOString().split('T')[0];
@@ -181,33 +158,6 @@ export default function HomeScreen() {
       setIsSubscribing(false);
     }
   }, [user, refreshProfile]);
-
-  const handleVideoPress = useCallback(() => {
-    if (latestVideo) {
-      console.log('[HomeScreen] Opening video player for:', latestVideo.id);
-      router.push({
-        pathname: '/video-player',
-        params: { videoId: latestVideo.id }
-      });
-    }
-  }, [latestVideo]);
-
-  const handleVideoPlaybackStatusUpdate = useCallback((status: any) => {
-    // Mark video as ready when it's loaded and can play
-    if (status.isLoaded && !videoReady) {
-      console.log('[HomeScreen] Video is ready to play');
-      setVideoReady(true);
-    }
-    
-    // Stop video after it finishes playing once
-    if (status.didJustFinish) {
-      console.log('[HomeScreen] Video finished playing');
-      if (videoRef.current) {
-        videoRef.current.setPositionAsync(0);
-        videoRef.current.pauseAsync();
-      }
-    }
-  }, [videoReady]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -391,80 +341,6 @@ export default function HomeScreen() {
         <WeeklyForecast forecast={weatherForecast} />
       )}
 
-      {/* Latest Video Section */}
-      <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.sectionHeader}>
-          <IconSymbol
-            ios_icon_name="video.fill"
-            android_material_icon_name="videocam"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Latest Drone Footage
-          </Text>
-        </View>
-
-        {isLoadingData ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : latestVideo ? (
-          <TouchableOpacity
-            style={styles.videoCard}
-            onPress={handleVideoPress}
-            activeOpacity={0.7}
-          >
-            <View style={styles.videoPreviewContainer}>
-              {!videoReady && (
-                <View style={styles.videoLoadingOverlay}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-              )}
-              <ExpoVideo
-                ref={videoRef}
-                source={{ uri: latestVideo.video_url }}
-                style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={true}
-                isLooping={false}
-                isMuted={true}
-                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
-              />
-              {videoReady && (
-                <View style={styles.videoOverlay}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play_circle"
-                    size={64}
-                    color="rgba(255, 255, 255, 0.9)"
-                  />
-                </View>
-              )}
-            </View>
-            <View style={styles.videoInfo}>
-              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                {latestVideo.title}
-              </Text>
-              {latestVideo.description && (
-                <Text style={[styles.videoDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {latestVideo.description}
-                </Text>
-              )}
-              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                {new Date(latestVideo.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos available yet
-            </Text>
-          </View>
-        )}
-      </View>
-
       {/* Quick Links */}
       <View style={styles.quickLinks}>
         <TouchableOpacity
@@ -532,10 +408,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     marginTop: 16,
-  },
-  loadingContainer: {
-    paddingVertical: 20,
-    alignItems: 'center',
   },
   header: {
     alignItems: 'center',
@@ -609,84 +481,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  section: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  videoCard: {
-    gap: 12,
-  },
-  videoPreviewContainer: {
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#000000',
-  },
-  videoPreview: {
-    width: '100%',
-    height: '100%',
-  },
-  videoHidden: {
-    opacity: 0,
-  },
-  videoLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    zIndex: 10,
-  },
-  videoOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  },
-  videoInfo: {
-    gap: 4,
-  },
-  videoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  videoDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  videoDate: {
-    fontSize: 12,
-  },
-  emptyState: {
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
   },
   quickLinks: {
     flexDirection: 'row',
