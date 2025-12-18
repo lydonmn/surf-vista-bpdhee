@@ -420,9 +420,7 @@ export default function ReportScreen() {
           )}
         </View>
       ) : (
-        <React.Fragment>
-          {surfReports.map((report, index) => renderReportCard(report, index))}
-        </React.Fragment>
+        surfReports.map((report, index) => renderReportCard(report, index))
       )}
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>

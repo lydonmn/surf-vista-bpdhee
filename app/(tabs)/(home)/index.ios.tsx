@@ -57,6 +57,7 @@ export default function HomeScreen() {
         setLatestVideo(videoData);
       } else {
         console.log('[HomeScreen iOS] No videos found');
+        setLatestVideo(null);
       }
 
       // Load today's surf report
@@ -74,13 +75,14 @@ export default function HomeScreen() {
         setTodayReport(reportData);
       } else {
         console.log('[HomeScreen iOS] No report found for today');
+        setTodayReport(null);
       }
     } catch (error) {
       console.error('[HomeScreen iOS] Error loading data:', error);
     } finally {
       setIsLoadingData(false);
     }
-  }, [isLoadingData]);
+  }, []);
 
   // Only load data when conditions are met - use separate effect
   useEffect(() => {
@@ -100,7 +102,7 @@ export default function HomeScreen() {
     } else {
       console.log('[HomeScreen iOS] Not loading data - conditions not met');
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, loadData, session]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription, session]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -175,6 +177,16 @@ export default function HomeScreen() {
       setIsSubscribing(false);
     }
   }, [user, refreshProfile]);
+
+  const handleVideoPress = useCallback(() => {
+    if (latestVideo) {
+      console.log('[HomeScreen iOS] Opening video player for:', latestVideo.id);
+      router.push({
+        pathname: '/video-player',
+        params: { videoId: latestVideo.id }
+      });
+    }
+  }, [latestVideo]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -379,10 +391,8 @@ export default function HomeScreen() {
         ) : latestVideo ? (
           <TouchableOpacity
             style={styles.videoCard}
-            onPress={() => router.push({
-              pathname: '/video-player',
-              params: { videoUrl: latestVideo.video_url, title: latestVideo.title }
-            })}
+            onPress={handleVideoPress}
+            activeOpacity={0.7}
           >
             <View style={[styles.videoPlaceholder, { backgroundColor: colors.highlight }]}>
               <IconSymbol
@@ -397,7 +407,7 @@ export default function HomeScreen() {
                 {latestVideo.title}
               </Text>
               {latestVideo.description && (
-                <Text style={[styles.videoDescription, { color: colors.textSecondary }]}>
+                <Text style={[styles.videoDescription, { color: colors.textSecondary }]} numberOfLines={2}>
                   {latestVideo.description}
                 </Text>
               )}
