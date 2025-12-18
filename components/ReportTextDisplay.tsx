@@ -46,8 +46,42 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     return parts.length > 0 ? parts : [{ text: inputText, bold: false }];
   };
 
-  // Split text into sentences for better readability
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  // Make the report more concise by focusing on key rideability information
+  const getCondensedReport = (fullText: string): string => {
+    // If it's a custom report (edited by admin), don't condense it
+    if (isCustom) {
+      return fullText;
+    }
+
+    // Extract key sentences about wave rideability
+    const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+    
+    // Filter to keep only the most relevant sentences about rideability
+    const relevantKeywords = [
+      'rideable', 'ride', 'surfable', 'surf',
+      'wave', 'swell', 'conditions',
+      'good', 'fair', 'poor', 'excellent',
+      'clean', 'choppy', 'glassy',
+      'beginner', 'intermediate', 'advanced',
+      'recommend', 'best', 'ideal'
+    ];
+
+    const relevantSentences = sentences.filter(sentence => {
+      const lowerSentence = sentence.toLowerCase();
+      return relevantKeywords.some(keyword => lowerSentence.includes(keyword));
+    });
+
+    // If we filtered out too much, keep the first 3 sentences
+    if (relevantSentences.length === 0) {
+      return sentences.slice(0, 3).join(' ').trim();
+    }
+
+    // Return the most relevant sentences (max 4)
+    return relevantSentences.slice(0, 4).join(' ').trim();
+  };
+
+  const condensedText = getCondensedReport(text);
+  const sentences = condensedText.match(/[^.!?]+[.!?]+/g) || [condensedText];
 
   return (
     <View style={styles.container}>
@@ -85,12 +119,12 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
 
 const styles = StyleSheet.create({
   container: {
-    gap: 10,
+    gap: 8,
   },
   sentence: {
     fontSize: 15,
-    lineHeight: 24,
-    marginBottom: 4,
+    lineHeight: 22,
+    marginBottom: 2,
   },
   customSentence: {
     fontWeight: '500',

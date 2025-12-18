@@ -8,6 +8,9 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
+import { supabase } from "@/app/integrations/supabase/client";
+import { Video } from "@/types";
+import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
 export default function ReportScreen() {
   const theme = useTheme();
@@ -15,6 +18,9 @@ export default function ReportScreen() {
   const isSubscribed = checkSubscription();
   const { surfReports, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [latestVideo, setLatestVideo] = useState<Video | null>(null);
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
+  const videoRef = React.useRef<ExpoVideo>(null);
 
   // Filter to show only today's report (EST timezone)
   const todaysReport = useMemo(() => {
@@ -27,6 +33,35 @@ export default function ReportScreen() {
     console.log('Filtering reports for EST date:', today);
     return surfReports.filter(report => report.date === today);
   }, [surfReports]);
+
+  // Load latest video
+  const loadLatestVideo = React.useCallback(async () => {
+    try {
+      setIsLoadingVideo(true);
+      console.log('[ReportScreen] Fetching latest video...');
+      
+      const { data: videoData, error: videoError } = await supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (videoError) {
+        console.log('[ReportScreen] Video fetch error:', videoError.message);
+      } else if (videoData) {
+        console.log('[ReportScreen] Video loaded:', videoData.title);
+        setLatestVideo(videoData);
+      } else {
+        console.log('[ReportScreen] No videos found');
+        setLatestVideo(null);
+      }
+    } catch (error) {
+      console.error('[ReportScreen] Error loading video:', error);
+    } finally {
+      setIsLoadingVideo(false);
+    }
+  }, []);
 
   useEffect(() => {
     console.log('ReportScreen - Auth state:', {
@@ -43,9 +78,16 @@ export default function ReportScreen() {
     });
   }, [user, profile, isSubscribed, authLoading, isInitialized]);
 
+  // Load video when user is subscribed
+  useEffect(() => {
+    if (isInitialized && !authLoading && user && profile && isSubscribed) {
+      loadLatestVideo();
+    }
+  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await refreshData();
+    await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
   };
 
@@ -54,6 +96,27 @@ export default function ReportScreen() {
     await updateAllData();
     setIsRefreshing(false);
   };
+
+  const handleVideoPress = React.useCallback(() => {
+    if (latestVideo) {
+      console.log('[ReportScreen] Opening video player for:', latestVideo.id);
+      router.push({
+        pathname: '/video-player',
+        params: { videoId: latestVideo.id }
+      });
+    }
+  }, [latestVideo]);
+
+  const handleVideoPlaybackStatusUpdate = React.useCallback((status: any) => {
+    // Stop video after it finishes playing once
+    if (status.didJustFinish) {
+      console.log('[ReportScreen] Video finished playing');
+      if (videoRef.current) {
+        videoRef.current.setPositionAsync(0);
+        videoRef.current.pauseAsync();
+      }
+    }
+  }, []);
 
   const getSwellDirectionIcon = (direction: string | null) => {
     if (!direction) return { ios: 'arrow.up', android: 'north' };
@@ -260,7 +323,7 @@ export default function ReportScreen() {
         <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
           <View style={styles.conditionsHeader}>
             <Text style={[styles.conditionsTitle, { color: colors.reportBoldText }]}>
-              Conditions
+              Surf Conditions
             </Text>
             {profile?.is_admin && (
               <TouchableOpacity
@@ -435,6 +498,73 @@ export default function ReportScreen() {
         todaysReport.map((report, index) => renderReportCard(report, index))
       )}
 
+      {/* Latest Drone Video Section */}
+      <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol
+            ios_icon_name="video.fill"
+            android_material_icon_name="videocam"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Latest Drone Footage
+          </Text>
+        </View>
+
+        {isLoadingVideo ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : latestVideo ? (
+          <TouchableOpacity
+            style={styles.videoCard}
+            onPress={handleVideoPress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.videoPreviewContainer}>
+              <ExpoVideo
+                ref={videoRef}
+                source={{ uri: latestVideo.video_url }}
+                style={styles.videoPreview}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={false}
+                isMuted={true}
+                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
+              />
+              <View style={styles.videoOverlay}>
+                <IconSymbol
+                  ios_icon_name="play.circle.fill"
+                  android_material_icon_name="play_circle"
+                  size={64}
+                  color="rgba(255, 255, 255, 0.9)"
+                />
+              </View>
+            </View>
+            <View style={styles.videoInfo}>
+              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                {latestVideo.title}
+              </Text>
+              {latestVideo.description && (
+                <Text style={[styles.videoDescription, { color: colors.textSecondary }]} numberOfLines={2}>
+                  {latestVideo.description}
+                </Text>
+              )}
+              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                {new Date(latestVideo.created_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No videos available yet
+            </Text>
+          </View>
+        )}
+      </View>
+
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
         <IconSymbol
           ios_icon_name="info.circle.fill"
@@ -484,6 +614,10 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     marginTop: 16,
+  },
+  loadingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   header: {
     marginBottom: 24,
@@ -575,6 +709,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 16,
+  },
+  emptyState: {
+    paddingVertical: 32,
+    alignItems: 'center',
   },
   generateButton: {
     paddingHorizontal: 24,
@@ -677,6 +815,61 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     marginTop: 8,
+  },
+  videoSection: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  videoCard: {
+    gap: 12,
+  },
+  videoPreviewContainer: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  videoInfo: {
+    gap: 4,
+  },
+  videoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  videoDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  videoDate: {
+    fontSize: 12,
   },
   infoCard: {
     flexDirection: 'row',
