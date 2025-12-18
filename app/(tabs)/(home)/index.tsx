@@ -22,6 +22,7 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [videoLoaded, setVideoLoaded] = useState(false);
   const videoRef = useRef<ExpoVideo>(null);
   
   // Use the surf data hook for weather and forecast
@@ -42,6 +43,7 @@ export default function HomeScreen() {
 
     try {
       setIsLoadingData(true);
+      setVideoLoaded(false); // Reset video loaded state
       console.log('[HomeScreen] Fetching videos and reports...');
       
       // Load latest video
@@ -191,6 +193,12 @@ export default function HomeScreen() {
   }, [latestVideo]);
 
   const handleVideoPlaybackStatusUpdate = useCallback((status: any) => {
+    // Mark video as loaded when it's ready to play
+    if (status.isLoaded && !videoLoaded) {
+      console.log('[HomeScreen] Video loaded and ready');
+      setVideoLoaded(true);
+    }
+
     // Stop video after it finishes playing once
     if (status.didJustFinish) {
       console.log('[HomeScreen] Video finished playing');
@@ -199,7 +207,7 @@ export default function HomeScreen() {
         videoRef.current.pauseAsync();
       }
     }
-  }, []);
+  }, [videoLoaded]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -408,24 +416,31 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
+              {!videoLoaded && (
+                <View style={styles.videoLoadingOverlay}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              )}
               <ExpoVideo
                 ref={videoRef}
                 source={{ uri: latestVideo.video_url }}
-                style={styles.videoPreview}
+                style={[styles.videoPreview, !videoLoaded && styles.videoHidden]}
                 resizeMode={ResizeMode.COVER}
-                shouldPlay={true}
+                shouldPlay={videoLoaded}
                 isLooping={false}
                 isMuted={true}
                 onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
               />
-              <View style={styles.videoOverlay}>
-                <IconSymbol
-                  ios_icon_name="play.circle.fill"
-                  android_material_icon_name="play_circle"
-                  size={64}
-                  color="rgba(255, 255, 255, 0.9)"
-                />
-              </View>
+              {videoLoaded && (
+                <View style={styles.videoOverlay}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play_circle"
+                    size={64}
+                    color="rgba(255, 255, 255, 0.9)"
+                  />
+                </View>
+              )}
             </View>
             <View style={styles.videoInfo}>
               <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
@@ -622,10 +637,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: '#000000',
   },
   videoPreview: {
     width: '100%',
     height: '100%',
+  },
+  videoHidden: {
+    opacity: 0,
+  },
+  videoLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 10,
   },
   videoOverlay: {
     position: 'absolute',
