@@ -24,14 +24,29 @@ export default function ReportScreen() {
 
   // Filter to show only today's report (EST timezone)
   const todaysReport = useMemo(() => {
-    // Get current date in EST timezone
-    const estDate = new Date().toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
-    });
-    const today = new Date(estDate).toISOString().split('T')[0];
-    
-    console.log('Filtering reports for EST date:', today);
-    return surfReports.filter(report => report.date === today);
+    try {
+      // Get current date in EST timezone
+      const now = new Date();
+      const estDateString = now.toLocaleString('en-US', { 
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      
+      // Parse the EST date string (format: MM/DD/YYYY)
+      const [month, day, year] = estDateString.split(',')[0].split('/');
+      const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      
+      console.log('Filtering reports for EST date:', today);
+      return surfReports.filter(report => {
+        if (!report.date) return false;
+        return report.date === today;
+      });
+    } catch (error) {
+      console.error('Error filtering reports:', error);
+      return [];
+    }
   }, [surfReports]);
 
   // Load latest video
