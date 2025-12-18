@@ -23,6 +23,7 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<ExpoVideo>(null);
   
   // Use the surf data hook for weather and forecast
@@ -43,7 +44,8 @@ export default function HomeScreen() {
 
     try {
       setIsLoadingData(true);
-      setVideoLoaded(false); // Reset video loaded state
+      setVideoLoaded(false);
+      setVideoReady(false);
       console.log('[HomeScreen] Fetching videos and reports...');
       
       // Load latest video
@@ -197,6 +199,11 @@ export default function HomeScreen() {
     if (status.isLoaded && !videoLoaded) {
       console.log('[HomeScreen] Video loaded and ready');
       setVideoLoaded(true);
+      
+      // Small delay to ensure smooth transition
+      setTimeout(() => {
+        setVideoReady(true);
+      }, 100);
     }
 
     // Stop video after it finishes playing once
@@ -416,22 +423,36 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {!videoLoaded && (
+              {/* Always show loading overlay until video is ready */}
+              {!videoReady && (
                 <View style={styles.videoLoadingOverlay}>
                   <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingVideoText}>Loading preview...</Text>
                 </View>
               )}
-              <ExpoVideo
-                ref={videoRef}
-                source={{ uri: latestVideo.video_url }}
-                style={[styles.videoPreview, !videoLoaded && styles.videoHidden]}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={videoLoaded}
-                isLooping={false}
-                isMuted={true}
-                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
-              />
-              {videoLoaded && (
+              
+              {/* Only render video component when we have a video */}
+              {latestVideo && (
+                <ExpoVideo
+                  ref={videoRef}
+                  source={{ uri: latestVideo.video_url }}
+                  style={[styles.videoPreview, !videoReady && styles.videoHidden]}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={false}
+                  isLooping={false}
+                  isMuted={true}
+                  onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
+                  onLoad={() => {
+                    console.log('[HomeScreen] Video onLoad triggered');
+                    if (videoRef.current) {
+                      videoRef.current.playAsync();
+                    }
+                  }}
+                />
+              )}
+              
+              {/* Show play icon overlay when video is ready */}
+              {videoReady && (
                 <View style={styles.videoOverlay}>
                   <IconSymbol
                     ios_icon_name="play.circle.fill"
@@ -654,8 +675,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     zIndex: 10,
+  },
+  loadingVideoText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginTop: 12,
   },
   videoOverlay: {
     position: 'absolute',
