@@ -45,7 +45,12 @@ export default function ReportScreen() {
       
       return surfReports.filter(report => {
         if (!report.date) return false;
-        return report.date === today;
+        
+        // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
+        const reportDate = report.date.split('T')[0];
+        
+        console.log('Comparing report date:', reportDate, 'with today:', today);
+        return reportDate === today;
       });
     } catch (error) {
       console.error('Error filtering reports:', error);
@@ -201,6 +206,15 @@ export default function ReportScreen() {
     const swellIcon = getSwellDirectionIcon(report.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
+    // Parse the report date in EST timezone for display
+    const reportDate = new Date(report.date + 'T00:00:00');
+    const estDisplayDate = reportDate.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric'
+    });
+    
     return (
       <View 
         key={reportKey}
@@ -208,11 +222,7 @@ export default function ReportScreen() {
       >
         <View style={styles.reportHeader}>
           <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-            {new Date(report.date).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric'
-            })}
+            {estDisplayDate}
           </Text>
           <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
             <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
