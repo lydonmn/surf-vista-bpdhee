@@ -226,8 +226,9 @@ serve(async (req) => {
 
     console.log('Weather data stored successfully:', weatherInsertData);
 
-    // Step 4: Store 7-day forecast
-    const forecastRecords = [];
+    // Step 4: Store 7-day forecast with aggregated daily data
+    // Group periods by date and aggregate high/low temps
+    const dailyForecasts = new Map<string, any>();
     
     for (let i = 0; i < Math.min(periods.length, 14); i++) {
       const period = periods[i];
@@ -241,22 +242,54 @@ serve(async (req) => {
       const day = String(estPeriodDate.getUTCDate()).padStart(2, '0');
       const formattedDate = `${year}-${month}-${day}`;
       
-      forecastRecords.push({
-        date: formattedDate,
-        period_name: period.name,
-        temperature: period.temperature,
-        temperature_unit: period.temperatureUnit,
-        wind_speed: period.windSpeed.split(' ')[0], // Extract just the number
-        wind_direction: period.windDirection,
-        short_forecast: period.shortForecast,
-        detailed_forecast: period.detailedForecast,
-        icon: period.icon,
-        is_daytime: period.isDaytime,
-        updated_at: new Date().toISOString(),
-      });
+      // Get or create daily forecast entry
+      if (!dailyForecasts.has(formattedDate)) {
+        dailyForecasts.set(formattedDate, {
+          date: formattedDate,
+          day_name: period.name.includes('Night') ? period.name.replace(' Night', '') : period.name,
+          high_temp: null,
+          low_temp: null,
+          conditions: period.shortForecast,
+          icon: period.icon,
+          wind_speed: parseInt(period.windSpeed.split(' ')[0]) || 0,
+          wind_direction: period.windDirection,
+          precipitation_chance: 0,
+          humidity: 0,
+          period_name: period.name,
+          temperature: period.temperature,
+          temperature_unit: period.temperatureUnit,
+          short_forecast: period.shortForecast,
+          detailed_forecast: period.detailedForecast,
+          is_daytime: period.isDaytime,
+          swell_height_min: null,
+          swell_height_max: null,
+          swell_height_range: '1-2 ft', // Default, will be updated if we have surf data
+          updated_at: new Date().toISOString(),
+        });
+      }
+      
+      const dailyData = dailyForecasts.get(formattedDate);
+      
+      // Update high/low temps
+      if (period.isDaytime) {
+        if (dailyData.high_temp === null || period.temperature > dailyData.high_temp) {
+          dailyData.high_temp = period.temperature;
+        }
+      } else {
+        if (dailyData.low_temp === null || period.temperature < dailyData.low_temp) {
+          dailyData.low_temp = period.temperature;
+        }
+      }
+      
+      // Use daytime conditions as primary
+      if (period.isDaytime) {
+        dailyData.conditions = period.shortForecast;
+        dailyData.icon = period.icon;
+      }
     }
 
-    console.log(`Upserting ${forecastRecords.length} forecast records`);
+    const forecastRecords = Array.from(dailyForecasts.values());
+    console.log(`Prepared ${forecastRecords.length} daily forecast records`);
 
     // Delete old forecasts first (older than 2 days ago)
     const twoDaysAgo = new Date();

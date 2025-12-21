@@ -174,18 +174,21 @@ serve(async (req) => {
     const tideSummary = generateTideSummary(tideData);
     console.log('Tide summary:', tideSummary);
 
-    // Calculate surf rating (1-10)
+    // Calculate surf rating (1-10) - use surf_height if available, otherwise wave_height
     const rating = calculateSurfRating(surfData, weatherData);
     console.log('Calculated rating:', rating);
 
-    // Generate report text
+    // Generate report text with variety
     const reportText = generateReportText(surfData, weatherData, tideSummary, rating);
     console.log('Generated report text length:', reportText.length);
+
+    // Use surf_height for display if available, otherwise fall back to wave_height
+    const displayHeight = surfData.surf_height || surfData.wave_height;
 
     // Create the surf report
     const surfReport = {
       date: today,
-      wave_height: surfData.wave_height,
+      wave_height: displayHeight, // Now using surf height (face height) for display
       wave_period: surfData.wave_period || 'N/A',
       swell_direction: surfData.swell_direction || 'N/A',
       wind_speed: surfData.wind_speed,
@@ -267,9 +270,10 @@ function generateTideSummary(tideData: any[]): string {
 }
 
 function calculateSurfRating(surfData: any, weatherData: any): number {
-  // Parse wave height
-  const waveHeightMatch = surfData.wave_height.match(/(\d+\.?\d*)/);
-  const waveHeight = waveHeightMatch ? parseFloat(waveHeightMatch[1]) : 0;
+  // Parse surf height (use surf_height if available, otherwise wave_height)
+  const heightStr = surfData.surf_height || surfData.wave_height;
+  const heightMatch = heightStr.match(/(\d+\.?\d*)/);
+  const surfHeight = heightMatch ? parseFloat(heightMatch[1]) : 0;
 
   // Parse wind speed
   const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
@@ -317,22 +321,22 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
   }
 
   console.log('Stoke rating calculation:', {
-    waveHeight,
+    surfHeight,
     windSpeed,
     windDir,
     period,
     conditions
   });
 
-  // Apply new stoke rating parameters
+  // Apply stoke rating parameters based on SURF HEIGHT (not wave height)
   let rating = 0;
 
   // 1. Surf height 3ft or less: Max 3/10. If clean, then 3/10.
-  if (waveHeight <= 3) {
+  if (surfHeight <= 3) {
     rating = conditions === 'clean' ? 3 : Math.min(3, Math.max(1, 3 - (windSpeed / 10)));
   }
   // 2. Surf height 4ft: Clean = 4/10. Rough = 3/10.
-  else if (waveHeight > 3 && waveHeight < 4.5) {
+  else if (surfHeight > 3 && surfHeight < 4.5) {
     if (conditions === 'clean') {
       rating = 4;
     } else {
@@ -340,7 +344,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
     }
   }
   // 3. Surf height 4-6ft: Clean = 7/10. Moderately poor to very poor = 3/10 to 6/10.
-  else if (waveHeight >= 4.5 && waveHeight <= 6) {
+  else if (surfHeight >= 4.5 && surfHeight <= 6) {
     if (conditions === 'clean') {
       rating = 7;
     } else if (conditions === 'moderate') {
@@ -356,7 +360,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
     }
   }
   // 4. Surf height 7ft or higher: Clean = 10/10. Moderate to very poor = 6/10 to 8/10.
-  else if (waveHeight >= 7) {
+  else if (surfHeight >= 7) {
     if (conditions === 'clean') {
       rating = 10;
     } else if (conditions === 'moderate') {
@@ -379,8 +383,10 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
 }
 
 function generateReportText(surfData: any, weatherData: any, tideSummary: string, rating: number): string {
-  const waveHeightMatch = surfData.wave_height.match(/(\d+\.?\d*)/);
-  const waveHeight = waveHeightMatch ? parseFloat(waveHeightMatch[1]) : 0;
+  // Use surf_height if available, otherwise wave_height
+  const heightStr = surfData.surf_height || surfData.wave_height;
+  const heightMatch = heightStr.match(/(\d+\.?\d*)/);
+  const surfHeight = heightMatch ? parseFloat(heightMatch[1]) : 0;
   
   const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
   const windSpeed = windSpeedMatch ? parseInt(windSpeedMatch[1]) : 0;
@@ -389,53 +395,99 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   const swellDir = surfData.swell_direction;
   const period = surfData.wave_period;
 
-  let report = '';
+  // Variety arrays for different phrases
+  const openings = [
+    { min: 8, phrases: ['Epic day at Folly!', 'Firing at Folly Beach!', 'Get out there!', 'Stellar conditions today!'] },
+    { min: 6, phrases: ['Solid surf at Folly.', 'Looking good out there.', 'Worth the paddle.', 'Nice conditions today.'] },
+    { min: 4, phrases: ['Fair conditions at Folly.', 'Decent enough to get wet.', 'Not bad, not great.', 'Rideable waves today.'] },
+    { min: 0, phrases: ['Slim pickings today.', 'Patience required.', 'Better days ahead.', 'Tough conditions out there.'] }
+  ];
 
-  // Overall assessment
-  if (rating >= 8) {
-    report += 'Excellent surf conditions today at Folly Beach! ';
-  } else if (rating >= 6) {
-    report += 'Good surf conditions at Folly Beach with rideable waves. ';
-  } else if (rating >= 4) {
-    report += 'Fair surf conditions at Folly Beach. ';
-  } else {
-    report += 'Poor surf conditions at Folly Beach today. ';
-  }
+  const waveDescriptions = [
+    { min: 7, clean: ['pumping', 'cranking', 'firing', 'going off'], rough: ['big and messy', 'chunky', 'beefy but bumpy'] },
+    { min: 4, clean: ['rolling in nicely', 'looking fun', 'peeling well', 'offering some rides'], rough: ['choppy', 'wind-affected', 'bumpy', 'textured'] },
+    { min: 2, clean: ['small but clean', 'knee-high gems', 'mellow rollers'], rough: ['wind chop', 'mushy', 'struggling'] },
+    { min: 0, clean: ['barely there', 'ankle-slappers', 'flat as a lake'], rough: ['blown out', 'unfriendly', 'a mess'] }
+  ];
 
-  // Wave description
-  if (waveHeight >= 4) {
-    report += `Waves are running ${surfData.wave_height} with ${period} period from ${swellDir}. `;
-  } else if (waveHeight >= 2) {
-    report += `Waves are ${surfData.wave_height} with ${period} period from ${swellDir}. `;
-  } else {
-    report += `Small waves at ${surfData.wave_height} with ${period} period from ${swellDir}. `;
-  }
+  const windPhrases = {
+    offshore_light: ['glassy offshore', 'light offshore breeze', 'grooming winds', 'offshore perfection'],
+    offshore_strong: ['strong offshore', 'howling offshore', 'wind-groomed but strong'],
+    onshore_light: ['light onshore', 'gentle onshore', 'slight texture from the east'],
+    onshore_strong: ['choppy onshore', 'blown out', 'wind-ravaged', 'textured by onshore winds']
+  };
 
-  // Wind conditions
-  if (windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n')) {
-    if (windSpeed < 10) {
-      report += `Light offshore winds from ${windDir} at ${surfData.wind_speed} creating clean conditions. `;
-    } else if (windSpeed < 20) {
-      report += `Offshore winds from ${windDir} at ${surfData.wind_speed} grooming the waves. `;
-    } else {
-      report += `Strong offshore winds from ${windDir} at ${surfData.wind_speed} may blow out the surf. `;
-    }
-  } else {
-    if (windSpeed < 10) {
-      report += `Light onshore winds from ${windDir} at ${surfData.wind_speed}. `;
-    } else {
-      report += `Onshore winds from ${windDir} at ${surfData.wind_speed} creating choppy conditions. `;
+  const periodComments = [
+    { min: 12, phrases: ['Long-period swell', 'Quality groundswell', 'Clean lines'] },
+    { min: 8, phrases: ['Decent period', 'Moderate swell', 'Fair interval'] },
+    { min: 0, phrases: ['Short-period chop', 'Wind swell', 'Quick interval'] }
+  ];
+
+  // Select opening based on rating
+  let opening = 'Conditions at Folly Beach.';
+  for (const o of openings) {
+    if (rating >= o.min) {
+      opening = o.phrases[Math.floor(Math.random() * o.phrases.length)];
+      break;
     }
   }
 
-  // Water temperature
-  report += `Water temperature is ${surfData.water_temp}. `;
+  // Determine if conditions are clean
+  const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
+  const isClean = (isOffshore && windSpeed < 15) || (!isOffshore && windSpeed < 8);
 
-  // Weather - use the conditions field from weather_data
+  // Select wave description
+  let waveDesc = 'waves';
+  for (const wd of waveDescriptions) {
+    if (surfHeight >= wd.min) {
+      const phrases = isClean ? wd.clean : wd.rough;
+      waveDesc = phrases[Math.floor(Math.random() * phrases.length)];
+      break;
+    }
+  }
+
+  // Select wind phrase
+  let windPhrase = '';
+  if (isOffshore) {
+    windPhrase = windSpeed < 12 
+      ? windPhrases.offshore_light[Math.floor(Math.random() * windPhrases.offshore_light.length)]
+      : windPhrases.offshore_strong[Math.floor(Math.random() * windPhrases.offshore_strong.length)];
+  } else {
+    windPhrase = windSpeed < 10
+      ? windPhrases.onshore_light[Math.floor(Math.random() * windPhrases.onshore_light.length)]
+      : windPhrases.onshore_strong[Math.floor(Math.random() * windPhrases.onshore_strong.length)];
+  }
+
+  // Select period comment
+  const periodNum = parseInt(period.match(/(\d+)/)?.[1] || '0');
+  let periodComment = '';
+  for (const pc of periodComments) {
+    if (periodNum >= pc.min) {
+      periodComment = pc.phrases[Math.floor(Math.random() * pc.phrases.length)];
+      break;
+    }
+  }
+
+  // Build the report with variety
+  let report = `${opening} `;
+
+  // Wave info
+  report += `Surf is ${heightStr} and ${waveDesc}. `;
+  
+  // Period and direction
+  report += `${periodComment} at ${period} from ${swellDir}. `;
+
+  // Wind
+  report += `${windPhrase.charAt(0).toUpperCase() + windPhrase.slice(1)} at ${surfData.wind_speed} from ${windDir}. `;
+
+  // Water temp
+  report += `Water's ${surfData.water_temp}. `;
+
+  // Weather
   const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
   report += `${weatherConditions}. `;
 
-  // Tide info
+  // Tide
   report += `Tides: ${tideSummary}.`;
 
   return report;

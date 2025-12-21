@@ -35,6 +35,51 @@ function getESTDate(): string {
   return estDate;
 }
 
+// Helper function to calculate surf height from wave height
+// Surf height (face height) is typically 1.5-2x the significant wave height
+// depending on wave period and swell quality
+function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
+  // Convert to feet first
+  const waveHeightFt = waveHeightMeters * 3.28084;
+  
+  // Longer period swells produce larger, cleaner faces
+  // Short period (< 8s) = choppy, smaller faces (1.3-1.5x)
+  // Medium period (8-12s) = decent faces (1.5-1.7x)
+  // Long period (> 12s) = clean, larger faces (1.7-2x)
+  
+  let multiplierMin = 1.3;
+  let multiplierMax = 1.5;
+  
+  if (periodSeconds >= 12) {
+    multiplierMin = 1.7;
+    multiplierMax = 2.0;
+  } else if (periodSeconds >= 8) {
+    multiplierMin = 1.5;
+    multiplierMax = 1.7;
+  }
+  
+  const surfHeightMin = waveHeightFt * multiplierMin;
+  const surfHeightMax = waveHeightFt * multiplierMax;
+  
+  // Round to nearest 0.5 ft
+  const roundedMin = Math.round(surfHeightMin * 2) / 2;
+  const roundedMax = Math.round(surfHeightMax * 2) / 2;
+  
+  // Format display string
+  let display: string;
+  if (roundedMin === roundedMax) {
+    display = `${roundedMin.toFixed(1)} ft`;
+  } else {
+    display = `${roundedMin.toFixed(1)}-${roundedMax.toFixed(1)} ft`;
+  }
+  
+  return {
+    min: roundedMin,
+    max: roundedMax,
+    display
+  };
+}
+
 // Helper function to fetch with timeout
 async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -185,6 +230,19 @@ serve(async (req) => {
       ? (waveHeight * 3.28084).toFixed(1) // Convert meters to feet
       : 'N/A';
     
+    // Calculate surf height (face height) from wave height
+    let surfHeight = 'N/A';
+    if (waveHeight !== 99.0 && !isNaN(waveHeight) && dominantPeriod !== 99.0 && !isNaN(dominantPeriod)) {
+      const surfHeightCalc = calculateSurfHeight(waveHeight, dominantPeriod);
+      surfHeight = surfHeightCalc.display;
+      console.log('Surf height calculation:', {
+        waveHeightMeters: waveHeight,
+        waveHeightFt: waveHeightFt,
+        period: dominantPeriod,
+        surfHeight: surfHeightCalc
+      });
+    }
+    
     const wavePeriodSec = dominantPeriod !== 99.0 && !isNaN(dominantPeriod)
       ? dominantPeriod.toFixed(0)
       : 'N/A';
@@ -209,10 +267,11 @@ serve(async (req) => {
     const today = getESTDate();
     console.log('Storing data for EST date:', today);
 
-    // Store the raw buoy data
+    // Store the raw buoy data with both wave height and surf height
     const surfData = {
       date: today,
       wave_height: waveHeightFt !== 'N/A' ? `${waveHeightFt} ft` : 'N/A',
+      surf_height: surfHeight, // NEW: Calculated surf height (face height)
       wave_period: wavePeriodSec !== 'N/A' ? `${wavePeriodSec} sec` : 'N/A',
       swell_direction: swellDirection,
       wind_speed: windSpeedMph !== 'N/A' ? `${windSpeedMph} mph` : 'N/A',
