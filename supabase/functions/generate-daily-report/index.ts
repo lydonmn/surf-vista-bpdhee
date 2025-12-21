@@ -37,7 +37,7 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Generating daily surf report...');
+    console.log('Generating daily surf report for Folly Beach, SC...');
 
     // Get current date in EST
     const now = new Date();
@@ -227,7 +227,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Daily surf report generated successfully',
+        message: 'Daily surf report generated successfully for Folly Beach, SC',
+        location: 'Folly Beach, SC',
         report: surfReport,
         timestamp: new Date().toISOString(),
       }),
@@ -336,13 +337,13 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
 
   // Overall assessment
   if (rating >= 8) {
-    report += 'Excellent surf conditions today! ';
+    report += 'Excellent surf conditions today at Folly Beach! ';
   } else if (rating >= 6) {
-    report += 'Good surf conditions with rideable waves. ';
+    report += 'Good surf conditions at Folly Beach with rideable waves. ';
   } else if (rating >= 4) {
-    report += 'Fair surf conditions. ';
+    report += 'Fair surf conditions at Folly Beach. ';
   } else {
-    report += 'Poor surf conditions today. ';
+    report += 'Poor surf conditions at Folly Beach today. ';
   }
 
   // Wave description

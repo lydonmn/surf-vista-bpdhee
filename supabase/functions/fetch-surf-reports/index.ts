@@ -59,8 +59,8 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching surf conditions from NOAA Buoy...');
-    console.log('Buoy ID:', BUOY_ID);
+    console.log('Fetching surf conditions from NOAA Buoy for Folly Beach, SC...');
+    console.log('Buoy ID:', BUOY_ID, '(Edisto, SC - closest to Folly Beach)');
 
     // Fetch latest buoy data with timeout
     const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
@@ -311,7 +311,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Surf conditions updated successfully',
+        message: 'Surf conditions updated successfully for Folly Beach, SC',
+        location: 'Folly Beach, SC (Buoy 41004 - Edisto)',
         data: surfData,
         timestamp: new Date().toISOString(),
       }),

@@ -63,7 +63,7 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching weather data from NOAA...');
+    console.log('Fetching weather data from NOAA for Folly Beach, SC...');
     console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
 
     const requestHeaders = {
@@ -292,7 +292,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Weather data updated successfully',
+        message: 'Weather data updated successfully for Folly Beach, SC',
+        location: 'Folly Beach, SC',
         current: weatherData,
         forecast_periods: forecastRecords.length,
         forecast_count: forecastInsertData?.length || 0,

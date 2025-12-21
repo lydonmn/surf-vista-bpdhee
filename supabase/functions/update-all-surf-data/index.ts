@@ -54,6 +54,7 @@ serve(async (req) => {
   try {
     console.log('=== UPDATE ALL SURF DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
+    console.log('Location: Folly Beach, SC');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
@@ -90,7 +91,7 @@ serve(async (req) => {
     };
 
     // Step 1: Fetch weather data
-    console.log('Step 1: Fetching weather data...');
+    console.log('Step 1: Fetching weather data for Folly Beach, SC...');
     try {
       const weatherResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-weather-data`,
@@ -115,7 +116,7 @@ serve(async (req) => {
     }
 
     // Step 2: Fetch tide data
-    console.log('Step 2: Fetching tide data...');
+    console.log('Step 2: Fetching tide data for Folly Beach, SC...');
     try {
       const tideResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-tide-data`,
@@ -140,7 +141,7 @@ serve(async (req) => {
     }
 
     // Step 3: Fetch surf conditions
-    console.log('Step 3: Fetching surf conditions...');
+    console.log('Step 3: Fetching surf conditions for Folly Beach, SC...');
     try {
       const surfResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-surf-reports`,
@@ -166,7 +167,7 @@ serve(async (req) => {
 
     // Step 4: Generate daily report (only if we have the required data)
     if (results.weather?.success && results.surf?.success) {
-      console.log('Step 4: Generating daily report...');
+      console.log('Step 4: Generating daily report for Folly Beach, SC...');
       try {
         const reportResult = await invokeFunctionWithTimeout(
           `${supabaseUrl}/functions/v1/generate-daily-report`,
@@ -214,10 +215,11 @@ serve(async (req) => {
       JSON.stringify({
         success: criticalSuccess, // Return success if critical data was fetched
         message: allSuccess 
-          ? 'All surf data updated successfully' 
+          ? 'All surf data updated successfully for Folly Beach, SC' 
           : criticalSuccess
-          ? 'Critical surf data updated successfully (some optional updates failed)'
-          : 'Failed to update critical surf data',
+          ? 'Critical surf data updated successfully for Folly Beach, SC (some optional updates failed)'
+          : 'Failed to update critical surf data for Folly Beach, SC',
+        location: 'Folly Beach, SC',
         results,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date().toISOString(),

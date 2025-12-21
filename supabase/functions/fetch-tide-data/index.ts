@@ -59,8 +59,8 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching tide data from NOAA...');
-    console.log('Station ID:', STATION_ID);
+    console.log('Fetching tide data from NOAA for Folly Beach, SC...');
+    console.log('Station ID:', STATION_ID, '(Charleston Harbor)');
 
     // Get current date in EST
     const now = new Date();
@@ -202,7 +202,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Tide data updated successfully',
+        message: 'Tide data updated successfully for Folly Beach, SC',
+        location: 'Folly Beach, SC (Charleston Harbor)',
         tides: tideRecords.length,
         count: tideRecords.length,
         records: tideRecords,
