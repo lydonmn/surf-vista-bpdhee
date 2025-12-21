@@ -9,9 +9,10 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
 import { colors } from '@/styles/commonStyles';
+import { IconSymbol } from '@/components/IconSymbol';
 
 interface DataCounts {
   tides: number;
@@ -310,15 +311,37 @@ export default function AdminDataScreen() {
     addLog('Activity log cleared');
   };
 
+  const handleGoBack = () => {
+    console.log('[AdminDataScreen] Navigating back...');
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // If can't go back, navigate to home
+      router.replace('/(tabs)/(home)');
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: 'Data Sources',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-        }}
-      />
+      {/* Custom Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleGoBack}
+        >
+          <IconSymbol
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow_back"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.backButtonText, { color: colors.primary }]}>
+            Back
+          </Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Data Sources</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Data Counts */}
@@ -436,6 +459,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingRight: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  headerSpacer: {
+    width: 60,
   },
   scrollView: {
     flex: 1,
