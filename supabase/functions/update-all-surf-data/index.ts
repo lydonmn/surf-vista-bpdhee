@@ -186,21 +186,26 @@ serve(async (req) => {
     });
     console.log('Errors:', errors);
 
-    const success = errors.length === 0;
+    // Consider it a success if at least weather and surf data were fetched
+    // (tide is optional, report depends on weather and surf)
+    const criticalSuccess = results.weather?.success && results.surf?.success;
+    const allSuccess = errors.length === 0;
 
     return new Response(
       JSON.stringify({
-        success,
-        message: success 
+        success: criticalSuccess, // Return success if critical data was fetched
+        message: allSuccess 
           ? 'All surf data updated successfully' 
-          : 'Some updates failed - see errors for details',
+          : criticalSuccess
+          ? 'Critical surf data updated successfully (some optional updates failed)'
+          : 'Failed to update critical surf data',
         results,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: success ? 200 : 207, // 207 = Multi-Status (partial success)
+        status: criticalSuccess ? 200 : 500, // Return 200 if critical data succeeded
       }
     );
   } catch (error) {

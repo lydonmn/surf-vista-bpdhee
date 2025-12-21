@@ -183,32 +183,48 @@ export function useSurfData() {
       console.log('[useSurfData] Updating all data via Edge Functions...');
 
       // Call the new unified edge function
-      const response = await supabase.functions.invoke('update-all-surf-data');
+      const { data, error } = await supabase.functions.invoke('update-all-surf-data');
 
-      console.log('[useSurfData] Update response:', response);
+      console.log('[useSurfData] Update response:', { data, error });
 
-      // Check for errors
-      if (response.error) {
-        console.error('[useSurfData] Update failed:', response.error);
-        throw new Error(response.error.message || 'Update failed');
+      // Check for errors - handle both error object and non-success responses
+      if (error) {
+        console.error('[useSurfData] Update failed with error:', error);
+        throw new Error(error.message || 'Update failed');
       }
 
-      const data = response.data;
-      
-      if (!data.success) {
-        console.error('[useSurfData] Update partially failed:', data.errors);
-        // Still refresh data even if some updates failed
+      // Check if the response indicates failure
+      if (data && !data.success) {
+        console.error('[useSurfData] Update failed:', data.errors);
+        
+        // If there are errors but some data was updated, still refresh
+        if (data.results) {
+          const successCount = Object.values(data.results).filter((r: any) => r?.success).length;
+          console.log(`[useSurfData] Partial success: ${successCount} operations succeeded`);
+          
+          // Show a warning but still refresh data
+          if (isMountedRef.current) {
+            setState(prev => ({
+              ...prev,
+              error: `Some data updates failed: ${data.errors?.join(', ') || 'Unknown errors'}`,
+            }));
+          }
+        } else {
+          throw new Error(data.error || 'Update failed');
+        }
       }
 
       // Refresh data from database
+      console.log('[useSurfData] Refreshing data from database...');
       await fetchData();
     } catch (error) {
       console.error('[useSurfData] Error updating surf data:', error);
       if (isMountedRef.current) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update data';
         setState(prev => ({
           ...prev,
           isLoading: false,
-          error: error instanceof Error ? error.message : 'Failed to update data',
+          error: `Update failed: ${errorMessage}. Please try again.`,
         }));
       }
     } finally {
