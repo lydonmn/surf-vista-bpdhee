@@ -85,30 +85,31 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
 
   return (
     <View style={styles.container}>
-      {sentences.map((sentence, index) => {
+      {sentences.map((sentence, sentenceIndex) => {
         const parts = parseTextWithBold(sentence.trim());
         
         return (
-          <Text
-            key={`sentence-${index}`}
-            style={[
-              styles.sentence,
-              { color: colors.reportText },
-              isCustom && styles.customSentence
-            ]}
-          >
-            {parts.map((part, partIndex) => (
-              <Text
-                key={`part-${index}-${partIndex}`}
-                style={[
-                  part.bold && styles.boldText,
-                  part.bold && { color: colors.reportBoldText }
-                ]}
-              >
-                {part.text}
-              </Text>
-            ))}
-          </Text>
+          <View key={`sentence-${sentenceIndex}`}>
+            <Text
+              style={[
+                styles.sentence,
+                { color: colors.reportText },
+                isCustom && styles.customSentence
+              ]}
+            >
+              {parts.map((part, partIndex) => (
+                <Text
+                  key={`sentence-${sentenceIndex}-part-${partIndex}`}
+                  style={[
+                    part.bold && styles.boldText,
+                    part.bold && { color: colors.reportBoldText }
+                  ]}
+                >
+                  {part.text}
+                </Text>
+              ))}
+            </Text>
+          </View>
         );
       })}
     </View>
