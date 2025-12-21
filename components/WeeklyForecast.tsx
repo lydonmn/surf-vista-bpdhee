@@ -43,17 +43,23 @@ function getDayName(dateStr: string): string {
 
 export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
   const theme = useTheme();
+  const today = getTodayDateString();
 
   console.log('[WeeklyForecast] Rendering with forecast data:', {
     count: forecast?.length || 0,
     hasData: !!forecast && forecast.length > 0,
-    firstItem: forecast?.[0]
+    firstItem: forecast?.[0],
+    today
   });
 
   // Filter to only show entries with aggregated data (high_temp and low_temp present)
-  // and remove duplicates by date
+  // ONLY show today and future dates, and remove duplicates by date
   const filteredForecast = forecast
-    ?.filter(day => day.high_temp !== null && day.low_temp !== null)
+    ?.filter(day => {
+      const hasData = day.high_temp !== null && day.low_temp !== null;
+      const isTodayOrFuture = day.date >= today;
+      return hasData && isTodayOrFuture;
+    })
     .reduce((acc, current) => {
       // Only add if we don't already have this date
       if (!acc.find(item => item.date === current.date)) {

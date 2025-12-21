@@ -33,6 +33,16 @@ function getTodayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
+// Helper function to get date N days from now
+function getDateNDaysFromNow(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to get day name from date string
 function getDayName(dateStr: string): string {
   const today = getTodayDateString();
@@ -66,54 +76,83 @@ export default function ForecastScreen() {
     setIsRefreshing(false);
   }, [refreshData]);
 
-  // Combine all data by date
+  // Combine all data by date - ONLY INCLUDE TODAY AND FUTURE DATES
   const combinedForecast: DayForecast[] = React.useMemo(() => {
     const forecastMap = new Map<string, DayForecast>();
+    const today = getTodayDateString();
 
-    // Add surf reports
+    console.log('[ForecastScreen] Building forecast, today:', today);
+
+    // Add surf reports (only today and future)
     surfReports.forEach(report => {
-      if (!forecastMap.has(report.date)) {
-        forecastMap.set(report.date, {
-          date: report.date,
-          dayName: getDayName(report.date),
-          surfReport: report,
-          weatherForecast: null,
-          tides: [],
-        });
-      } else {
-        const existing = forecastMap.get(report.date)!;
-        existing.surfReport = report;
+      if (report.date >= today) {
+        if (!forecastMap.has(report.date)) {
+          forecastMap.set(report.date, {
+            date: report.date,
+            dayName: getDayName(report.date),
+            surfReport: report,
+            weatherForecast: null,
+            tides: [],
+          });
+        } else {
+          const existing = forecastMap.get(report.date)!;
+          existing.surfReport = report;
+        }
       }
     });
 
-    // Add weather forecasts
+    // Add weather forecasts (only today and future)
     weatherForecast.forEach(forecast => {
-      if (!forecastMap.has(forecast.date)) {
-        forecastMap.set(forecast.date, {
-          date: forecast.date,
-          dayName: getDayName(forecast.date),
-          surfReport: null,
-          weatherForecast: forecast,
-          tides: [],
-        });
-      } else {
-        const existing = forecastMap.get(forecast.date)!;
-        existing.weatherForecast = forecast;
+      if (forecast.date >= today) {
+        if (!forecastMap.has(forecast.date)) {
+          forecastMap.set(forecast.date, {
+            date: forecast.date,
+            dayName: getDayName(forecast.date),
+            surfReport: null,
+            weatherForecast: forecast,
+            tides: [],
+          });
+        } else {
+          const existing = forecastMap.get(forecast.date)!;
+          existing.weatherForecast = forecast;
+        }
       }
     });
 
-    // Add tides
+    // Add tides (only today and future)
     tideData.forEach(tide => {
-      if (forecastMap.has(tide.date)) {
+      if (tide.date >= today && forecastMap.has(tide.date)) {
         const existing = forecastMap.get(tide.date)!;
         existing.tides.push(tide);
       }
     });
 
+    // If we don't have enough data, generate placeholder entries for the next 7 days
+    const existingDates = Array.from(forecastMap.keys());
+    console.log('[ForecastScreen] Existing forecast dates:', existingDates);
+
+    // Generate dates for the next 7 days starting from today
+    for (let i = 0; i < 7; i++) {
+      const date = getDateNDaysFromNow(i);
+      if (!forecastMap.has(date)) {
+        forecastMap.set(date, {
+          date,
+          dayName: getDayName(date),
+          surfReport: null,
+          weatherForecast: null,
+          tides: [],
+        });
+      }
+    }
+
     // Convert to array and sort by date
-    return Array.from(forecastMap.values())
+    const result = Array.from(forecastMap.values())
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 7); // Limit to 7 days
+
+    console.log('[ForecastScreen] Final forecast dates:', result.map(f => `${f.date} (${f.dayName})`));
+
+    return result;
   }, [surfReports, weatherForecast, tideData]);
 
   const toggleDay = (date: string) => {
@@ -481,7 +520,7 @@ export default function ForecastScreen() {
                       {day.tides.length > 0 ? (
                         <View style={styles.tidesContainer}>
                           {day.tides.map((tide, tideIndex) => {
-                            const isHighTide = tide.type === 'high';
+                            const isHighTide = tide.type === 'high' || tide.type === 'High';
                             const iconColor = isHighTide ? '#2196F3' : '#FF9800';
 
                             return (
