@@ -10,6 +10,28 @@ const corsHeaders = {
 // Folly Beach coordinates
 const FOLLY_BEACH_LAT = 32.6552;
 const FOLLY_BEACH_LON = -79.9403;
+const FETCH_TIMEOUT = 15000; // 15 seconds
+
+// Helper function to fetch with timeout
+async function fetchWithTimeout(url: string, headers: Record<string, string>, timeout: number = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, { 
+      headers,
+      signal: controller.signal 
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -20,11 +42,23 @@ serve(async (req) => {
     console.log('=== FETCH WEATHER DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing Supabase environment variables');
+      const error = 'Missing Supabase environment variables';
+      console.error(error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -32,51 +66,100 @@ serve(async (req) => {
     console.log('Fetching weather data from NOAA...');
     console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
 
+    const requestHeaders = {
+      'User-Agent': 'SurfVista App (contact@surfvista.app)',
+      'Accept': 'application/geo+json'
+    };
+
     // Step 1: Get the grid point for Folly Beach
     const pointsUrl = `https://api.weather.gov/points/${FOLLY_BEACH_LAT},${FOLLY_BEACH_LON}`;
     console.log('Fetching grid point:', pointsUrl);
     
-    const pointsResponse = await fetch(pointsUrl, {
-      headers: {
-        'User-Agent': 'SurfVista App (contact@surfvista.app)',
-        'Accept': 'application/geo+json'
-      }
-    });
+    let pointsResponse;
+    try {
+      pointsResponse = await fetchWithTimeout(pointsUrl, requestHeaders);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
+      console.error('Failed to fetch grid point:', errorMsg);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch grid point: ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
+    }
 
     if (!pointsResponse.ok) {
       const errorText = await pointsResponse.text();
       console.error('NOAA Points API error:', pointsResponse.status, errorText);
-      throw new Error(`NOAA Points API error: ${pointsResponse.status} - ${errorText}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `NOAA Points API error: ${pointsResponse.status}`,
+          details: errorText.substring(0, 200),
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const pointsData = await pointsResponse.json();
-    console.log('Points data received:', JSON.stringify(pointsData.properties, null, 2));
+    console.log('Points data received');
     
     const forecastUrl = pointsData.properties.forecast;
     const forecastHourlyUrl = pointsData.properties.forecastHourly;
 
     console.log('Forecast URL:', forecastUrl);
-    console.log('Forecast Hourly URL:', forecastHourlyUrl);
 
     // Step 2: Get the forecast
-    const forecastResponse = await fetch(forecastUrl, {
-      headers: {
-        'User-Agent': 'SurfVista App (contact@surfvista.app)',
-        'Accept': 'application/geo+json'
-      }
-    });
+    let forecastResponse;
+    try {
+      forecastResponse = await fetchWithTimeout(forecastUrl, requestHeaders);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
+      console.error('Failed to fetch forecast:', errorMsg);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch forecast: ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
+    }
 
     if (!forecastResponse.ok) {
       const errorText = await forecastResponse.text();
       console.error('NOAA Forecast API error:', forecastResponse.status, errorText);
-      throw new Error(`NOAA Forecast API error: ${forecastResponse.status} - ${errorText}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `NOAA Forecast API error: ${forecastResponse.status}`,
+          details: errorText.substring(0, 200),
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const forecastData = await forecastResponse.json();
     const periods = forecastData.properties.periods;
 
     console.log(`Received ${periods.length} forecast periods`);
-    console.log('First period:', JSON.stringify(periods[0], null, 2));
 
     // Get current date in EST
     const now = new Date();
@@ -92,7 +175,6 @@ serve(async (req) => {
     const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     
     console.log('Current EST date:', today);
-    console.log('Current UTC time:', now.toISOString());
 
     // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
@@ -109,7 +191,7 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Upserting current weather data:', JSON.stringify(weatherData, null, 2));
+    console.log('Upserting current weather data');
 
     const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
@@ -118,10 +200,21 @@ serve(async (req) => {
 
     if (weatherError) {
       console.error('Error storing weather data:', weatherError);
-      throw weatherError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to store weather data in database',
+          details: weatherError.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
-    console.log('Weather data stored successfully:', weatherInsertData);
+    console.log('Weather data stored successfully');
 
     // Step 4: Store 7-day forecast
     const forecastRecords = [];
@@ -169,8 +262,6 @@ serve(async (req) => {
 
     if (deleteError) {
       console.error('Error deleting old forecasts:', deleteError);
-    } else {
-      console.log('Old forecasts deleted successfully');
     }
 
     // Insert new forecasts
@@ -181,7 +272,18 @@ serve(async (req) => {
 
     if (forecastError) {
       console.error('Error storing forecast data:', forecastError);
-      throw forecastError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to store forecast data in database',
+          details: forecastError.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     console.log(`Forecast data stored successfully: ${forecastInsertData?.length || 0} records`);

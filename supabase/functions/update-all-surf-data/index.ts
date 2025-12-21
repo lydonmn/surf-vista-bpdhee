@@ -6,6 +6,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const FUNCTION_TIMEOUT = 25000; // 25 seconds per function
+
+async function invokeFunctionWithTimeout(url: string, headers: Record<string, string>, timeout: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Function timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -15,11 +38,23 @@ serve(async (req) => {
     console.log('=== UPDATE ALL SURF DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error('Missing Supabase environment variables');
+      const error = 'Missing Supabase environment variables';
+      console.error(error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const results = {
@@ -30,23 +65,25 @@ serve(async (req) => {
     };
 
     const errors = [];
+    const requestHeaders = {
+      'Authorization': `Bearer ${supabaseAnonKey}`,
+      'Content-Type': 'application/json',
+    };
 
     // Step 1: Fetch weather data
     console.log('Step 1: Fetching weather data...');
     try {
-      const weatherResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-weather-data`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const weatherResponse = await invokeFunctionWithTimeout(
+        `${supabaseUrl}/functions/v1/fetch-weather-data`,
+        requestHeaders,
+        FUNCTION_TIMEOUT
+      );
 
       const weatherData = await weatherResponse.json();
       results.weather = weatherData;
       
       if (!weatherData.success) {
-        errors.push(`Weather: ${weatherData.error}`);
+        errors.push(`Weather: ${weatherData.error || 'Unknown error'}`);
         console.error('Weather fetch failed:', weatherData);
       } else {
         console.log('Weather data fetched successfully');
@@ -55,24 +92,23 @@ serve(async (req) => {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       errors.push(`Weather: ${errorMsg}`);
       console.error('Weather fetch error:', error);
+      results.weather = { success: false, error: errorMsg };
     }
 
     // Step 2: Fetch tide data
     console.log('Step 2: Fetching tide data...');
     try {
-      const tideResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-tide-data`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const tideResponse = await invokeFunctionWithTimeout(
+        `${supabaseUrl}/functions/v1/fetch-tide-data`,
+        requestHeaders,
+        FUNCTION_TIMEOUT
+      );
 
       const tideData = await tideResponse.json();
       results.tide = tideData;
       
       if (!tideData.success) {
-        errors.push(`Tide: ${tideData.error}`);
+        errors.push(`Tide: ${tideData.error || 'Unknown error'}`);
         console.error('Tide fetch failed:', tideData);
       } else {
         console.log('Tide data fetched successfully');
@@ -81,24 +117,23 @@ serve(async (req) => {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       errors.push(`Tide: ${errorMsg}`);
       console.error('Tide fetch error:', error);
+      results.tide = { success: false, error: errorMsg };
     }
 
     // Step 3: Fetch surf conditions
     console.log('Step 3: Fetching surf conditions...');
     try {
-      const surfResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-surf-reports`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const surfResponse = await invokeFunctionWithTimeout(
+        `${supabaseUrl}/functions/v1/fetch-surf-reports`,
+        requestHeaders,
+        FUNCTION_TIMEOUT
+      );
 
       const surfData = await surfResponse.json();
       results.surf = surfData;
       
       if (!surfData.success) {
-        errors.push(`Surf: ${surfData.error}`);
+        errors.push(`Surf: ${surfData.error || 'Unknown error'}`);
         console.error('Surf fetch failed:', surfData);
       } else {
         console.log('Surf conditions fetched successfully');
@@ -107,25 +142,24 @@ serve(async (req) => {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       errors.push(`Surf: ${errorMsg}`);
       console.error('Surf fetch error:', error);
+      results.surf = { success: false, error: errorMsg };
     }
 
     // Step 4: Generate daily report (only if we have the required data)
     if (results.weather?.success && results.surf?.success) {
       console.log('Step 4: Generating daily report...');
       try {
-        const reportResponse = await fetch(`${supabaseUrl}/functions/v1/generate-daily-report`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-        });
+        const reportResponse = await invokeFunctionWithTimeout(
+          `${supabaseUrl}/functions/v1/generate-daily-report`,
+          requestHeaders,
+          FUNCTION_TIMEOUT
+        );
 
         const reportData = await reportResponse.json();
         results.report = reportData;
         
         if (!reportData.success) {
-          errors.push(`Report: ${reportData.error}`);
+          errors.push(`Report: ${reportData.error || 'Unknown error'}`);
           console.error('Report generation failed:', reportData);
         } else {
           console.log('Daily report generated successfully');
@@ -134,15 +168,22 @@ serve(async (req) => {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         errors.push(`Report: ${errorMsg}`);
         console.error('Report generation error:', error);
+        results.report = { success: false, error: errorMsg };
       }
     } else {
-      const msg = 'Skipping report generation - missing required data';
+      const msg = 'Skipping report generation - missing required data (weather or surf)';
       errors.push(msg);
       console.log(msg);
+      results.report = { success: false, error: msg };
     }
 
     console.log('=== UPDATE ALL SURF DATA COMPLETED ===');
-    console.log('Results:', JSON.stringify(results, null, 2));
+    console.log('Results summary:', {
+      weather: results.weather?.success ? 'SUCCESS' : 'FAILED',
+      tide: results.tide?.success ? 'SUCCESS' : 'FAILED',
+      surf: results.surf?.success ? 'SUCCESS' : 'FAILED',
+      report: results.report?.success ? 'SUCCESS' : 'FAILED',
+    });
     console.log('Errors:', errors);
 
     const success = errors.length === 0;
@@ -152,7 +193,7 @@ serve(async (req) => {
         success,
         message: success 
           ? 'All surf data updated successfully' 
-          : 'Some updates failed',
+          : 'Some updates failed - see errors for details',
         results,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date().toISOString(),

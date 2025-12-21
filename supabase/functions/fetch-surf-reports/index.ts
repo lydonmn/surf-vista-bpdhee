@@ -9,6 +9,25 @@ const corsHeaders = {
 
 // NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
 const BUOY_ID = '41004';
+const FETCH_TIMEOUT = 15000; // 15 seconds
+
+// Helper function to fetch with timeout
+async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -19,11 +38,23 @@ serve(async (req) => {
     console.log('=== FETCH SURF REPORTS STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing Supabase environment variables');
+      const error = 'Missing Supabase environment variables';
+      console.error(error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -31,16 +62,44 @@ serve(async (req) => {
     console.log('Fetching surf conditions from NOAA Buoy...');
     console.log('Buoy ID:', BUOY_ID);
 
-    // Fetch latest buoy data
+    // Fetch latest buoy data with timeout
     const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
     console.log('Fetching buoy data:', buoyUrl);
 
-    const buoyResponse = await fetch(buoyUrl);
+    let buoyResponse;
+    try {
+      buoyResponse = await fetchWithTimeout(buoyUrl);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
+      console.error('Failed to fetch buoy data:', errorMsg);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch buoy data: ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
+    }
 
     if (!buoyResponse.ok) {
       const errorText = await buoyResponse.text();
       console.error('NOAA Buoy API error:', buoyResponse.status, errorText);
-      throw new Error(`NOAA Buoy API error: ${buoyResponse.status} - ${errorText}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `NOAA Buoy API error: ${buoyResponse.status}`,
+          details: errorText.substring(0, 200),
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const buoyText = await buoyResponse.text();
@@ -51,7 +110,19 @@ serve(async (req) => {
 
     // Skip header lines (first 2 lines)
     if (lines.length < 3) {
-      throw new Error('Insufficient buoy data');
+      console.error('Insufficient buoy data');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Insufficient buoy data received',
+          lines: lines.length,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     // Parse the most recent data line (line 2, after headers)
@@ -149,7 +220,18 @@ serve(async (req) => {
     if (surfError) {
       console.error('Error storing surf data:', surfError);
       console.error('Error details:', JSON.stringify(surfError, null, 2));
-      throw surfError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to store surf data in database',
+          details: surfError.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     console.log('Surf conditions stored successfully:', insertData);

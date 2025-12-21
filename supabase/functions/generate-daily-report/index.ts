@@ -16,11 +16,23 @@ serve(async (req) => {
     console.log('=== GENERATE DAILY REPORT STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing Supabase environment variables');
+      const error = 'Missing Supabase environment variables';
+      console.error(error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -54,7 +66,6 @@ serve(async (req) => {
     console.log('Surf conditions result:', {
       error: surfResult.error,
       hasData: !!surfResult.data,
-      data: surfResult.data
     });
 
     console.log('Fetching weather data...');
@@ -67,7 +78,6 @@ serve(async (req) => {
     console.log('Weather data result:', {
       error: weatherResult.error,
       hasData: !!weatherResult.data,
-      data: weatherResult.data
     });
 
     console.log('Fetching tide data...');
@@ -80,22 +90,54 @@ serve(async (req) => {
     console.log('Tide data result:', {
       error: tideResult.error,
       count: tideResult.data?.length || 0,
-      data: tideResult.data
     });
 
     if (surfResult.error) {
       console.error('Error fetching surf conditions:', surfResult.error);
-      throw surfResult.error;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to fetch surf conditions',
+          details: surfResult.error.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     if (weatherResult.error) {
       console.error('Error fetching weather:', weatherResult.error);
-      throw weatherResult.error;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to fetch weather data',
+          details: weatherResult.error.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     if (tideResult.error) {
       console.error('Error fetching tides:', tideResult.error);
-      throw tideResult.error;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to fetch tide data',
+          details: tideResult.error.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const surfData = surfResult.data;
@@ -115,7 +157,17 @@ serve(async (req) => {
       
       const errorMsg = `Missing required data for report generation: ${missingData.join(', ')}`;
       console.error(errorMsg);
-      throw new Error(errorMsg);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: errorMsg,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     // Generate tide summary
@@ -128,7 +180,7 @@ serve(async (req) => {
 
     // Generate report text
     const reportText = generateReportText(surfData, weatherData, tideSummary, rating);
-    console.log('Generated report text:', reportText);
+    console.log('Generated report text length:', reportText.length);
 
     // Create the surf report
     const surfReport = {
@@ -145,7 +197,7 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Generated surf report:', JSON.stringify(surfReport, null, 2));
+    console.log('Storing surf report...');
 
     // Store the report
     const { data: insertData, error: reportError } = await supabase
@@ -155,11 +207,21 @@ serve(async (req) => {
 
     if (reportError) {
       console.error('Error storing surf report:', reportError);
-      console.error('Error details:', JSON.stringify(reportError, null, 2));
-      throw reportError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to store surf report in database',
+          details: reportError.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
-    console.log('Surf report stored successfully:', insertData);
+    console.log('Surf report stored successfully');
     console.log('=== GENERATE DAILY REPORT COMPLETED ===');
 
     return new Response(

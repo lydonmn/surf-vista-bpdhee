@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -118,8 +118,23 @@ export default function ReportScreen() {
 
   const handleUpdateData = async () => {
     setIsRefreshing(true);
-    await updateAllData();
-    setIsRefreshing(false);
+    try {
+      await updateAllData();
+      Alert.alert(
+        'Update Complete',
+        'Surf data has been updated from NOAA. Pull down to refresh the display.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Update error:', error);
+      Alert.alert(
+        'Update Failed',
+        'Failed to update surf data. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handleVideoPress = React.useCallback(() => {
@@ -494,7 +509,13 @@ export default function ReportScreen() {
             size={24}
             color="#FFFFFF"
           />
-          <Text style={styles.errorText}>{error}</Text>
+          <View style={styles.errorTextContainer}>
+            <Text style={styles.errorText}>Edge Function returned a non-2xx status code</Text>
+            <Text style={styles.errorSubtext}>
+              This usually means the NOAA data sources are temporarily unavailable or timing out. 
+              Please try again in a few minutes.
+            </Text>
+          </View>
         </View>
       )}
 
@@ -735,17 +756,26 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
     gap: 12,
   },
-  errorText: {
+  errorTextContainer: {
     flex: 1,
+  },
+  errorText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+    marginBottom: 4,
+  },
+  errorSubtext: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    lineHeight: 18,
+    opacity: 0.9,
   },
   emptyCard: {
     alignItems: 'center',

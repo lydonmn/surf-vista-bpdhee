@@ -9,6 +9,25 @@ const corsHeaders = {
 
 // NOAA Station ID for Folly Beach (Charleston Harbor)
 const STATION_ID = '8665530'; // Charleston, Cooper River Entrance
+const FETCH_TIMEOUT = 15000; // 15 seconds
+
+// Helper function to fetch with timeout
+async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    throw error;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -19,11 +38,23 @@ serve(async (req) => {
     console.log('=== FETCH TIDE DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing Supabase environment variables');
+      const error = 'Missing Supabase environment variables';
+      console.error(error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -56,12 +87,40 @@ serve(async (req) => {
 
     console.log('Fetching tide predictions:', tideUrl);
 
-    const tideResponse = await fetch(tideUrl);
+    let tideResponse;
+    try {
+      tideResponse = await fetchWithTimeout(tideUrl);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
+      console.error('Failed to fetch tide data:', errorMsg);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch tide data: ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
+    }
 
     if (!tideResponse.ok) {
       const errorText = await tideResponse.text();
       console.error('NOAA Tides API error:', tideResponse.status, errorText);
-      throw new Error(`NOAA Tides API error: ${tideResponse.status} - ${errorText}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `NOAA Tides API error: ${tideResponse.status}`,
+          details: errorText.substring(0, 200),
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     const tideData = await tideResponse.json();
@@ -114,7 +173,7 @@ serve(async (req) => {
       };
     });
 
-    console.log(`Inserting ${tideRecords.length} tide records:`, JSON.stringify(tideRecords, null, 2));
+    console.log(`Inserting ${tideRecords.length} tide records`);
 
     const { data: insertData, error: tideError } = await supabase
       .from('tide_data')
@@ -123,7 +182,18 @@ serve(async (req) => {
 
     if (tideError) {
       console.error('Error storing tide data:', tideError);
-      throw tideError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to store tide data in database',
+          details: tideError.message,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
 
     console.log(`Tide data stored successfully: ${insertData?.length || 0} records`);
