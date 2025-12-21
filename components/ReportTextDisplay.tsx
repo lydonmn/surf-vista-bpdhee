@@ -89,27 +89,29 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
         const parts = parseTextWithBold(sentence.trim());
         
         return (
-          <View key={`sentence-${sentenceIndex}`}>
-            <Text
-              style={[
-                styles.sentence,
-                { color: colors.reportText },
-                isCustom && styles.customSentence
-              ]}
-            >
-              {parts.map((part, partIndex) => (
-                <Text
-                  key={`sentence-${sentenceIndex}-part-${partIndex}`}
-                  style={[
-                    part.bold && styles.boldText,
-                    part.bold && { color: colors.reportBoldText }
-                  ]}
-                >
-                  {part.text}
-                </Text>
-              ))}
-            </Text>
-          </View>
+          <React.Fragment key={`sentence-${sentenceIndex}-${sentence.substring(0, 20)}`}>
+            <View>
+              <Text
+                style={[
+                  styles.sentence,
+                  { color: colors.reportText },
+                  isCustom && styles.customSentence
+                ]}
+              >
+                {parts.map((part, partIndex) => (
+                  <Text
+                    key={`part-${sentenceIndex}-${partIndex}-${part.text.substring(0, 10)}`}
+                    style={[
+                      part.bold && styles.boldText,
+                      part.bold && { color: colors.reportBoldText }
+                    ]}
+                  >
+                    {part.text}
+                  </Text>
+                ))}
+              </Text>
+            </View>
+          </React.Fragment>
         );
       })}
     </View>
