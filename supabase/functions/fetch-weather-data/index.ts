@@ -187,7 +187,7 @@ serve(async (req) => {
     // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
     
-    // Match the existing database schema
+    // Match the existing database schema - convert numeric fields to strings
     const weatherData = {
       date: today,
       temperature: currentPeriod.temperature.toString(),
@@ -262,7 +262,7 @@ serve(async (req) => {
           icon: period.icon,
           wind_speed: parseInt(period.windSpeed.split(' ')[0]) || 0,
           wind_direction: period.windDirection,
-          precipitation_chance: 0,
+          precipitation_chance: period.probabilityOfPrecipitation?.value || 0,
           humidity: 0,
           swell_height_min: null,
           swell_height_max: null,
@@ -288,30 +288,29 @@ serve(async (req) => {
       if (period.isDaytime) {
         dailyData.conditions = period.shortForecast;
         dailyData.icon = period.icon;
+        dailyData.day_name = period.name;
       }
     }
 
     const forecastRecords = Array.from(dailyForecasts.values());
     console.log(`Prepared ${forecastRecords.length} daily forecast records`);
 
-    // Delete old forecasts first (older than 2 days ago)
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
-    
+    // Delete ALL old forecasts first to prevent duplicates
     const { error: deleteError } = await supabase
       .from('weather_forecast')
       .delete()
-      .lt('date', twoDaysAgoStr);
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
 
     if (deleteError) {
       console.error('Error deleting old forecasts:', deleteError);
+    } else {
+      console.log('Deleted all old forecast records');
     }
 
-    // Insert new forecasts (remove period_name from conflict to avoid duplicates)
+    // Insert new forecasts
     const { data: forecastInsertData, error: forecastError } = await supabase
       .from('weather_forecast')
-      .upsert(forecastRecords, { onConflict: 'date' })
+      .insert(forecastRecords)
       .select();
 
     if (forecastError) {

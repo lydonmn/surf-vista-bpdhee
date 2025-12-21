@@ -36,27 +36,29 @@ function getESTDate(): string {
 }
 
 // Helper function to calculate surf height from wave height
-// IMPORTANT: Surf height (rideable face) should NEVER exceed wave height
-// Surf height is typically 0.5-0.8x the significant wave height for most conditions
+// CRITICAL: Surf height (rideable face) is ALWAYS LESS than wave height
+// Wave height = significant wave height from buoy (trough to crest)
+// Surf height = rideable face height (what surfers actually ride)
+// Surf height is typically 0.4-0.7x the significant wave height
 function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
   // Convert to feet first
   const waveHeightFt = waveHeightMeters * 3.28084;
   
-  // Surf height is the rideable face, which is typically LESS than the significant wave height
-  // The multiplier depends on wave period and quality:
-  // - Short period (< 8s) = choppy, smaller rideable faces (0.5-0.6x wave height)
-  // - Medium period (8-12s) = decent faces (0.6-0.7x wave height)
-  // - Long period (> 12s) = clean, larger faces (0.7-0.8x wave height)
+  // Surf height multipliers based on wave period
+  // These are ALWAYS less than 1.0 to ensure surf height < wave height
+  // - Short period (< 8s) = choppy, smaller rideable faces (0.4-0.5x wave height)
+  // - Medium period (8-12s) = decent faces (0.5-0.6x wave height)
+  // - Long period (> 12s) = clean, larger faces (0.6-0.7x wave height)
   
-  let multiplierMin = 0.5;
-  let multiplierMax = 0.6;
+  let multiplierMin = 0.4;
+  let multiplierMax = 0.5;
   
   if (periodSeconds >= 12) {
-    multiplierMin = 0.7;
-    multiplierMax = 0.8;
-  } else if (periodSeconds >= 8) {
     multiplierMin = 0.6;
     multiplierMax = 0.7;
+  } else if (periodSeconds >= 8) {
+    multiplierMin = 0.5;
+    multiplierMax = 0.6;
   }
   
   const surfHeightMin = waveHeightFt * multiplierMin;
@@ -66,9 +68,9 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   const roundedMin = Math.round(surfHeightMin * 2) / 2;
   const roundedMax = Math.round(surfHeightMax * 2) / 2;
   
-  // Ensure surf height never exceeds wave height
-  const cappedMin = Math.min(roundedMin, waveHeightFt);
-  const cappedMax = Math.min(roundedMax, waveHeightFt);
+  // CRITICAL: Ensure surf height NEVER exceeds wave height
+  const cappedMin = Math.min(roundedMin, waveHeightFt * 0.95); // Cap at 95% of wave height
+  const cappedMax = Math.min(roundedMax, waveHeightFt * 0.95);
   
   // Format display string
   let display: string;
@@ -89,7 +91,8 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
     roundedMax: roundedMax.toFixed(1),
     cappedMin: cappedMin.toFixed(1),
     cappedMax: cappedMax.toFixed(1),
-    display
+    display,
+    verification: `Surf height (${display}) < Wave height (${waveHeightFt.toFixed(1)} ft): ${cappedMax < waveHeightFt}`
   });
   
   return {
