@@ -17,10 +17,27 @@ function parseLocalDate(dateStr: string): Date {
   return new Date(year, month - 1, day);
 }
 
+// Helper function to get today's date in YYYY-MM-DD format
+function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to get day name from date string
-function getDayName(dateStr: string, index: number): string {
-  if (index === 0) return 'Today';
+function getDayName(dateStr: string): string {
+  const today = getTodayDateString();
+  if (dateStr === today) return 'Today';
+  
   const date = parseLocalDate(dateStr);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  
+  if (dateStr === tomorrowStr) return 'Tomorrow';
+  
   return date.toLocaleDateString('en-US', { weekday: 'short' });
 }
 
@@ -104,7 +121,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
         contentContainerStyle={styles.forecastScroll}
       >
         {filteredForecast.map((day, index) => {
-          const dayName = getDayName(day.date, index);
+          const dayName = getDayName(day.date);
           
           // Get swell size range or use default
           const swellRange = day.swell_height_range || '1-2 ft';

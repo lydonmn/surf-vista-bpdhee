@@ -24,10 +24,27 @@ function parseLocalDate(dateStr: string): Date {
   return new Date(year, month - 1, day);
 }
 
+// Helper function to get today's date in YYYY-MM-DD format
+function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to get day name from date string
-function getDayName(dateStr: string, index: number): string {
-  if (index === 0) return 'Today';
+function getDayName(dateStr: string): string {
+  const today = getTodayDateString();
+  if (dateStr === today) return 'Today';
+  
   const date = parseLocalDate(dateStr);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  
+  if (dateStr === tomorrowStr) return 'Tomorrow';
+  
   return date.toLocaleDateString('en-US', { weekday: 'long' });
 }
 
@@ -58,7 +75,7 @@ export default function ForecastScreen() {
       if (!forecastMap.has(report.date)) {
         forecastMap.set(report.date, {
           date: report.date,
-          dayName: getDayName(report.date, 0),
+          dayName: getDayName(report.date),
           surfReport: report,
           weatherForecast: null,
           tides: [],
@@ -74,7 +91,7 @@ export default function ForecastScreen() {
       if (!forecastMap.has(forecast.date)) {
         forecastMap.set(forecast.date, {
           date: forecast.date,
-          dayName: getDayName(forecast.date, 0),
+          dayName: getDayName(forecast.date),
           surfReport: null,
           weatherForecast: forecast,
           tides: [],
@@ -230,9 +247,8 @@ export default function ForecastScreen() {
             </Text>
           </View>
         ) : (
-          combinedForecast.map((day, index) => {
+          combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
-            const dayName = getDayName(day.date, index);
 
             return (
               <View
@@ -246,7 +262,7 @@ export default function ForecastScreen() {
                 >
                   <View style={styles.dayHeaderLeft}>
                     <Text style={[styles.dayName, { color: theme.colors.text }]}>
-                      {dayName}
+                      {day.dayName}
                     </Text>
                     <Text style={[styles.dayDate, { color: colors.textSecondary }]}>
                       {formatDate(day.date)}
