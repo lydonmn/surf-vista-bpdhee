@@ -12,6 +12,17 @@ const FOLLY_BEACH_LAT = 32.6552;
 const FOLLY_BEACH_LON = -79.9403;
 const FETCH_TIMEOUT = 15000; // 15 seconds
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  // Convert to EST by subtracting 5 hours (EST is UTC-5)
+  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
+  const year = estTime.getUTCFullYear();
+  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(estTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to fetch with timeout
 async function fetchWithTimeout(url: string, headers: Record<string, string>, timeout: number = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -162,19 +173,9 @@ serve(async (req) => {
     console.log(`Received ${periods.length} forecast periods`);
 
     // Get current date in EST
-    const now = new Date();
-    const estDateString = now.toLocaleString('en-US', { 
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    
-    // Parse the EST date string (format: MM/DD/YYYY)
-    const [month, day, year] = estDateString.split('/');
-    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    
+    const today = getESTDate();
     console.log('Current EST date:', today);
+    console.log('Current UTC time:', new Date().toISOString());
 
     // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
@@ -191,7 +192,7 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Upserting current weather data');
+    console.log('Upserting current weather data for date:', today);
 
     const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
@@ -222,16 +223,14 @@ serve(async (req) => {
     for (let i = 0; i < Math.min(periods.length, 14); i++) {
       const period = periods[i];
       
-      // Parse the start time to get the date
+      // Parse the start time to get the date in EST
       const periodDate = new Date(period.startTime);
-      const periodDateStr = periodDate.toLocaleDateString('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      const [pMonth, pDay, pYear] = periodDateStr.split('/');
-      const formattedDate = `${pYear}-${pMonth.padStart(2, '0')}-${pDay.padStart(2, '0')}`;
+      // Convert to EST by subtracting 5 hours
+      const estPeriodDate = new Date(periodDate.getTime() - (5 * 60 * 60 * 1000));
+      const year = estPeriodDate.getUTCFullYear();
+      const month = String(estPeriodDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(estPeriodDate.getUTCDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
       
       forecastRecords.push({
         date: formattedDate,

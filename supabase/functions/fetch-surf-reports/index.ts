@@ -11,6 +11,17 @@ const corsHeaders = {
 const BUOY_ID = '41004';
 const FETCH_TIMEOUT = 15000; // 15 seconds
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  // Convert to EST by subtracting 5 hours (EST is UTC-5)
+  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
+  const year = estTime.getUTCFullYear();
+  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(estTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to fetch with timeout
 async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -182,19 +193,9 @@ serve(async (req) => {
       : 'N/A';
 
     // Get current date in EST
-    const now = new Date();
-    const estDateString = now.toLocaleString('en-US', { 
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    
-    // Parse the EST date string (format: MM/DD/YYYY)
-    const [eMonth, eDay, eYear] = estDateString.split('/');
-    const today = `${eYear}-${eMonth.padStart(2, '0')}-${eDay.padStart(2, '0')}`;
-    
+    const today = getESTDate();
     console.log('Current EST date:', today);
+    console.log('Current UTC time:', new Date().toISOString());
 
     // Store the raw buoy data
     const surfData = {
@@ -210,77 +211,6 @@ serve(async (req) => {
     };
 
     console.log('Storing surf data:', JSON.stringify(surfData, null, 2));
-
-    // First, check if surf_conditions table exists
-    console.log('Checking if surf_conditions table exists...');
-    const { error: tableCheckError } = await supabase
-      .from('surf_conditions')
-      .select('id')
-      .limit(1);
-
-    if (tableCheckError) {
-      console.error('surf_conditions table does not exist or is not accessible:', tableCheckError);
-      console.log('Attempting to create surf_conditions table...');
-      
-      // Try to create the table
-      const { error: createError } = await supabase.rpc('exec_sql', {
-        sql: `
-          CREATE TABLE IF NOT EXISTS public.surf_conditions (
-            id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-            date date NOT NULL UNIQUE,
-            wave_height text,
-            wave_period text,
-            swell_direction text,
-            wind_speed text,
-            wind_direction text,
-            water_temp text,
-            buoy_id text,
-            updated_at timestamptz DEFAULT now(),
-            created_at timestamptz DEFAULT now()
-          );
-          
-          ALTER TABLE public.surf_conditions ENABLE ROW LEVEL SECURITY;
-          
-          DROP POLICY IF EXISTS "Allow public read access to surf_conditions" ON public.surf_conditions;
-          CREATE POLICY "Allow public read access to surf_conditions"
-            ON public.surf_conditions
-            FOR SELECT
-            TO public
-            USING (true);
-          
-          DROP POLICY IF EXISTS "Allow service role full access to surf_conditions" ON public.surf_conditions;
-          CREATE POLICY "Allow service role full access to surf_conditions"
-            ON public.surf_conditions
-            FOR ALL
-            TO service_role
-            USING (true)
-            WITH CHECK (true);
-          
-          CREATE INDEX IF NOT EXISTS idx_surf_conditions_date ON public.surf_conditions(date DESC);
-          
-          GRANT SELECT ON public.surf_conditions TO anon, authenticated;
-          GRANT ALL ON public.surf_conditions TO service_role;
-        `
-      });
-      
-      if (createError) {
-        console.error('Failed to create surf_conditions table:', createError);
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: 'surf_conditions table does not exist and could not be created',
-            details: createError.message,
-            timestamp: new Date().toISOString(),
-          }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 500,
-          }
-        );
-      }
-      
-      console.log('surf_conditions table created successfully');
-    }
 
     // Store in surf_conditions table
     const { data: insertData, error: surfError } = await supabase

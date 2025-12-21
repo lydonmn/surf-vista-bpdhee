@@ -7,6 +7,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  // Convert to EST by subtracting 5 hours (EST is UTC-5)
+  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
+  const year = estTime.getUTCFullYear();
+  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(estTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -40,20 +51,9 @@ serve(async (req) => {
     console.log('Generating daily surf report for Folly Beach, SC...');
 
     // Get current date in EST
-    const now = new Date();
-    const estDateString = now.toLocaleString('en-US', { 
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    
-    // Parse the EST date string (format: MM/DD/YYYY)
-    const [month, day, year] = estDateString.split('/');
-    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    
+    const today = getESTDate();
     console.log('Current EST date:', today);
-    console.log('Current UTC time:', now.toISOString());
+    console.log('Current UTC time:', new Date().toISOString());
 
     // Fetch all the data we need
     console.log('Fetching surf conditions...');

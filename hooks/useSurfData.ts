@@ -22,6 +22,17 @@ interface SurfDataState {
 const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
 const RETRY_DELAY = 5000; // 5 seconds
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  // Convert to EST by subtracting 5 hours (EST is UTC-5)
+  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
+  const year = estTime.getUTCFullYear();
+  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(estTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function useSurfData() {
   const [state, setState] = useState<SurfDataState>({
     surfReports: [],
@@ -47,20 +58,10 @@ export function useSurfData() {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
       // Get current date in EST
-      const now = new Date();
-      const estDateString = now.toLocaleString('en-US', { 
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      
-      // Parse the EST date string (format: MM/DD/YYYY)
-      const [month, day, year] = estDateString.split('/');
-      const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      const today = getESTDate();
       
       console.log('[useSurfData] Fetching data for EST date:', today);
-      console.log('[useSurfData] Current UTC time:', now.toISOString());
+      console.log('[useSurfData] Current UTC time:', new Date().toISOString());
 
       // Fetch all data in parallel
       const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
