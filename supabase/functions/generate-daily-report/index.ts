@@ -375,8 +375,9 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   // Water temperature
   report += `Water temperature is ${surfData.water_temp}. `;
 
-  // Weather
-  report += `${weatherData.short_forecast}. `;
+  // Weather - use the conditions field from weather_data
+  const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
+  report += `${weatherConditions}. `;
 
   // Tide info
   report += `Tides: ${tideSummary}.`;

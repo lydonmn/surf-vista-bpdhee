@@ -180,19 +180,27 @@ serve(async (req) => {
     // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
     
+    // Match the existing database schema
     const weatherData = {
       date: today,
-      temperature: currentPeriod.temperature,
-      temperature_unit: currentPeriod.temperatureUnit,
-      wind_speed: currentPeriod.windSpeed,
+      temperature: currentPeriod.temperature.toString(),
+      feels_like: currentPeriod.temperature.toString(),
+      humidity: 0,
+      wind_speed: currentPeriod.windSpeed.split(' ')[0], // Extract just the number
       wind_direction: currentPeriod.windDirection,
-      short_forecast: currentPeriod.shortForecast,
-      detailed_forecast: currentPeriod.detailedForecast,
-      icon: currentPeriod.icon,
+      wind_gust: '0',
+      pressure: '0',
+      visibility: '10',
+      conditions: currentPeriod.shortForecast,
+      forecast: currentPeriod.detailedForecast,
+      raw_data: {
+        forecast: currentPeriod
+      },
       updated_at: new Date().toISOString(),
     };
 
     console.log('Upserting current weather data for date:', today);
+    console.log('Weather data to insert:', JSON.stringify(weatherData, null, 2));
 
     const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
@@ -201,6 +209,7 @@ serve(async (req) => {
 
     if (weatherError) {
       console.error('Error storing weather data:', weatherError);
+      console.error('Error details:', JSON.stringify(weatherError, null, 2));
       return new Response(
         JSON.stringify({
           success: false,
@@ -215,7 +224,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Weather data stored successfully');
+    console.log('Weather data stored successfully:', weatherInsertData);
 
     // Step 4: Store 7-day forecast
     const forecastRecords = [];
@@ -237,7 +246,7 @@ serve(async (req) => {
         period_name: period.name,
         temperature: period.temperature,
         temperature_unit: period.temperatureUnit,
-        wind_speed: period.windSpeed,
+        wind_speed: period.windSpeed.split(' ')[0], // Extract just the number
         wind_direction: period.windDirection,
         short_forecast: period.shortForecast,
         detailed_forecast: period.detailedForecast,
