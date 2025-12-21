@@ -19,7 +19,26 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
     firstItem: forecast?.[0]
   });
 
-  if (!forecast || forecast.length === 0) {
+  // Filter to only show entries with aggregated data (high_temp and low_temp present)
+  // and remove duplicates by date
+  const filteredForecast = forecast
+    ?.filter(day => day.high_temp !== null && day.low_temp !== null)
+    .reduce((acc, current) => {
+      // Only add if we don't already have this date
+      if (!acc.find(item => item.date === current.date)) {
+        acc.push(current);
+      }
+      return acc;
+    }, [] as WeatherForecast[])
+    .slice(0, 7); // Limit to 7 days
+
+  console.log('[WeeklyForecast] Filtered forecast:', {
+    originalCount: forecast?.length || 0,
+    filteredCount: filteredForecast?.length || 0,
+    dates: filteredForecast?.map(d => d.date)
+  });
+
+  if (!filteredForecast || filteredForecast.length === 0) {
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.header}>
@@ -70,7 +89,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.forecastScroll}
       >
-        {forecast.map((day, index) => {
+        {filteredForecast.map((day, index) => {
           const date = new Date(day.date);
           const dayName = day.day_name || date.toLocaleDateString('en-US', { weekday: 'short' });
           
@@ -83,6 +102,8 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
             conditions: day.conditions,
             swellRange,
             dayName,
+            highTemp: day.high_temp,
+            lowTemp: day.low_temp,
             precipChance: day.precipitation_chance
           });
           

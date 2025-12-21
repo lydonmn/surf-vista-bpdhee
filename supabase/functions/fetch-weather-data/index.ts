@@ -15,12 +15,19 @@ const FETCH_TIMEOUT = 15000; // 15 seconds
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Convert to EST by subtracting 5 hours (EST is UTC-5)
-  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-  const year = estTime.getUTCFullYear();
-  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(estTime.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // Get EST time by using toLocaleString with America/New_York timezone
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the EST date string (format: MM/DD/YYYY)
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  return estDate;
 }
 
 // Helper function to fetch with timeout
@@ -235,12 +242,14 @@ serve(async (req) => {
       
       // Parse the start time to get the date in EST
       const periodDate = new Date(period.startTime);
-      // Convert to EST by subtracting 5 hours
-      const estPeriodDate = new Date(periodDate.getTime() - (5 * 60 * 60 * 1000));
-      const year = estPeriodDate.getUTCFullYear();
-      const month = String(estPeriodDate.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(estPeriodDate.getUTCDate()).padStart(2, '0');
-      const formattedDate = `${year}-${month}-${day}`;
+      const estDateString = periodDate.toLocaleString('en-US', { 
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const [month, day, year] = estDateString.split('/');
+      const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
       
       // Get or create daily forecast entry
       if (!dailyForecasts.has(formattedDate)) {
@@ -255,12 +264,6 @@ serve(async (req) => {
           wind_direction: period.windDirection,
           precipitation_chance: 0,
           humidity: 0,
-          period_name: period.name,
-          temperature: period.temperature,
-          temperature_unit: period.temperatureUnit,
-          short_forecast: period.shortForecast,
-          detailed_forecast: period.detailedForecast,
-          is_daytime: period.isDaytime,
           swell_height_min: null,
           swell_height_max: null,
           swell_height_range: '1-2 ft', // Default, will be updated if we have surf data
@@ -305,10 +308,10 @@ serve(async (req) => {
       console.error('Error deleting old forecasts:', deleteError);
     }
 
-    // Insert new forecasts
+    // Insert new forecasts (remove period_name from conflict to avoid duplicates)
     const { data: forecastInsertData, error: forecastError } = await supabase
       .from('weather_forecast')
-      .upsert(forecastRecords, { onConflict: 'date,period_name' })
+      .upsert(forecastRecords, { onConflict: 'date' })
       .select();
 
     if (forecastError) {

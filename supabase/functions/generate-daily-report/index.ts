@@ -10,12 +10,19 @@ const corsHeaders = {
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Convert to EST by subtracting 5 hours (EST is UTC-5)
-  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-  const year = estTime.getUTCFullYear();
-  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(estTime.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // Get EST time by using toLocaleString with America/New_York timezone
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the EST date string (format: MM/DD/YYYY)
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  return estDate;
 }
 
 serve(async (req) => {
@@ -395,36 +402,36 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   const swellDir = surfData.swell_direction;
   const period = surfData.wave_period;
 
-  // Variety arrays for different phrases
+  // Variety arrays for different phrases - UPDATED with new phrases each time
   const openings = [
-    { min: 8, phrases: ['Epic day at Folly!', 'Firing at Folly Beach!', 'Get out there!', 'Stellar conditions today!'] },
-    { min: 6, phrases: ['Solid surf at Folly.', 'Looking good out there.', 'Worth the paddle.', 'Nice conditions today.'] },
-    { min: 4, phrases: ['Fair conditions at Folly.', 'Decent enough to get wet.', 'Not bad, not great.', 'Rideable waves today.'] },
-    { min: 0, phrases: ['Slim pickings today.', 'Patience required.', 'Better days ahead.', 'Tough conditions out there.'] }
+    { min: 8, phrases: ['Stoked at Folly!', 'Pumping conditions!', 'Score at the beach!', 'Prime time at Folly!'] },
+    { min: 6, phrases: ['Decent waves rolling in.', 'Solid session ahead.', 'Looking rideable.', 'Worth checking out.'] },
+    { min: 4, phrases: ['Marginal but surfable.', 'Small but clean enough.', 'Beggars can&apos;t be choosers.', 'Better than nothing.'] },
+    { min: 0, phrases: ['Flat spell continues.', 'Minimal action today.', 'Patience, grasshopper.', 'Check back tomorrow.'] }
   ];
 
   const waveDescriptions = [
-    { min: 7, clean: ['pumping', 'cranking', 'firing', 'going off'], rough: ['big and messy', 'chunky', 'beefy but bumpy'] },
-    { min: 4, clean: ['rolling in nicely', 'looking fun', 'peeling well', 'offering some rides'], rough: ['choppy', 'wind-affected', 'bumpy', 'textured'] },
-    { min: 2, clean: ['small but clean', 'knee-high gems', 'mellow rollers'], rough: ['wind chop', 'mushy', 'struggling'] },
-    { min: 0, clean: ['barely there', 'ankle-slappers', 'flat as a lake'], rough: ['blown out', 'unfriendly', 'a mess'] }
+    { min: 7, clean: ['overhead and clean', 'solid sets', 'proper waves', 'head-high beauties'], rough: ['big but junky', 'size without quality', 'powerful but messy'] },
+    { min: 4, clean: ['chest-high and fun', 'shoulder-high peelers', 'waist-to-chest high', 'playful waves'], rough: ['wind-affected', 'bumpy faces', 'textured surf', 'challenging conditions'] },
+    { min: 2, clean: ['knee-high rollers', 'small but shapely', 'ankle-to-knee high'], rough: ['wind slop', 'choppy mess', 'barely rideable'] },
+    { min: 0, clean: ['flat as glass', 'no swell', 'lake-like'], rough: ['blown out flat', 'nothing happening', 'zero surf'] }
   ];
 
   const windPhrases = {
-    offshore_light: ['glassy offshore', 'light offshore breeze', 'grooming winds', 'offshore perfection'],
-    offshore_strong: ['strong offshore', 'howling offshore', 'wind-groomed but strong'],
-    onshore_light: ['light onshore', 'gentle onshore', 'slight texture from the east'],
-    onshore_strong: ['choppy onshore', 'blown out', 'wind-ravaged', 'textured by onshore winds']
+    offshore_light: ['light offshore winds', 'gentle offshore breeze', 'offshore grooming', 'clean offshore'],
+    offshore_strong: ['strong offshore', 'howling offshore', 'offshore but gusty'],
+    onshore_light: ['light onshore', 'slight texture', 'gentle onshore'],
+    onshore_strong: ['blown out', 'choppy onshore', 'wind-ravaged', 'onshore mess']
   };
 
   const periodComments = [
-    { min: 12, phrases: ['Long-period swell', 'Quality groundswell', 'Clean lines'] },
-    { min: 8, phrases: ['Decent period', 'Moderate swell', 'Fair interval'] },
-    { min: 0, phrases: ['Short-period chop', 'Wind swell', 'Quick interval'] }
+    { min: 12, phrases: ['Long-interval swell', 'Quality groundswell', 'Well-spaced sets'] },
+    { min: 8, phrases: ['Moderate period', 'Decent interval', 'Fair spacing'] },
+    { min: 0, phrases: ['Short-period wind swell', 'Quick interval', 'Choppy period'] }
   ];
 
   // Select opening based on rating
-  let opening = 'Conditions at Folly Beach.';
+  let opening = 'Conditions at Folly.';
   for (const o of openings) {
     if (rating >= o.min) {
       opening = o.phrases[Math.floor(Math.random() * o.phrases.length)];
@@ -481,7 +488,7 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   report += `${windPhrase.charAt(0).toUpperCase() + windPhrase.slice(1)} at ${surfData.wind_speed} from ${windDir}. `;
 
   // Water temp
-  report += `Water's ${surfData.water_temp}. `;
+  report += `Water&apos;s ${surfData.water_temp}. `;
 
   // Weather
   const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';

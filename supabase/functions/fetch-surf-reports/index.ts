@@ -36,26 +36,27 @@ function getESTDate(): string {
 }
 
 // Helper function to calculate surf height from wave height
-// Surf height (face height) is typically 1.5-2x the significant wave height
-// depending on wave period and swell quality
+// IMPORTANT: Surf height (rideable face) should NEVER exceed wave height
+// Surf height is typically 0.5-0.8x the significant wave height for most conditions
 function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
   // Convert to feet first
   const waveHeightFt = waveHeightMeters * 3.28084;
   
-  // Longer period swells produce larger, cleaner faces
-  // Short period (< 8s) = choppy, smaller faces (1.3-1.5x)
-  // Medium period (8-12s) = decent faces (1.5-1.7x)
-  // Long period (> 12s) = clean, larger faces (1.7-2x)
+  // Surf height is the rideable face, which is typically LESS than the significant wave height
+  // The multiplier depends on wave period and quality:
+  // - Short period (< 8s) = choppy, smaller rideable faces (0.5-0.6x wave height)
+  // - Medium period (8-12s) = decent faces (0.6-0.7x wave height)
+  // - Long period (> 12s) = clean, larger faces (0.7-0.8x wave height)
   
-  let multiplierMin = 1.3;
-  let multiplierMax = 1.5;
+  let multiplierMin = 0.5;
+  let multiplierMax = 0.6;
   
   if (periodSeconds >= 12) {
-    multiplierMin = 1.7;
-    multiplierMax = 2.0;
+    multiplierMin = 0.7;
+    multiplierMax = 0.8;
   } else if (periodSeconds >= 8) {
-    multiplierMin = 1.5;
-    multiplierMax = 1.7;
+    multiplierMin = 0.6;
+    multiplierMax = 0.7;
   }
   
   const surfHeightMin = waveHeightFt * multiplierMin;
@@ -65,17 +66,35 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   const roundedMin = Math.round(surfHeightMin * 2) / 2;
   const roundedMax = Math.round(surfHeightMax * 2) / 2;
   
+  // Ensure surf height never exceeds wave height
+  const cappedMin = Math.min(roundedMin, waveHeightFt);
+  const cappedMax = Math.min(roundedMax, waveHeightFt);
+  
   // Format display string
   let display: string;
-  if (roundedMin === roundedMax) {
-    display = `${roundedMin.toFixed(1)} ft`;
+  if (cappedMin === cappedMax) {
+    display = `${cappedMin.toFixed(1)} ft`;
   } else {
-    display = `${roundedMin.toFixed(1)}-${roundedMax.toFixed(1)} ft`;
+    display = `${cappedMin.toFixed(1)}-${cappedMax.toFixed(1)} ft`;
   }
   
+  console.log('Surf height calculation:', {
+    waveHeightMeters,
+    waveHeightFt: waveHeightFt.toFixed(1),
+    periodSeconds,
+    multiplierRange: `${multiplierMin}-${multiplierMax}`,
+    calculatedMin: surfHeightMin.toFixed(1),
+    calculatedMax: surfHeightMax.toFixed(1),
+    roundedMin: roundedMin.toFixed(1),
+    roundedMax: roundedMax.toFixed(1),
+    cappedMin: cappedMin.toFixed(1),
+    cappedMax: cappedMax.toFixed(1),
+    display
+  });
+  
   return {
-    min: roundedMin,
-    max: roundedMax,
+    min: cappedMin,
+    max: cappedMax,
     display
   };
 }
@@ -235,12 +254,6 @@ serve(async (req) => {
     if (waveHeight !== 99.0 && !isNaN(waveHeight) && dominantPeriod !== 99.0 && !isNaN(dominantPeriod)) {
       const surfHeightCalc = calculateSurfHeight(waveHeight, dominantPeriod);
       surfHeight = surfHeightCalc.display;
-      console.log('Surf height calculation:', {
-        waveHeightMeters: waveHeight,
-        waveHeightFt: waveHeightFt,
-        period: dominantPeriod,
-        surfHeight: surfHeightCalc
-      });
     }
     
     const wavePeriodSec = dominantPeriod !== 99.0 && !isNaN(dominantPeriod)
@@ -271,7 +284,7 @@ serve(async (req) => {
     const surfData = {
       date: today,
       wave_height: waveHeightFt !== 'N/A' ? `${waveHeightFt} ft` : 'N/A',
-      surf_height: surfHeight, // NEW: Calculated surf height (face height)
+      surf_height: surfHeight, // Calculated surf height (rideable face height)
       wave_period: wavePeriodSec !== 'N/A' ? `${wavePeriodSec} sec` : 'N/A',
       swell_direction: swellDirection,
       wind_speed: windSpeedMph !== 'N/A' ? `${windSpeedMph} mph` : 'N/A',
