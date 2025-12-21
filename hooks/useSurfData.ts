@@ -210,21 +210,29 @@ export function useSurfData() {
       if (response.data && !response.data.success) {
         console.error('[useSurfData] Update failed:', response.data.errors);
         
-        // If there are errors but some data was updated, still refresh
+        // Build detailed error message
+        const errorDetails = [];
+        
         if (response.data.results) {
-          const successCount = Object.values(response.data.results).filter((r: any) => r?.success).length;
-          console.log(`[useSurfData] Partial success: ${successCount} operations succeeded`);
-          
-          // Show a warning but still refresh data
-          if (isMountedRef.current) {
-            setState(prev => ({
-              ...prev,
-              error: `Some data updates failed: ${response.data.errors?.join(', ') || 'Unknown errors'}`,
-            }));
+          if (response.data.results.weather && !response.data.results.weather.success) {
+            errorDetails.push(`Weather: ${response.data.results.weather.error || 'Failed to store weather data in database'}`);
           }
-        } else {
-          throw new Error(response.data.error || 'Update failed');
+          if (response.data.results.tide && !response.data.results.tide.success) {
+            errorDetails.push(`Tide: ${response.data.results.tide.error || 'Failed to store tide data in database'}`);
+          }
+          if (response.data.results.surf && !response.data.results.surf.success) {
+            errorDetails.push(`Surf: ${response.data.results.surf.error || 'Failed to store surf data in database'}`);
+          }
+          if (response.data.results.report && !response.data.results.report.success) {
+            errorDetails.push(`Report: ${response.data.results.report.error || 'Skipping report generation - missing required data (weather or surf)'}`);
+          }
         }
+        
+        const errorMessage = errorDetails.length > 0 
+          ? errorDetails.join(', ')
+          : response.data.error || 'Update failed';
+        
+        throw new Error(errorMessage);
       }
 
       // Refresh data from database
@@ -237,7 +245,7 @@ export function useSurfData() {
         setState(prev => ({
           ...prev,
           isLoading: false,
-          error: `Update failed: ${errorMessage}. Please check the admin debug page for details.`,
+          error: errorMessage,
         }));
       }
     } finally {
