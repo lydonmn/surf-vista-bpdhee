@@ -129,12 +129,12 @@ serve(async (req) => {
       console.log(`Deleted ${results.weatherForecast} old weather forecast records`);
     }
 
-    // Delete old tide data (older than 7 days)
+    // Delete old tide data (older than today - we keep 7 days forward)
     console.log('Deleting old tide data...');
     const { data: deletedTides, error: tidesError } = await supabase
       .from('tide_data')
       .delete()
-      .lt('date', cutoffDate)
+      .lt('date', today)
       .select();
 
     if (tidesError) {

@@ -85,8 +85,9 @@ export function useSurfData() {
         supabase
           .from('tide_data')
           .select('*')
-          .eq('date', today)
-          .order('time'),
+          .gte('date', today)
+          .order('date', { ascending: true })
+          .order('time', { ascending: true }),
       ]);
 
       if (!isMountedRef.current) return;
