@@ -119,17 +119,20 @@ export default function ReportScreen() {
   const handleUpdateData = async () => {
     setIsRefreshing(true);
     try {
+      console.log('[ReportScreen] Starting data update...');
       await updateAllData();
+      console.log('[ReportScreen] Data update completed successfully');
       Alert.alert(
         'Update Complete',
         'Surf data has been updated from NOAA. Pull down to refresh the display.',
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('Update error:', error);
+      console.error('[ReportScreen] Update error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert(
         'Update Failed',
-        'Failed to update surf data. Please check your connection and try again.',
+        `Failed to update surf data: ${errorMessage}\n\nPlease check your internet connection and try again.`,
         [{ text: 'OK' }]
       );
     } finally {
@@ -510,10 +513,12 @@ export default function ReportScreen() {
             color="#FFFFFF"
           />
           <View style={styles.errorTextContainer}>
-            <Text style={styles.errorText}>Edge Function returned a non-2xx status code</Text>
+            <Text style={styles.errorText}>Unable to fetch surf data</Text>
             <Text style={styles.errorSubtext}>
-              This usually means the NOAA data sources are temporarily unavailable or timing out. 
-              Please try again in a few minutes.
+              {error}
+            </Text>
+            <Text style={styles.errorSubtext}>
+              Please check your internet connection and try again.
             </Text>
           </View>
         </View>
@@ -553,7 +558,11 @@ export default function ReportScreen() {
         </View>
       ) : (
         <React.Fragment>
-          {todaysReport.map((report, index) => renderReportCard(report, index))}
+          {todaysReport.map((report, index) => (
+            <React.Fragment key={report.id ? `report-${report.id}` : `report-index-${index}`}>
+              {renderReportCard(report, index)}
+            </React.Fragment>
+          ))}
         </React.Fragment>
       )}
 

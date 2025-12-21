@@ -21,6 +21,7 @@ interface SurfDataState {
 
 const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
 const RETRY_DELAY = 5000; // 5 seconds
+const FUNCTION_TIMEOUT = 60000; // 60 seconds
 
 // Helper function to get EST date
 function getESTDate(): string {
@@ -183,71 +184,110 @@ export function useSurfData() {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       console.log('[useSurfData] Updating all data via Edge Functions...');
 
-      // Call the new unified edge function
-      const response = await supabase.functions.invoke('update-all-surf-data');
+      // Create an AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FUNCTION_TIMEOUT);
 
-      console.log('[useSurfData] Update response:', { 
-        data: response.data, 
-        error: response.error,
-        status: (response as any).status 
-      });
+      try {
+        // Call the new unified edge function with timeout
+        const response = await Promise.race([
+          supabase.functions.invoke('update-all-surf-data', {
+            body: {},
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout - please try again')), FUNCTION_TIMEOUT)
+          )
+        ]) as any;
 
-      // Check for HTTP errors first
-      if (response.error) {
-        console.error('[useSurfData] Update failed with error:', response.error);
-        
-        // Try to parse error message
-        let errorMsg = 'Update failed';
-        if (response.error.message) {
-          errorMsg = response.error.message;
-        } else if (typeof response.error === 'string') {
-          errorMsg = response.error;
+        clearTimeout(timeoutId);
+
+        console.log('[useSurfData] Update response:', { 
+          data: response.data, 
+          error: response.error,
+        });
+
+        // Check for HTTP errors first
+        if (response.error) {
+          console.error('[useSurfData] Update failed with error:', response.error);
+          
+          // Try to parse error message
+          let errorMsg = 'Update failed';
+          if (response.error.message) {
+            errorMsg = response.error.message;
+          } else if (typeof response.error === 'string') {
+            errorMsg = response.error;
+          }
+          
+          // Check if it's a network error
+          if (errorMsg.includes('Failed to fetch') || errorMsg.includes('Network request failed')) {
+            errorMsg = 'Network error - please check your internet connection and try again';
+          }
+          
+          throw new Error(errorMsg);
         }
-        
-        throw new Error(errorMsg);
-      }
 
-      // Check if the response data indicates failure
-      if (response.data && !response.data.success) {
-        console.error('[useSurfData] Update failed:', response.data.errors);
-        
-        // Build detailed error message
-        const errorDetails = [];
-        
-        if (response.data.results) {
-          if (response.data.results.weather && !response.data.results.weather.success) {
-            errorDetails.push(`Weather: ${response.data.results.weather.error || 'Failed to store weather data in database'}`);
+        // Check if the response data indicates failure
+        if (response.data && !response.data.success) {
+          console.error('[useSurfData] Update failed:', response.data.errors);
+          
+          // Build detailed error message
+          const errorDetails = [];
+          
+          if (response.data.results) {
+            if (response.data.results.weather && !response.data.results.weather.success) {
+              errorDetails.push(`Weather: ${response.data.results.weather.error || 'Failed'}`);
+            }
+            if (response.data.results.tide && !response.data.results.tide.success) {
+              errorDetails.push(`Tide: ${response.data.results.tide.error || 'Failed'}`);
+            }
+            if (response.data.results.surf && !response.data.results.surf.success) {
+              errorDetails.push(`Surf: ${response.data.results.surf.error || 'Failed'}`);
+            }
+            if (response.data.results.report && !response.data.results.report.success) {
+              errorDetails.push(`Report: ${response.data.results.report.error || 'Failed'}`);
+            }
           }
-          if (response.data.results.tide && !response.data.results.tide.success) {
-            errorDetails.push(`Tide: ${response.data.results.tide.error || 'Failed to store tide data in database'}`);
-          }
-          if (response.data.results.surf && !response.data.results.surf.success) {
-            errorDetails.push(`Surf: ${response.data.results.surf.error || 'Failed to store surf data in database'}`);
-          }
-          if (response.data.results.report && !response.data.results.report.success) {
-            errorDetails.push(`Report: ${response.data.results.report.error || 'Skipping report generation - missing required data (weather or surf)'}`);
-          }
+          
+          const errorMessage = errorDetails.length > 0 
+            ? errorDetails.join(', ')
+            : response.data.error || 'Update failed';
+          
+          throw new Error(errorMessage);
         }
-        
-        const errorMessage = errorDetails.length > 0 
-          ? errorDetails.join(', ')
-          : response.data.error || 'Update failed';
-        
-        throw new Error(errorMessage);
-      }
 
-      // Refresh data from database
-      console.log('[useSurfData] Refreshing data from database...');
-      await fetchData();
+        // Refresh data from database
+        console.log('[useSurfData] Refreshing data from database...');
+        await fetchData();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
     } catch (error) {
       console.error('[useSurfData] Error updating surf data:', error);
       if (isMountedRef.current) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to update data';
+        let errorMessage = 'Failed to update data';
+        
+        if (error instanceof Error) {
+          errorMessage = error.message;
+          
+          // Provide more user-friendly error messages
+          if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Network request failed')) {
+            errorMessage = 'Network error - please check your internet connection';
+          } else if (errorMessage.includes('timeout')) {
+            errorMessage = 'Request timed out - NOAA servers may be slow, please try again';
+          } else if (errorMessage.includes('NOAA')) {
+            errorMessage = 'NOAA data temporarily unavailable - please try again in a few minutes';
+          }
+        }
+        
         setState(prev => ({
           ...prev,
           isLoading: false,
           error: errorMessage,
         }));
+        
+        // Re-throw so the UI can show an alert
+        throw new Error(errorMessage);
       }
     } finally {
       isUpdatingRef.current = false;

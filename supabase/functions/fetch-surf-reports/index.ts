@@ -14,12 +14,25 @@ const FETCH_TIMEOUT = 15000; // 15 seconds
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Convert to EST by subtracting 5 hours (EST is UTC-5)
-  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-  const year = estTime.getUTCFullYear();
-  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(estTime.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // Get EST time by using toLocaleString with America/New_York timezone
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the EST date string (format: MM/DD/YYYY)
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  console.log('EST Date calculation:', {
+    utcTime: now.toISOString(),
+    estDateString,
+    estDate
+  });
+  
+  return estDate;
 }
 
 // Helper function to fetch with timeout
@@ -194,8 +207,7 @@ serve(async (req) => {
 
     // Get current date in EST
     const today = getESTDate();
-    console.log('Current EST date:', today);
-    console.log('Current UTC time:', new Date().toISOString());
+    console.log('Storing data for EST date:', today);
 
     // Store the raw buoy data
     const surfData = {
