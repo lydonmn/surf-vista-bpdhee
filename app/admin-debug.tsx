@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
@@ -13,6 +13,7 @@ export default function AdminDebugScreen() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [testingFunction, setTestingFunction] = useState<string | null>(null);
 
   const runDiagnostics = async () => {
     setLoading(true);
@@ -117,67 +118,6 @@ export default function AdminDebugScreen() {
         };
       }
 
-      // Test edge functions
-      console.log('Testing fetch-weather-data...');
-      try {
-        const { data, error } = await supabase.functions.invoke('fetch-weather-data');
-        info.edgeFunctions.fetch_weather_data = {
-          success: !error,
-          error: error?.message,
-          response: data,
-        };
-      } catch (e) {
-        info.edgeFunctions.fetch_weather_data = {
-          success: false,
-          error: e instanceof Error ? e.message : 'Unknown error',
-        };
-      }
-
-      console.log('Testing fetch-tide-data...');
-      try {
-        const { data, error } = await supabase.functions.invoke('fetch-tide-data');
-        info.edgeFunctions.fetch_tide_data = {
-          success: !error,
-          error: error?.message,
-          response: data,
-        };
-      } catch (e) {
-        info.edgeFunctions.fetch_tide_data = {
-          success: false,
-          error: e instanceof Error ? e.message : 'Unknown error',
-        };
-      }
-
-      console.log('Testing fetch-surf-reports...');
-      try {
-        const { data, error } = await supabase.functions.invoke('fetch-surf-reports');
-        info.edgeFunctions.fetch_surf_reports = {
-          success: !error,
-          error: error?.message,
-          response: data,
-        };
-      } catch (e) {
-        info.edgeFunctions.fetch_surf_reports = {
-          success: false,
-          error: e instanceof Error ? e.message : 'Unknown error',
-        };
-      }
-
-      console.log('Testing generate-daily-report...');
-      try {
-        const { data, error } = await supabase.functions.invoke('generate-daily-report');
-        info.edgeFunctions.generate_daily_report = {
-          success: !error,
-          error: error?.message,
-          response: data,
-        };
-      } catch (e) {
-        info.edgeFunctions.generate_daily_report = {
-          success: false,
-          error: e instanceof Error ? e.message : 'Unknown error',
-        };
-      }
-
       setDebugInfo(info);
     } catch (error) {
       console.error('Diagnostics error:', error);
@@ -185,6 +125,106 @@ export default function AdminDebugScreen() {
       setDebugInfo(info);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const testEdgeFunction = async (functionName: string) => {
+    setTestingFunction(functionName);
+    try {
+      console.log(`Testing ${functionName}...`);
+      const response = await supabase.functions.invoke(functionName);
+      
+      console.log(`${functionName} response:`, response);
+      
+      const result = {
+        success: !response.error && response.data?.success !== false,
+        error: response.error?.message || (response.data?.success === false ? response.data.error : null),
+        response: response.data,
+        status: (response as any).status,
+      };
+
+      setDebugInfo((prev: any) => ({
+        ...prev,
+        edgeFunctions: {
+          ...prev.edgeFunctions,
+          [functionName]: result,
+        },
+      }));
+
+      if (result.success) {
+        Alert.alert('Success', `${functionName} executed successfully`);
+      } else {
+        Alert.alert('Error', `${functionName} failed: ${result.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+      console.error(`${functionName} error:`, e);
+      
+      setDebugInfo((prev: any) => ({
+        ...prev,
+        edgeFunctions: {
+          ...prev.edgeFunctions,
+          [functionName]: {
+            success: false,
+            error: errorMsg,
+          },
+        },
+      }));
+
+      Alert.alert('Error', `${functionName} failed: ${errorMsg}`);
+    } finally {
+      setTestingFunction(null);
+    }
+  };
+
+  const testUpdateAllData = async () => {
+    setTestingFunction('update-all-surf-data');
+    try {
+      console.log('Testing update-all-surf-data...');
+      const response = await supabase.functions.invoke('update-all-surf-data');
+      
+      console.log('update-all-surf-data response:', response);
+      
+      const result = {
+        success: !response.error && response.data?.success !== false,
+        error: response.error?.message || (response.data?.success === false ? response.data.error : null),
+        response: response.data,
+        status: (response as any).status,
+      };
+
+      setDebugInfo((prev: any) => ({
+        ...prev,
+        edgeFunctions: {
+          ...prev.edgeFunctions,
+          'update-all-surf-data': result,
+        },
+      }));
+
+      if (result.success) {
+        Alert.alert('Success', 'All surf data updated successfully. Refreshing diagnostics...');
+        // Refresh diagnostics after successful update
+        setTimeout(() => runDiagnostics(), 2000);
+      } else {
+        Alert.alert('Error', `Update failed: ${result.error || 'Unknown error'}\n\nCheck the response details below.`);
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+      console.error('update-all-surf-data error:', e);
+      
+      setDebugInfo((prev: any) => ({
+        ...prev,
+        edgeFunctions: {
+          ...prev.edgeFunctions,
+          'update-all-surf-data': {
+            success: false,
+            error: errorMsg,
+          },
+        },
+      }));
+
+      Alert.alert('Error', `Update failed: ${errorMsg}`);
+    } finally {
+      setTestingFunction(null);
     }
   };
 
@@ -238,25 +278,47 @@ export default function AdminDebugScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.refreshButton, { backgroundColor: colors.accent }]}
-          onPress={runDiagnostics}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <React.Fragment>
-              <IconSymbol
-                ios_icon_name="arrow.clockwise"
-                android_material_icon_name="refresh"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.buttonText}>Run Diagnostics</Text>
-            </React.Fragment>
-          )}
-        </TouchableOpacity>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: colors.accent, flex: 1 }]}
+            onPress={runDiagnostics}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="arrow.clockwise"
+                  android_material_icon_name="refresh"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.buttonText}>Refresh</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: colors.primary, flex: 1 }]}
+            onPress={testUpdateAllData}
+            disabled={testingFunction !== null}
+          >
+            {testingFunction === 'update-all-surf-data' ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="arrow.down.circle.fill"
+                  android_material_icon_name="download"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.buttonText}>Update All</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
+        </View>
 
         {debugInfo && (
           <React.Fragment>
@@ -275,6 +337,9 @@ export default function AdminDebugScreen() {
             <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
                 Database Tables
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                If surf_conditions is missing, run the SQL in docs/CREATE_SURF_CONDITIONS_TABLE.sql
               </Text>
               {Object.entries(debugInfo.tables).map(([tableName, tableInfo]: [string, any]) => (
                 <View key={tableName} style={styles.tableInfo}>
@@ -305,6 +370,60 @@ export default function AdminDebugScreen() {
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
                 Edge Functions
               </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                Test individual functions to see detailed error messages
+              </Text>
+              
+              <View style={styles.functionButtons}>
+                <TouchableOpacity
+                  style={[styles.functionButton, { backgroundColor: colors.accent }]}
+                  onPress={() => testEdgeFunction('fetch-weather-data')}
+                  disabled={testingFunction !== null}
+                >
+                  {testingFunction === 'fetch-weather-data' ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.functionButtonText}>Test Weather</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.functionButton, { backgroundColor: colors.accent }]}
+                  onPress={() => testEdgeFunction('fetch-tide-data')}
+                  disabled={testingFunction !== null}
+                >
+                  {testingFunction === 'fetch-tide-data' ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.functionButtonText}>Test Tide</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.functionButton, { backgroundColor: colors.accent }]}
+                  onPress={() => testEdgeFunction('fetch-surf-reports')}
+                  disabled={testingFunction !== null}
+                >
+                  {testingFunction === 'fetch-surf-reports' ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.functionButtonText}>Test Surf</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.functionButton, { backgroundColor: colors.accent }]}
+                  onPress={() => testEdgeFunction('generate-daily-report')}
+                  disabled={testingFunction !== null}
+                >
+                  {testingFunction === 'generate-daily-report' ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.functionButtonText}>Test Report</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
               {Object.entries(debugInfo.edgeFunctions).map(([funcName, funcInfo]: [string, any]) => (
                 <View key={funcName} style={styles.tableInfo}>
                   <Text style={[styles.tableName, { color: theme.colors.text }]}>
@@ -313,6 +432,11 @@ export default function AdminDebugScreen() {
                   <Text style={[styles.debugText, { color: funcInfo.success ? colors.success : colors.error }]}>
                     {funcInfo.success ? '✓ Success' : '✗ Failed'}
                   </Text>
+                  {funcInfo.status && (
+                    <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+                      HTTP Status: {funcInfo.status}
+                    </Text>
+                  )}
                   {funcInfo.error && (
                     <Text style={[styles.errorText, { color: colors.error }]}>
                       Error: {funcInfo.error}
@@ -339,6 +463,24 @@ export default function AdminDebugScreen() {
                 ))}
               </View>
             )}
+
+            <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Troubleshooting Tips
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                - If surf_conditions table is missing, run the SQL in docs/CREATE_SURF_CONDITIONS_TABLE.sql
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                - If functions fail, check Supabase Edge Function logs
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                - NOAA APIs may be temporarily unavailable
+              </Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                - Redeploy edge functions after code changes
+              </Text>
+            </View>
           </React.Fragment>
         )}
       </ScrollView>
@@ -389,6 +531,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
   refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -397,7 +544,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 8,
-    marginBottom: 16,
   },
   button: {
     paddingHorizontal: 32,
@@ -407,6 +553,24 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  functionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  functionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  functionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '600',
   },
   tableInfo: {
@@ -428,5 +592,10 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     marginTop: 4,
+  },
+  infoText: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
 });

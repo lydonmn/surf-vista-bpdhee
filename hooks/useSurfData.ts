@@ -183,34 +183,47 @@ export function useSurfData() {
       console.log('[useSurfData] Updating all data via Edge Functions...');
 
       // Call the new unified edge function
-      const { data, error } = await supabase.functions.invoke('update-all-surf-data');
+      const response = await supabase.functions.invoke('update-all-surf-data');
 
-      console.log('[useSurfData] Update response:', { data, error });
+      console.log('[useSurfData] Update response:', { 
+        data: response.data, 
+        error: response.error,
+        status: (response as any).status 
+      });
 
-      // Check for errors - handle both error object and non-success responses
-      if (error) {
-        console.error('[useSurfData] Update failed with error:', error);
-        throw new Error(error.message || 'Update failed');
+      // Check for HTTP errors first
+      if (response.error) {
+        console.error('[useSurfData] Update failed with error:', response.error);
+        
+        // Try to parse error message
+        let errorMsg = 'Update failed';
+        if (response.error.message) {
+          errorMsg = response.error.message;
+        } else if (typeof response.error === 'string') {
+          errorMsg = response.error;
+        }
+        
+        throw new Error(errorMsg);
       }
 
-      // Check if the response indicates failure
-      if (data && !data.success) {
-        console.error('[useSurfData] Update failed:', data.errors);
+      // Check if the response data indicates failure
+      if (response.data && !response.data.success) {
+        console.error('[useSurfData] Update failed:', response.data.errors);
         
         // If there are errors but some data was updated, still refresh
-        if (data.results) {
-          const successCount = Object.values(data.results).filter((r: any) => r?.success).length;
+        if (response.data.results) {
+          const successCount = Object.values(response.data.results).filter((r: any) => r?.success).length;
           console.log(`[useSurfData] Partial success: ${successCount} operations succeeded`);
           
           // Show a warning but still refresh data
           if (isMountedRef.current) {
             setState(prev => ({
               ...prev,
-              error: `Some data updates failed: ${data.errors?.join(', ') || 'Unknown errors'}`,
+              error: `Some data updates failed: ${response.data.errors?.join(', ') || 'Unknown errors'}`,
             }));
           }
         } else {
-          throw new Error(data.error || 'Update failed');
+          throw new Error(response.data.error || 'Update failed');
         }
       }
 
@@ -224,7 +237,7 @@ export function useSurfData() {
         setState(prev => ({
           ...prev,
           isLoading: false,
-          error: `Update failed: ${errorMessage}. Please try again.`,
+          error: `Update failed: ${errorMessage}. Please check the admin debug page for details.`,
         }));
       }
     } finally {

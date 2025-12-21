@@ -211,6 +211,77 @@ serve(async (req) => {
 
     console.log('Storing surf data:', JSON.stringify(surfData, null, 2));
 
+    // First, check if surf_conditions table exists
+    console.log('Checking if surf_conditions table exists...');
+    const { error: tableCheckError } = await supabase
+      .from('surf_conditions')
+      .select('id')
+      .limit(1);
+
+    if (tableCheckError) {
+      console.error('surf_conditions table does not exist or is not accessible:', tableCheckError);
+      console.log('Attempting to create surf_conditions table...');
+      
+      // Try to create the table
+      const { error: createError } = await supabase.rpc('exec_sql', {
+        sql: `
+          CREATE TABLE IF NOT EXISTS public.surf_conditions (
+            id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+            date date NOT NULL UNIQUE,
+            wave_height text,
+            wave_period text,
+            swell_direction text,
+            wind_speed text,
+            wind_direction text,
+            water_temp text,
+            buoy_id text,
+            updated_at timestamptz DEFAULT now(),
+            created_at timestamptz DEFAULT now()
+          );
+          
+          ALTER TABLE public.surf_conditions ENABLE ROW LEVEL SECURITY;
+          
+          DROP POLICY IF EXISTS "Allow public read access to surf_conditions" ON public.surf_conditions;
+          CREATE POLICY "Allow public read access to surf_conditions"
+            ON public.surf_conditions
+            FOR SELECT
+            TO public
+            USING (true);
+          
+          DROP POLICY IF EXISTS "Allow service role full access to surf_conditions" ON public.surf_conditions;
+          CREATE POLICY "Allow service role full access to surf_conditions"
+            ON public.surf_conditions
+            FOR ALL
+            TO service_role
+            USING (true)
+            WITH CHECK (true);
+          
+          CREATE INDEX IF NOT EXISTS idx_surf_conditions_date ON public.surf_conditions(date DESC);
+          
+          GRANT SELECT ON public.surf_conditions TO anon, authenticated;
+          GRANT ALL ON public.surf_conditions TO service_role;
+        `
+      });
+      
+      if (createError) {
+        console.error('Failed to create surf_conditions table:', createError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'surf_conditions table does not exist and could not be created',
+            details: createError.message,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500,
+          }
+        );
+      }
+      
+      console.log('surf_conditions table created successfully');
+    }
+
     // Store in surf_conditions table
     const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
