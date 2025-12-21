@@ -10,6 +10,20 @@ interface WeeklyForecastProps {
   forecast: WeatherForecast[];
 }
 
+// Helper function to parse date string as local date (not UTC)
+function parseLocalDate(dateStr: string): Date {
+  // Parse YYYY-MM-DD as local date, not UTC
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Helper function to get day name from date string
+function getDayName(dateStr: string, index: number): string {
+  if (index === 0) return 'Today';
+  const date = parseLocalDate(dateStr);
+  return date.toLocaleDateString('en-US', { weekday: 'short' });
+}
+
 export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
   const theme = useTheme();
 
@@ -90,8 +104,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
         contentContainerStyle={styles.forecastScroll}
       >
         {filteredForecast.map((day, index) => {
-          const date = new Date(day.date);
-          const dayName = day.day_name || date.toLocaleDateString('en-US', { weekday: 'short' });
+          const dayName = getDayName(day.date, index);
           
           // Get swell size range or use default
           const swellRange = day.swell_height_range || '1-2 ft';
@@ -116,7 +129,7 @@ export function WeeklyForecast({ forecast }: WeeklyForecastProps) {
                 ]}
               >
                 <Text style={[styles.dayName, { color: theme.colors.text }]}>
-                  {index === 0 ? 'Today' : dayName}
+                  {dayName}
                 </Text>
                 
                 {/* Display swell size instead of weather icon */}

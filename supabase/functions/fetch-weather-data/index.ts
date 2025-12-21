@@ -30,6 +30,30 @@ function getESTDate(): string {
   return estDate;
 }
 
+// Helper function to convert ISO timestamp to EST date string
+function getESTDateFromISO(isoString: string): string {
+  const date = new Date(isoString);
+  const estDateString = date.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the EST date string (format: MM/DD/YYYY)
+  const [month, day, year] = estDateString.split('/');
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+// Helper function to get day name from ISO timestamp in EST
+function getDayNameFromISO(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    weekday: 'long'
+  });
+}
+
 // Helper function to fetch with timeout
 async function fetchWithTimeout(url: string, headers: Record<string, string>, timeout: number = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -240,22 +264,17 @@ serve(async (req) => {
     for (let i = 0; i < Math.min(periods.length, 14); i++) {
       const period = periods[i];
       
-      // Parse the start time to get the date in EST
-      const periodDate = new Date(period.startTime);
-      const estDateString = periodDate.toLocaleString('en-US', { 
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      const [month, day, year] = estDateString.split('/');
-      const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      // Parse the start time to get the date in EST using our helper function
+      const formattedDate = getESTDateFromISO(period.startTime);
+      const dayName = getDayNameFromISO(period.startTime);
+      
+      console.log(`Processing period ${i}: ${period.name}, startTime: ${period.startTime}, EST date: ${formattedDate}, day: ${dayName}`);
       
       // Get or create daily forecast entry
       if (!dailyForecasts.has(formattedDate)) {
         dailyForecasts.set(formattedDate, {
           date: formattedDate,
-          day_name: period.name.includes('Night') ? period.name.replace(' Night', '') : period.name,
+          day_name: dayName,
           high_temp: null,
           low_temp: null,
           conditions: period.shortForecast,
@@ -288,7 +307,6 @@ serve(async (req) => {
       if (period.isDaytime) {
         dailyData.conditions = period.shortForecast;
         dailyData.icon = period.icon;
-        dailyData.day_name = period.name;
       }
     }
 
@@ -314,6 +332,7 @@ serve(async (req) => {
     });
 
     console.log(`Prepared ${forecastRecords.length} daily forecast records`);
+    console.log('Forecast dates:', forecastRecords.map(r => `${r.date} (${r.day_name})`).join(', '));
 
     // Delete ALL old forecasts first to prevent duplicates
     const { error: deleteError } = await supabase
@@ -360,6 +379,7 @@ serve(async (req) => {
         current: weatherData,
         forecast_periods: forecastRecords.length,
         forecast_count: forecastInsertData?.length || 0,
+        forecast_dates: forecastRecords.map(r => r.date),
         timestamp: new Date().toISOString(),
       }),
       {

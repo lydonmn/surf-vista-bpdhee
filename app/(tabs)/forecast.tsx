@@ -17,6 +17,26 @@ interface DayForecast {
   tides: TideData[];
 }
 
+// Helper function to parse date string as local date (not UTC)
+function parseLocalDate(dateStr: string): Date {
+  // Parse YYYY-MM-DD as local date, not UTC
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Helper function to get day name from date string
+function getDayName(dateStr: string, index: number): string {
+  if (index === 0) return 'Today';
+  const date = parseLocalDate(dateStr);
+  return date.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+// Helper function to format date
+function formatDate(dateStr: string): string {
+  const date = parseLocalDate(dateStr);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export default function ForecastScreen() {
   const theme = useTheme();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
@@ -36,10 +56,9 @@ export default function ForecastScreen() {
     // Add surf reports
     surfReports.forEach(report => {
       if (!forecastMap.has(report.date)) {
-        const date = new Date(report.date);
         forecastMap.set(report.date, {
           date: report.date,
-          dayName: date.toLocaleDateString('en-US', { weekday: 'long' }),
+          dayName: getDayName(report.date, 0),
           surfReport: report,
           weatherForecast: null,
           tides: [],
@@ -53,10 +72,9 @@ export default function ForecastScreen() {
     // Add weather forecasts
     weatherForecast.forEach(forecast => {
       if (!forecastMap.has(forecast.date)) {
-        const date = new Date(forecast.date);
         forecastMap.set(forecast.date, {
           date: forecast.date,
-          dayName: date.toLocaleDateString('en-US', { weekday: 'long' }),
+          dayName: getDayName(forecast.date, 0),
           surfReport: null,
           weatherForecast: forecast,
           tides: [],
@@ -83,11 +101,6 @@ export default function ForecastScreen() {
 
   const toggleDay = (date: string) => {
     setExpandedDay(expandedDay === date ? null : date);
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const formatTime = (timeStr: string) => {
@@ -219,7 +232,7 @@ export default function ForecastScreen() {
         ) : (
           combinedForecast.map((day, index) => {
             const isExpanded = expandedDay === day.date;
-            const isToday = index === 0;
+            const dayName = getDayName(day.date, index);
 
             return (
               <View
@@ -233,7 +246,7 @@ export default function ForecastScreen() {
                 >
                   <View style={styles.dayHeaderLeft}>
                     <Text style={[styles.dayName, { color: theme.colors.text }]}>
-                      {isToday ? 'Today' : day.dayName}
+                      {dayName}
                     </Text>
                     <Text style={[styles.dayDate, { color: colors.textSecondary }]}>
                       {formatDate(day.date)}
