@@ -108,6 +108,13 @@ export default function ForecastScreen() {
     return '#F44336'; // Red
   };
 
+  const formatTemp = (temp: any): string => {
+    if (temp === null || temp === undefined) return 'N/A';
+    const numTemp = Number(temp);
+    if (isNaN(numTemp)) return 'N/A';
+    return `${Math.round(numTemp)}°`;
+  };
+
   if (isLoading && combinedForecast.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -234,13 +241,19 @@ export default function ForecastScreen() {
                   </View>
 
                   <View style={styles.dayHeaderRight}>
-                    {day.weatherForecast && (
+                    {day.weatherForecast ? (
                       <View style={styles.tempRange}>
                         <Text style={[styles.highTemp, { color: theme.colors.text }]}>
-                          {Math.round(Number(day.weatherForecast.high_temp))}°
+                          {formatTemp(day.weatherForecast.high_temp)}
                         </Text>
                         <Text style={[styles.lowTemp, { color: colors.textSecondary }]}>
-                          {Math.round(Number(day.weatherForecast.low_temp))}°
+                          {formatTemp(day.weatherForecast.low_temp)}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.tempRange}>
+                        <Text style={[styles.highTemp, { color: colors.textSecondary }]}>
+                          N/A
                         </Text>
                       </View>
                     )}
@@ -255,178 +268,188 @@ export default function ForecastScreen() {
 
                 {isExpanded && (
                   <View style={styles.dayDetails}>
-                    {/* Surf Report Section */}
-                    {day.surfReport && (
-                      <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                          <IconSymbol
-                            ios_icon_name="water.waves"
-                            android_material_icon_name="waves"
-                            size={20}
-                            color={colors.primary}
-                          />
-                          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                            Surf Conditions
-                          </Text>
-                        </View>
+                    {/* Surf Report Section - Always show */}
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <IconSymbol
+                          ios_icon_name="water.waves"
+                          android_material_icon_name="waves"
+                          size={20}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                          Surf Conditions
+                        </Text>
+                      </View>
 
-                        <View style={styles.stokeRating}>
-                          <Text style={[styles.stokeLabel, { color: colors.textSecondary }]}>
-                            Stoke Rating
-                          </Text>
-                          <View style={styles.stokeValue}>
-                            <Text style={[styles.stokeNumber, { color: getStokeColor(day.surfReport.rating) }]}>
-                              {day.surfReport.rating || 'N/A'}
+                      {day.surfReport ? (
+                        <React.Fragment>
+                          <View style={styles.stokeRating}>
+                            <Text style={[styles.stokeLabel, { color: colors.textSecondary }]}>
+                              Stoke Rating
                             </Text>
-                            <Text style={[styles.stokeMax, { color: colors.textSecondary }]}>
-                              / 10
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.detailsGrid}>
-                          <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                              Wave Height
-                            </Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                              {day.surfReport.wave_height}
-                            </Text>
-                          </View>
-
-                          <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                              Wave Period
-                            </Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                              {day.surfReport.wave_period || 'N/A'}
-                            </Text>
-                          </View>
-
-                          <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                              Wind
-                            </Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                              {day.surfReport.wind_speed} {day.surfReport.wind_direction}
-                            </Text>
-                          </View>
-
-                          <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                              Water Temp
-                            </Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                              {day.surfReport.water_temp}
-                            </Text>
-                          </View>
-
-                          {day.surfReport.swell_direction && (
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Swell Direction
+                            <View style={styles.stokeValue}>
+                              <Text style={[styles.stokeNumber, { color: getStokeColor(day.surfReport.rating) }]}>
+                                {day.surfReport.rating || 'N/A'}
                               </Text>
-                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.surfReport.swell_direction}
+                              <Text style={[styles.stokeMax, { color: colors.textSecondary }]}>
+                                / 10
                               </Text>
                             </View>
-                          )}
-                        </View>
-
-                        {day.surfReport.report_text && (
-                          <View style={[styles.reportTextBox, { backgroundColor: colors.highlight }]}>
-                            <Text style={[styles.reportText, { color: theme.colors.text }]}>
-                              {day.surfReport.report_text}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    {/* Weather Section */}
-                    {day.weatherForecast && (
-                      <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                          <IconSymbol
-                            ios_icon_name="cloud.sun.fill"
-                            android_material_icon_name="wb_sunny"
-                            size={20}
-                            color={colors.primary}
-                          />
-                          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                            Weather
-                          </Text>
-                        </View>
-
-                        <View style={styles.detailsGrid}>
-                          <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                              High / Low
-                            </Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                              {Math.round(Number(day.weatherForecast.high_temp))}° / {Math.round(Number(day.weatherForecast.low_temp))}°
-                            </Text>
                           </View>
 
-                          {day.weatherForecast.wind_speed && (
+                          <View style={styles.detailsGrid}>
+                            <View style={styles.detailItem}>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                Wave Height
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {day.surfReport.wave_height || 'N/A'}
+                              </Text>
+                            </View>
+
+                            <View style={styles.detailItem}>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                Wave Period
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {day.surfReport.wave_period || 'N/A'}
+                              </Text>
+                            </View>
+
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                                 Wind
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.weatherForecast.wind_speed} mph {day.weatherForecast.wind_direction || ''}
+                                {day.surfReport.wind_speed || 'N/A'} {day.surfReport.wind_direction || ''}
+                              </Text>
+                            </View>
+
+                            <View style={styles.detailItem}>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                Water Temp
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {day.surfReport.water_temp || 'N/A'}
+                              </Text>
+                            </View>
+
+                            {day.surfReport.swell_direction && (
+                              <View style={styles.detailItem}>
+                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                  Swell Direction
+                                </Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                  {day.surfReport.swell_direction}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {day.surfReport.report_text && (
+                            <View style={[styles.reportTextBox, { backgroundColor: colors.highlight }]}>
+                              <Text style={[styles.reportText, { color: theme.colors.text }]}>
+                                {day.surfReport.report_text}
                               </Text>
                             </View>
                           )}
+                        </React.Fragment>
+                      ) : (
+                        <View style={styles.noDataContainer}>
+                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
+                            No surf data available for this day
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
-                          {day.weatherForecast.humidity && (
+                    {/* Weather Section - Always show */}
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <IconSymbol
+                          ios_icon_name="cloud.sun.fill"
+                          android_material_icon_name="wb_sunny"
+                          size={20}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                          Weather
+                        </Text>
+                      </View>
+
+                      {day.weatherForecast ? (
+                        <React.Fragment>
+                          <View style={styles.detailsGrid}>
+                            <View style={styles.detailItem}>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                High / Low
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {formatTemp(day.weatherForecast.high_temp)} / {formatTemp(day.weatherForecast.low_temp)}
+                              </Text>
+                            </View>
+
+                            <View style={styles.detailItem}>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                Wind
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {day.weatherForecast.wind_speed ? `${day.weatherForecast.wind_speed} mph` : 'N/A'} {day.weatherForecast.wind_direction || ''}
+                              </Text>
+                            </View>
+
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                                 Humidity
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.weatherForecast.humidity}%
+                                {day.weatherForecast.humidity ? `${day.weatherForecast.humidity}%` : 'N/A'}
                               </Text>
                             </View>
-                          )}
 
-                          {day.weatherForecast.precipitation_chance !== null && (
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                                 Rain Chance
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.weatherForecast.precipitation_chance}%
+                                {day.weatherForecast.precipitation_chance !== null && day.weatherForecast.precipitation_chance !== undefined ? `${day.weatherForecast.precipitation_chance}%` : 'N/A'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {day.weatherForecast.conditions && (
+                            <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
+                              <Text style={[styles.conditionsText, { color: theme.colors.text }]}>
+                                {day.weatherForecast.conditions}
                               </Text>
                             </View>
                           )}
-                        </View>
-
-                        {day.weatherForecast.conditions && (
-                          <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
-                            <Text style={[styles.conditionsText, { color: theme.colors.text }]}>
-                              {day.weatherForecast.conditions}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    {/* Tides Section */}
-                    {day.tides.length > 0 && (
-                      <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                          <IconSymbol
-                            ios_icon_name="arrow.up.arrow.down"
-                            android_material_icon_name="swap_vert"
-                            size={20}
-                            color={colors.primary}
-                          />
-                          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                            Tide Schedule
+                        </React.Fragment>
+                      ) : (
+                        <View style={styles.noDataContainer}>
+                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
+                            No weather data available for this day
                           </Text>
                         </View>
+                      )}
+                    </View>
 
+                    {/* Tides Section - Always show */}
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <IconSymbol
+                          ios_icon_name="arrow.up.arrow.down"
+                          android_material_icon_name="swap_vert"
+                          size={20}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                          Tide Schedule
+                        </Text>
+                      </View>
+
+                      {day.tides.length > 0 ? (
                         <View style={styles.tidesContainer}>
                           {day.tides.map((tide, tideIndex) => {
                             const isHighTide = tide.type === 'high';
@@ -455,8 +478,14 @@ export default function ForecastScreen() {
                             );
                           })}
                         </View>
-                      </View>
-                    )}
+                      ) : (
+                        <View style={styles.noDataContainer}>
+                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
+                            No tide data available for this day
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 )}
               </View>
@@ -674,5 +703,13 @@ const styles = StyleSheet.create({
   tideHeight: {
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  noDataContainer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  noDataText: {
+    fontSize: 14,
+    fontStyle: 'italic',
   },
 });
