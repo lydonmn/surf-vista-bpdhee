@@ -267,59 +267,115 @@ function generateTideSummary(tideData: any[]): string {
 }
 
 function calculateSurfRating(surfData: any, weatherData: any): number {
-  let rating = 5; // Start at middle
-
   // Parse wave height
   const waveHeightMatch = surfData.wave_height.match(/(\d+\.?\d*)/);
   const waveHeight = waveHeightMatch ? parseFloat(waveHeightMatch[1]) : 0;
 
-  // Wave height scoring (0-10 ft range)
-  if (waveHeight >= 3 && waveHeight <= 6) {
-    rating += 2; // Ideal range
-  } else if (waveHeight >= 2 && waveHeight < 3) {
-    rating += 1; // Decent
-  } else if (waveHeight > 6 && waveHeight <= 8) {
-    rating += 1; // Big but manageable
-  } else if (waveHeight < 2) {
-    rating -= 2; // Too small
-  } else if (waveHeight > 8) {
-    rating -= 1; // Too big for most
-  }
-
-  // Wind scoring
+  // Parse wind speed
   const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
   const windSpeed = windSpeedMatch ? parseInt(windSpeedMatch[1]) : 0;
   
   const windDir = surfData.wind_direction.toLowerCase();
   
+  // Determine conditions quality based on wind
+  let conditions = 'clean';
+  
   // Offshore winds (W, NW, N) are best
   if (windDir.includes('w') || windDir.includes('n')) {
-    if (windSpeed < 15) {
-      rating += 2; // Light offshore
+    if (windSpeed < 10) {
+      conditions = 'clean';
+    } else if (windSpeed < 15) {
+      conditions = 'clean';
     } else if (windSpeed < 20) {
-      rating += 1; // Moderate offshore
+      conditions = 'moderate';
+    } else {
+      conditions = 'poor';
     }
   } else if (windDir.includes('e') || windDir.includes('s')) {
     // Onshore winds (E, SE, S) are worse
-    if (windSpeed > 15) {
-      rating -= 2; // Strong onshore
+    if (windSpeed < 8) {
+      conditions = 'clean';
+    } else if (windSpeed < 12) {
+      conditions = 'moderately poor';
+    } else if (windSpeed < 18) {
+      conditions = 'poor';
     } else {
-      rating -= 1; // Light onshore
+      conditions = 'very poor';
     }
   }
 
-  // Wave period scoring
+  // Wave period affects conditions
   const periodMatch = surfData.wave_period.match(/(\d+)/);
   const period = periodMatch ? parseInt(periodMatch[1]) : 0;
   
-  if (period >= 10) {
-    rating += 1; // Long period = better waves
-  } else if (period < 6) {
-    rating -= 1; // Short period = choppy
+  if (period < 6 && conditions === 'clean') {
+    conditions = 'moderate'; // Short period = choppy even with good wind
+  } else if (period < 6 && conditions === 'moderate') {
+    conditions = 'poor';
+  } else if (period < 6 && conditions === 'moderately poor') {
+    conditions = 'poor';
+  }
+
+  console.log('Stoke rating calculation:', {
+    waveHeight,
+    windSpeed,
+    windDir,
+    period,
+    conditions
+  });
+
+  // Apply new stoke rating parameters
+  let rating = 0;
+
+  // 1. Surf height 3ft or less: Max 3/10. If clean, then 3/10.
+  if (waveHeight <= 3) {
+    rating = conditions === 'clean' ? 3 : Math.min(3, Math.max(1, 3 - (windSpeed / 10)));
+  }
+  // 2. Surf height 4ft: Clean = 4/10. Rough = 3/10.
+  else if (waveHeight > 3 && waveHeight < 4.5) {
+    if (conditions === 'clean') {
+      rating = 4;
+    } else {
+      rating = 3;
+    }
+  }
+  // 3. Surf height 4-6ft: Clean = 7/10. Moderately poor to very poor = 3/10 to 6/10.
+  else if (waveHeight >= 4.5 && waveHeight <= 6) {
+    if (conditions === 'clean') {
+      rating = 7;
+    } else if (conditions === 'moderate') {
+      rating = 6;
+    } else if (conditions === 'moderately poor') {
+      rating = 5;
+    } else if (conditions === 'poor') {
+      rating = 4;
+    } else if (conditions === 'very poor') {
+      rating = 3;
+    } else {
+      rating = 5; // Default for unknown conditions
+    }
+  }
+  // 4. Surf height 7ft or higher: Clean = 10/10. Moderate to very poor = 6/10 to 8/10.
+  else if (waveHeight >= 7) {
+    if (conditions === 'clean') {
+      rating = 10;
+    } else if (conditions === 'moderate') {
+      rating = 8;
+    } else if (conditions === 'poor') {
+      rating = 7;
+    } else if (conditions === 'very poor') {
+      rating = 6;
+    } else {
+      rating = 7; // Default for unknown conditions
+    }
   }
 
   // Clamp rating between 1 and 10
-  return Math.max(1, Math.min(10, rating));
+  rating = Math.max(1, Math.min(10, rating));
+  
+  console.log('Final stoke rating:', rating);
+  
+  return rating;
 }
 
 function generateReportText(surfData: any, weatherData: any, tideSummary: string, rating: number): string {
