@@ -42,7 +42,8 @@ export default function LoginScreen() {
     try {
       console.log('[LoginScreen] Resending confirmation email to:', resendEmail);
       
-      const { error } = await supabase.auth.resend({
+      // Use 'signup' type for resending confirmation emails
+      const { data, error } = await supabase.auth.resend({
         type: 'signup',
         email: resendEmail,
         options: {
@@ -52,8 +53,9 @@ export default function LoginScreen() {
 
       if (error) {
         console.error('[LoginScreen] Resend error:', error);
-        Alert.alert('Error', error.message);
+        Alert.alert('Error', error.message || 'Failed to resend confirmation email');
       } else {
+        console.log('[LoginScreen] Resend successful:', data);
         Alert.alert(
           'Email Sent!',
           'A new confirmation email has been sent. Please check your inbox and spam folder.',

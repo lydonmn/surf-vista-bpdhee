@@ -32,8 +32,8 @@ import { supabase } from '@/app/integrations/supabase/client';
 
 // ⚠️ IMPORTANT: Replace with your PRODUCTION API key from RevenueCat
 // 
-// The test key (test_pIbMwlfINrGOjQfGWYzmARWVOvg) will NOT show paywalls!
-// It only works in "Preview API mode" which doesn't present actual paywalls.
+// DO NOT USE TEST KEYS IN PRODUCTION!
+// Test keys (starting with test_) will NOT show paywalls and will cause errors.
 //
 // To get your production key:
 // 1. Go to https://app.revenuecat.com/
@@ -42,11 +42,12 @@ import { supabase } from '@/app/integrations/supabase/client';
 // 4. Copy the "Apple App Store" key for iOS or "Google Play Store" key for Android
 // 5. Replace the key below
 //
-// Your production key will look like: appl_xxxxxxxxxxxxxxxxx (for iOS)
-// or goog_xxxxxxxxxxxxxxxxx (for Android)
+// Your production key will look like:
+// - iOS: appl_xxxxxxxxxxxxxxxxx
+// - Android: goog_xxxxxxxxxxxxxxxxx
 
-const REVENUECAT_API_KEY_IOS = 'test_pIbMwlfINrGOjQfGWYzmARWVOvg'; // ⚠️ REPLACE WITH YOUR iOS PRODUCTION KEY
-const REVENUECAT_API_KEY_ANDROID = 'test_pIbMwlfINrGOjQfGWYzmARWVOvg'; // ⚠️ REPLACE WITH YOUR Android PRODUCTION KEY
+const REVENUECAT_API_KEY_IOS = 'appl_YOUR_IOS_PRODUCTION_KEY_HERE'; // ⚠️ REPLACE WITH YOUR iOS PRODUCTION KEY
+const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_PRODUCTION_KEY_HERE'; // ⚠️ REPLACE WITH YOUR Android PRODUCTION KEY
 
 // Select the appropriate key based on platform
 const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
@@ -94,10 +95,44 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     
     // Check if using test key
     if (REVENUECAT_API_KEY.startsWith('test_')) {
-      console.warn('[RevenueCat] ⚠️⚠️⚠️ WARNING: Using TEST API key! ⚠️⚠️⚠️');
-      console.warn('[RevenueCat] ⚠️ Paywalls will NOT present in test mode!');
-      console.warn('[RevenueCat] ⚠️ Replace with your PRODUCTION key from:');
-      console.warn('[RevenueCat] ⚠️ https://app.revenuecat.com/ → Settings → API Keys');
+      console.error('[RevenueCat] ❌❌❌ CRITICAL ERROR: Using TEST API key! ❌❌❌');
+      console.error('[RevenueCat] ❌ Paywalls will NOT present in test mode!');
+      console.error('[RevenueCat] ❌ Replace with your PRODUCTION key from:');
+      console.error('[RevenueCat] ❌ https://app.revenuecat.com/ → Settings → API Keys');
+      
+      return {
+        state: 'error',
+        message: '⚠️ TEST API KEY DETECTED\n\n' +
+                 'Paywalls cannot be presented in test mode.\n\n' +
+                 'To fix this:\n' +
+                 '1. Go to https://app.revenuecat.com/\n' +
+                 '2. Navigate to Settings → API Keys\n' +
+                 '3. Copy your iOS or Android PRODUCTION key\n' +
+                 '4. Replace the test key in utils/superwallConfig.ts\n\n' +
+                 'Your production key will start with "appl_" (iOS) or "goog_" (Android)'
+      };
+    }
+    
+    // Check if placeholder keys are still in use
+    if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
+      console.error('[RevenueCat] ❌❌❌ CRITICAL ERROR: Placeholder API key detected! ❌❌❌');
+      console.error('[RevenueCat] ❌ You must replace the placeholder with your actual production key!');
+      console.error('[RevenueCat] ❌ Get your key from: https://app.revenuecat.com/ → Settings → API Keys');
+      
+      Alert.alert(
+        'RevenueCat Not Configured',
+        '⚠️ PRODUCTION API KEY REQUIRED\n\n' +
+        'The app is using a placeholder API key. You must configure your production RevenueCat API key.\n\n' +
+        'Steps:\n' +
+        '1. Go to https://app.revenuecat.com/\n' +
+        '2. Navigate to Settings → API Keys\n' +
+        '3. Copy your iOS or Android PRODUCTION key\n' +
+        '4. Replace the placeholder in utils/superwallConfig.ts\n\n' +
+        'Your production key will start with "appl_" (iOS) or "goog_" (Android)',
+        [{ text: 'OK' }]
+      );
+      
+      return false;
     }
     
     // Set log level for debugging
@@ -170,7 +205,15 @@ export const checkPaymentConfiguration = (): boolean => {
   console.log('[RevenueCat] ⚙️ Configuration Check:');
   console.log('[RevenueCat] - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat] - Platform:', Platform.OS);
-  console.log('[RevenueCat] - API Key Type:', REVENUECAT_API_KEY.startsWith('test_') ? '⚠️ TEST KEY (won\'t show paywalls!)' : '✅ PRODUCTION KEY');
+  
+  if (REVENUECAT_API_KEY.startsWith('test_')) {
+    console.log('[RevenueCat] - API Key Type: ⚠️ TEST KEY (won\'t show paywalls!)');
+  } else if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
+    console.log('[RevenueCat] - API Key Type: ⚠️ PLACEHOLDER KEY (not configured!)');
+  } else {
+    console.log('[RevenueCat] - API Key Type: ✅ PRODUCTION KEY');
+  }
+  
   console.log('[RevenueCat] - Offering IDs:', PAYMENT_CONFIG.OFFERING_IDS);
   console.log('[RevenueCat] - Current Offering:', currentOffering?.identifier || 'None');
   
@@ -200,6 +243,22 @@ export const presentPaywall = async (
                  '2. Navigate to Settings → API Keys\n' +
                  '3. Copy your iOS or Android PRODUCTION key\n' +
                  '4. Replace the test key in utils/superwallConfig.ts\n\n' +
+                 'Your production key will start with "appl_" (iOS) or "goog_" (Android)'
+      };
+    }
+    
+    // Check if using placeholder key
+    if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
+      console.error('[RevenueCat] ❌ Cannot present paywall with placeholder API key!');
+      return {
+        state: 'error',
+        message: '⚠️ PRODUCTION API KEY REQUIRED\n\n' +
+                 'You must configure your production RevenueCat API key.\n\n' +
+                 'Steps:\n' +
+                 '1. Go to https://app.revenuecat.com/\n' +
+                 '2. Navigate to Settings → API Keys\n' +
+                 '3. Copy your iOS or Android PRODUCTION key\n' +
+                 '4. Replace the placeholder in utils/superwallConfig.ts\n\n' +
                  'Your production key will start with "appl_" (iOS) or "goog_" (Android)'
       };
     }
