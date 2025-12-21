@@ -14,6 +14,8 @@ serve(async (req) => {
 
   try {
     console.log('=== GENERATE DAILY REPORT STARTED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
@@ -49,6 +51,12 @@ serve(async (req) => {
       .eq('date', today)
       .maybeSingle();
 
+    console.log('Surf conditions result:', {
+      error: surfResult.error,
+      hasData: !!surfResult.data,
+      data: surfResult.data
+    });
+
     console.log('Fetching weather data...');
     const weatherResult = await supabase
       .from('weather_data')
@@ -56,12 +64,24 @@ serve(async (req) => {
       .eq('date', today)
       .maybeSingle();
 
+    console.log('Weather data result:', {
+      error: weatherResult.error,
+      hasData: !!weatherResult.data,
+      data: weatherResult.data
+    });
+
     console.log('Fetching tide data...');
     const tideResult = await supabase
       .from('tide_data')
       .select('*')
       .eq('date', today)
       .order('time');
+
+    console.log('Tide data result:', {
+      error: tideResult.error,
+      count: tideResult.data?.length || 0,
+      data: tideResult.data
+    });
 
     if (surfResult.error) {
       console.error('Error fetching surf conditions:', surfResult.error);
@@ -86,9 +106,6 @@ serve(async (req) => {
       hasSurf: !!surfData,
       hasWeather: !!weatherData,
       tideCount: tideData.length,
-      surfData: surfData ? JSON.stringify(surfData) : 'null',
-      weatherData: weatherData ? JSON.stringify(weatherData) : 'null',
-      tideData: JSON.stringify(tideData)
     });
 
     if (!surfData || !weatherData) {
@@ -96,7 +113,9 @@ serve(async (req) => {
       if (!surfData) missingData.push('surf conditions');
       if (!weatherData) missingData.push('weather data');
       
-      throw new Error(`Missing required data for report generation: ${missingData.join(', ')}`);
+      const errorMsg = `Missing required data for report generation: ${missingData.join(', ')}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
     // Generate tide summary
@@ -136,6 +155,7 @@ serve(async (req) => {
 
     if (reportError) {
       console.error('Error storing surf report:', reportError);
+      console.error('Error details:', JSON.stringify(reportError, null, 2));
       throw reportError;
     }
 
@@ -157,6 +177,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('=== GENERATE DAILY REPORT FAILED ===');
     console.error('Error in generate-daily-report:', error);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    
     return new Response(
       JSON.stringify({
         success: false,

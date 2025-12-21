@@ -17,6 +17,8 @@ serve(async (req) => {
 
   try {
     console.log('=== FETCH TIDE DATA STARTED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
@@ -59,10 +61,11 @@ serve(async (req) => {
     if (!tideResponse.ok) {
       const errorText = await tideResponse.text();
       console.error('NOAA Tides API error:', tideResponse.status, errorText);
-      throw new Error(`NOAA Tides API error: ${tideResponse.status} ${tideResponse.statusText}`);
+      throw new Error(`NOAA Tides API error: ${tideResponse.status} - ${errorText}`);
     }
 
     const tideData = await tideResponse.json();
+    console.log('Tide data received:', JSON.stringify(tideData, null, 2));
 
     if (!tideData.predictions || tideData.predictions.length === 0) {
       console.log('No tide predictions available for today');
@@ -71,6 +74,7 @@ serve(async (req) => {
           success: true,
           message: 'No tide predictions available for today',
           tides: 0,
+          count: 0,
           date: today,
           timestamp: new Date().toISOString(),
         }),
@@ -130,6 +134,7 @@ serve(async (req) => {
         success: true,
         message: 'Tide data updated successfully',
         tides: tideRecords.length,
+        count: tideRecords.length,
         records: tideRecords,
         date: today,
         timestamp: new Date().toISOString(),
@@ -142,6 +147,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('=== FETCH TIDE DATA FAILED ===');
     console.error('Error in fetch-tide-data:', error);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    
     return new Response(
       JSON.stringify({
         success: false,

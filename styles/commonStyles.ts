@@ -17,6 +17,8 @@ export const colors = {
   reportBoldText: '#E8F4F8',    // Light blue-gray for bold text on dark backgrounds
   reportLabel: '#B8D4E0',       // Light blue-gray for labels on dark backgrounds
   errorBackground: '#FF6B6B',   // Bright red for errors
+  success: '#4CAF50',           // Green for success states
+  error: '#F44336',             // Red for error states
 };
 
 export const buttonStyles = StyleSheet.create({

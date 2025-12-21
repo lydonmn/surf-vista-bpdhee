@@ -18,6 +18,8 @@ serve(async (req) => {
 
   try {
     console.log('=== FETCH WEATHER DATA STARTED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
@@ -44,10 +46,12 @@ serve(async (req) => {
     if (!pointsResponse.ok) {
       const errorText = await pointsResponse.text();
       console.error('NOAA Points API error:', pointsResponse.status, errorText);
-      throw new Error(`NOAA Points API error: ${pointsResponse.status} ${pointsResponse.statusText}`);
+      throw new Error(`NOAA Points API error: ${pointsResponse.status} - ${errorText}`);
     }
 
     const pointsData = await pointsResponse.json();
+    console.log('Points data received:', JSON.stringify(pointsData.properties, null, 2));
+    
     const forecastUrl = pointsData.properties.forecast;
     const forecastHourlyUrl = pointsData.properties.forecastHourly;
 
@@ -65,13 +69,14 @@ serve(async (req) => {
     if (!forecastResponse.ok) {
       const errorText = await forecastResponse.text();
       console.error('NOAA Forecast API error:', forecastResponse.status, errorText);
-      throw new Error(`NOAA Forecast API error: ${forecastResponse.status} ${forecastResponse.statusText}`);
+      throw new Error(`NOAA Forecast API error: ${forecastResponse.status} - ${errorText}`);
     }
 
     const forecastData = await forecastResponse.json();
     const periods = forecastData.properties.periods;
 
     console.log(`Received ${periods.length} forecast periods`);
+    console.log('First period:', JSON.stringify(periods[0], null, 2));
 
     // Get current date in EST
     const now = new Date();
@@ -188,6 +193,7 @@ serve(async (req) => {
         message: 'Weather data updated successfully',
         current: weatherData,
         forecast_periods: forecastRecords.length,
+        forecast_count: forecastInsertData?.length || 0,
         timestamp: new Date().toISOString(),
       }),
       {
@@ -198,6 +204,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('=== FETCH WEATHER DATA FAILED ===');
     console.error('Error in fetch-weather-data:', error);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    
     return new Response(
       JSON.stringify({
         success: false,

@@ -17,6 +17,8 @@ serve(async (req) => {
 
   try {
     console.log('=== FETCH SURF REPORTS STARTED ===');
+    console.log('Timestamp:', new Date().toISOString());
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
@@ -38,13 +40,14 @@ serve(async (req) => {
     if (!buoyResponse.ok) {
       const errorText = await buoyResponse.text();
       console.error('NOAA Buoy API error:', buoyResponse.status, errorText);
-      throw new Error(`NOAA Buoy API error: ${buoyResponse.status} ${buoyResponse.statusText}`);
+      throw new Error(`NOAA Buoy API error: ${buoyResponse.status} - ${errorText}`);
     }
 
     const buoyText = await buoyResponse.text();
     const lines = buoyText.trim().split('\n');
 
     console.log(`Received ${lines.length} lines from buoy`);
+    console.log('First 5 lines:', lines.slice(0, 5).join('\n'));
 
     // Skip header lines (first 2 lines)
     if (lines.length < 3) {
@@ -137,7 +140,7 @@ serve(async (req) => {
 
     console.log('Storing surf data:', JSON.stringify(surfData, null, 2));
 
-    // Store in a temporary table for report generation
+    // Store in surf_conditions table
     const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
       .upsert(surfData, { onConflict: 'date' })
@@ -145,6 +148,7 @@ serve(async (req) => {
 
     if (surfError) {
       console.error('Error storing surf data:', surfError);
+      console.error('Error details:', JSON.stringify(surfError, null, 2));
       throw surfError;
     }
 
@@ -166,6 +170,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('=== FETCH SURF REPORTS FAILED ===');
     console.error('Error in fetch-surf-reports:', error);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    
     return new Response(
       JSON.stringify({
         success: false,

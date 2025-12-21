@@ -640,6 +640,35 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Debug Diagnostics Card */}
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin-debug')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="wrench.and.screwdriver.fill"
+              android_material_icon_name="build"
+              size={32}
+              color="#FF9800"
+            />
+            <View style={styles.cardHeaderText}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Debug Diagnostics
+              </Text>
+              <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+                Test data fetching and troubleshoot issues
+              </Text>
+            </View>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron_right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
+
         {/* Video Upload Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
