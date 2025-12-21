@@ -375,7 +375,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/(tabs)/weather')}
+          onPress={() => router.push('/(tabs)/forecast')}
         >
           <IconSymbol
             ios_icon_name="water.waves"
@@ -384,7 +384,7 @@ export default function HomeScreen() {
             color={colors.primary}
           />
           <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Tides
+            Forecast
           </Text>
         </TouchableOpacity>
       </View>
