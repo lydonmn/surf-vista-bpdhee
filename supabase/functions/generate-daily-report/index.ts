@@ -53,6 +53,7 @@ serve(async (req) => {
       );
     }
     
+    // Use service role key for database operations (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Generating daily surf report for Folly Beach, SC...');
