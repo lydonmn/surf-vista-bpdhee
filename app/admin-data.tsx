@@ -172,6 +172,39 @@ export default function AdminDataScreen() {
     }
   };
 
+  const handleGenerateReport = async () => {
+    setIsLoading(true);
+    addLog('Generating new surf report...');
+
+    try {
+      const response = await supabase.functions.invoke('generate-daily-report');
+      
+      console.log('Generate report response:', response);
+      addLog(`Generate report response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+
+      if (response.error) {
+        const errorMsg = response.error.message || JSON.stringify(response.error);
+        addLog(`❌ Report generation error: ${errorMsg}`, 'error');
+        Alert.alert('Error', errorMsg);
+      } else if (response.data?.success) {
+        addLog(`✅ Report generated successfully`, 'success');
+        Alert.alert('Success', response.data.message || 'Surf report generated successfully');
+        await loadDataCounts();
+      } else {
+        const errorMsg = response.data?.error || 'Failed to generate report';
+        addLog(`❌ Report generation failed: ${errorMsg}`, 'error');
+        Alert.alert('Error', errorMsg);
+      }
+    } catch (error) {
+      console.error('Error generating report:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Report generation exception: ${errorMsg}`, 'error');
+      Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleFetchWeather = async () => {
     setIsLoading(true);
     addLog('Fetching weather data for Folly Beach, SC...');
@@ -324,6 +357,19 @@ export default function AdminDataScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Generate Report Button */}
+        <TouchableOpacity
+          style={[styles.button, styles.accentButton, isLoading && styles.buttonDisabled]}
+          onPress={handleGenerateReport}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>📝 Generate New Surf Report</Text>
+          )}
+        </TouchableOpacity>
+
         {/* Individual Updates */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Individual Updates</Text>
@@ -438,6 +484,9 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: colors.primary,
+  },
+  accentButton: {
+    backgroundColor: colors.accent,
   },
   secondaryButton: {
     backgroundColor: colors.card,
