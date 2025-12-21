@@ -403,40 +403,65 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   const swellDir = surfData.swell_direction;
   const period = surfData.wave_period;
 
+  // Use a more random seed - combine timestamp with random values
+  const randomSeed = Date.now() + Math.floor(Math.random() * 10000);
+
   // EXPANDED variety arrays with MORE phrases for better randomization
   const openings = [
-    { min: 8, phrases: ['Epic at Folly!', 'Firing today!', 'Get out there!', 'Pumping!', 'Score!', 'Stoked!', 'Solid day!', 'Prime time!'] },
-    { min: 6, phrases: ['Decent waves.', 'Worth a paddle.', 'Looking good.', 'Rideable.', 'Not bad.', 'Solid session.', 'Fun out there.', 'Check it out.'] },
-    { min: 4, phrases: ['Small but clean.', 'Marginal.', 'Tiny but rideable.', 'Better than nothing.', 'Knee-high fun.', 'Longboard day.', 'Mellow vibes.', 'Chill session.'] },
-    { min: 0, phrases: ['Flat.', 'No surf.', 'Lake mode.', 'Patience.', 'Tomorrow maybe.', 'Rest day.', 'Yoga time.', 'Check back later.'] }
+    { min: 8, phrases: ['Epic at Folly!', 'Firing today!', 'Get out there!', 'Pumping!', 'Score!', 'Stoked!', 'Solid day!', 'Prime time!', 'Go time!', 'Maxing out!'] },
+    { min: 6, phrases: ['Decent waves.', 'Worth a paddle.', 'Looking good.', 'Rideable.', 'Not bad.', 'Solid session.', 'Fun out there.', 'Check it out.', 'Pretty good.', 'Nice sets.'] },
+    { min: 4, phrases: ['Small but clean.', 'Marginal.', 'Tiny but rideable.', 'Better than nothing.', 'Knee-high fun.', 'Longboard day.', 'Mellow vibes.', 'Chill session.', 'Cruisy.', 'Easy going.'] },
+    { min: 0, phrases: ['Flat.', 'No surf.', 'Lake mode.', 'Patience.', 'Tomorrow maybe.', 'Rest day.', 'Yoga time.', 'Check back later.', 'Nada.', 'Zilch.'] }
   ];
 
   const waveDescriptions = [
-    { min: 7, clean: ['overhead sets', 'head-high bombs', 'proper waves', 'solid barrels', 'epic faces', 'firing peaks'], rough: ['big but junky', 'size without shape', 'powerful mess', 'heavy chop', 'wild sets', 'gnarly conditions'] },
-    { min: 4, clean: ['chest-high fun', 'shoulder-high peelers', 'waist-to-chest', 'playful walls', 'clean faces', 'fun peaks'], rough: ['wind-affected', 'bumpy', 'textured', 'choppy', 'rough faces', 'challenging'] },
-    { min: 2, clean: ['knee-high rollers', 'small but shapely', 'ankle-to-knee', 'tiny peelers', 'mini waves', 'gentle rollers'], rough: ['wind slop', 'choppy mess', 'barely rideable', 'blown out', 'mushy', 'weak chop'] },
-    { min: 0, clean: ['flat', 'no swell', 'glassy lake', 'mirror surface', 'zero waves', 'dead calm'], rough: ['blown flat', 'nothing', 'nada', 'zilch', 'flatsville', 'no action'] }
+    { min: 7, clean: ['overhead sets', 'head-high bombs', 'proper waves', 'solid barrels', 'epic faces', 'firing peaks', 'heavy walls', 'pumping sets'], rough: ['big but junky', 'size without shape', 'powerful mess', 'heavy chop', 'wild sets', 'gnarly conditions', 'blown out beasts', 'chaotic surf'] },
+    { min: 4, clean: ['chest-high fun', 'shoulder-high peelers', 'waist-to-chest', 'playful walls', 'clean faces', 'fun peaks', 'nice rollers', 'quality waves'], rough: ['wind-affected', 'bumpy', 'textured', 'choppy', 'rough faces', 'challenging', 'messy sets', 'wind-torn'] },
+    { min: 2, clean: ['knee-high rollers', 'small but shapely', 'ankle-to-knee', 'tiny peelers', 'mini waves', 'gentle rollers', 'soft waves', 'mellow bumps'], rough: ['wind slop', 'choppy mess', 'barely rideable', 'blown out', 'mushy', 'weak chop', 'textured mush', 'wind-chopped'] },
+    { min: 0, clean: ['flat', 'no swell', 'glassy lake', 'mirror surface', 'zero waves', 'dead calm', 'glass off', 'pond-like'], rough: ['blown flat', 'nothing', 'nada', 'zilch', 'flatsville', 'no action', 'zero energy', 'dead zone'] }
   ];
 
   const windPhrases = {
-    offshore_light: ['light offshore', 'gentle offshore breeze', 'offshore grooming', 'clean offshore', 'perfect wind', 'glassy conditions'],
-    offshore_strong: ['strong offshore', 'howling offshore', 'offshore but gusty', 'breezy offshore', 'stiff offshore', 'offshore winds'],
-    onshore_light: ['light onshore', 'slight texture', 'gentle onshore', 'soft onshore', 'mild onshore', 'barely onshore'],
-    onshore_strong: ['blown out', 'choppy onshore', 'wind-ravaged', 'onshore mess', 'heavy onshore', 'strong onshore']
+    offshore_light: ['light offshore', 'gentle offshore breeze', 'offshore grooming', 'clean offshore', 'perfect wind', 'glassy conditions', 'offshore kiss', 'grooming breeze'],
+    offshore_strong: ['strong offshore', 'howling offshore', 'offshore but gusty', 'breezy offshore', 'stiff offshore', 'offshore winds', 'gusty offshore', 'offshore blast'],
+    onshore_light: ['light onshore', 'slight texture', 'gentle onshore', 'soft onshore', 'mild onshore', 'barely onshore', 'subtle texture', 'light sea breeze'],
+    onshore_strong: ['blown out', 'choppy onshore', 'wind-ravaged', 'onshore mess', 'heavy onshore', 'strong onshore', 'onshore chaos', 'wind-torn']
   };
 
   const periodComments = [
-    { min: 12, phrases: ['Long-interval swell', 'Quality groundswell', 'Well-spaced sets', 'Clean period', 'Solid interval', 'Nice spacing'] },
-    { min: 8, phrases: ['Moderate period', 'Decent interval', 'Fair spacing', 'Average period', 'Okay interval', 'Standard spacing'] },
-    { min: 0, phrases: ['Short-period wind swell', 'Quick interval', 'Choppy period', 'Fast period', 'Wind swell', 'Rapid interval'] }
+    { min: 12, phrases: ['Long-interval swell', 'Quality groundswell', 'Well-spaced sets', 'Clean period', 'Solid interval', 'Nice spacing', 'Proper groundswell', 'Long-period energy'] },
+    { min: 8, phrases: ['Moderate period', 'Decent interval', 'Fair spacing', 'Average period', 'Okay interval', 'Standard spacing', 'Mid-range period', 'Reasonable interval'] },
+    { min: 0, phrases: ['Short-period wind swell', 'Quick interval', 'Choppy period', 'Fast period', 'Wind swell', 'Rapid interval', 'Close sets', 'Wind-driven chop'] }
   ];
 
-  // Select opening based on rating - USE TIMESTAMP FOR RANDOMIZATION
-  const timestamp = Date.now();
+  // Additional descriptive phrases for more variety
+  const swellComments = [
+    'Swell direction looking good.',
+    'Nice angle on the swell.',
+    'Swell hitting the beach well.',
+    'Good swell window.',
+    'Swell wrapping nicely.',
+    'Favorable swell direction.',
+    'Swell lines stacking up.',
+    'Clean swell energy.'
+  ];
+
+  const waterTempComments = [
+    'Water feels great.',
+    'Nice water temp.',
+    'Comfortable water.',
+    'Water&apos;s perfect.',
+    'Good water temp.',
+    'Pleasant water.',
+    'Water&apos;s nice.',
+    'Decent water temp.'
+  ];
+
+  // Select opening based on rating - USE RANDOM SEED
   let opening = 'Conditions at Folly.';
   for (const o of openings) {
     if (rating >= o.min) {
-      const index = timestamp % o.phrases.length;
+      const index = randomSeed % o.phrases.length;
       opening = o.phrases[index];
       break;
     }
@@ -451,7 +476,7 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   for (const wd of waveDescriptions) {
     if (surfHeight >= wd.min) {
       const phrases = isClean ? wd.clean : wd.rough;
-      const index = (timestamp + 1) % phrases.length;
+      const index = (randomSeed + 1) % phrases.length;
       waveDesc = phrases[index];
       break;
     }
@@ -461,11 +486,11 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   let windPhrase = '';
   if (isOffshore) {
     const phrases = windSpeed < 12 ? windPhrases.offshore_light : windPhrases.offshore_strong;
-    const index = (timestamp + 2) % phrases.length;
+    const index = (randomSeed + 2) % phrases.length;
     windPhrase = phrases[index];
   } else {
     const phrases = windSpeed < 10 ? windPhrases.onshore_light : windPhrases.onshore_strong;
-    const index = (timestamp + 2) % phrases.length;
+    const index = (randomSeed + 2) % phrases.length;
     windPhrase = phrases[index];
   }
 
@@ -474,35 +499,65 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   let periodComment = '';
   for (const pc of periodComments) {
     if (periodNum >= pc.min) {
-      const index = (timestamp + 3) % pc.phrases.length;
+      const index = (randomSeed + 3) % pc.phrases.length;
       periodComment = pc.phrases[index];
       break;
     }
   }
 
-  // Build the report with variety - ALWAYS DIFFERENT
+  // Select additional comments
+  const swellComment = swellComments[(randomSeed + 4) % swellComments.length];
+  const waterComment = waterTempComments[(randomSeed + 5) % waterTempComments.length];
+
+  // Build the report with MORE variety and length
   let report = `${opening} `;
 
-  // Wave info
-  report += `Surf is ${heightStr} with ${waveDesc}. `;
+  // Wave info with more detail
+  report += `Surf is running ${heightStr} with ${waveDesc}. `;
   
-  // Period and direction
-  report += `${periodComment} at ${period} from ${swellDir}. `;
+  // Period and direction with extra commentary
+  report += `${periodComment} at ${period} from ${swellDir}. ${swellComment} `;
 
-  // Wind
-  report += `${windPhrase.charAt(0).toUpperCase() + windPhrase.slice(1)} at ${surfData.wind_speed} from ${windDir}. `;
+  // Wind with more context
+  report += `Wind is ${windPhrase} at ${surfData.wind_speed} from ${windDir}. `;
 
-  // Water temp
-  report += `Water&apos;s ${surfData.water_temp}. `;
+  // Water temp with commentary
+  report += `${waterComment} ${surfData.water_temp}. `;
 
-  // Weather
+  // Weather with more detail
   const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
-  report += `${weatherConditions}. `;
+  const weatherForecast = weatherData.forecast || weatherData.detailed_forecast || '';
+  
+  report += `Sky: ${weatherConditions}. `;
+  
+  // Add detailed forecast if available and not too long
+  if (weatherForecast && weatherForecast.length < 200) {
+    report += `${weatherForecast} `;
+  }
 
-  // Tide
-  report += `Tides: ${tideSummary}.`;
+  // Tide with context
+  report += `Tides today: ${tideSummary}. `;
 
-  console.log('Generated narrative with timestamp seed:', timestamp);
+  // Add a closing comment based on rating
+  const closingComments = {
+    high: ['Get after it!', 'Don&apos;t miss this one.', 'Prime conditions.', 'Go surf!', 'Epic day ahead.'],
+    medium: ['Worth checking out.', 'Should be fun.', 'Decent session awaits.', 'Give it a go.', 'Not bad at all.'],
+    low: ['Maybe tomorrow.', 'Check back later.', 'Patience pays off.', 'Rest day vibes.', 'Better days coming.']
+  };
+
+  let closingPhrase = '';
+  if (rating >= 7) {
+    closingPhrase = closingComments.high[(randomSeed + 6) % closingComments.high.length];
+  } else if (rating >= 4) {
+    closingPhrase = closingComments.medium[(randomSeed + 6) % closingComments.medium.length];
+  } else {
+    closingPhrase = closingComments.low[(randomSeed + 6) % closingComments.low.length];
+  }
+
+  report += closingPhrase;
+
+  console.log('Generated narrative with random seed:', randomSeed);
+  console.log('Report length:', report.length, 'characters');
 
   return report;
 }

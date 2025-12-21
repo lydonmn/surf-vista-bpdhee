@@ -292,7 +292,27 @@ serve(async (req) => {
       }
     }
 
-    const forecastRecords = Array.from(dailyForecasts.values());
+    // Ensure all entries have both high and low temps by filling in missing values
+    const forecastRecords = Array.from(dailyForecasts.values()).map(record => {
+      // If we're missing low_temp, estimate it as high_temp - 10
+      if (record.low_temp === null && record.high_temp !== null) {
+        record.low_temp = record.high_temp - 10;
+        console.log(`Estimated low_temp for ${record.date}: ${record.low_temp}`);
+      }
+      // If we're missing high_temp, estimate it as low_temp + 10
+      if (record.high_temp === null && record.low_temp !== null) {
+        record.high_temp = record.low_temp + 10;
+        console.log(`Estimated high_temp for ${record.date}: ${record.high_temp}`);
+      }
+      // If both are missing, use reasonable defaults
+      if (record.high_temp === null && record.low_temp === null) {
+        record.high_temp = 65;
+        record.low_temp = 55;
+        console.log(`Using default temps for ${record.date}`);
+      }
+      return record;
+    });
+
     console.log(`Prepared ${forecastRecords.length} daily forecast records`);
 
     // Delete ALL old forecasts first to prevent duplicates
