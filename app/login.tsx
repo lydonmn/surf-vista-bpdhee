@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { supabase } from '@/app/integrations/supabase/client';
 
 export default function LoginScreen() {
   const theme = useTheme();
@@ -14,6 +15,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showResendEmail, setShowResendEmail] = useState(false);
+  const [resendEmail, setResendEmail] = useState('');
 
   // Redirect if already logged in
   useEffect(() => {
@@ -22,6 +25,56 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     }
   }, [user, authLoading]);
+
+  const handleResendConfirmation = async () => {
+    if (!resendEmail) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(resendEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('[LoginScreen] Resending confirmation email to:', resendEmail);
+      
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: resendEmail,
+        options: {
+          emailRedirectTo: 'https://natively.dev/email-confirmed'
+        }
+      });
+
+      if (error) {
+        console.error('[LoginScreen] Resend error:', error);
+        Alert.alert('Error', error.message);
+      } else {
+        Alert.alert(
+          'Email Sent!',
+          'A new confirmation email has been sent. Please check your inbox and spam folder.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setShowResendEmail(false);
+                setResendEmail('');
+              }
+            }
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('[LoginScreen] Resend exception:', error);
+      Alert.alert('Error', error.message || 'Failed to resend confirmation email');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!email || !password) {
@@ -52,7 +105,7 @@ export default function LoginScreen() {
         if (result.success) {
           Alert.alert(
             'Success!',
-            result.message,
+            result.message + '\n\n⚠️ Important: Please check your spam/junk folder if you don\'t see the email within a few minutes.',
             [
               {
                 text: 'OK',
@@ -77,7 +130,28 @@ export default function LoginScreen() {
           console.log('[LoginScreen] Sign in successful, navigating to home');
           router.replace('/(tabs)');
         } else {
-          Alert.alert('Sign In Failed', result.message);
+          // Check if it's an email not confirmed error
+          if (result.message.includes('verify your email') || result.message.includes('Email not confirmed')) {
+            Alert.alert(
+              'Email Not Verified',
+              'Please verify your email address before signing in. Check your inbox and spam folder for the confirmation email.',
+              [
+                {
+                  text: 'Resend Email',
+                  onPress: () => {
+                    setResendEmail(email);
+                    setShowResendEmail(true);
+                  }
+                },
+                {
+                  text: 'OK',
+                  style: 'cancel'
+                }
+              ]
+            );
+          } else {
+            Alert.alert('Sign In Failed', result.message);
+          }
         }
       }
     } catch (error: any) {
@@ -91,6 +165,7 @@ export default function LoginScreen() {
   const toggleMode = () => {
     setIsSignUp(!isSignUp);
     setPassword('');
+    setShowResendEmail(false);
   };
 
   if (authLoading) {
@@ -98,6 +173,108 @@ export default function LoginScreen() {
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
+    );
+  }
+
+  // Resend confirmation email view
+  if (showResendEmail) {
+    return (
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
+                <IconSymbol
+                  ios_icon_name="envelope.badge.fill"
+                  android_material_icon_name="mark_email_read"
+                  size={64}
+                  color="#FFFFFF"
+                />
+              </View>
+              <Text style={[styles.title, { color: theme.colors.text }]}>
+                Resend Confirmation
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                Enter your email to receive a new confirmation link
+              </Text>
+            </View>
+
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <IconSymbol
+                  ios_icon_name="envelope.fill"
+                  android_material_icon_name="email"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.input, { color: theme.colors.text }]}
+                  placeholder="Email"
+                  placeholderTextColor={colors.textSecondary}
+                  value={resendEmail}
+                  onChangeText={setResendEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!isLoading}
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: colors.primary },
+                  isLoading && styles.submitButtonDisabled
+                ]}
+                onPress={handleResendConfirmation}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    Resend Confirmation Email
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={() => {
+                  setShowResendEmail(false);
+                  setResendEmail('');
+                }}
+                disabled={isLoading}
+              >
+                <Text style={[styles.toggleButtonText, { color: colors.primary }]}>
+                  Back to Sign In
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Info */}
+            <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
+              <IconSymbol
+                ios_icon_name="info.circle.fill"
+                android_material_icon_name="info"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={[styles.noticeText, { color: theme.colors.text }]}>
+                Make sure to check your spam/junk folder. Confirmation emails sometimes end up there.
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -203,6 +380,19 @@ export default function LoginScreen() {
                   : 'Don\'t have an account? Sign Up'}
               </Text>
             </TouchableOpacity>
+
+            {/* Resend confirmation link */}
+            {!isSignUp && (
+              <TouchableOpacity
+                style={[styles.toggleButton, { marginTop: 8 }]}
+                onPress={() => setShowResendEmail(true)}
+                disabled={isLoading}
+              >
+                <Text style={[styles.resendLinkText, { color: colors.textSecondary }]}>
+                  Didn&apos;t receive confirmation email?
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Info */}
@@ -227,9 +417,14 @@ export default function LoginScreen() {
                 size={20}
                 color={colors.primary}
               />
-              <Text style={[styles.noticeText, { color: theme.colors.text }]}>
-                After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.noticeText, { color: theme.colors.text, marginBottom: 8 }]}>
+                  After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.
+                </Text>
+                <Text style={[styles.noticeText, { color: theme.colors.text, fontSize: 12, fontStyle: 'italic' }]}>
+                  💡 Tip: Check your spam/junk folder if you don&apos;t see the email within a few minutes.
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -317,6 +512,10 @@ const styles = StyleSheet.create({
   toggleButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  resendLinkText: {
+    fontSize: 13,
+    textDecorationLine: 'underline',
   },
   infoContainer: {
     flexDirection: 'row',
