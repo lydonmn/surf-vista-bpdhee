@@ -16,18 +16,35 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== FETCH TIDE DATA STARTED ===');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Fetching tide data from NOAA...');
+    console.log('Station ID:', STATION_ID);
 
     // Get current date in EST
-    const estDate = new Date().toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
+    const now = new Date();
+    const estDateString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     });
-    const today = new Date(estDate);
-    const todayStr = today.toISOString().split('T')[0].replace(/-/g, '');
+    
+    // Parse the EST date string (format: MM/DD/YYYY)
+    const [month, day, year] = estDateString.split('/');
+    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const todayStr = today.replace(/-/g, '');
+
+    console.log('Current EST date:', today);
+    console.log('NOAA date format:', todayStr);
 
     // Fetch tide predictions for today
     const tideUrl = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?` +
@@ -40,18 +57,22 @@ serve(async (req) => {
     const tideResponse = await fetch(tideUrl);
 
     if (!tideResponse.ok) {
+      const errorText = await tideResponse.text();
+      console.error('NOAA Tides API error:', tideResponse.status, errorText);
       throw new Error(`NOAA Tides API error: ${tideResponse.status} ${tideResponse.statusText}`);
     }
 
     const tideData = await tideResponse.json();
 
     if (!tideData.predictions || tideData.predictions.length === 0) {
-      console.log('No tide predictions available');
+      console.log('No tide predictions available for today');
       return new Response(
         JSON.stringify({
           success: true,
           message: 'No tide predictions available for today',
           tides: 0,
+          date: today,
+          timestamp: new Date().toISOString(),
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -63,11 +84,16 @@ serve(async (req) => {
     console.log(`Received ${tideData.predictions.length} tide predictions`);
 
     // Delete old tide data for today
-    const todayDate = today.toISOString().split('T')[0];
-    await supabase
+    const { error: deleteError } = await supabase
       .from('tide_data')
       .delete()
-      .eq('date', todayDate);
+      .eq('date', today);
+
+    if (deleteError) {
+      console.error('Error deleting old tide data:', deleteError);
+    } else {
+      console.log('Old tide data deleted successfully');
+    }
 
     // Store tide predictions
     const tideRecords = tideData.predictions.map((prediction: any) => {
@@ -75,7 +101,7 @@ serve(async (req) => {
       const [datePart, timePart] = prediction.t.split(' ');
       
       return {
-        date: todayDate,
+        date: today,
         time: timePart,
         type: prediction.type === 'H' ? 'High' : 'Low',
         height: parseFloat(prediction.v),
@@ -84,18 +110,20 @@ serve(async (req) => {
       };
     });
 
-    console.log(`Inserting ${tideRecords.length} tide records`);
+    console.log(`Inserting ${tideRecords.length} tide records:`, JSON.stringify(tideRecords, null, 2));
 
-    const { error: tideError } = await supabase
+    const { data: insertData, error: tideError } = await supabase
       .from('tide_data')
-      .insert(tideRecords);
+      .insert(tideRecords)
+      .select();
 
     if (tideError) {
       console.error('Error storing tide data:', tideError);
       throw tideError;
     }
 
-    console.log('Tide data updated successfully');
+    console.log(`Tide data stored successfully: ${insertData?.length || 0} records`);
+    console.log('=== FETCH TIDE DATA COMPLETED ===');
 
     return new Response(
       JSON.stringify({
@@ -103,6 +131,8 @@ serve(async (req) => {
         message: 'Tide data updated successfully',
         tides: tideRecords.length,
         records: tideRecords,
+        date: today,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -110,11 +140,14 @@ serve(async (req) => {
       }
     );
   } catch (error) {
+    console.error('=== FETCH TIDE DATA FAILED ===');
     console.error('Error in fetch-tide-data:', error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

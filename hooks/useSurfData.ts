@@ -37,6 +37,7 @@ export function useSurfData() {
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const isMountedRef = useRef(true);
+  const isUpdatingRef = useRef(false);
 
   // Memoize fetchData to prevent infinite loops
   const fetchData = useCallback(async () => {
@@ -45,8 +46,21 @@ export function useSurfData() {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-      const today = new Date().toISOString().split('T')[0];
-      console.log('[useSurfData] Fetching data for date:', today);
+      // Get current date in EST
+      const now = new Date();
+      const estDateString = now.toLocaleString('en-US', { 
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      
+      // Parse the EST date string (format: MM/DD/YYYY)
+      const [month, day, year] = estDateString.split('/');
+      const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      
+      console.log('[useSurfData] Fetching data for EST date:', today);
+      console.log('[useSurfData] Current UTC time:', now.toISOString());
 
       // Fetch all data in parallel
       const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
@@ -79,16 +93,20 @@ export function useSurfData() {
       console.log('[useSurfData] Surf reports result:', {
         error: surfReportsResult.error,
         count: surfReportsResult.data?.length || 0,
+        dates: surfReportsResult.data?.map(r => r.date) || [],
       });
 
       console.log('[useSurfData] Weather result:', {
         error: weatherResult.error,
         hasData: !!weatherResult.data,
+        date: weatherResult.data?.date,
+        updated_at: weatherResult.data?.updated_at,
       });
 
       console.log('[useSurfData] Forecast result:', {
         error: forecastResult.error,
         count: forecastResult.data?.length || 0,
+        dates: forecastResult.data?.map(f => f.date) || [],
       });
 
       console.log('[useSurfData] Tide result:', {
@@ -113,12 +131,7 @@ export function useSurfData() {
         throw tideResult.error;
       }
 
-      console.log('[useSurfData] Data fetched successfully:', {
-        surfReports: surfReportsResult.data?.length || 0,
-        hasWeather: !!weatherResult.data,
-        forecast: forecastResult.data?.length || 0,
-        tides: tideResult.data?.length || 0,
-      });
+      console.log('[useSurfData] Data fetched successfully');
 
       if (isMountedRef.current) {
         setState({
@@ -159,48 +172,35 @@ export function useSurfData() {
   }, []); // Empty dependency array - this function doesn't depend on any props or state
 
   const updateAllData = useCallback(async () => {
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current || isUpdatingRef.current) {
+      console.log('[useSurfData] Update already in progress, skipping...');
+      return;
+    }
 
     try {
+      isUpdatingRef.current = true;
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       console.log('[useSurfData] Updating all data via Edge Functions...');
 
-      // Call edge functions to update data
-      const [weatherResponse, tideResponse, surfResponse] = await Promise.all([
-        supabase.functions.invoke('fetch-weather-data'),
-        supabase.functions.invoke('fetch-tide-data'),
-        supabase.functions.invoke('fetch-surf-reports'),
-      ]);
+      // Call the new unified edge function
+      const response = await supabase.functions.invoke('update-all-surf-data');
 
-      // Log responses
-      console.log('[useSurfData] Weather response:', weatherResponse);
-      console.log('[useSurfData] Tide response:', tideResponse);
-      console.log('[useSurfData] Surf response:', surfResponse);
+      console.log('[useSurfData] Update response:', response);
 
       // Check for errors
-      if (weatherResponse.error) {
-        console.error('[useSurfData] Weather update failed:', weatherResponse.error);
-        throw new Error('Weather update failed');
-      }
-      if (tideResponse.error) {
-        console.error('[useSurfData] Tide update failed:', tideResponse.error);
-        throw new Error('Tide update failed');
-      }
-      if (surfResponse.error) {
-        console.error('[useSurfData] Surf report update failed:', surfResponse.error);
-        throw new Error('Surf report update failed');
+      if (response.error) {
+        console.error('[useSurfData] Update failed:', response.error);
+        throw new Error(response.error.message || 'Update failed');
       }
 
-      // Generate daily report
-      const reportResponse = await supabase.functions.invoke('generate-daily-report');
-      console.log('[useSurfData] Daily report response:', reportResponse);
+      const data = response.data;
       
-      if (reportResponse.error) {
-        console.error('[useSurfData] Daily report generation failed:', reportResponse.error);
-        throw new Error('Daily report generation failed');
+      if (!data.success) {
+        console.error('[useSurfData] Update partially failed:', data.errors);
+        // Still refresh data even if some updates failed
       }
 
-      // Refresh data
+      // Refresh data from database
       await fetchData();
     } catch (error) {
       console.error('[useSurfData] Error updating surf data:', error);
@@ -211,6 +211,8 @@ export function useSurfData() {
           error: error instanceof Error ? error.message : 'Failed to update data',
         }));
       }
+    } finally {
+      isUpdatingRef.current = false;
     }
   }, [fetchData]);
 

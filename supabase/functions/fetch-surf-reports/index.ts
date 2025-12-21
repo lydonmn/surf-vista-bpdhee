@@ -16,11 +16,18 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== FETCH SURF REPORTS STARTED ===');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Fetching surf conditions from NOAA Buoy...');
+    console.log('Buoy ID:', BUOY_ID);
 
     // Fetch latest buoy data
     const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
@@ -29,11 +36,15 @@ serve(async (req) => {
     const buoyResponse = await fetch(buoyUrl);
 
     if (!buoyResponse.ok) {
+      const errorText = await buoyResponse.text();
+      console.error('NOAA Buoy API error:', buoyResponse.status, errorText);
       throw new Error(`NOAA Buoy API error: ${buoyResponse.status} ${buoyResponse.statusText}`);
     }
 
     const buoyText = await buoyResponse.text();
     const lines = buoyText.trim().split('\n');
+
+    console.log(`Received ${lines.length} lines from buoy`);
 
     // Skip header lines (first 2 lines)
     if (lines.length < 3) {
@@ -43,6 +54,8 @@ serve(async (req) => {
     // Parse the most recent data line (line 2, after headers)
     const dataLine = lines[2].trim().split(/\s+/);
     
+    console.log('Parsing data line:', dataLine.join(' | '));
+    
     // NOAA Buoy data format:
     // YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD PRES ATMP WTMP DEWP VIS TIDE
     // 0  1  2  3  4  5    6    7   8    9   10  11  12   13   14   15   16  17
@@ -50,6 +63,8 @@ serve(async (req) => {
     const year = parseInt(dataLine[0]);
     const month = parseInt(dataLine[1]);
     const day = parseInt(dataLine[2]);
+    const hour = parseInt(dataLine[3]);
+    const minute = parseInt(dataLine[4]);
     const waveHeight = parseFloat(dataLine[8]); // WVHT - Significant wave height in meters
     const dominantPeriod = parseFloat(dataLine[9]); // DPD - Dominant wave period in seconds
     const meanWaveDirection = parseFloat(dataLine[11]); // MWD - Mean wave direction in degrees
@@ -58,6 +73,7 @@ serve(async (req) => {
     const waterTemp = parseFloat(dataLine[14]); // WTMP - Water temperature in Celsius
 
     console.log('Parsed buoy data:', {
+      timestamp: `${year}-${month}-${day} ${hour}:${minute}`,
       waveHeight,
       dominantPeriod,
       meanWaveDirection,
@@ -92,10 +108,19 @@ serve(async (req) => {
       : 'N/A';
 
     // Get current date in EST
-    const estDate = new Date().toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
+    const now = new Date();
+    const estDateString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     });
-    const today = new Date(estDate).toISOString().split('T')[0];
+    
+    // Parse the EST date string (format: MM/DD/YYYY)
+    const [eMonth, eDay, eYear] = estDateString.split('/');
+    const today = `${eYear}-${eMonth.padStart(2, '0')}-${eDay.padStart(2, '0')}`;
+    
+    console.log('Current EST date:', today);
 
     // Store the raw buoy data
     const surfData = {
@@ -110,25 +135,28 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Storing surf data:', surfData);
+    console.log('Storing surf data:', JSON.stringify(surfData, null, 2));
 
     // Store in a temporary table for report generation
-    const { error: surfError } = await supabase
+    const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
-      .upsert(surfData, { onConflict: 'date' });
+      .upsert(surfData, { onConflict: 'date' })
+      .select();
 
     if (surfError) {
       console.error('Error storing surf data:', surfError);
       throw surfError;
     }
 
-    console.log('Surf conditions updated successfully');
+    console.log('Surf conditions stored successfully:', insertData);
+    console.log('=== FETCH SURF REPORTS COMPLETED ===');
 
     return new Response(
       JSON.stringify({
         success: true,
         message: 'Surf conditions updated successfully',
         data: surfData,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -136,11 +164,14 @@ serve(async (req) => {
       }
     );
   } catch (error) {
+    console.error('=== FETCH SURF REPORTS FAILED ===');
     console.error('Error in fetch-surf-reports:', error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

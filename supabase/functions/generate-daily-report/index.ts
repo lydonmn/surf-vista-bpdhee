@@ -13,24 +13,55 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== GENERATE DAILY REPORT STARTED ===');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Generating daily surf report...');
 
     // Get current date in EST
-    const estDate = new Date().toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
+    const now = new Date();
+    const estDateString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     });
-    const today = new Date(estDate).toISOString().split('T')[0];
+    
+    // Parse the EST date string (format: MM/DD/YYYY)
+    const [month, day, year] = estDateString.split('/');
+    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    console.log('Current EST date:', today);
+    console.log('Current UTC time:', now.toISOString());
 
     // Fetch all the data we need
-    const [surfResult, weatherResult, tideResult] = await Promise.all([
-      supabase.from('surf_conditions').select('*').eq('date', today).maybeSingle(),
-      supabase.from('weather_data').select('*').eq('date', today).maybeSingle(),
-      supabase.from('tide_data').select('*').eq('date', today).order('time'),
-    ]);
+    console.log('Fetching surf conditions...');
+    const surfResult = await supabase
+      .from('surf_conditions')
+      .select('*')
+      .eq('date', today)
+      .maybeSingle();
+
+    console.log('Fetching weather data...');
+    const weatherResult = await supabase
+      .from('weather_data')
+      .select('*')
+      .eq('date', today)
+      .maybeSingle();
+
+    console.log('Fetching tide data...');
+    const tideResult = await supabase
+      .from('tide_data')
+      .select('*')
+      .eq('date', today)
+      .order('time');
 
     if (surfResult.error) {
       console.error('Error fetching surf conditions:', surfResult.error);
@@ -51,24 +82,34 @@ serve(async (req) => {
     const weatherData = weatherResult.data;
     const tideData = tideResult.data || [];
 
-    if (!surfData || !weatherData) {
-      throw new Error('Missing required data for report generation');
-    }
-
     console.log('Data retrieved:', {
       hasSurf: !!surfData,
       hasWeather: !!weatherData,
-      tideCount: tideData.length
+      tideCount: tideData.length,
+      surfData: surfData ? JSON.stringify(surfData) : 'null',
+      weatherData: weatherData ? JSON.stringify(weatherData) : 'null',
+      tideData: JSON.stringify(tideData)
     });
+
+    if (!surfData || !weatherData) {
+      const missingData = [];
+      if (!surfData) missingData.push('surf conditions');
+      if (!weatherData) missingData.push('weather data');
+      
+      throw new Error(`Missing required data for report generation: ${missingData.join(', ')}`);
+    }
 
     // Generate tide summary
     const tideSummary = generateTideSummary(tideData);
+    console.log('Tide summary:', tideSummary);
 
     // Calculate surf rating (1-10)
     const rating = calculateSurfRating(surfData, weatherData);
+    console.log('Calculated rating:', rating);
 
     // Generate report text
     const reportText = generateReportText(surfData, weatherData, tideSummary, rating);
+    console.log('Generated report text:', reportText);
 
     // Create the surf report
     const surfReport = {
@@ -85,25 +126,28 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Generated surf report:', surfReport);
+    console.log('Generated surf report:', JSON.stringify(surfReport, null, 2));
 
     // Store the report
-    const { error: reportError } = await supabase
+    const { data: insertData, error: reportError } = await supabase
       .from('surf_reports')
-      .upsert(surfReport, { onConflict: 'date' });
+      .upsert(surfReport, { onConflict: 'date' })
+      .select();
 
     if (reportError) {
       console.error('Error storing surf report:', reportError);
       throw reportError;
     }
 
-    console.log('Daily surf report generated successfully');
+    console.log('Surf report stored successfully:', insertData);
+    console.log('=== GENERATE DAILY REPORT COMPLETED ===');
 
     return new Response(
       JSON.stringify({
         success: true,
         message: 'Daily surf report generated successfully',
         report: surfReport,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -111,11 +155,14 @@ serve(async (req) => {
       }
     );
   } catch (error) {
+    console.error('=== GENERATE DAILY REPORT FAILED ===');
     console.error('Error in generate-daily-report:', error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

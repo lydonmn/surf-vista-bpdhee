@@ -17,11 +17,18 @@ serve(async (req) => {
   }
 
   try {
+    console.log('=== FETCH WEATHER DATA STARTED ===');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Fetching weather data from NOAA...');
+    console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
 
     // Step 1: Get the grid point for Folly Beach
     const pointsUrl = `https://api.weather.gov/points/${FOLLY_BEACH_LAT},${FOLLY_BEACH_LON}`;
@@ -35,6 +42,8 @@ serve(async (req) => {
     });
 
     if (!pointsResponse.ok) {
+      const errorText = await pointsResponse.text();
+      console.error('NOAA Points API error:', pointsResponse.status, errorText);
       throw new Error(`NOAA Points API error: ${pointsResponse.status} ${pointsResponse.statusText}`);
     }
 
@@ -43,6 +52,7 @@ serve(async (req) => {
     const forecastHourlyUrl = pointsData.properties.forecastHourly;
 
     console.log('Forecast URL:', forecastUrl);
+    console.log('Forecast Hourly URL:', forecastHourlyUrl);
 
     // Step 2: Get the forecast
     const forecastResponse = await fetch(forecastUrl, {
@@ -53,6 +63,8 @@ serve(async (req) => {
     });
 
     if (!forecastResponse.ok) {
+      const errorText = await forecastResponse.text();
+      console.error('NOAA Forecast API error:', forecastResponse.status, errorText);
       throw new Error(`NOAA Forecast API error: ${forecastResponse.status} ${forecastResponse.statusText}`);
     }
 
@@ -62,10 +74,20 @@ serve(async (req) => {
     console.log(`Received ${periods.length} forecast periods`);
 
     // Get current date in EST
-    const estDate = new Date().toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
+    const now = new Date();
+    const estDateString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     });
-    const today = new Date(estDate).toISOString().split('T')[0];
+    
+    // Parse the EST date string (format: MM/DD/YYYY)
+    const [month, day, year] = estDateString.split('/');
+    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    console.log('Current EST date:', today);
+    console.log('Current UTC time:', now.toISOString());
 
     // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
@@ -82,16 +104,19 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Upserting current weather data:', weatherData);
+    console.log('Upserting current weather data:', JSON.stringify(weatherData, null, 2));
 
-    const { error: weatherError } = await supabase
+    const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
-      .upsert(weatherData, { onConflict: 'date' });
+      .upsert(weatherData, { onConflict: 'date' })
+      .select();
 
     if (weatherError) {
       console.error('Error storing weather data:', weatherError);
       throw weatherError;
     }
+
+    console.log('Weather data stored successfully:', weatherInsertData);
 
     // Step 4: Store 7-day forecast
     const forecastRecords = [];
@@ -107,8 +132,8 @@ serve(async (req) => {
         month: '2-digit',
         day: '2-digit'
       });
-      const [month, day, year] = periodDateStr.split('/');
-      const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      const [pMonth, pDay, pYear] = periodDateStr.split('/');
+      const formattedDate = `${pYear}-${pMonth.padStart(2, '0')}-${pDay.padStart(2, '0')}`;
       
       forecastRecords.push({
         date: formattedDate,
@@ -127,23 +152,35 @@ serve(async (req) => {
 
     console.log(`Upserting ${forecastRecords.length} forecast records`);
 
-    // Delete old forecasts first
-    await supabase
+    // Delete old forecasts first (older than 2 days ago)
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+    
+    const { error: deleteError } = await supabase
       .from('weather_forecast')
       .delete()
-      .lt('date', today);
+      .lt('date', twoDaysAgoStr);
+
+    if (deleteError) {
+      console.error('Error deleting old forecasts:', deleteError);
+    } else {
+      console.log('Old forecasts deleted successfully');
+    }
 
     // Insert new forecasts
-    const { error: forecastError } = await supabase
+    const { data: forecastInsertData, error: forecastError } = await supabase
       .from('weather_forecast')
-      .upsert(forecastRecords, { onConflict: 'date,period_name' });
+      .upsert(forecastRecords, { onConflict: 'date,period_name' })
+      .select();
 
     if (forecastError) {
       console.error('Error storing forecast data:', forecastError);
       throw forecastError;
     }
 
-    console.log('Weather data updated successfully');
+    console.log(`Forecast data stored successfully: ${forecastInsertData?.length || 0} records`);
+    console.log('=== FETCH WEATHER DATA COMPLETED ===');
 
     return new Response(
       JSON.stringify({
@@ -151,6 +188,7 @@ serve(async (req) => {
         message: 'Weather data updated successfully',
         current: weatherData,
         forecast_periods: forecastRecords.length,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -158,11 +196,14 @@ serve(async (req) => {
       }
     );
   } catch (error) {
+    console.error('=== FETCH WEATHER DATA FAILED ===');
     console.error('Error in fetch-weather-data:', error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

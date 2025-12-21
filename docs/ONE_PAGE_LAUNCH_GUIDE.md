@@ -27,7 +27,7 @@ Entitlement ID:
 
 ### 1. App Store Connect (30 min)
 ```
-→ https://appstoreconnect.apple.com/
+→ https://appstoreconnect.apple.com/Q
 → Create app: "SurfVista"
 → Create subscription: surfvista_monthly ($5.00/month)
 → Create subscription: surfvista_annual ($50.00/year)
