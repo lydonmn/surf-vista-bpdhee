@@ -258,7 +258,7 @@ export default function ReportScreen() {
               />
               <View style={styles.conditionTextContainer}>
                 <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
-                  Wave Height
+                  Surf Height
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
                   {report.wave_height}
@@ -664,7 +664,7 @@ export default function ReportScreen() {
             • NOAA Tides & Currents (Charleston) - Tide predictions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            Data updates hourly. Previous day&apos;s reports removed after midnight EST.
+            Surf height shown is the rideable face height (calculated from wave height and period). Data updates hourly. Previous day&apos;s reports removed after midnight EST.
           </Text>
         </View>
       </View>

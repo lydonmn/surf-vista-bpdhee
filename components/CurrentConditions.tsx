@@ -112,7 +112,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             <View style={styles.surfGrid}>
               <View style={styles.surfItem}>
                 <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
-                  Waves
+                  Surf Height
                 </Text>
                 <Text style={[styles.surfValue, { color: theme.colors.text }]}>
                   {surfReport.wave_height || '--'}
