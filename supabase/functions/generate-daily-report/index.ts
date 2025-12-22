@@ -453,21 +453,32 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   // Build concise, descriptive narrative (max 4 sentences)
   let report = `${opening} `;
 
-  // Sentence 1: Wave description with rideability
+  // Sentence 1: Wave description with rideability - MORE LIVELY PHRASES!
   if (surfHeight >= 7) {
-    const waveQuality = isClean ? 'overhead perfection' : 'overhead but choppy';
+    const waveDescriptions = isClean 
+      ? ['Massive overhead sets rolling through', 'Overhead bombs detonating', 'Epic overhead perfection', 'Overhead barrels on tap', 'Huge clean walls stacking up']
+      : ['Overhead chaos out there', 'Big but messy conditions', 'Overhead but wind-torn', 'Large and challenging surf', 'Overhead but choppy'];
+    const waveDesc = selectRandom(waveDescriptions, baseSeed + 2);
     const rideability = isClean ? 'Barrels on tap for experienced surfers.' : 'Challenging conditions for advanced riders only.';
-    report += `Surf is running ${heightStr} with ${waveQuality}. ${rideability} `;
+    report += `${waveDesc} at ${heightStr}. ${rideability} `;
   } else if (surfHeight >= 4.5) {
-    const waveQuality = isClean ? 'chest-to-head high clean faces' : 'chest-high but wind-affected';
+    const waveDescriptions = isClean 
+      ? ['Chest-to-head high peelers', 'Solid shoulder-high sets', 'Clean head-high walls', 'Pumping chest-high waves', 'Crispy shoulder-high faces', 'Glassy chest-high perfection']
+      : ['Chest-high but bumpy', 'Shoulder-high wind slop', 'Head-high but textured', 'Chest-high with some chop', 'Shoulder-high but rough'];
+    const waveDesc = selectRandom(waveDescriptions, baseSeed + 2);
     const rideability = isClean ? 'Great for all skill levels with plenty of makeable waves.' : 'Workable for intermediates, but expect some bumps.';
-    report += `Surf is running ${heightStr} with ${waveQuality}. ${rideability} `;
+    report += `${waveDesc} at ${heightStr}. ${rideability} `;
   } else if (surfHeight >= 2) {
-    const waveQuality = isClean ? 'small but shapely peelers' : 'knee-high wind slop';
+    const waveDescriptions = isClean 
+      ? ['Waist-high fun waves', 'Knee-to-waist high peelers', 'Small but shapely sets', 'Mellow waist-high rollers', 'Clean knee-high nuggets', 'Playful waist-high waves']
+      : ['Knee-high wind slop', 'Small and choppy', 'Waist-high but messy', 'Tiny and textured', 'Ankle-biters with chop'];
+    const waveDesc = selectRandom(waveDescriptions, baseSeed + 2);
     const rideability = isClean ? 'Perfect for longboards and beginners.' : 'Barely rideable, best for foam boards.';
-    report += `Surf is running ${heightStr} with ${waveQuality}. ${rideability} `;
+    report += `${waveDesc} at ${heightStr}. ${rideability} `;
   } else {
-    report += `Surf is flat at ${heightStr}. No rideable waves today. `;
+    const flatDescriptions = ['Pancake flat', 'Total lake mode', 'Zero energy', 'Glassy but lifeless', 'Completely flat', 'Not a ripple in sight'];
+    const flatDesc = selectRandom(flatDescriptions, baseSeed + 2);
+    report += `${flatDesc} at ${heightStr}. No rideable waves today. `;
   }
 
   // Sentence 2: Wind and period conditions
