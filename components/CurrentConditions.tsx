@@ -17,8 +17,10 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   console.log('[CurrentConditions] Rendering with data:', {
     hasWeather: !!weather,
     hasSurfReport: !!surfReport,
-    waveHeight: surfReport?.wave_height,
+    surfHeight: surfReport?.wave_height,
     temperature: weather?.temperature,
+    reportDate: surfReport?.date,
+    reportUpdatedAt: surfReport?.updated_at,
   });
 
   if (!weather && !surfReport) {
@@ -40,7 +42,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             No data available yet
           </Text>
           <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-            Data will be updated automatically
+            Pull down to refresh
           </Text>
         </View>
       </View>
@@ -136,6 +138,38 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                 </Text>
               </View>
             </View>
+
+            {/* Additional surf details */}
+            {(surfReport.wave_period || surfReport.swell_direction) && (
+              <View style={styles.additionalDetails}>
+                {surfReport.wave_period && (
+                  <View style={styles.detailItem}>
+                    <IconSymbol
+                      ios_icon_name="timer"
+                      android_material_icon_name="schedule"
+                      size={14}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={[styles.detailSmallText, { color: colors.textSecondary }]}>
+                      Period: {surfReport.wave_period}
+                    </Text>
+                  </View>
+                )}
+                {surfReport.swell_direction && (
+                  <View style={styles.detailItem}>
+                    <IconSymbol
+                      ios_icon_name="location.north.fill"
+                      android_material_icon_name="navigation"
+                      size={14}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={[styles.detailSmallText, { color: colors.textSecondary }]}>
+                      Swell: {surfReport.swell_direction}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -197,6 +231,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  detailSmallText: {
+    fontSize: 12,
+  },
   surfSection: {
     paddingTop: 16,
     borderTopWidth: 1,
@@ -215,6 +252,7 @@ const styles = StyleSheet.create({
   surfGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginBottom: 8,
   },
   surfItem: {
     alignItems: 'center',
@@ -226,6 +264,13 @@ const styles = StyleSheet.create({
   surfValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  additionalDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128, 128, 128, 0.1)',
   },
   emptyState: {
     alignItems: 'center',

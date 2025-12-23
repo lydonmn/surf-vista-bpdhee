@@ -13,6 +13,22 @@ import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  return estDate;
+}
+
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
@@ -20,6 +36,7 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [dataFetchKey, setDataFetchKey] = useState(0); // Force refresh key
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
@@ -31,8 +48,8 @@ export default function HomeScreen() {
   }, [profile, checkSubscription]);
 
   // Memoize loadData to prevent recreation on every render
-  const loadData = useCallback(async () => {
-    if (isLoadingData) {
+  const loadData = useCallback(async (forceRefresh = false) => {
+    if (isLoadingData && !forceRefresh) {
       console.log('[HomeScreen] Already loading data, skipping...');
       return;
     }
@@ -41,21 +58,30 @@ export default function HomeScreen() {
       setIsLoadingData(true);
       console.log('[HomeScreen] Fetching reports...');
 
-      // Load today's surf report
-      const today = new Date().toISOString().split('T')[0];
+      // Get today's date in EST
+      const today = getESTDate();
+      console.log('[HomeScreen] Fetching report for EST date:', today);
+
+      // Load today's surf report with a fresh query (no cache)
       const { data: reportData, error: reportError } = await supabase
         .from('surf_reports')
         .select('*')
         .eq('date', today)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (reportError) {
         console.log('[HomeScreen] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen] Report loaded for:', today);
+        console.log('[HomeScreen] Report loaded:', {
+          date: reportData.date,
+          wave_height: reportData.wave_height,
+          updated_at: reportData.updated_at,
+        });
         setTodayReport(reportData);
       } else {
-        console.log('[HomeScreen] No report found for today');
+        console.log('[HomeScreen] No report found for today:', today);
         setTodayReport(null);
       }
     } catch (error) {
@@ -73,21 +99,32 @@ export default function HomeScreen() {
       hasUser: !!user,
       hasSession: !!session,
       hasProfile: !!profile,
-      hasSubscription
+      hasSubscription,
+      dataFetchKey,
     });
 
     // Only load data when fully initialized, not loading, has user, profile, and subscription
     if (isInitialized && !isLoading && user && profile && hasSubscription) {
       console.log('[HomeScreen] Conditions met, loading content data...');
-      loadData();
+      loadData(true); // Force refresh
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription, session, dataFetchKey]);
 
   const handleRefresh = useCallback(async () => {
+    console.log('[HomeScreen] Manual refresh triggered');
     setIsRefreshing(true);
-    await Promise.all([loadData(), refreshData()]);
+    
+    // Force a fresh data fetch
+    await Promise.all([
+      loadData(true),
+      refreshData()
+    ]);
+    
+    // Increment the fetch key to force a re-render
+    setDataFetchKey(prev => prev + 1);
+    
     setIsRefreshing(false);
   }, [loadData, refreshData]);
 
@@ -272,7 +309,12 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
-  console.log('[HomeScreen] Rendering: Subscribed content');
+  console.log('[HomeScreen] Rendering: Subscribed content with report:', {
+    hasReport: !!todayReport,
+    reportDate: todayReport?.date,
+    reportWaveHeight: todayReport?.wave_height,
+  });
+  
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
