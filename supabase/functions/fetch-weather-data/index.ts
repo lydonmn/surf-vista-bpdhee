@@ -218,11 +218,13 @@ serve(async (req) => {
     // Determine default swell range for forecasts
     let defaultSwellRange = '1-2 ft';
     let currentSwellRange = '1-2 ft';
+    let hasActualSurfData = false;
     
     // Use actual surf conditions from database if available
     if (currentSurfConditions?.surf_height) {
       currentSwellRange = currentSurfConditions.surf_height;
-      console.log('Using current surf height from database for today:', currentSwellRange);
+      hasActualSurfData = true;
+      console.log('✅ Using ACTUAL surf height from database for today:', currentSwellRange);
     }
 
     // Fetch buoy data for future predictions
@@ -234,12 +236,16 @@ serve(async (req) => {
       console.log('Using current buoy data for future swell predictions:', defaultSwellRange);
       
       // If we don't have database surf conditions, use the buoy calculation for today
-      if (!currentSurfConditions?.surf_height) {
+      if (!hasActualSurfData) {
         currentSwellRange = defaultSwellRange;
         console.log('No database surf conditions, using buoy calculation for today:', currentSwellRange);
       }
     } else {
       console.log('Using default swell range for predictions:', defaultSwellRange);
+      // If we don't have buoy data and no actual surf data, keep the default
+      if (!hasActualSurfData) {
+        console.log('⚠️ WARNING: No actual surf data or buoy data available, using default 1-2 ft');
+      }
     }
 
     const requestHeaders = {
@@ -405,10 +411,14 @@ serve(async (req) => {
         // Determine swell range for this date
         let swellRange = defaultSwellRange;
         
-        // Use actual current surf conditions for today
-        if (formattedDate === today) {
+        // ✅ CRITICAL FIX: Use actual current surf conditions for today
+        if (formattedDate === today && hasActualSurfData) {
           swellRange = currentSwellRange;
-          console.log(`Using actual current surf conditions for today (${formattedDate}): ${swellRange}`);
+          console.log(`✅ Using ACTUAL current surf conditions for today (${formattedDate}): ${swellRange}`);
+        } else if (formattedDate === today && !hasActualSurfData) {
+          // Today but no actual data - use buoy or default
+          swellRange = currentSwellRange;
+          console.log(`⚠️ Using estimated surf conditions for today (${formattedDate}): ${swellRange}`);
         } else if (buoyData) {
           // Add slight variation for future days (±0.5 ft)
           const dayOffset = i / 2; // Days from now
@@ -416,6 +426,9 @@ serve(async (req) => {
           const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048); // Convert ft to meters
           const surfCalc = calculateSurfHeight(Math.max(0.5, adjustedWaveHeight), buoyData.period);
           swellRange = surfCalc.display;
+          console.log(`Using buoy-based prediction for ${formattedDate}: ${swellRange}`);
+        } else {
+          console.log(`Using default swell range for ${formattedDate}: ${swellRange}`);
         }
         
         // Parse swell range to get min/max values
@@ -537,6 +550,7 @@ serve(async (req) => {
         forecast_dates: forecastRecords.map(r => r.date),
         swell_predictions: forecastRecords.map(r => ({ date: r.date, swell: r.swell_height_range })),
         current_surf_conditions: currentSwellRange,
+        has_actual_surf_data: hasActualSurfData,
         timestamp: new Date().toISOString(),
       }),
       {
