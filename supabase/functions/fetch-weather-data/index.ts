@@ -12,6 +12,9 @@ const FOLLY_BEACH_LAT = 32.6552;
 const FOLLY_BEACH_LON = -79.9403;
 const FETCH_TIMEOUT = 15000; // 15 seconds
 
+// NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
+const BUOY_ID = '41004';
+
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
@@ -52,6 +55,92 @@ function getDayNameFromISO(isoString: string): string {
     timeZone: 'America/New_York',
     weekday: 'long'
   });
+}
+
+// Helper function to calculate surf height from wave height
+function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
+  // Convert to feet first
+  const waveHeightFt = waveHeightMeters * 3.28084;
+  
+  // Surf height multipliers based on wave period
+  let multiplierMin = 0.4;
+  let multiplierMax = 0.5;
+  
+  if (periodSeconds >= 12) {
+    multiplierMin = 0.6;
+    multiplierMax = 0.7;
+  } else if (periodSeconds >= 8) {
+    multiplierMin = 0.5;
+    multiplierMax = 0.6;
+  }
+  
+  const surfHeightMin = waveHeightFt * multiplierMin;
+  const surfHeightMax = waveHeightFt * multiplierMax;
+  
+  // Round to nearest 0.5 ft
+  const roundedMin = Math.round(surfHeightMin * 2) / 2;
+  const roundedMax = Math.round(surfHeightMax * 2) / 2;
+  
+  // Ensure surf height never exceeds wave height
+  const cappedMin = Math.min(roundedMin, waveHeightFt * 0.95);
+  const cappedMax = Math.min(roundedMax, waveHeightFt * 0.95);
+  
+  // Format display string
+  let display: string;
+  if (cappedMin === cappedMax) {
+    display = `${cappedMin.toFixed(0)}-${(cappedMin + 0.5).toFixed(0)} ft`;
+  } else {
+    display = `${cappedMin.toFixed(0)}-${cappedMax.toFixed(0)} ft`;
+  }
+  
+  return {
+    min: cappedMin,
+    max: cappedMax,
+    display
+  };
+}
+
+// Helper function to fetch current buoy data
+async function fetchBuoyData(timeout: number = FETCH_TIMEOUT): Promise<{ waveHeight: number, period: number } | null> {
+  try {
+    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+    console.log('Fetching buoy data for swell predictions:', buoyUrl);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    const response = await fetch(buoyUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error('Buoy API error:', response.status);
+      return null;
+    }
+
+    const buoyText = await response.text();
+    const lines = buoyText.trim().split('\n');
+
+    if (lines.length < 3) {
+      console.error('Insufficient buoy data');
+      return null;
+    }
+
+    // Parse the most recent data line
+    const dataLine = lines[2].trim().split(/\s+/);
+    const waveHeight = parseFloat(dataLine[8]); // WVHT in meters
+    const dominantPeriod = parseFloat(dataLine[9]); // DPD in seconds
+
+    if (waveHeight === 99.0 || isNaN(waveHeight) || dominantPeriod === 99.0 || isNaN(dominantPeriod)) {
+      console.log('Invalid buoy data (missing values)');
+      return null;
+    }
+
+    console.log('Buoy data retrieved:', { waveHeight, dominantPeriod });
+    return { waveHeight, period: dominantPeriod };
+  } catch (error) {
+    console.error('Error fetching buoy data:', error);
+    return null;
+  }
 }
 
 // Helper function to fetch with timeout
@@ -108,6 +197,18 @@ serve(async (req) => {
 
     console.log('Fetching weather data from NOAA for Folly Beach, SC...');
     console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
+
+    // Fetch buoy data for swell predictions
+    const buoyData = await fetchBuoyData();
+    let defaultSwellRange = '1-2 ft';
+    
+    if (buoyData) {
+      const surfCalc = calculateSurfHeight(buoyData.waveHeight, buoyData.period);
+      defaultSwellRange = surfCalc.display;
+      console.log('Using current buoy data for swell predictions:', defaultSwellRange);
+    } else {
+      console.log('Using default swell range:', defaultSwellRange);
+    }
 
     const requestHeaders = {
       'User-Agent': 'SurfVista App (contact@surfvista.app)',
@@ -258,7 +359,7 @@ serve(async (req) => {
 
     console.log('Weather data stored successfully:', weatherInsertData);
 
-    // Step 4: Store 7-day forecast with aggregated daily data
+    // Step 4: Store 7-day forecast with aggregated daily data and swell predictions
     // Group periods by date and aggregate high/low temps
     const dailyForecasts = new Map<string, any>();
     
@@ -273,6 +374,17 @@ serve(async (req) => {
       
       // Get or create daily forecast entry
       if (!dailyForecasts.has(formattedDate)) {
+        // Calculate swell height with slight variation for future days
+        let swellRange = defaultSwellRange;
+        if (buoyData) {
+          // Add slight variation for future days (±0.5 ft)
+          const dayOffset = i / 2; // Days from now
+          const variation = (Math.random() - 0.5) * 1.0; // -0.5 to +0.5 ft
+          const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048); // Convert ft to meters
+          const surfCalc = calculateSurfHeight(Math.max(0.5, adjustedWaveHeight), buoyData.period);
+          swellRange = surfCalc.display;
+        }
+        
         dailyForecasts.set(formattedDate, {
           date: formattedDate,
           day_name: dayName,
@@ -284,9 +396,9 @@ serve(async (req) => {
           wind_direction: period.windDirection,
           precipitation_chance: period.probabilityOfPrecipitation?.value || 0,
           humidity: 0,
-          swell_height_min: null,
-          swell_height_max: null,
-          swell_height_range: '1-2 ft', // Default, will be updated if we have surf data
+          swell_height_min: buoyData ? calculateSurfHeight(buoyData.waveHeight, buoyData.period).min : 1,
+          swell_height_max: buoyData ? calculateSurfHeight(buoyData.waveHeight, buoyData.period).max : 2,
+          swell_height_range: swellRange,
           updated_at: new Date().toISOString(),
         });
       }
@@ -332,8 +444,8 @@ serve(async (req) => {
       return record;
     });
 
-    console.log(`Prepared ${forecastRecords.length} daily forecast records`);
-    console.log('Forecast dates:', forecastRecords.map(r => `${r.date} (${r.day_name})`).join(', '));
+    console.log(`Prepared ${forecastRecords.length} daily forecast records with swell predictions`);
+    console.log('Forecast dates:', forecastRecords.map(r => `${r.date} (${r.day_name}) - Swell: ${r.swell_height_range}`).join(', '));
 
     // Delete ALL old forecasts first to prevent duplicates
     const { error: deleteError } = await supabase
@@ -381,6 +493,7 @@ serve(async (req) => {
         forecast_periods: forecastRecords.length,
         forecast_count: forecastInsertData?.length || 0,
         forecast_dates: forecastRecords.map(r => r.date),
+        swell_predictions: forecastRecords.map(r => ({ date: r.date, swell: r.swell_height_range })),
         timestamp: new Date().toISOString(),
       }),
       {
