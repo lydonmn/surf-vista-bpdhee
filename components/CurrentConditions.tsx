@@ -14,9 +14,10 @@ interface CurrentConditionsProps {
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
-  console.log('[CurrentConditions] Rendering with weather:', {
+  console.log('[CurrentConditions] Rendering with data:', {
     hasWeather: !!weather,
-    conditions: weather?.conditions,
+    hasSurfReport: !!surfReport,
+    waveHeight: surfReport?.wave_height,
     temperature: weather?.temperature,
   });
 

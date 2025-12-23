@@ -198,16 +198,48 @@ serve(async (req) => {
     console.log('Fetching weather data from NOAA for Folly Beach, SC...');
     console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
 
-    // Fetch buoy data for swell predictions
-    const buoyData = await fetchBuoyData();
+    // Get current date in EST
+    const today = getESTDate();
+    console.log('Current EST date:', today);
+
+    // Fetch current surf conditions from database for today
+    const { data: currentSurfConditions, error: surfCondError } = await supabase
+      .from('surf_conditions')
+      .select('surf_height, wave_height, wave_period')
+      .eq('date', today)
+      .maybeSingle();
+
+    if (surfCondError) {
+      console.error('Error fetching current surf conditions:', surfCondError);
+    }
+
+    console.log('Current surf conditions from database:', currentSurfConditions);
+
+    // Determine default swell range for forecasts
     let defaultSwellRange = '1-2 ft';
+    let currentSwellRange = '1-2 ft';
+    
+    // Use actual surf conditions from database if available
+    if (currentSurfConditions?.surf_height) {
+      currentSwellRange = currentSurfConditions.surf_height;
+      console.log('Using current surf height from database for today:', currentSwellRange);
+    }
+
+    // Fetch buoy data for future predictions
+    const buoyData = await fetchBuoyData();
     
     if (buoyData) {
       const surfCalc = calculateSurfHeight(buoyData.waveHeight, buoyData.period);
       defaultSwellRange = surfCalc.display;
-      console.log('Using current buoy data for swell predictions:', defaultSwellRange);
+      console.log('Using current buoy data for future swell predictions:', defaultSwellRange);
+      
+      // If we don't have database surf conditions, use the buoy calculation for today
+      if (!currentSurfConditions?.surf_height) {
+        currentSwellRange = defaultSwellRange;
+        console.log('No database surf conditions, using buoy calculation for today:', currentSwellRange);
+      }
     } else {
-      console.log('Using default swell range:', defaultSwellRange);
+      console.log('Using default swell range for predictions:', defaultSwellRange);
     }
 
     const requestHeaders = {
@@ -304,10 +336,6 @@ serve(async (req) => {
     const periods = forecastData.properties.periods;
 
     console.log(`Received ${periods.length} forecast periods`);
-
-    // Get current date in EST
-    const today = getESTDate();
-    console.log('Current EST date:', today);
     console.log('Current UTC time:', new Date().toISOString());
 
     // Step 3: Store current weather data (first period)
@@ -374,15 +402,29 @@ serve(async (req) => {
       
       // Get or create daily forecast entry
       if (!dailyForecasts.has(formattedDate)) {
-        // Calculate swell height with slight variation for future days
+        // Determine swell range for this date
         let swellRange = defaultSwellRange;
-        if (buoyData) {
+        
+        // Use actual current surf conditions for today
+        if (formattedDate === today) {
+          swellRange = currentSwellRange;
+          console.log(`Using actual current surf conditions for today (${formattedDate}): ${swellRange}`);
+        } else if (buoyData) {
           // Add slight variation for future days (±0.5 ft)
           const dayOffset = i / 2; // Days from now
           const variation = (Math.random() - 0.5) * 1.0; // -0.5 to +0.5 ft
           const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048); // Convert ft to meters
           const surfCalc = calculateSurfHeight(Math.max(0.5, adjustedWaveHeight), buoyData.period);
           swellRange = surfCalc.display;
+        }
+        
+        // Parse swell range to get min/max values
+        let swellMin = 1;
+        let swellMax = 2;
+        if (swellRange.includes('-')) {
+          const parts = swellRange.split('-');
+          swellMin = parseFloat(parts[0]);
+          swellMax = parseFloat(parts[1].replace(' ft', ''));
         }
         
         dailyForecasts.set(formattedDate, {
@@ -396,8 +438,8 @@ serve(async (req) => {
           wind_direction: period.windDirection,
           precipitation_chance: period.probabilityOfPrecipitation?.value || 0,
           humidity: 0,
-          swell_height_min: buoyData ? calculateSurfHeight(buoyData.waveHeight, buoyData.period).min : 1,
-          swell_height_max: buoyData ? calculateSurfHeight(buoyData.waveHeight, buoyData.period).max : 2,
+          swell_height_min: swellMin,
+          swell_height_max: swellMax,
           swell_height_range: swellRange,
           updated_at: new Date().toISOString(),
         });
@@ -494,6 +536,7 @@ serve(async (req) => {
         forecast_count: forecastInsertData?.length || 0,
         forecast_dates: forecastRecords.map(r => r.date),
         swell_predictions: forecastRecords.map(r => ({ date: r.date, swell: r.swell_height_range })),
+        current_surf_conditions: currentSwellRange,
         timestamp: new Date().toISOString(),
       }),
       {
