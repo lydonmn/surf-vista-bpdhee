@@ -403,8 +403,9 @@ function selectRandom<T>(array: T[]): T {
 function generateReportText(surfData: any, weatherData: any, tideSummary: string, rating: number): string {
   // Use surf_height if available, otherwise wave_height
   const heightStr = surfData.surf_height || surfData.wave_height;
-  const heightMatch = heightStr.match(/(\d+\.?\d*)/);
+  const heightMatch = heightStr.match(/(\d+\.?\d*)-?(\d+\.?\d*)?/);
   const surfHeight = heightMatch ? parseFloat(heightMatch[1]) : 0;
+  const surfHeightMax = heightMatch && heightMatch[2] ? parseFloat(heightMatch[2]) : surfHeight;
   
   const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
   const windSpeed = windSpeedMatch ? parseInt(windSpeedMatch[1]) : 0;
@@ -413,46 +414,48 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   const swellDir = surfData.swell_direction;
   const period = surfData.wave_period;
   const periodNum = parseInt(period.match(/(\d+)/)?.[1] || '0');
+  const waterTemp = surfData.water_temp;
 
   // Log that we're generating a new narrative with true randomness
-  console.log('Generating narrative with crypto-based randomness');
+  console.log('Generating conversational narrative with crypto-based randomness');
   console.log('Surf height:', surfHeight, 'Rating:', rating);
 
   // Determine if conditions are clean
   const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
   const isClean = (isOffshore && windSpeed < 15) || (!isOffshore && windSpeed < 8);
 
-  // EXPANDED opening phrases based on rating - MORE VARIETY!
+  // CONVERSATIONAL opening phrases - like a friend telling you about the surf
   const openings = [
     { min: 8, phrases: [
-      'Epic at Folly!', 'Firing today!', 'Pumping!', 'Score!', 'Overhead and clean!', 
-      'Going off!', 'Absolutely firing!', 'Bombs away!', 'Maxing out!', 'Cranking!',
-      'Nuking!', 'All-time conditions!', 'Legendary session ahead!', 'Perfection!',
-      'Barrels for days!', 'Dream conditions!', 'Unreal out there!', 'Insane!',
-      'Off the charts!', 'World-class today!', 'Firing on all cylinders!', 'Stacked!'
+      'Yo, it&apos;s absolutely firing out there!', 'Dude, you gotta see this!', 
+      'Holy smokes, it&apos;s going off!', 'Bro, drop everything and get out here!',
+      'Man, this is what we&apos;ve been waiting for!', 'Seriously, it&apos;s pumping!',
+      'No joke, it&apos;s epic today!', 'This is insane, get out here!',
+      'You&apos;re not gonna believe this!', 'It&apos;s absolutely cranking!',
+      'This is the day we&apos;ve been dreaming about!', 'Unreal conditions right now!'
     ]},
     { min: 6, phrases: [
-      'Decent waves.', 'Worth a paddle.', 'Looking good.', 'Rideable.', 'Solid session.',
-      'Fun out there.', 'Nice sets.', 'Looking fun!', 'Quality waves.', 'Stoked!',
-      'Good vibes.', 'Playful conditions.', 'Makeable waves.', 'Cruisy session.',
-      'Enjoyable surf.', 'Plenty of rides.', 'Surfable for sure.', 'Good times!',
-      'Waves on tap.', 'Decent shape.', 'Fun size.', 'Workable conditions.'
+      'Hey, it&apos;s looking pretty fun out there.', 'Not bad at all today!',
+      'Yeah, there&apos;s some decent waves rolling through.', 'It&apos;s worth checking out for sure.',
+      'Pretty solid session happening.', 'Some nice ones coming through.',
+      'Looking good, you should paddle out.', 'Definitely rideable today.',
+      'Some fun waves to be had.', 'Worth the drive for sure.'
     ]},
     { min: 4, phrases: [
-      'Small but clean.', 'Marginal.', 'Longboard day.', 'Mellow vibes.', 'Chill session.',
-      'Beginner friendly.', 'Mini wave fun.', 'Cruiser conditions.', 'Soft and playful.',
-      'Gentle rollers.', 'Learner-friendly.', 'Easy going.', 'Mellow magic.',
-      'Foam board paradise.', 'Tiny but rideable.', 'Knee-high fun.', 'Soft peaks.'
+      'It&apos;s small but clean, could be fun.', 'Pretty mellow out there today.',
+      'Not much size but it&apos;s rideable.', 'Longboard conditions for sure.',
+      'Small but shapely, good for beginners.', 'Chill vibes, nothing crazy.',
+      'Tiny but clean, grab the log.', 'Mellow session if you&apos;re into it.'
     ]},
     { min: 0, phrases: [
-      'Flat.', 'No surf.', 'Lake mode.', 'Rest day.', 'Check back later.', 'Zero energy.',
-      'Skip it today.', 'Pancake flat.', 'Glassy but lifeless.', 'Nada.', 'Zilch.',
-      'Dead calm.', 'Mirror finish.', 'Totally flat.', 'Nothing happening.', 'Flatline.'
+      'Honestly, it&apos;s pretty flat.', 'Not much happening today.',
+      'Yeah, it&apos;s basically a lake.', 'Save your energy, nothing out there.',
+      'Flat as a pancake, maybe tomorrow.', 'Zero surf, check back later.'
     ]}
   ];
 
   // Select opening with true randomness
-  let opening = 'Conditions at Folly.';
+  let opening = 'Checked the surf this morning.';
   for (const o of openings) {
     if (rating >= o.min) {
       opening = selectRandom(o.phrases);
@@ -460,160 +463,221 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
     }
   }
 
-  // Build concise, descriptive narrative (max 4 sentences)
   let report = `${opening} `;
 
-  // Sentence 1: Wave description with rideability - EXPANDED VARIETY!
+  // CONVERSATIONAL swell description - talk about what the swell is doing
   if (surfHeight >= 7) {
-    const waveDescriptions = isClean 
+    const swellDescriptions = isClean 
       ? [
-          'Massive overhead sets rolling through', 'Overhead bombs detonating', 
-          'Epic overhead perfection', 'Overhead barrels on tap', 'Huge clean walls stacking up',
-          'Double overhead perfection', 'Towering clean peaks', 'Overhead juice flowing',
-          'Massive clean faces', 'Overhead dreamland', 'Huge glassy walls',
-          'Overhead perfection unfolding', 'Giant clean sets marching in',
-          'Overhead barrels spinning', 'Massive groomed faces'
+          `We&apos;ve got this massive ${swellDir} swell rolling in, waves are stacking up overhead and just peeling perfectly`,
+          `There&apos;s a huge ${swellDir} groundswell hitting the beach, sets are coming through double overhead and super clean`,
+          `Big ${swellDir} energy out there, waves are towering overhead with glassy faces`,
+          `This ${swellDir} swell is pumping, overhead bombs just marching through like clockwork`,
+          `Serious ${swellDir} juice today, waves are overhead and groomed to perfection`,
+          `The ${swellDir} swell is maxing out, overhead sets with perfect shape`
         ]
       : [
-          'Overhead chaos out there', 'Big but messy conditions', 'Overhead but wind-torn',
-          'Large and challenging surf', 'Overhead but choppy', 'Big and bumpy',
-          'Overhead wind slop', 'Large but textured', 'Overhead madness',
-          'Big and wild', 'Overhead but rough', 'Large and unruly'
+          `There&apos;s a big ${swellDir} swell but the wind is tearing it apart, overhead but pretty messy`,
+          `Huge ${swellDir} energy but it&apos;s getting blown out, overhead and choppy`,
+          `The ${swellDir} swell is massive but conditions are rough, overhead but challenging`,
+          `Big ${swellDir} waves but the wind is making it gnarly, overhead chaos`
         ];
-    const waveDesc = selectRandom(waveDescriptions);
+    report += `${selectRandom(swellDescriptions)}. `;
+    
+    // Talk about rideability
     const rideability = isClean 
       ? selectRandom([
-          'Barrels on tap for experienced surfers.', 'Epic rides for skilled chargers.',
-          'Advanced surfers will score big.', 'Experts only, but worth it.',
-          'Serious barrels for the brave.', 'Heavy but makeable for pros.'
+          `Honestly, if you can handle it, you&apos;re gonna get barreled`,
+          `This is expert territory but the barrels are there if you want them`,
+          `Heavy but makeable for experienced surfers, some serious tubes on offer`,
+          `Not for beginners but if you know what you&apos;re doing, it&apos;s firing`,
+          `Advanced riders are scoring big time right now`
         ])
       : selectRandom([
-          'Challenging conditions for advanced riders only.', 'Expert territory today.',
-          'Big wave experience required.', 'Not for the faint of heart.',
-          'Gnarly conditions, proceed with caution.', 'Heavy and unpredictable.'
+          `It&apos;s big and wild, only go out if you really know what you&apos;re doing`,
+          `Challenging conditions, definitely not for everyone today`,
+          `Heavy and unpredictable, proceed with caution`,
+          `Expert level stuff, pretty gnarly out there`
         ]);
-    report += `${waveDesc} at ${heightStr}. ${rideability} `;
+    report += `${rideability}. `;
   } else if (surfHeight >= 4.5) {
-    const waveDescriptions = isClean 
+    const swellDescriptions = isClean 
       ? [
-          'Chest-to-head high peelers', 'Solid shoulder-high sets', 'Clean head-high walls',
-          'Pumping chest-high waves', 'Crispy shoulder-high faces', 'Glassy chest-high perfection',
-          'Head-high gems', 'Shoulder-high beauties', 'Chest-high corduroy',
-          'Head-high perfection', 'Shoulder-high rippable walls', 'Chest-high playgrounds',
-          'Head-high butter', 'Shoulder-high fun machines', 'Chest-high stoke generators'
+          `We&apos;ve got a nice ${swellDir} swell, waves are coming through chest to head high and looking super clean`,
+          `The ${swellDir} swell is delivering some quality shoulder to head high sets with great shape`,
+          `Really nice ${swellDir} energy, waves are chest high and peeling nicely`,
+          `Solid ${swellDir} swell, sets are head high and just rippable`,
+          `The ${swellDir} swell is pumping out some fun chest to shoulder high waves`,
+          `Good ${swellDir} groundswell, waves are head high with clean faces`
         ]
       : [
-          'Chest-high but bumpy', 'Shoulder-high wind slop', 'Head-high but textured',
-          'Chest-high with some chop', 'Shoulder-high but rough', 'Head-high but messy',
-          'Chest-high wind waves', 'Shoulder-high texture', 'Head-high but choppy'
+          `There&apos;s a ${swellDir} swell but the wind is adding some texture, chest high but a bit bumpy`,
+          `The ${swellDir} swell is shoulder to head high but conditions are choppy`,
+          `Decent ${swellDir} energy but the wind is making it messy, still rideable though`,
+          `Chest high ${swellDir} waves but you&apos;ll have to work around the chop`
         ];
-    const waveDesc = selectRandom(waveDescriptions);
+    report += `${selectRandom(swellDescriptions)}. `;
+    
+    // Talk about rideability
     const rideability = isClean 
       ? selectRandom([
-          'Great for all skill levels with plenty of makeable waves.', 
-          'Fun for everyone, lots of rides available.',
-          'Perfect conditions for progression.', 'Ideal for intermediate to advanced.',
-          'Plenty of opportunities for all levels.', 'Rippable for most surfers.',
-          'Makeable waves all around.', 'Fun size for the masses.'
+          `Perfect size for most people, tons of makeable waves out there`,
+          `Everyone&apos;s getting waves, from intermediates to advanced`,
+          `Great conditions for progression, lots of opportunities`,
+          `Fun for all levels, plenty of rides to go around`,
+          `This is that sweet spot size, super fun and rippable`
         ])
       : selectRandom([
-          'Workable for intermediates, but expect some bumps.', 
-          'Rideable but challenging.', 'Doable for experienced surfers.',
-          'Makeable if you pick your waves.', 'Intermediate level required.',
-          'Some fun to be had if you work for it.'
+          `Still rideable if you pick your waves, intermediate level should be fine`,
+          `Workable conditions, just gotta be selective`,
+          `Doable for experienced surfers, some fun to be had`,
+          `Not perfect but definitely surfable if you work for it`
         ]);
-    report += `${waveDesc} at ${heightStr}. ${rideability} `;
+    report += `${rideability}. `;
   } else if (surfHeight >= 2) {
-    const waveDescriptions = isClean 
+    const swellDescriptions = isClean 
       ? [
-          'Waist-high fun waves', 'Knee-to-waist high peelers', 'Small but shapely sets',
-          'Mellow waist-high rollers', 'Clean knee-high nuggets', 'Playful waist-high waves',
-          'Thigh-high fun', 'Waist-high cruisers', 'Knee-high perfection',
-          'Waist-high playgrounds', 'Thigh-high gems', 'Knee-high butter',
-          'Waist-high rippable faces', 'Thigh-high fun machines'
+          `Small ${swellDir} swell, waves are waist high and clean though`,
+          `Mellow ${swellDir} energy, knee to waist high but shapely`,
+          `Tiny ${swellDir} swell but the waves have nice shape, waist high`,
+          `Small but fun ${swellDir} waves, thigh to waist high and clean`,
+          `Little ${swellDir} swell, waves are knee high but peeling nicely`
         ]
       : [
-          'Knee-high wind slop', 'Small and choppy', 'Waist-high but messy',
-          'Tiny and textured', 'Ankle-biters with chop', 'Knee-high bumps',
-          'Waist-high wind waves', 'Small but rough', 'Thigh-high texture'
+          `Small ${swellDir} swell and the wind isn&apos;t helping, waist high but choppy`,
+          `Tiny ${swellDir} waves with some texture, knee high and bumpy`,
+          `Not much ${swellDir} energy and it&apos;s getting blown around, small and messy`
         ];
-    const waveDesc = selectRandom(waveDescriptions);
+    report += `${selectRandom(swellDescriptions)}. `;
+    
+    // Talk about rideability
     const rideability = isClean 
       ? selectRandom([
-          'Perfect for longboards and beginners.', 'Ideal for learning.',
-          'Great for cruising and nose riding.', 'Longboard heaven.',
-          'Beginner paradise.', 'Mellow fun for all.',
-          'Cruisy conditions for learners.', 'Soft and forgiving.'
+          `Perfect for longboards, super cruisy and fun`,
+          `Great for beginners, mellow and forgiving`,
+          `Longboard heaven, nose riding conditions`,
+          `Ideal for learning, soft and playful waves`,
+          `Grab the log, it&apos;s perfect for cruising`
         ])
       : selectRandom([
-          'Barely rideable, best for foam boards.', 'Tough conditions for small waves.',
-          'Challenging for beginners.', 'Foam board territory.',
-          'Hard to catch anything clean.', 'Minimal fun factor.'
+          `Tough to catch anything clean, foam board territory`,
+          `Barely rideable, maybe for beginners on soft tops`,
+          `Not much fun factor with the chop, pretty challenging`
         ]);
-    report += `${waveDesc} at ${heightStr}. ${rideability} `;
+    report += `${rideability}. `;
   } else {
     const flatDescriptions = [
-      'Pancake flat', 'Total lake mode', 'Zero energy', 'Glassy but lifeless',
-      'Completely flat', 'Not a ripple in sight', 'Dead calm', 'Mirror finish',
-      'Absolutely nothing', 'Flatline conditions', 'Zero swell', 'Nada happening',
-      'Totally dead', 'Glassy nothingness', 'Flat as a board'
+      `Honestly, there&apos;s just no swell at all, it&apos;s completely flat`,
+      `Zero energy in the water, not a wave in sight`,
+      `It&apos;s like a lake out there, totally dead`,
+      `No swell whatsoever, glassy but lifeless`,
+      `Flat as can be, nothing happening`
     ];
-    const flatDesc = selectRandom(flatDescriptions);
-    report += `${flatDesc} at ${heightStr}. ${selectRandom([
-      'No rideable waves today.', 'Nothing to ride.', 'Zero surf.',
-      'Come back tomorrow.', 'Not worth the paddle.', 'Skip it.'
-    ])} `;
+    report += `${selectRandom(flatDescriptions)}. Not worth paddling out today. `;
   }
 
-  // Sentence 2: Wind and period conditions - MORE VARIETY!
-  const windQuality = isOffshore 
+  // CONVERSATIONAL wind and period description
+  const windDescriptions = isOffshore 
     ? (windSpeed < 12 
-        ? selectRandom(['light offshore grooming', 'gentle offshore winds', 'soft offshore breeze', 'offshore perfection', 'light offshore texture'])
-        : selectRandom(['strong offshore winds', 'offshore howling', 'offshore gusts', 'offshore blowing hard', 'offshore cranking']))
+        ? [
+            `The wind is ${windSpeed} mph ${windDir}, just lightly grooming the faces`,
+            `We&apos;ve got this perfect offshore breeze at ${windSpeed} mph from the ${windDir}, cleaning everything up`,
+            `Light ${windDir} winds at ${windSpeed} mph, just kissing the surface`,
+            `Offshore at ${windSpeed} mph from the ${windDir}, making it super glassy`,
+            `Nice ${windDir} breeze at ${windSpeed} mph, holding the faces up nicely`
+          ]
+        : [
+            `The wind is howling offshore at ${windSpeed} mph from the ${windDir}, almost too much`,
+            `Strong ${windDir} winds at ${windSpeed} mph, blowing pretty hard offshore`,
+            `Offshore is cranking at ${windSpeed} mph ${windDir}, making it challenging`,
+            `The ${windDir} wind is gusting to ${windSpeed} mph, pretty blustery`
+          ])
     : (windSpeed < 10 
-        ? selectRandom(['light onshore texture', 'gentle onshore breeze', 'soft onshore winds', 'mild onshore flow', 'light onshore ripple'])
-        : selectRandom(['choppy onshore winds', 'onshore mess', 'onshore slop', 'onshore chaos', 'onshore destruction']));
+        ? [
+            `There&apos;s a light onshore breeze at ${windSpeed} mph from the ${windDir}, adding a little texture`,
+            `Gentle ${windDir} winds at ${windSpeed} mph, just barely onshore`,
+            `Soft onshore at ${windSpeed} mph ${windDir}, not too bad`,
+            `Light ${windDir} flow at ${windSpeed} mph, minimal impact`
+          ]
+        : [
+            `The wind is onshore at ${windSpeed} mph from the ${windDir}, making it pretty choppy`,
+            `Onshore winds at ${windSpeed} mph ${windDir}, definitely adding some slop`,
+            `The ${windDir} wind is blowing ${windSpeed} mph straight onshore, pretty messy`,
+            `Onshore at ${windSpeed} mph from the ${windDir}, tearing it up`
+          ]);
   
-  const periodQuality = periodNum >= 12 
-    ? selectRandom(['long-interval groundswell', 'long-period swell', 'deep water swell', 'powerful groundswell', 'long-range swell'])
+  const periodDescriptions = periodNum >= 12 
+    ? [
+        `The swell period is ${period}, so these are long-interval groundswell waves with lots of power`,
+        `We&apos;re seeing ${period} intervals, that&apos;s solid groundswell with good push`,
+        `Period is ${period}, nice long-range swell energy`,
+        `${period} on the period, that&apos;s quality groundswell`
+      ]
     : (periodNum >= 8 
-        ? selectRandom(['moderate period', 'mid-range swell', 'decent interval', 'workable period', 'medium-period waves'])
-        : selectRandom(['short-period wind swell', 'choppy wind swell', 'short-interval chop', 'wind-driven waves', 'short-period slop']));
+        ? [
+            `The period is ${period}, decent mid-range swell`,
+            `We&apos;ve got ${period} intervals, workable swell energy`,
+            `Period is sitting at ${period}, moderate but rideable`,
+            `${period} on the period, not bad at all`
+          ]
+        : [
+            `The period is only ${period}, so it&apos;s short-interval wind swell, pretty choppy`,
+            `We&apos;re seeing ${period} intervals, that&apos;s wind-driven chop`,
+            `Period is just ${period}, short and junky`,
+            `${period} on the period, wind swell for sure`
+          ]);
   
-  report += `${periodQuality.charAt(0).toUpperCase() + periodQuality.slice(1)} at ${period} from ${swellDir} with ${windQuality} at ${surfData.wind_speed} from ${windDir}. `;
+  report += `${selectRandom(windDescriptions)}. ${selectRandom(periodDescriptions)}. `;
 
-  // Sentence 3: Weather and water temp - MORE VARIETY!
+  // CONVERSATIONAL weather description
   const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
-  const skyDescriptions = [
-    'Sky:', 'Overhead:', 'Weather:', 'Conditions:', 'Above:', 'Skies:', 'Looking up:'
+  const weatherDescriptions = [
+    `Weather-wise, we&apos;ve got ${weatherConditions.toLowerCase()}`,
+    `Looking up, it&apos;s ${weatherConditions.toLowerCase()}`,
+    `The sky is ${weatherConditions.toLowerCase()}`,
+    `Conditions overhead are ${weatherConditions.toLowerCase()}`,
+    `Weather is ${weatherConditions.toLowerCase()}`
   ];
+  
   const waterDescriptions = [
-    'water at', 'H2O at', 'ocean temp', 'water temp', 'sea temp at', 'water sitting at'
+    `Water temp is ${waterTemp}, feels pretty good`,
+    `Ocean is sitting at ${waterTemp}, not too bad`,
+    `Water&apos;s ${waterTemp}, comfortable enough`,
+    `Sea temp is ${waterTemp}, decent`,
+    `Water feels like ${waterTemp}`
   ];
-  report += `${selectRandom(skyDescriptions)} ${weatherConditions}, ${selectRandom(waterDescriptions)} ${surfData.water_temp}. `;
+  
+  report += `${selectRandom(weatherDescriptions)} and the ${selectRandom(waterDescriptions)}. `;
 
-  // Sentence 4: Closing recommendation based on rating - EXPANDED!
+  // CONVERSATIONAL closing recommendation
   const closings = {
     high: [
-      'Get after it!', 'Don&apos;t miss this one.', 'Prime conditions.', 'Epic day ahead.',
-      'Get out there now!', 'Drop everything!', 'Call in sick!', 'This is it!',
-      'Go go go!', 'All hands on deck!', 'Paddle out immediately!', 'Don&apos;t sleep on this!',
-      'Rare opportunity!', 'Once in a lifetime!', 'You&apos;ll regret missing this!',
-      'Clear your schedule!', 'This is what we live for!', 'Legendary session awaits!'
+      `Seriously, drop what you&apos;re doing and get out here!`,
+      `This is the one you don&apos;t want to miss!`,
+      `Call in sick, this is epic!`,
+      `Get out here now, it&apos;s firing!`,
+      `You&apos;ll regret not surfing this one!`,
+      `This is what we live for, go go go!`,
+      `Clear your schedule, this is it!`,
+      `Don&apos;t sleep on this, it&apos;s legendary!`
     ],
     medium: [
-      'Worth checking out.', 'Should be fun.', 'Decent session awaits.', 'Give it a go.',
-      'Not bad at all.', 'Worth the paddle.', 'Could be fun.', 'Grab your board.',
-      'Might score some waves.', 'Worth a look.', 'Could be worth it.',
-      'Decent enough.', 'Better than nothing.', 'Some fun to be had.',
-      'Worth the effort.', 'Could surprise you.', 'Give it a shot.'
+      `Definitely worth checking out if you&apos;ve got time.`,
+      `Should be a fun session, worth the paddle.`,
+      `Not perfect but definitely worth it.`,
+      `You&apos;ll probably have a good time out there.`,
+      `Worth grabbing your board for sure.`,
+      `Could be a decent session if you go.`,
+      `Better than sitting at home, that&apos;s for sure.`
     ],
     low: [
-      'Maybe tomorrow.', 'Check back later.', 'Rest day vibes.', 'Better days coming.',
-      'Patience pays off.', 'Save your energy.', 'Wait for it.', 'Not today.',
-      'Skip this one.', 'Tomorrow looks better.', 'Hang tight.', 'Next swell incoming.',
-      'Take a break.', 'Recharge for the next one.', 'Better waves ahead.',
-      'Not worth the drive.', 'Stay home today.', 'Wait for the goods.'
+      `Maybe wait for the next swell, this one&apos;s not worth it.`,
+      `I&apos;d probably skip it today, save your energy.`,
+      `Check back tomorrow, might be better.`,
+      `Not really worth the drive honestly.`,
+      `Better waves are coming, be patient.`,
+      `Take a rest day, nothing special happening.`,
+      `Wait for it, the next swell will be better.`
     ]
   };
 
@@ -628,7 +692,7 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
 
   report += closingPhrase;
 
-  console.log('Generated unique narrative with crypto randomness');
+  console.log('Generated conversational narrative with crypto randomness');
   console.log('Report length:', report.length, 'characters');
   console.log('Sentence count:', report.split(/[.!?]+/).filter(s => s.trim().length > 0).length);
   console.log('Report preview:', report.substring(0, 150) + '...');
