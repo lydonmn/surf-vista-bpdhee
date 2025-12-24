@@ -326,13 +326,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[AuthContext] Current user state:', user?.email);
     
     try {
-      // Logout from RevenueCat first
-      try {
-        await logoutUser();
-      } catch (error) {
-        console.error('[AuthContext] Error logging out from RevenueCat:', error);
-      }
-      
       // Clear local state FIRST for immediate UI update
       console.log('[AuthContext] Clearing local state immediately...');
       setUser(null);
@@ -340,12 +333,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
+      // Logout from RevenueCat (non-blocking, don't wait for it)
+      logoutUser().catch(error => {
+        console.error('[AuthContext] Error logging out from RevenueCat (non-critical):', error);
+      });
+      
       // Then call Supabase signOut to clear the session from storage
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('[AuthContext] ❌ Supabase signOut error:', error);
+        // Don't throw - we've already cleared local state
       } else {
         console.log('[AuthContext] ✅ Supabase signOut successful');
       }
@@ -358,6 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
+      console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   };
 
