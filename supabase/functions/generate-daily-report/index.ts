@@ -234,6 +234,7 @@ serve(async (req) => {
       console.log('Surf data:', surfData);
       
       // Generate a report indicating no data available
+      const tideSummary = generateTideSummary(tideData);
       const noDataReport = {
         date: today,
         wave_height: 'N/A',
@@ -242,13 +243,14 @@ serve(async (req) => {
         wind_speed: surfData.wind_speed || 'N/A',
         wind_direction: surfData.wind_direction || 'N/A',
         water_temp: surfData.water_temp || 'N/A',
-        tide: generateTideSummary(tideData),
+        tide: tideSummary || 'Tide data unavailable',
         conditions: generateNoDataReportText(weatherData, tideData),
         rating: 0,
         updated_at: new Date().toISOString(),
       };
 
       console.log('Storing no-data surf report...');
+      console.log('Report data:', JSON.stringify(noDataReport, null, 2));
 
       // First, try to delete existing report for today
       const { error: deleteError } = await supabase
@@ -268,11 +270,15 @@ serve(async (req) => {
 
       if (reportError) {
         console.error('Error storing surf report:', reportError);
+        console.error('Full error details:', JSON.stringify(reportError, null, 2));
         return new Response(
           JSON.stringify({
             success: false,
             error: 'Failed to store surf report in database',
             details: reportError.message,
+            hint: reportError.hint,
+            code: reportError.code,
+            reportData: noDataReport,
             timestamp: new Date().toISOString(),
           }),
           {
@@ -317,22 +323,23 @@ serve(async (req) => {
     // Use surf_height for display if available, otherwise fall back to wave_height
     const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
 
-    // Create the surf report
+    // Create the surf report - ensure all required fields are present
     const surfReport = {
       date: today,
-      wave_height: displayHeight, // Now using surf height (face height) for display
+      wave_height: displayHeight || 'N/A',
       wave_period: surfData.wave_period || 'N/A',
       swell_direction: surfData.swell_direction || 'N/A',
-      wind_speed: surfData.wind_speed,
-      wind_direction: surfData.wind_direction,
-      water_temp: surfData.water_temp,
-      tide: tideSummary,
+      wind_speed: surfData.wind_speed || 'N/A',
+      wind_direction: surfData.wind_direction || 'N/A',
+      water_temp: surfData.water_temp || 'N/A',
+      tide: tideSummary || 'Tide data unavailable',
       conditions: reportText,
       rating: rating,
       updated_at: new Date().toISOString(),
     };
 
     console.log('Storing surf report...');
+    console.log('Report data:', JSON.stringify(surfReport, null, 2));
 
     // First, try to delete existing report for today
     const { error: deleteError } = await supabase
@@ -355,12 +362,15 @@ serve(async (req) => {
 
     if (reportError) {
       console.error('Error storing surf report:', reportError);
+      console.error('Full error details:', JSON.stringify(reportError, null, 2));
       console.error('Report data:', JSON.stringify(surfReport, null, 2));
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Failed to store surf report in database',
           details: reportError.message,
+          hint: reportError.hint,
+          code: reportError.code,
           reportData: surfReport,
           timestamp: new Date().toISOString(),
         }),
@@ -372,6 +382,7 @@ serve(async (req) => {
     }
 
     console.log('Surf report stored successfully');
+    console.log('Inserted data:', JSON.stringify(insertData, null, 2));
     console.log('=== GENERATE DAILY REPORT COMPLETED ===');
 
     return new Response(
@@ -391,12 +402,16 @@ serve(async (req) => {
   } catch (error) {
     console.error('=== GENERATE DAILY REPORT FAILED ===');
     console.error('Error in generate-daily-report:', error);
+    console.error('Error type:', typeof error);
+    console.error('Error name:', error instanceof Error ? error.name : 'N/A');
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
     console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
     
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.name : typeof error,
         stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString(),
       }),
