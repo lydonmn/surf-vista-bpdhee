@@ -213,9 +213,20 @@ serve(async (req) => {
 
       console.log('Storing no-data surf report...');
 
+      // First, try to delete existing report for today
+      const { error: deleteError } = await supabase
+        .from('surf_reports')
+        .delete()
+        .eq('date', today);
+
+      if (deleteError) {
+        console.error('Error deleting old report:', deleteError);
+      }
+
+      // Then insert new report
       const { data: insertData, error: reportError } = await supabase
         .from('surf_reports')
-        .upsert(noDataReport, { onConflict: 'date' })
+        .insert(noDataReport)
         .select();
 
       if (reportError) {
@@ -286,19 +297,34 @@ serve(async (req) => {
 
     console.log('Storing surf report...');
 
-    // Store the report
+    // First, try to delete existing report for today
+    const { error: deleteError } = await supabase
+      .from('surf_reports')
+      .delete()
+      .eq('date', today);
+
+    if (deleteError) {
+      console.error('Error deleting old report:', deleteError);
+      // Continue anyway - the insert might still work
+    } else {
+      console.log('Old report deleted successfully');
+    }
+
+    // Then insert new report
     const { data: insertData, error: reportError } = await supabase
       .from('surf_reports')
-      .upsert(surfReport, { onConflict: 'date' })
+      .insert(surfReport)
       .select();
 
     if (reportError) {
       console.error('Error storing surf report:', reportError);
+      console.error('Report data:', JSON.stringify(surfReport, null, 2));
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Failed to store surf report in database',
           details: reportError.message,
+          reportData: surfReport,
           timestamp: new Date().toISOString(),
         }),
         {
