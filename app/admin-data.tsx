@@ -193,8 +193,19 @@ export default function AdminDataScreen() {
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to generate report';
+        const suggestion = response.data?.suggestion || '';
+        const missingData = response.data?.missingData || [];
+        
+        let fullMessage = errorMsg;
+        if (missingData.length > 0) {
+          fullMessage += `\n\nMissing: ${missingData.join(', ')}`;
+        }
+        if (suggestion) {
+          fullMessage += `\n\n${suggestion}`;
+        }
+        
         addLog(`❌ Report generation failed: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        Alert.alert('Cannot Generate Report', fullMessage);
       }
     } catch (error) {
       console.error('Error generating report:', error);
@@ -436,7 +447,7 @@ export default function AdminDataScreen() {
               <Text style={styles.logEmpty}>No activity yet</Text>
             ) : (
               activityLog.map((log, index) => (
-                <View key={index} style={styles.logEntry}>
+                <View key={`log-${index}-${log.timestamp}`} style={styles.logEntry}>
                   <Text style={styles.logTimestamp}>[{log.timestamp}]</Text>
                   <Text style={[
                     styles.logMessage,
