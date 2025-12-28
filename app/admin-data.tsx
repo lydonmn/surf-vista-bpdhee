@@ -191,7 +191,15 @@ export default function AdminDataScreen() {
         Alert.alert('Error', errorMsg);
       } else if (response.data?.success) {
         addLog(`✅ Report generated successfully`, 'success');
-        Alert.alert('Success', response.data.message || 'Surf report generated successfully');
+        
+        // Show data age warning if applicable
+        if (response.data.dataAge && response.data.dataAge !== 'Using current data') {
+          addLog(`⚠️ ${response.data.dataAge}`, 'info');
+          Alert.alert('Success', `${response.data.message}\n\n${response.data.dataAge}`);
+        } else {
+          Alert.alert('Success', response.data.message || 'Surf report generated successfully');
+        }
+        
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to generate report';
@@ -361,19 +369,19 @@ export default function AdminDataScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Current Data (Today)</Text>
           <View style={styles.countsGrid}>
-            <View style={styles.countCard}>
+            <View style={styles.countCard} key="tides-count">
               <Text style={styles.countValue}>{dataCounts.tides}</Text>
               <Text style={styles.countLabel}>Tides</Text>
             </View>
-            <View style={styles.countCard}>
+            <View style={styles.countCard} key="weather-count">
               <Text style={styles.countValue}>{dataCounts.weather}</Text>
               <Text style={styles.countLabel}>Weather</Text>
             </View>
-            <View style={styles.countCard}>
+            <View style={styles.countCard} key="forecast-count">
               <Text style={styles.countValue}>{dataCounts.forecast}</Text>
               <Text style={styles.countLabel}>Forecast</Text>
             </View>
-            <View style={styles.countCard}>
+            <View style={styles.countCard} key="surf-count">
               <Text style={styles.countValue}>{dataCounts.surf}</Text>
               <Text style={styles.countLabel}>Surf</Text>
             </View>
@@ -448,18 +456,20 @@ export default function AdminDataScreen() {
             {activityLog.length === 0 ? (
               <Text style={styles.logEmpty}>No activity yet</Text>
             ) : (
-              activityLog.map((log) => (
-                <View key={log.id} style={styles.logEntry}>
-                  <Text style={styles.logTimestamp}>[{log.timestamp}]</Text>
-                  <Text style={[
-                    styles.logMessage,
-                    log.type === 'error' && styles.logError,
-                    log.type === 'success' && styles.logSuccess,
-                  ]}>
-                    {log.message}
-                  </Text>
-                </View>
-              ))
+              <React.Fragment>
+                {activityLog.map((log) => (
+                  <View key={log.id} style={styles.logEntry}>
+                    <Text style={styles.logTimestamp}>[{log.timestamp}]</Text>
+                    <Text style={[
+                      styles.logMessage,
+                      log.type === 'error' && styles.logError,
+                      log.type === 'success' && styles.logSuccess,
+                    ]}>
+                      {log.message}
+                    </Text>
+                  </View>
+                ))}
+              </React.Fragment>
             )}
           </View>
         </View>

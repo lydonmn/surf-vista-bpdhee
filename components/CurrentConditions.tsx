@@ -23,6 +23,26 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     reportUpdatedAt: surfReport?.updated_at,
   });
 
+  // Check if data is from today
+  const isDataCurrent = () => {
+    if (!surfReport?.date) return true;
+    
+    const now = new Date();
+    const estDateString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    
+    const [month, day, year] = estDateString.split('/');
+    const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    return surfReport.date === today;
+  };
+
+  const dataIsCurrent = isDataCurrent();
+
   if (!weather && !surfReport) {
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -55,6 +75,19 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
         <Text style={[styles.title, { color: theme.colors.text }]}>
           Current Conditions
         </Text>
+        {!dataIsCurrent && surfReport?.date && (
+          <View style={styles.dataBadge}>
+            <IconSymbol
+              ios_icon_name="clock"
+              android_material_icon_name="schedule"
+              size={12}
+              color={colors.accent}
+            />
+            <Text style={[styles.dataBadgeText, { color: colors.accent }]}>
+              Data from {surfReport.date}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.content}>
@@ -189,11 +222,25 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  dataBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dataBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   content: {
     gap: 16,

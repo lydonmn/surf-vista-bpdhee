@@ -73,30 +73,64 @@ serve(async (req) => {
     console.log('Current EST date:', today);
     console.log('Current UTC time:', new Date().toISOString());
 
-    // Fetch all the data we need
+    // Fetch all the data we need - try today first, then fall back to most recent
     console.log('Fetching surf conditions...');
-    const surfResult = await supabase
+    let surfResult = await supabase
       .from('surf_conditions')
       .select('*')
       .eq('date', today)
       .maybeSingle();
 
+    // If no data for today, get the most recent data
+    if (!surfResult.data) {
+      console.log('No surf data for today, fetching most recent...');
+      surfResult = await supabase
+        .from('surf_conditions')
+        .select('*')
+        .order('date', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (surfResult.data) {
+        console.log('Using surf data from:', surfResult.data.date);
+      }
+    }
+
     console.log('Surf conditions result:', {
       error: surfResult.error,
       hasData: !!surfResult.data,
-      data: surfResult.data,
+      dataDate: surfResult.data?.date,
+      waveHeight: surfResult.data?.wave_height,
+      surfHeight: surfResult.data?.surf_height,
     });
 
     console.log('Fetching weather data...');
-    const weatherResult = await supabase
+    let weatherResult = await supabase
       .from('weather_data')
       .select('*')
       .eq('date', today)
       .maybeSingle();
 
+    // If no weather for today, get most recent
+    if (!weatherResult.data) {
+      console.log('No weather data for today, fetching most recent...');
+      weatherResult = await supabase
+        .from('weather_data')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (weatherResult.data) {
+        console.log('Using weather data from:', weatherResult.data.date);
+      }
+    }
+
     console.log('Weather data result:', {
       error: weatherResult.error,
       hasData: !!weatherResult.data,
+      dataDate: weatherResult.data?.date,
     });
 
     console.log('Fetching tide data...');
@@ -167,6 +201,8 @@ serve(async (req) => {
       hasSurf: !!surfData,
       hasWeather: !!weatherData,
       tideCount: tideData.length,
+      surfDataDate: surfData?.date,
+      weatherDataDate: weatherData?.date,
     });
 
     if (!surfData || !weatherData) {
@@ -174,12 +210,13 @@ serve(async (req) => {
       if (!surfData) missingData.push('surf conditions');
       if (!weatherData) missingData.push('weather data');
       
-      const errorMsg = `Missing required data for report generation: ${missingData.join(', ')}`;
+      const errorMsg = `Missing required data for report generation: ${missingData.join(', ')}. Please run "Update All Data" first.`;
       console.error(errorMsg);
       return new Response(
         JSON.stringify({
           success: false,
           error: errorMsg,
+          suggestion: 'Click "Update All Data" to fetch the latest surf and weather information.',
           timestamp: new Date().toISOString(),
         }),
         {
@@ -343,6 +380,7 @@ serve(async (req) => {
         message: 'Daily surf report generated successfully for Folly Beach, SC',
         location: 'Folly Beach, SC',
         report: surfReport,
+        dataAge: surfData.date !== today ? `Using surf data from ${surfData.date}` : 'Using current data',
         timestamp: new Date().toISOString(),
       }),
       {
