@@ -12,6 +12,22 @@ import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 
+// Helper function to get EST date
+function getESTDate(): string {
+  const now = new Date();
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  return estDate;
+}
+
 export default function ReportScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
@@ -22,25 +38,17 @@ export default function ReportScreen() {
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = React.useRef<ExpoVideo>(null);
+  
+  // State for real-time surf conditions
+  const [surfConditions, setSurfConditions] = useState<any>(null);
+  const [isLoadingConditions, setIsLoadingConditions] = useState(false);
 
   // Filter to show only today's report (EST timezone)
   const todaysReport = useMemo(() => {
     try {
-      // Get current date in EST timezone
-      const now = new Date();
-      const estDateString = now.toLocaleString('en-US', { 
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
+      const today = getESTDate();
       
-      // Parse the EST date string (format: MM/DD/YYYY)
-      const [month, day, year] = estDateString.split('/');
-      const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-      
-      console.log('Current EST date string:', estDateString);
-      console.log('Filtering reports for EST date:', today);
+      console.log('Current EST date:', today);
       console.log('Available reports:', surfReports.map(r => ({ date: r.date, id: r.id })));
       
       return surfReports.filter(report => {
@@ -57,6 +65,33 @@ export default function ReportScreen() {
       return [];
     }
   }, [surfReports]);
+
+  // Fetch real-time surf conditions
+  const fetchSurfConditions = React.useCallback(async () => {
+    try {
+      setIsLoadingConditions(true);
+      const today = getESTDate();
+      
+      console.log('[ReportScreen] Fetching surf conditions for:', today);
+      
+      const { data, error } = await supabase
+        .from('surf_conditions')
+        .select('*')
+        .eq('date', today)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[ReportScreen] Error fetching surf conditions:', error);
+      } else {
+        console.log('[ReportScreen] Surf conditions loaded:', data);
+        setSurfConditions(data);
+      }
+    } catch (error) {
+      console.error('[ReportScreen] Error in fetchSurfConditions:', error);
+    } finally {
+      setIsLoadingConditions(false);
+    }
+  }, []);
 
   // Load latest video
   const loadLatestVideo = React.useCallback(async () => {
@@ -103,16 +138,47 @@ export default function ReportScreen() {
     });
   }, [user, profile, isSubscribed, authLoading, isInitialized]);
 
-  // Load video when user is subscribed
+  // Load video and surf conditions when user is subscribed
   useEffect(() => {
     if (isInitialized && !authLoading && user && profile && isSubscribed) {
       loadLatestVideo();
+      fetchSurfConditions();
     }
-  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions]);
+
+  // Set up real-time subscription for surf_conditions
+  useEffect(() => {
+    if (!isInitialized || authLoading || !user || !profile || !isSubscribed) {
+      return;
+    }
+
+    console.log('[ReportScreen] Setting up real-time subscription for surf_conditions');
+    
+    const subscription = supabase
+      .channel('surf_conditions_report_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surf_conditions',
+        },
+        (payload) => {
+          console.log('[ReportScreen] Surf conditions updated:', payload);
+          fetchSurfConditions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[ReportScreen] Cleaning up real-time subscription');
+      subscription.unsubscribe();
+    };
+  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([refreshData(), loadLatestVideo()]);
+    await Promise.all([refreshData(), loadLatestVideo(), fetchSurfConditions()]);
     setIsRefreshing(false);
   };
 
@@ -237,7 +303,10 @@ export default function ReportScreen() {
   };
 
   const renderReportCard = (report: any, index: number) => {
-    const swellIcon = getSwellDirectionIcon(report.swell_direction);
+    // Use real-time surf conditions if available, otherwise fall back to report data
+    const displayData = surfConditions || report;
+    
+    const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
     // Parse the report date in EST timezone for display
@@ -263,6 +332,16 @@ export default function ReportScreen() {
           </View>
         </View>
 
+        {/* Real-time data indicator */}
+        {surfConditions && (
+          <View style={styles.liveIndicator}>
+            <View style={styles.liveDot} />
+            <Text style={[styles.liveText, { color: colors.primary }]}>
+              Live Data • Updated {surfConditions.updated_at ? new Date(surfConditions.updated_at).toLocaleTimeString() : 'recently'}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.conditionsGrid}>
           <View style={styles.conditionRow}>
             <View style={styles.conditionItem}>
@@ -277,7 +356,7 @@ export default function ReportScreen() {
                   Surf Height
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                  {report.wave_height}
+                  {displayData.surf_height || displayData.wave_height || 'N/A'}
                 </Text>
               </View>
             </View>
@@ -294,7 +373,7 @@ export default function ReportScreen() {
                   Wind Speed
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                  {report.wind_speed}
+                  {displayData.wind_speed || 'N/A'}
                 </Text>
               </View>
             </View>
@@ -313,7 +392,7 @@ export default function ReportScreen() {
                   Wind Direction
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                  {report.wind_direction}
+                  {displayData.wind_direction || 'N/A'}
                 </Text>
               </View>
             </View>
@@ -330,15 +409,15 @@ export default function ReportScreen() {
                   Water Temp
                 </Text>
                 <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                  {report.water_temp}
+                  {displayData.water_temp || 'N/A'}
                 </Text>
               </View>
             </View>
           </View>
 
-          {(report.wave_period || report.swell_direction) && (
+          {(displayData.wave_period || displayData.swell_direction) && (
             <View style={styles.conditionRow}>
-              {report.wave_period && (
+              {displayData.wave_period && (
                 <View style={styles.conditionItem}>
                   <IconSymbol
                     ios_icon_name="timer"
@@ -351,13 +430,13 @@ export default function ReportScreen() {
                       Wave Period
                     </Text>
                     <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                      {report.wave_period}
+                      {displayData.wave_period}
                     </Text>
                   </View>
                 </View>
               )}
 
-              {report.swell_direction && (
+              {displayData.swell_direction && (
                 <View style={styles.conditionItem}>
                   <IconSymbol
                     ios_icon_name={swellIcon.ios}
@@ -370,7 +449,7 @@ export default function ReportScreen() {
                       Swell Direction
                     </Text>
                     <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                      {report.swell_direction}
+                      {displayData.swell_direction}
                     </Text>
                   </View>
                 </View>
@@ -384,7 +463,7 @@ export default function ReportScreen() {
                 Tide
               </Text>
               <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
-                {report.tide}
+                {report.tide || 'Check tide chart'}
               </Text>
             </View>
           </View>
@@ -665,7 +744,7 @@ export default function ReportScreen() {
         />
         <View style={styles.infoTextContainer}>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Reports are automatically generated from official NOAA data sources - the most reliable and accurate surf and weather data available.
+            Live surf conditions are automatically updated from official NOAA data sources - the most reliable and accurate surf and weather data available.
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
             <Text style={{ fontWeight: 'bold' }}>Data Sources:</Text>
@@ -680,7 +759,7 @@ export default function ReportScreen() {
             • NOAA Tides & Currents (Charleston) - Tide predictions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            Surf height shown is the rideable face height (calculated from wave height and period). Data updates hourly. Previous day&apos;s reports removed after midnight EST.
+            Surf height shown is the rideable face height (calculated from wave height and period). Live data updates automatically. Surf conditions report text is updated when a new report is generated.
           </Text>
         </View>
       </View>
@@ -845,7 +924,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   reportDate: {
     fontSize: 18,
@@ -861,6 +940,27 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  liveText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   conditionsGrid: {
     marginBottom: 16,
