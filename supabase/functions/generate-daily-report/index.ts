@@ -25,6 +25,16 @@ function getESTDate(): string {
   return estDate;
 }
 
+// Helper function to safely parse numeric values from strings
+function parseNumericValue(value: string | null | undefined, defaultValue: number = 0): number {
+  if (!value || value === 'N/A' || value === 'null' || value === 'undefined') {
+    return defaultValue;
+  }
+  
+  const match = value.match(/(\d+\.?\d*)/);
+  return match ? parseFloat(match[1]) : defaultValue;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -74,6 +84,7 @@ serve(async (req) => {
     console.log('Surf conditions result:', {
       error: surfResult.error,
       hasData: !!surfResult.data,
+      data: surfResult.data,
     });
 
     console.log('Fetching weather data...');
@@ -178,6 +189,70 @@ serve(async (req) => {
       );
     }
 
+    // Check if surf data is valid (not all N/A)
+    const hasValidSurfData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
+    
+    if (!hasValidSurfData) {
+      console.warn('Surf data contains N/A values - buoy may be offline or not reporting');
+      console.log('Surf data:', surfData);
+      
+      // Generate a report indicating no data available
+      const noDataReport = {
+        date: today,
+        wave_height: 'N/A',
+        wave_period: 'N/A',
+        swell_direction: 'N/A',
+        wind_speed: surfData.wind_speed || 'N/A',
+        wind_direction: surfData.wind_direction || 'N/A',
+        water_temp: surfData.water_temp || 'N/A',
+        tide: generateTideSummary(tideData),
+        conditions: generateNoDataReportText(weatherData, tideData),
+        rating: 0,
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log('Storing no-data surf report...');
+
+      const { data: insertData, error: reportError } = await supabase
+        .from('surf_reports')
+        .upsert(noDataReport, { onConflict: 'date' })
+        .select();
+
+      if (reportError) {
+        console.error('Error storing surf report:', reportError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Failed to store surf report in database',
+            details: reportError.message,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500,
+          }
+        );
+      }
+
+      console.log('No-data surf report stored successfully');
+      console.log('=== GENERATE DAILY REPORT COMPLETED (NO DATA) ===');
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Daily surf report generated (no buoy data available)',
+          location: 'Folly Beach, SC',
+          report: noDataReport,
+          warning: 'Buoy data unavailable - report generated with limited information',
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
     // Generate tide summary
     const tideSummary = generateTideSummary(tideData);
     console.log('Tide summary:', tideSummary);
@@ -192,7 +267,7 @@ serve(async (req) => {
     console.log('Report text length:', reportText.length);
 
     // Use surf_height for display if available, otherwise fall back to wave_height
-    const displayHeight = surfData.surf_height || surfData.wave_height;
+    const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
 
     // Create the surf report
     const surfReport = {
@@ -278,17 +353,39 @@ function generateTideSummary(tideData: any[]): string {
   return tides.join(', ');
 }
 
+function generateNoDataReportText(weatherData: any, tideData: any[]): string {
+  const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
+  
+  const messages = [
+    `Hey folks, unfortunately the surf buoy is offline or not reporting data right now, so we can&apos;t give you accurate wave conditions. Weather-wise, we&apos;ve got ${weatherConditions.toLowerCase()}. Check back later for updated surf conditions, or head down to the beach to see for yourself!`,
+    `Buoy data is currently unavailable, so we don&apos;t have wave height or period information at the moment. The weather is ${weatherConditions.toLowerCase()}. We&apos;ll update as soon as the buoy comes back online. In the meantime, your best bet is to check the beach in person.`,
+    `No surf data available right now - the buoy seems to be offline. Weather conditions are ${weatherConditions.toLowerCase()}. We&apos;re monitoring the situation and will update when data becomes available. Consider checking local surf cams or heading to the beach to assess conditions yourself.`,
+    `The NOAA buoy isn&apos;t reporting wave data at the moment, so we can&apos;t provide surf conditions. Current weather is ${weatherConditions.toLowerCase()}. Check back soon for updates, or take a drive to the beach to see what&apos;s happening out there.`,
+  ];
+  
+  // Use crypto for random selection
+  const randomBuffer = new Uint32Array(1);
+  crypto.getRandomValues(randomBuffer);
+  const index = randomBuffer[0] % messages.length;
+  
+  return messages[index];
+}
+
 function calculateSurfRating(surfData: any, weatherData: any): number {
   // Parse surf height (use surf_height if available, otherwise wave_height)
-  const heightStr = surfData.surf_height || surfData.wave_height;
-  const heightMatch = heightStr.match(/(\d+\.?\d*)/);
-  const surfHeight = heightMatch ? parseFloat(heightMatch[1]) : 0;
+  const heightStr = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
+  
+  // If still N/A, return 0
+  if (heightStr === 'N/A') {
+    return 0;
+  }
+  
+  const surfHeight = parseNumericValue(heightStr, 0);
 
   // Parse wind speed
-  const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
-  const windSpeed = windSpeedMatch ? parseInt(windSpeedMatch[1]) : 0;
+  const windSpeed = parseNumericValue(surfData.wind_speed, 0);
   
-  const windDir = surfData.wind_direction.toLowerCase();
+  const windDir = (surfData.wind_direction || '').toLowerCase();
   
   // Determine conditions quality based on wind
   let conditions = 'clean';
@@ -318,8 +415,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
   }
 
   // Wave period affects conditions
-  const periodMatch = surfData.wave_period.match(/(\d+)/);
-  const period = periodMatch ? parseInt(periodMatch[1]) : 0;
+  const period = parseNumericValue(surfData.wave_period, 0);
   
   if (period < 6 && conditions === 'clean') {
     conditions = 'moderate'; // Short period = choppy even with good wind
@@ -402,19 +498,23 @@ function selectRandom<T>(array: T[]): T {
 
 function generateReportText(surfData: any, weatherData: any, tideSummary: string, rating: number): string {
   // Use surf_height if available, otherwise wave_height
-  const heightStr = surfData.surf_height || surfData.wave_height;
-  const heightMatch = heightStr.match(/(\d+\.?\d*)-?(\d+\.?\d*)?/);
-  const surfHeight = heightMatch ? parseFloat(heightMatch[1]) : 0;
-  const surfHeightMax = heightMatch && heightMatch[2] ? parseFloat(heightMatch[2]) : surfHeight;
+  const heightStr = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
   
-  const windSpeedMatch = surfData.wind_speed.match(/(\d+)/);
-  const windSpeed = windSpeedMatch ? parseInt(windSpeedMatch[1]) : 0;
+  // If still N/A, use default values
+  if (heightStr === 'N/A') {
+    return generateNoDataReportText(weatherData, []);
+  }
   
-  const windDir = surfData.wind_direction;
-  const swellDir = surfData.swell_direction;
-  const period = surfData.wave_period;
-  const periodNum = parseInt(period.match(/(\d+)/)?.[1] || '0');
-  const waterTemp = surfData.water_temp;
+  const surfHeight = parseNumericValue(heightStr, 0);
+  const surfHeightMax = surfHeight; // Simplified for now
+  
+  const windSpeed = parseNumericValue(surfData.wind_speed, 0);
+  
+  const windDir = surfData.wind_direction || 'Variable';
+  const swellDir = surfData.swell_direction || 'Variable';
+  const period = surfData.wave_period || 'N/A';
+  const periodNum = parseNumericValue(period, 0);
+  const waterTemp = surfData.water_temp || 'N/A';
 
   // Log that we're generating a new narrative with true randomness
   console.log('Generating conversational narrative with crypto-based randomness');
