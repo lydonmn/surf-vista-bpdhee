@@ -226,16 +226,39 @@ serve(async (req) => {
       );
     }
 
-    // Check if surf data is valid (not all N/A)
-    const hasValidSurfData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
+    // Check if surf data has valid wave measurements
+    const hasValidWaveData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
     
-    if (!hasValidSurfData) {
-      console.warn('Surf data contains N/A values - buoy may be offline or not reporting');
-      console.log('Surf data:', surfData);
+    // If no valid wave data today, check if we have recent valid data (within last 3 days)
+    let recentValidSurfData = null;
+    if (!hasValidWaveData) {
+      console.log('No valid wave data for today, checking recent history...');
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
       
-      // Generate a report indicating no data available
+      const recentSurfResult = await supabase
+        .from('surf_conditions')
+        .select('*')
+        .gte('date', threeDaysAgoStr)
+        .neq('wave_height', 'N/A')
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (recentSurfResult.data) {
+        recentValidSurfData = recentSurfResult.data;
+        console.log('Found recent valid surf data from:', recentValidSurfData.date);
+      }
+    }
+    
+    if (!hasValidWaveData && !recentValidSurfData) {
+      console.warn('No valid wave data available - buoy wave sensors appear to be offline');
+      console.log('Current surf data:', surfData);
+      
+      // Generate a report indicating wave sensors are offline but other data is available
       const tideSummary = generateTideSummary(tideData);
-      const noDataReport = {
+      const noWaveDataReport = {
         date: today,
         wave_height: 'N/A',
         wave_period: 'N/A',
@@ -244,13 +267,13 @@ serve(async (req) => {
         wind_direction: surfData.wind_direction || 'N/A',
         water_temp: surfData.water_temp || 'N/A',
         tide: tideSummary || 'Tide data unavailable',
-        conditions: generateNoDataReportText(weatherData, tideData),
+        conditions: generateNoWaveDataReportText(weatherData, surfData, tideData),
         rating: 0,
         updated_at: new Date().toISOString(),
       };
 
-      console.log('Storing no-data surf report...');
-      console.log('Report data:', JSON.stringify(noDataReport, null, 2));
+      console.log('Storing no-wave-data surf report...');
+      console.log('Report data:', JSON.stringify(noWaveDataReport, null, 2));
 
       // First, try to delete existing report for today
       const { error: deleteError } = await supabase
@@ -265,7 +288,7 @@ serve(async (req) => {
       // Then insert new report
       const { data: insertData, error: reportError } = await supabase
         .from('surf_reports')
-        .insert(noDataReport)
+        .insert(noWaveDataReport)
         .select();
 
       if (reportError) {
@@ -278,7 +301,7 @@ serve(async (req) => {
             details: reportError.message,
             hint: reportError.hint,
             code: reportError.code,
-            reportData: noDataReport,
+            reportData: noWaveDataReport,
             timestamp: new Date().toISOString(),
           }),
           {
@@ -288,16 +311,16 @@ serve(async (req) => {
         );
       }
 
-      console.log('No-data surf report stored successfully');
-      console.log('=== GENERATE DAILY REPORT COMPLETED (NO DATA) ===');
+      console.log('No-wave-data surf report stored successfully');
+      console.log('=== GENERATE DAILY REPORT COMPLETED (NO WAVE DATA) ===');
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Daily surf report generated (no buoy data available)',
+          message: 'Daily surf report generated (wave sensors offline)',
           location: 'Folly Beach, SC',
-          report: noDataReport,
-          warning: 'Buoy data unavailable - report generated with limited information',
+          report: noWaveDataReport,
+          warning: 'Wave sensors offline - report generated with available data',
           timestamp: new Date().toISOString(),
         }),
         {
@@ -307,31 +330,41 @@ serve(async (req) => {
       );
     }
 
+    // Use recent valid data if current data is N/A
+    const effectiveSurfData = hasValidWaveData ? surfData : recentValidSurfData;
+    const usingHistoricalData = !hasValidWaveData && recentValidSurfData;
+
     // Generate tide summary
     const tideSummary = generateTideSummary(tideData);
     console.log('Tide summary:', tideSummary);
 
     // Calculate surf rating (1-10) - use surf_height if available, otherwise wave_height
-    const rating = calculateSurfRating(surfData, weatherData);
+    const rating = calculateSurfRating(effectiveSurfData, weatherData);
     console.log('Calculated rating:', rating);
 
     // Generate report text with variety - ALWAYS generate new text
-    const reportText = generateReportText(surfData, weatherData, tideSummary, rating);
+    const reportText = generateReportText(
+      effectiveSurfData, 
+      weatherData, 
+      tideSummary, 
+      rating,
+      usingHistoricalData ? effectiveSurfData.date : null
+    );
     console.log('Generated report text:', reportText);
     console.log('Report text length:', reportText.length);
 
     // Use surf_height for display if available, otherwise fall back to wave_height
-    const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
+    const displayHeight = effectiveSurfData.surf_height !== 'N/A' ? effectiveSurfData.surf_height : effectiveSurfData.wave_height;
 
     // Create the surf report - ensure all required fields are present
     const surfReport = {
       date: today,
       wave_height: displayHeight || 'N/A',
-      wave_period: surfData.wave_period || 'N/A',
-      swell_direction: surfData.swell_direction || 'N/A',
-      wind_speed: surfData.wind_speed || 'N/A',
-      wind_direction: surfData.wind_direction || 'N/A',
-      water_temp: surfData.water_temp || 'N/A',
+      wave_period: effectiveSurfData.wave_period || 'N/A',
+      swell_direction: effectiveSurfData.swell_direction || 'N/A',
+      wind_speed: surfData.wind_speed || 'N/A', // Use current wind data
+      wind_direction: surfData.wind_direction || 'N/A', // Use current wind data
+      water_temp: surfData.water_temp || 'N/A', // Use current water temp
       tide: tideSummary || 'Tide data unavailable',
       conditions: reportText,
       rating: rating,
@@ -391,7 +424,11 @@ serve(async (req) => {
         message: 'Daily surf report generated successfully for Folly Beach, SC',
         location: 'Folly Beach, SC',
         report: surfReport,
-        dataAge: surfData.date !== today ? `Using surf data from ${surfData.date}` : 'Using current data',
+        dataAge: usingHistoricalData 
+          ? `Using wave data from ${effectiveSurfData.date} (current sensors offline)` 
+          : surfData.date !== today 
+          ? `Using surf data from ${surfData.date}` 
+          : 'Using current data',
         timestamp: new Date().toISOString(),
       }),
       {
@@ -432,14 +469,17 @@ function generateTideSummary(tideData: any[]): string {
   return tides.join(', ');
 }
 
-function generateNoDataReportText(weatherData: any, tideData: any[]): string {
+function generateNoWaveDataReportText(weatherData: any, surfData: any, tideData: any[]): string {
   const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
+  const windSpeed = surfData.wind_speed || 'N/A';
+  const windDir = surfData.wind_direction || 'Variable';
+  const waterTemp = surfData.water_temp || 'N/A';
   
   const messages = [
-    `Hey folks, unfortunately the surf buoy is offline or not reporting data right now, so we can&apos;t give you accurate wave conditions. Weather-wise, we&apos;ve got ${weatherConditions.toLowerCase()}. Check back later for updated surf conditions, or head down to the beach to see for yourself!`,
-    `Buoy data is currently unavailable, so we don&apos;t have wave height or period information at the moment. The weather is ${weatherConditions.toLowerCase()}. We&apos;ll update as soon as the buoy comes back online. In the meantime, your best bet is to check the beach in person.`,
-    `No surf data available right now - the buoy seems to be offline. Weather conditions are ${weatherConditions.toLowerCase()}. We&apos;re monitoring the situation and will update when data becomes available. Consider checking local surf cams or heading to the beach to assess conditions yourself.`,
-    `The NOAA buoy isn&apos;t reporting wave data at the moment, so we can&apos;t provide surf conditions. Current weather is ${weatherConditions.toLowerCase()}. Check back soon for updates, or take a drive to the beach to see what&apos;s happening out there.`,
+    `Hey folks, the wave sensors on the Edisto buoy aren&apos;t reporting right now, so we can&apos;t give you wave heights or periods. The buoy is online though - we&apos;re seeing ${windSpeed} winds from the ${windDir}, water temp is ${waterTemp}, and weather is ${weatherConditions.toLowerCase()}. Check local surf cams or head to the beach to see what&apos;s actually happening out there!`,
+    `Wave sensors are offline on the buoy today, so no wave data available. But we do know the wind is ${windSpeed} from the ${windDir}, water&apos;s at ${waterTemp}, and it&apos;s ${weatherConditions.toLowerCase()}. Your best bet is to check the beach in person or look at surf cams for current conditions.`,
+    `The Edisto buoy&apos;s wave sensors aren&apos;t working right now, so we can&apos;t tell you wave heights. Current conditions show ${windSpeed} winds from the ${windDir}, ${waterTemp} water, and ${weatherConditions.toLowerCase()}. Head down to the beach or check surf cams to see what&apos;s actually going on!`,
+    `No wave data from the buoy today - sensors appear to be offline. We can tell you the wind is ${windSpeed} ${windDir}, water temp is ${waterTemp}, and weather is ${weatherConditions.toLowerCase()}. Check surf cams or take a drive to the beach to assess conditions yourself.`,
   ];
   
   // Use crypto for random selection
@@ -575,13 +615,19 @@ function selectRandom<T>(array: T[]): T {
   return array[index];
 }
 
-function generateReportText(surfData: any, weatherData: any, tideSummary: string, rating: number): string {
+function generateReportText(
+  surfData: any, 
+  weatherData: any, 
+  tideSummary: string, 
+  rating: number,
+  historicalDate: string | null = null
+): string {
   // Use surf_height if available, otherwise wave_height
   const heightStr = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
   
   // If still N/A, use default values
   if (heightStr === 'N/A') {
-    return generateNoDataReportText(weatherData, []);
+    return generateNoWaveDataReportText(weatherData, surfData, []);
   }
   
   const surfHeight = parseNumericValue(heightStr, 0);
@@ -598,10 +644,17 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
   // Log that we're generating a new narrative with true randomness
   console.log('Generating conversational narrative with crypto-based randomness');
   console.log('Surf height:', surfHeight, 'Rating:', rating);
+  console.log('Using historical data:', historicalDate || 'No');
 
   // Determine if conditions are clean
   const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
   const isClean = (isOffshore && windSpeed < 15) || (!isOffshore && windSpeed < 8);
+
+  // Add note about historical data if applicable
+  let historicalNote = '';
+  if (historicalDate) {
+    historicalNote = ` (Note: Wave sensors are currently offline, using wave data from ${historicalDate}. Current wind and water conditions are up to date.)`;
+  }
 
   // CONVERSATIONAL opening phrases - like a friend telling you about the surf
   const openings = [
@@ -642,7 +695,7 @@ function generateReportText(surfData: any, weatherData: any, tideSummary: string
     }
   }
 
-  let report = `${opening} `;
+  let report = `${opening}${historicalNote} `;
 
   // CONVERSATIONAL swell description - talk about what the swell is doing
   if (surfHeight >= 7) {
