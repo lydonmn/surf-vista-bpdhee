@@ -23,6 +23,7 @@ interface DataCounts {
 }
 
 interface ActivityLog {
+  id: string;
   timestamp: string;
   message: string;
   type: 'info' | 'success' | 'error';
@@ -42,7 +43,8 @@ export default function AdminDataScreen() {
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-    setActivityLog(prev => [{ timestamp, message, type }, ...prev].slice(0, 50));
+    const id = `${Date.now()}-${Math.random()}`;
+    setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
   };
 
   const loadDataCounts = async () => {
@@ -446,8 +448,8 @@ export default function AdminDataScreen() {
             {activityLog.length === 0 ? (
               <Text style={styles.logEmpty}>No activity yet</Text>
             ) : (
-              activityLog.map((log, index) => (
-                <View key={`log-${index}-${log.timestamp}`} style={styles.logEntry}>
+              activityLog.map((log) => (
+                <View key={log.id} style={styles.logEntry}>
                   <Text style={styles.logTimestamp}>[{log.timestamp}]</Text>
                   <Text style={[
                     styles.logMessage,
