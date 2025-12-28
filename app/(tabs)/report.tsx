@@ -130,9 +130,25 @@ export default function ReportScreen() {
     } catch (error) {
       console.error('[ReportScreen] Update error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Parse the error message to provide more specific feedback
+      let userMessage = errorMessage;
+      let detailMessage = 'Please check your internet connection and try again.';
+      
+      if (errorMessage.includes('Weather:') || errorMessage.includes('Surf:')) {
+        userMessage = 'Failed to update surf data';
+        detailMessage = errorMessage + '\n\nPlease check your internet connection and try again.';
+      } else if (errorMessage.includes('Network error') || errorMessage.includes('Failed to fetch')) {
+        userMessage = 'Network Error';
+        detailMessage = 'Unable to connect to NOAA servers. Please check your internet connection and try again.';
+      } else if (errorMessage.includes('timeout')) {
+        userMessage = 'Request Timeout';
+        detailMessage = 'The request took too long. NOAA servers may be slow. Please try again in a few moments.';
+      }
+      
       Alert.alert(
-        'Update Failed',
-        `Failed to update surf data: ${errorMessage}\n\nPlease check your internet connection and try again.`,
+        userMessage,
+        detailMessage,
         [{ text: 'OK' }]
       );
     } finally {

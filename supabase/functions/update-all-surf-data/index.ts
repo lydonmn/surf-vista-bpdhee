@@ -57,9 +57,9 @@ serve(async (req) => {
     console.log('Location: Folly Beach, SC');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
       const error = 'Missing Supabase environment variables';
       console.error(error);
       return new Response(
@@ -85,8 +85,10 @@ serve(async (req) => {
     };
 
     const errors = [];
+    
+    // Use service role key for internal function calls to bypass RLS
     const requestHeaders = {
-      'Authorization': `Bearer ${supabaseAnonKey}`,
+      'Authorization': `Bearer ${supabaseServiceKey}`,
       'Content-Type': 'application/json',
     };
 
