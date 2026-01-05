@@ -1,5 +1,4 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const corsHeaders = {
@@ -10,7 +9,7 @@ const corsHeaders = {
 // Folly Beach coordinates
 const FOLLY_BEACH_LAT = 32.6552;
 const FOLLY_BEACH_LON = -79.9403;
-const FETCH_TIMEOUT = 15000; // 15 seconds
+const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
 
 // NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
 const BUOY_ID = '41004';
@@ -18,7 +17,6 @@ const BUOY_ID = '41004';
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Get EST time by using toLocaleString with America/New_York timezone
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -26,7 +24,6 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  // Parse the EST date string (format: MM/DD/YYYY)
   const [month, day, year] = estDateString.split('/');
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
@@ -43,7 +40,6 @@ function getESTDateFromISO(isoString: string): string {
     day: '2-digit'
   });
   
-  // Parse the EST date string (format: MM/DD/YYYY)
   const [month, day, year] = estDateString.split('/');
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
@@ -59,10 +55,8 @@ function getDayNameFromISO(isoString: string): string {
 
 // Helper function to calculate surf height from wave height
 function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
-  // Convert to feet first
   const waveHeightFt = waveHeightMeters * 3.28084;
   
-  // Surf height multipliers based on wave period
   let multiplierMin = 0.4;
   let multiplierMax = 0.5;
   
@@ -77,15 +71,12 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   const surfHeightMin = waveHeightFt * multiplierMin;
   const surfHeightMax = waveHeightFt * multiplierMax;
   
-  // Round to nearest 0.5 ft
   const roundedMin = Math.round(surfHeightMin * 2) / 2;
   const roundedMax = Math.round(surfHeightMax * 2) / 2;
   
-  // Ensure surf height never exceeds wave height
   const cappedMin = Math.min(roundedMin, waveHeightFt * 0.95);
   const cappedMax = Math.min(roundedMax, waveHeightFt * 0.95);
   
-  // Format display string
   let display: string;
   if (cappedMin === cappedMax) {
     display = `${cappedMin.toFixed(0)}-${(cappedMin + 0.5).toFixed(0)} ft`;
@@ -100,71 +91,92 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   };
 }
 
-// Helper function to fetch current buoy data
-async function fetchBuoyData(timeout: number = FETCH_TIMEOUT): Promise<{ waveHeight: number, period: number } | null> {
-  try {
-    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
-    console.log('Fetching buoy data for swell predictions:', buoyUrl);
+// Helper function to fetch current buoy data with retry logic
+async function fetchBuoyData(timeout: number = FETCH_TIMEOUT, retries: number = 3): Promise<{ waveHeight: number, period: number } | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+      console.log(`Fetching buoy data (attempt ${attempt}/${retries}):`, buoyUrl);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(buoyUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.error(`Buoy API error (attempt ${attempt}):`, response.status);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+          continue;
+        }
+        return null;
+      }
+
+      const buoyText = await response.text();
+      const lines = buoyText.trim().split('\n');
+
+      if (lines.length < 3) {
+        console.error('Insufficient buoy data');
+        return null;
+      }
+
+      const dataLine = lines[2].trim().split(/\s+/);
+      const waveHeight = parseFloat(dataLine[8]);
+      const dominantPeriod = parseFloat(dataLine[9]);
+
+      if (waveHeight === 99.0 || isNaN(waveHeight) || dominantPeriod === 99.0 || isNaN(dominantPeriod)) {
+        console.log('Invalid buoy data (missing values)');
+        return null;
+      }
+
+      console.log('Buoy data retrieved:', { waveHeight, dominantPeriod });
+      return { waveHeight, period: dominantPeriod };
+    } catch (error) {
+      console.error(`Error fetching buoy data (attempt ${attempt}):`, error);
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+// Helper function to fetch with timeout and retry
+async function fetchWithTimeout(url: string, headers: Record<string, string>, timeout: number = FETCH_TIMEOUT, retries: number = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
-    const response = await fetch(buoyUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.error('Buoy API error:', response.status);
-      return null;
+    try {
+      console.log(`Fetching ${url} (attempt ${attempt}/${retries})`);
+      const response = await fetch(url, { 
+        headers,
+        signal: controller.signal 
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`Request timeout after ${timeout}ms (attempt ${attempt})`);
+      } else {
+        console.error(`Fetch error (attempt ${attempt}):`, error);
+      }
+      
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        continue;
+      }
+      throw error;
     }
-
-    const buoyText = await response.text();
-    const lines = buoyText.trim().split('\n');
-
-    if (lines.length < 3) {
-      console.error('Insufficient buoy data');
-      return null;
-    }
-
-    // Parse the most recent data line
-    const dataLine = lines[2].trim().split(/\s+/);
-    const waveHeight = parseFloat(dataLine[8]); // WVHT in meters
-    const dominantPeriod = parseFloat(dataLine[9]); // DPD in seconds
-
-    if (waveHeight === 99.0 || isNaN(waveHeight) || dominantPeriod === 99.0 || isNaN(dominantPeriod)) {
-      console.log('Invalid buoy data (missing values)');
-      return null;
-    }
-
-    console.log('Buoy data retrieved:', { waveHeight, dominantPeriod });
-    return { waveHeight, period: dominantPeriod };
-  } catch (error) {
-    console.error('Error fetching buoy data:', error);
-    return null;
   }
+  throw new Error('Max retries exceeded');
 }
 
-// Helper function to fetch with timeout
-async function fetchWithTimeout(url: string, headers: Record<string, string>, timeout: number = FETCH_TIMEOUT) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    const response = await fetch(url, { 
-      headers,
-      signal: controller.signal 
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request timeout after ${timeout}ms`);
-    }
-    throw error;
-  }
-}
-
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -187,22 +199,19 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
     
-    // Use service role key for database operations (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Fetching weather data from NOAA for Folly Beach, SC...');
     console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
 
-    // Get current date in EST
     const today = getESTDate();
     console.log('Current EST date:', today);
 
-    // Fetch current surf conditions from database for today
     const { data: currentSurfConditions, error: surfCondError } = await supabase
       .from('surf_conditions')
       .select('surf_height, wave_height, wave_period')
@@ -215,19 +224,16 @@ serve(async (req) => {
 
     console.log('Current surf conditions from database:', currentSurfConditions);
 
-    // Determine default swell range for forecasts
     let defaultSwellRange = '1-2 ft';
     let currentSwellRange = '1-2 ft';
     let hasActualSurfData = false;
     
-    // Use actual surf conditions from database if available
     if (currentSurfConditions?.surf_height) {
       currentSwellRange = currentSurfConditions.surf_height;
       hasActualSurfData = true;
       console.log('✅ Using ACTUAL surf height from database for today:', currentSwellRange);
     }
 
-    // Fetch buoy data for future predictions
     const buoyData = await fetchBuoyData();
     
     if (buoyData) {
@@ -235,14 +241,12 @@ serve(async (req) => {
       defaultSwellRange = surfCalc.display;
       console.log('Using current buoy data for future swell predictions:', defaultSwellRange);
       
-      // If we don't have database surf conditions, use the buoy calculation for today
       if (!hasActualSurfData) {
         currentSwellRange = defaultSwellRange;
         console.log('No database surf conditions, using buoy calculation for today:', currentSwellRange);
       }
     } else {
       console.log('Using default swell range for predictions:', defaultSwellRange);
-      // If we don't have buoy data and no actual surf data, keep the default
       if (!hasActualSurfData) {
         console.log('⚠️ WARNING: No actual surf data or buoy data available, using default 1-2 ft');
       }
@@ -253,7 +257,6 @@ serve(async (req) => {
       'Accept': 'application/geo+json'
     };
 
-    // Step 1: Get the grid point for Folly Beach
     const pointsUrl = `https://api.weather.gov/points/${FOLLY_BEACH_LAT},${FOLLY_BEACH_LON}`;
     console.log('Fetching grid point:', pointsUrl);
     
@@ -271,7 +274,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -288,7 +291,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -297,11 +300,9 @@ serve(async (req) => {
     console.log('Points data received');
     
     const forecastUrl = pointsData.properties.forecast;
-    const forecastHourlyUrl = pointsData.properties.forecastHourly;
 
     console.log('Forecast URL:', forecastUrl);
 
-    // Step 2: Get the forecast
     let forecastResponse;
     try {
       forecastResponse = await fetchWithTimeout(forecastUrl, requestHeaders);
@@ -316,7 +317,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -333,7 +334,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -342,18 +343,15 @@ serve(async (req) => {
     const periods = forecastData.properties.periods;
 
     console.log(`Received ${periods.length} forecast periods`);
-    console.log('Current UTC time:', new Date().toISOString());
 
-    // Step 3: Store current weather data (first period)
     const currentPeriod = periods[0];
     
-    // Match the existing database schema - convert numeric fields to strings
     const weatherData = {
       date: today,
       temperature: currentPeriod.temperature.toString(),
       feels_like: currentPeriod.temperature.toString(),
       humidity: 0,
-      wind_speed: currentPeriod.windSpeed.split(' ')[0], // Extract just the number
+      wind_speed: currentPeriod.windSpeed.split(' ')[0],
       wind_direction: currentPeriod.windDirection,
       wind_gust: '0',
       pressure: '0',
@@ -367,7 +365,6 @@ serve(async (req) => {
     };
 
     console.log('Upserting current weather data for date:', today);
-    console.log('Weather data to insert:', JSON.stringify(weatherData, null, 2));
 
     const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
@@ -376,7 +373,6 @@ serve(async (req) => {
 
     if (weatherError) {
       console.error('Error storing weather data:', weatherError);
-      console.error('Error details:', JSON.stringify(weatherError, null, 2));
       return new Response(
         JSON.stringify({
           success: false,
@@ -386,52 +382,41 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
 
-    console.log('Weather data stored successfully:', weatherInsertData);
+    console.log('Weather data stored successfully');
 
-    // Step 4: Store 7-day forecast with aggregated daily data and swell predictions
-    // Group periods by date and aggregate high/low temps
     const dailyForecasts = new Map<string, any>();
     
     for (let i = 0; i < Math.min(periods.length, 14); i++) {
       const period = periods[i];
       
-      // Parse the start time to get the date in EST using our helper function
       const formattedDate = getESTDateFromISO(period.startTime);
       const dayName = getDayNameFromISO(period.startTime);
       
-      console.log(`Processing period ${i}: ${period.name}, startTime: ${period.startTime}, EST date: ${formattedDate}, day: ${dayName}`);
+      console.log(`Processing period ${i}: ${period.name}, EST date: ${formattedDate}`);
       
-      // Get or create daily forecast entry
       if (!dailyForecasts.has(formattedDate)) {
-        // Determine swell range for this date
         let swellRange = defaultSwellRange;
         
-        // ✅ CRITICAL FIX: Use actual current surf conditions for today
         if (formattedDate === today && hasActualSurfData) {
           swellRange = currentSwellRange;
           console.log(`✅ Using ACTUAL current surf conditions for today (${formattedDate}): ${swellRange}`);
         } else if (formattedDate === today && !hasActualSurfData) {
-          // Today but no actual data - use buoy or default
           swellRange = currentSwellRange;
           console.log(`⚠️ Using estimated surf conditions for today (${formattedDate}): ${swellRange}`);
         } else if (buoyData) {
-          // Add slight variation for future days (±0.5 ft)
-          const dayOffset = i / 2; // Days from now
-          const variation = (Math.random() - 0.5) * 1.0; // -0.5 to +0.5 ft
-          const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048); // Convert ft to meters
+          const dayOffset = i / 2;
+          const variation = (Math.random() - 0.5) * 1.0;
+          const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048);
           const surfCalc = calculateSurfHeight(Math.max(0.5, adjustedWaveHeight), buoyData.period);
           swellRange = surfCalc.display;
           console.log(`Using buoy-based prediction for ${formattedDate}: ${swellRange}`);
-        } else {
-          console.log(`Using default swell range for ${formattedDate}: ${swellRange}`);
         }
         
-        // Parse swell range to get min/max values
         let swellMin = 1;
         let swellMax = 2;
         if (swellRange.includes('-')) {
@@ -460,7 +445,6 @@ serve(async (req) => {
       
       const dailyData = dailyForecasts.get(formattedDate);
       
-      // Update high/low temps
       if (period.isDaytime) {
         if (dailyData.high_temp === null || period.temperature > dailyData.high_temp) {
           dailyData.high_temp = period.temperature;
@@ -471,50 +455,37 @@ serve(async (req) => {
         }
       }
       
-      // Use daytime conditions as primary
       if (period.isDaytime) {
         dailyData.conditions = period.shortForecast;
         dailyData.icon = period.icon;
       }
     }
 
-    // Ensure all entries have both high and low temps by filling in missing values
     const forecastRecords = Array.from(dailyForecasts.values()).map(record => {
-      // If we're missing low_temp, estimate it as high_temp - 10
       if (record.low_temp === null && record.high_temp !== null) {
         record.low_temp = record.high_temp - 10;
-        console.log(`Estimated low_temp for ${record.date}: ${record.low_temp}`);
       }
-      // If we're missing high_temp, estimate it as low_temp + 10
       if (record.high_temp === null && record.low_temp !== null) {
         record.high_temp = record.low_temp + 10;
-        console.log(`Estimated high_temp for ${record.date}: ${record.high_temp}`);
       }
-      // If both are missing, use reasonable defaults
       if (record.high_temp === null && record.low_temp === null) {
         record.high_temp = 65;
         record.low_temp = 55;
-        console.log(`Using default temps for ${record.date}`);
       }
       return record;
     });
 
-    console.log(`Prepared ${forecastRecords.length} daily forecast records with swell predictions`);
-    console.log('Forecast dates:', forecastRecords.map(r => `${r.date} (${r.day_name}) - Swell: ${r.swell_height_range}`).join(', '));
+    console.log(`Prepared ${forecastRecords.length} daily forecast records`);
 
-    // Delete ALL old forecasts first to prevent duplicates
     const { error: deleteError } = await supabase
       .from('weather_forecast')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+      .neq('id', '00000000-0000-0000-0000-000000000000');
 
     if (deleteError) {
       console.error('Error deleting old forecasts:', deleteError);
-    } else {
-      console.log('Deleted all old forecast records');
     }
 
-    // Insert new forecasts
     const { data: forecastInsertData, error: forecastError } = await supabase
       .from('weather_forecast')
       .insert(forecastRecords)
@@ -531,12 +502,11 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
 
-    console.log(`Forecast data stored successfully: ${forecastInsertData?.length || 0} records`);
     console.log('=== FETCH WEATHER DATA COMPLETED ===');
 
     return new Response(
@@ -546,11 +516,6 @@ serve(async (req) => {
         location: 'Folly Beach, SC',
         current: weatherData,
         forecast_periods: forecastRecords.length,
-        forecast_count: forecastInsertData?.length || 0,
-        forecast_dates: forecastRecords.map(r => r.date),
-        swell_predictions: forecastRecords.map(r => ({ date: r.date, swell: r.swell_height_range })),
-        current_surf_conditions: currentSwellRange,
-        has_actual_surf_data: hasActualSurfData,
         timestamp: new Date().toISOString(),
       }),
       {
@@ -560,19 +525,17 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('=== FETCH WEATHER DATA FAILED ===');
-    console.error('Error in fetch-weather-data:', error);
-    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    console.error('Error:', error);
     
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+        status: 200,
       }
     );
   }

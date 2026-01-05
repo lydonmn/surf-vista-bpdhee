@@ -1,5 +1,4 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const corsHeaders = {
@@ -7,14 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
 const BUOY_ID = '41004';
-const FETCH_TIMEOUT = 15000; // 15 seconds
+const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
 
-// Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Get EST time by using toLocaleString with America/New_York timezone
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -22,33 +18,14 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  // Parse the EST date string (format: MM/DD/YYYY)
   const [month, day, year] = estDateString.split('/');
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  
-  console.log('EST Date calculation:', {
-    utcTime: now.toISOString(),
-    estDateString,
-    estDate
-  });
   
   return estDate;
 }
 
-// Helper function to calculate surf height from wave height
-// CRITICAL: Surf height (rideable face) is ALWAYS LESS than wave height
-// Wave height = significant wave height from buoy (trough to crest)
-// Surf height = rideable face height (what surfers actually ride)
-// Surf height is typically 0.4-0.7x the significant wave height
 function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): { min: number, max: number, display: string } {
-  // Convert to feet first
   const waveHeightFt = waveHeightMeters * 3.28084;
-  
-  // Surf height multipliers based on wave period
-  // These are ALWAYS less than 1.0 to ensure surf height < wave height
-  // - Short period (< 8s) = choppy, smaller rideable faces (0.4-0.5x wave height)
-  // - Medium period (8-12s) = decent faces (0.5-0.6x wave height)
-  // - Long period (> 12s) = clean, larger faces (0.6-0.7x wave height)
   
   let multiplierMin = 0.4;
   let multiplierMax = 0.5;
@@ -64,36 +41,18 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   const surfHeightMin = waveHeightFt * multiplierMin;
   const surfHeightMax = waveHeightFt * multiplierMax;
   
-  // Round to nearest 0.5 ft
   const roundedMin = Math.round(surfHeightMin * 2) / 2;
   const roundedMax = Math.round(surfHeightMax * 2) / 2;
   
-  // CRITICAL: Ensure surf height NEVER exceeds wave height
-  const cappedMin = Math.min(roundedMin, waveHeightFt * 0.95); // Cap at 95% of wave height
+  const cappedMin = Math.min(roundedMin, waveHeightFt * 0.95);
   const cappedMax = Math.min(roundedMax, waveHeightFt * 0.95);
   
-  // Format display string
   let display: string;
   if (cappedMin === cappedMax) {
     display = `${cappedMin.toFixed(1)} ft`;
   } else {
     display = `${cappedMin.toFixed(1)}-${cappedMax.toFixed(1)} ft`;
   }
-  
-  console.log('Surf height calculation:', {
-    waveHeightMeters,
-    waveHeightFt: waveHeightFt.toFixed(1),
-    periodSeconds,
-    multiplierRange: `${multiplierMin}-${multiplierMax}`,
-    calculatedMin: surfHeightMin.toFixed(1),
-    calculatedMax: surfHeightMax.toFixed(1),
-    roundedMin: roundedMin.toFixed(1),
-    roundedMax: roundedMax.toFixed(1),
-    cappedMin: cappedMin.toFixed(1),
-    cappedMax: cappedMax.toFixed(1),
-    display,
-    verification: `Surf height (${display}) < Wave height (${waveHeightFt.toFixed(1)} ft): ${cappedMax < waveHeightFt}`
-  });
   
   return {
     min: cappedMin,
@@ -102,25 +61,35 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   };
 }
 
-// Helper function to fetch with timeout
-async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Request timeout after ${timeout}ms`);
+async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT, retries: number = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      console.log(`Fetching ${url} (attempt ${attempt}/${retries})`);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`Request timeout after ${timeout}ms (attempt ${attempt})`);
+      } else {
+        console.error(`Fetch error (attempt ${attempt}):`, error);
+      }
+      
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+  throw new Error('Max retries exceeded');
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -143,20 +112,16 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
     
-    // Use service role key for database operations (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching surf conditions from NOAA Buoy for Folly Beach, SC...');
-    console.log('Buoy ID:', BUOY_ID, '(Edisto, SC - closest to Folly Beach)');
+    console.log('Fetching surf conditions from NOAA Buoy...');
 
-    // Fetch latest buoy data with timeout
     const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
-    console.log('Fetching buoy data:', buoyUrl);
 
     let buoyResponse;
     try {
@@ -172,7 +137,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -189,7 +154,7 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
@@ -198,62 +163,35 @@ serve(async (req) => {
     const lines = buoyText.trim().split('\n');
 
     console.log(`Received ${lines.length} lines from buoy`);
-    console.log('First 5 lines:', lines.slice(0, 5).join('\n'));
 
-    // Skip header lines (first 2 lines)
     if (lines.length < 3) {
       console.error('Insufficient buoy data');
       return new Response(
         JSON.stringify({
           success: false,
           error: 'Insufficient buoy data received',
-          lines: lines.length,
           timestamp: new Date().toISOString(),
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
 
-    // Parse the most recent data line (line 2, after headers)
     const dataLine = lines[2].trim().split(/\s+/);
     
-    console.log('Parsing data line:', dataLine.join(' | '));
-    
-    // NOAA Buoy data format:
-    // YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD PRES ATMP WTMP DEWP VIS TIDE
-    // 0  1  2  3  4  5    6    7   8    9   10  11  12   13   14   15   16  17
-    
-    const year = parseInt(dataLine[0]);
-    const month = parseInt(dataLine[1]);
-    const day = parseInt(dataLine[2]);
-    const hour = parseInt(dataLine[3]);
-    const minute = parseInt(dataLine[4]);
-    const waveHeight = parseFloat(dataLine[8]); // WVHT - Significant wave height in meters
-    const dominantPeriod = parseFloat(dataLine[9]); // DPD - Dominant wave period in seconds
-    const meanWaveDirection = parseFloat(dataLine[11]); // MWD - Mean wave direction in degrees
-    const windDirection = parseFloat(dataLine[5]); // WDIR - Wind direction in degrees
-    const windSpeed = parseFloat(dataLine[6]); // WSPD - Wind speed in m/s
-    const waterTemp = parseFloat(dataLine[14]); // WTMP - Water temperature in Celsius
+    const waveHeight = parseFloat(dataLine[8]);
+    const dominantPeriod = parseFloat(dataLine[9]);
+    const meanWaveDirection = parseFloat(dataLine[11]);
+    const windDirection = parseFloat(dataLine[5]);
+    const windSpeed = parseFloat(dataLine[6]);
+    const waterTemp = parseFloat(dataLine[14]);
 
-    console.log('Parsed buoy data:', {
-      timestamp: `${year}-${month}-${day} ${hour}:${minute}`,
-      waveHeight,
-      dominantPeriod,
-      meanWaveDirection,
-      windDirection,
-      windSpeed,
-      waterTemp
-    });
-
-    // Convert values and handle missing data (999.0 or MM in NOAA data)
     const waveHeightFt = waveHeight !== 99.0 && !isNaN(waveHeight) 
-      ? (waveHeight * 3.28084).toFixed(1) // Convert meters to feet
+      ? (waveHeight * 3.28084).toFixed(1)
       : 'N/A';
     
-    // Calculate surf height (face height) from wave height
     let surfHeight = 'N/A';
     if (waveHeight !== 99.0 && !isNaN(waveHeight) && dominantPeriod !== 99.0 && !isNaN(dominantPeriod)) {
       const surfHeightCalc = calculateSurfHeight(waveHeight, dominantPeriod);
@@ -273,22 +211,19 @@ serve(async (req) => {
       : 'N/A';
     
     const windSpeedMph = windSpeed !== 99.0 && !isNaN(windSpeed)
-      ? (windSpeed * 2.23694).toFixed(0) // Convert m/s to mph
+      ? (windSpeed * 2.23694).toFixed(0)
       : 'N/A';
     
     const waterTempF = waterTemp !== 999.0 && !isNaN(waterTemp)
-      ? ((waterTemp * 9/5) + 32).toFixed(0) // Convert Celsius to Fahrenheit
+      ? ((waterTemp * 9/5) + 32).toFixed(0)
       : 'N/A';
 
-    // Get current date in EST
     const today = getESTDate();
-    console.log('Storing data for EST date:', today);
 
-    // Store the raw buoy data with both wave height and surf height
     const surfData = {
       date: today,
       wave_height: waveHeightFt !== 'N/A' ? `${waveHeightFt} ft` : 'N/A',
-      surf_height: surfHeight, // Calculated surf height (rideable face height)
+      surf_height: surfHeight,
       wave_period: wavePeriodSec !== 'N/A' ? `${wavePeriodSec} sec` : 'N/A',
       swell_direction: swellDirection,
       wind_speed: windSpeedMph !== 'N/A' ? `${windSpeedMph} mph` : 'N/A',
@@ -298,9 +233,8 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Storing surf data:', JSON.stringify(surfData, null, 2));
+    console.log('Storing surf data:', surfData);
 
-    // Store in surf_conditions table
     const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
       .upsert(surfData, { onConflict: 'date' })
@@ -308,7 +242,6 @@ serve(async (req) => {
 
     if (surfError) {
       console.error('Error storing surf data:', surfError);
-      console.error('Error details:', JSON.stringify(surfError, null, 2));
       return new Response(
         JSON.stringify({
           success: false,
@@ -318,19 +251,18 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
 
-    console.log('Surf conditions stored successfully:', insertData);
     console.log('=== FETCH SURF REPORTS COMPLETED ===');
 
     return new Response(
       JSON.stringify({
         success: true,
         message: 'Surf conditions updated successfully for Folly Beach, SC',
-        location: 'Folly Beach, SC (Buoy 41004 - Edisto)',
+        location: 'Folly Beach, SC',
         data: surfData,
         timestamp: new Date().toISOString(),
       }),
@@ -341,19 +273,17 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('=== FETCH SURF REPORTS FAILED ===');
-    console.error('Error in fetch-surf-reports:', error);
-    console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    console.error('Error:', error);
     
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+        status: 200,
       }
     );
   }

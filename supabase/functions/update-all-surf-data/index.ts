@@ -1,52 +1,57 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const FUNCTION_TIMEOUT = 30000; // 30 seconds per function
+const FUNCTION_TIMEOUT = 45000; // Increased to 45 seconds per function
 
-async function invokeFunctionWithTimeout(url: string, headers: Record<string, string>, timeout: number) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    console.log(`Invoking function: ${url}`);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+async function invokeFunctionWithTimeout(url: string, headers: Record<string, string>, timeout: number, retries: number = 2) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
     
-    console.log(`Function response status: ${response.status}`);
-    
-    // Try to parse response body
-    let responseData;
     try {
-      const text = await response.text();
-      console.log(`Function response body: ${text.substring(0, 500)}`);
-      responseData = JSON.parse(text);
-    } catch (e) {
-      console.error('Failed to parse response:', e);
-      responseData = { success: false, error: 'Failed to parse response' };
+      console.log(`Invoking function: ${url} (attempt ${attempt}/${retries})`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      
+      console.log(`Function response status: ${response.status}`);
+      
+      let responseData;
+      try {
+        const text = await response.text();
+        console.log(`Function response: ${text.substring(0, 200)}`);
+        responseData = JSON.parse(text);
+      } catch (e) {
+        console.error('Failed to parse response:', e);
+        responseData = { success: false, error: 'Failed to parse response' };
+      }
+      
+      return { status: response.status, data: responseData };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`Function timeout after ${timeout}ms (attempt ${attempt})`);
+      } else {
+        console.error(`Function invocation error (attempt ${attempt}):`, error);
+      }
+      
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        continue;
+      }
+      throw error;
     }
-    
-    return { status: response.status, data: responseData };
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      console.error(`Function timeout after ${timeout}ms`);
-      throw new Error(`Function timeout after ${timeout}ms`);
-    }
-    console.error('Function invocation error:', error);
-    throw error;
   }
+  throw new Error('Max retries exceeded');
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -54,7 +59,6 @@ serve(async (req) => {
   try {
     console.log('=== UPDATE ALL SURF DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
-    console.log('Location: Folly Beach, SC');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -70,12 +74,10 @@ serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
+          status: 200,
         }
       );
     }
-
-    console.log('Supabase URL:', supabaseUrl);
 
     const results = {
       weather: null as any,
@@ -86,14 +88,12 @@ serve(async (req) => {
 
     const errors = [];
     
-    // Use service role key for internal function calls to bypass RLS
     const requestHeaders = {
       'Authorization': `Bearer ${supabaseServiceKey}`,
       'Content-Type': 'application/json',
     };
 
-    // Step 1: Fetch weather data
-    console.log('Step 1: Fetching weather data for Folly Beach, SC...');
+    console.log('Step 1: Fetching weather data...');
     try {
       const weatherResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-weather-data`,
@@ -117,8 +117,7 @@ serve(async (req) => {
       results.weather = { success: false, error: errorMsg };
     }
 
-    // Step 2: Fetch tide data
-    console.log('Step 2: Fetching tide data for Folly Beach, SC...');
+    console.log('Step 2: Fetching tide data...');
     try {
       const tideResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-tide-data`,
@@ -142,8 +141,7 @@ serve(async (req) => {
       results.tide = { success: false, error: errorMsg };
     }
 
-    // Step 3: Fetch surf conditions
-    console.log('Step 3: Fetching surf conditions for Folly Beach, SC...');
+    console.log('Step 3: Fetching surf conditions...');
     try {
       const surfResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-surf-reports`,
@@ -167,9 +165,8 @@ serve(async (req) => {
       results.surf = { success: false, error: errorMsg };
     }
 
-    // Step 4: Generate daily report (only if we have the required data)
     if (results.weather?.success && results.surf?.success) {
-      console.log('Step 4: Generating daily report for Folly Beach, SC...');
+      console.log('Step 4: Generating daily report...');
       try {
         const reportResult = await invokeFunctionWithTimeout(
           `${supabaseUrl}/functions/v1/generate-daily-report`,
@@ -193,34 +190,21 @@ serve(async (req) => {
         results.report = { success: false, error: errorMsg };
       }
     } else {
-      const msg = 'Skipping report generation - missing required data (weather or surf)';
-      errors.push(msg);
+      const msg = 'Skipping report generation - missing required data';
       console.log(msg);
       results.report = { success: false, error: msg };
     }
 
     console.log('=== UPDATE ALL SURF DATA COMPLETED ===');
-    console.log('Results summary:', {
-      weather: results.weather?.success ? 'SUCCESS' : 'FAILED',
-      tide: results.tide?.success ? 'SUCCESS' : 'FAILED',
-      surf: results.surf?.success ? 'SUCCESS' : 'FAILED',
-      report: results.report?.success ? 'SUCCESS' : 'FAILED',
-    });
-    console.log('Errors:', errors);
 
-    // Consider it a success if at least weather and surf data were fetched
-    // (tide is optional, report depends on weather and surf)
     const criticalSuccess = results.weather?.success && results.surf?.success;
-    const allSuccess = errors.length === 0;
 
     return new Response(
       JSON.stringify({
-        success: criticalSuccess, // Return success if critical data was fetched
-        message: allSuccess 
-          ? 'All surf data updated successfully for Folly Beach, SC' 
-          : criticalSuccess
-          ? 'Critical surf data updated successfully for Folly Beach, SC (some optional updates failed)'
-          : 'Failed to update critical surf data for Folly Beach, SC',
+        success: criticalSuccess,
+        message: criticalSuccess 
+          ? 'Surf data updated successfully for Folly Beach, SC' 
+          : 'Failed to update critical surf data',
         location: 'Folly Beach, SC',
         results,
         errors: errors.length > 0 ? errors : undefined,
@@ -228,22 +212,21 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200, // Always return 200 to prevent client-side errors
+        status: 200,
       }
     );
   } catch (error) {
     console.error('=== UPDATE ALL SURF DATA FAILED ===');
-    console.error('Error in update-all-surf-data:', error);
+    console.error('Error:', error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200, // Return 200 to prevent client-side errors
+        status: 200,
       }
     );
   }
