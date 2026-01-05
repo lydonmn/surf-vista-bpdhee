@@ -46,8 +46,8 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, tideData:
   const waterTemp = surfData.water_temp || 'N/A';
   
   const messages = [
-    `Hey folks, the wave sensors on the Edisto buoy aren&apos;t reporting right now, so we can&apos;t give you wave heights or periods. The buoy is online though - we&apos;re seeing ${windSpeed} winds from the ${windDir}, water temp is ${waterTemp}, and weather is ${weatherConditions.toLowerCase()}. Check local surf cams or head to the beach to see what&apos;s actually happening out there!`,
-    `Wave sensors are offline on the buoy today, so no wave data available. But we do know the wind is ${windSpeed} from the ${windDir}, water&apos;s at ${waterTemp}, and it&apos;s ${weatherConditions.toLowerCase()}. Your best bet is to check the beach in person or look at surf cams for current conditions.`,
+    `The wave sensors on the Edisto buoy aren't reporting right now, so we can't give you wave heights or periods. The buoy is online though - winds are ${windSpeed} from the ${windDir}, water temp is ${waterTemp}, and weather is ${weatherConditions.toLowerCase()}. Check local surf cams or head to the beach to see what's actually happening out there!`,
+    `Wave sensors are offline on the buoy today, so no wave data available. Wind is ${windSpeed} from the ${windDir}, water's at ${waterTemp}, and it's ${weatherConditions.toLowerCase()}. Your best bet is to check the beach in person or look at surf cams for current conditions.`,
   ];
   
   const index = Math.floor(Date.now() / 1000) % messages.length;
@@ -68,6 +68,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
     
     let conditions = 'clean';
     
+    // Offshore winds (W, NW, N, NE) are good for surf
     if (windDir.includes('w') || windDir.includes('n')) {
       if (windSpeed < 10) {
         conditions = 'clean';
@@ -79,6 +80,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
         conditions = 'poor';
       }
     } else if (windDir.includes('e') || windDir.includes('s')) {
+      // Onshore winds (E, SE, S, SW) are bad for surf
       if (windSpeed < 8) {
         conditions = 'clean';
       } else if (windSpeed < 12) {
@@ -92,6 +94,7 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
 
     const period = parseNumericValue(surfData.wave_period, 0);
     
+    // Short period waves are choppy
     if (period < 6 && conditions === 'clean') {
       conditions = 'moderate';
     } else if (period < 6 && conditions === 'moderate') {
@@ -100,35 +103,43 @@ function calculateSurfRating(surfData: any, weatherData: any): number {
 
     let rating = 0;
 
-    if (surfHeight <= 3) {
-      rating = conditions === 'clean' ? 3 : Math.min(3, Math.max(1, 3 - (windSpeed / 10)));
+    // Rating based on surf height and conditions
+    if (surfHeight <= 1.5) {
+      // Flat to ankle high
+      rating = conditions === 'clean' ? 2 : 1;
+    } else if (surfHeight <= 3) {
+      // Knee to waist high
+      rating = conditions === 'clean' ? 4 : Math.max(2, 4 - Math.floor(windSpeed / 10));
     } else if (surfHeight > 3 && surfHeight < 4.5) {
-      rating = conditions === 'clean' ? 4 : 3;
+      // Waist to chest high
+      rating = conditions === 'clean' ? 6 : 4;
     } else if (surfHeight >= 4.5 && surfHeight <= 6) {
+      // Chest to head high
       if (conditions === 'clean') {
-        rating = 7;
+        rating = 8;
       } else if (conditions === 'moderate') {
-        rating = 6;
+        rating = 7;
       } else if (conditions === 'moderately poor') {
-        rating = 5;
+        rating = 6;
       } else if (conditions === 'poor') {
-        rating = 4;
-      } else if (conditions === 'very poor') {
-        rating = 3;
-      } else {
         rating = 5;
+      } else if (conditions === 'very poor') {
+        rating = 4;
+      } else {
+        rating = 6;
       }
     } else if (surfHeight >= 7) {
+      // Overhead+
       if (conditions === 'clean') {
         rating = 10;
       } else if (conditions === 'moderate') {
-        rating = 8;
+        rating = 9;
       } else if (conditions === 'poor') {
-        rating = 7;
+        rating = 8;
       } else if (conditions === 'very poor') {
-        rating = 6;
-      } else {
         rating = 7;
+      } else {
+        rating = 8;
       }
     }
 
@@ -176,61 +187,119 @@ function generateReportText(
       historicalNote = ` (Note: Wave sensors are currently offline, using wave data from ${historicalDate}. Current wind and water conditions are up to date.)`;
     }
 
-    const openings = [
-      { min: 8, phrases: ['Yo, it&apos;s absolutely firing out there!', 'Dude, you gotta see this!', 'Holy smokes, it&apos;s going off!'] },
-      { min: 6, phrases: ['Hey, it&apos;s looking pretty fun out there.', 'Not bad at all today!', 'Yeah, there&apos;s some decent waves rolling through.'] },
-      { min: 4, phrases: ['It&apos;s small but clean, could be fun.', 'Pretty mellow out there today.', 'Not much size but it&apos;s rideable.'] },
-      { min: 0, phrases: ['Honestly, it&apos;s pretty flat.', 'Not much happening today.', 'Yeah, it&apos;s basically a lake.'] }
-    ];
+    // Build the report with better structure
+    let report = '';
 
-    let opening = 'Checked the surf this morning.';
-    for (const o of openings) {
-      if (rating >= o.min) {
-        opening = selectRandom(o.phrases);
-        break;
-      }
-    }
-
-    let report = `${opening}${historicalNote} `;
-
-    if (surfHeight >= 7) {
-      const swellDescriptions = isClean 
-        ? [`We&apos;ve got this massive ${swellDir} swell rolling in, waves are stacking up overhead and just peeling perfectly`]
-        : [`There&apos;s a big ${swellDir} swell but the wind is tearing it apart, overhead but pretty messy`];
-      report += `${selectRandom(swellDescriptions)}. `;
-    } else if (surfHeight >= 4.5) {
-      const swellDescriptions = isClean 
-        ? [`We&apos;ve got a nice ${swellDir} swell, waves are coming through chest to head high and looking super clean`]
-        : [`There&apos;s a ${swellDir} swell but the wind is adding some texture, chest high but a bit bumpy`];
-      report += `${selectRandom(swellDescriptions)}. `;
-    } else if (surfHeight >= 2) {
-      const swellDescriptions = isClean 
-        ? [`Small ${swellDir} swell, waves are waist high and clean though`]
-        : [`Small ${swellDir} swell and the wind isn&apos;t helping, waist high but choppy`];
-      report += `${selectRandom(swellDescriptions)}. `;
+    // Opening based on rating
+    if (rating >= 8) {
+      const openings = [
+        'It\'s absolutely firing out there!',
+        'Epic conditions today!',
+        'You gotta see this - it\'s going off!',
+      ];
+      report += selectRandom(openings);
+    } else if (rating >= 6) {
+      const openings = [
+        'Looking pretty fun out there today.',
+        'Decent waves rolling through.',
+        'Not bad at all - worth checking out.',
+      ];
+      report += selectRandom(openings);
+    } else if (rating >= 4) {
+      const openings = [
+        'Small but rideable conditions.',
+        'Pretty mellow out there.',
+        'Not much size but it\'s clean.',
+      ];
+      report += selectRandom(openings);
     } else {
-      report += `Honestly, there&apos;s just no swell at all, it&apos;s completely flat. `;
+      const openings = [
+        'Pretty flat today.',
+        'Not much happening.',
+        'Minimal surf conditions.',
+      ];
+      report += selectRandom(openings);
     }
 
+    report += historicalNote + ' ';
+
+    // Wave description
+    if (surfHeight >= 7) {
+      if (isClean) {
+        report += `Massive ${swellDir} swell rolling in, waves are stacking up overhead and peeling perfectly. `;
+      } else {
+        report += `Big ${swellDir} swell but the wind is tearing it apart, overhead but pretty messy. `;
+      }
+    } else if (surfHeight >= 4.5) {
+      if (isClean) {
+        report += `Nice ${swellDir} swell, waves are chest to head high and looking super clean. `;
+      } else {
+        report += `${swellDir} swell but the wind is adding some texture, chest high but a bit bumpy. `;
+      }
+    } else if (surfHeight >= 2) {
+      if (isClean) {
+        report += `Small ${swellDir} swell, waves are waist high and clean. `;
+      } else {
+        report += `Small ${swellDir} swell and the wind isn\'t helping, waist high but choppy. `;
+      }
+    } else {
+      report += `Minimal swell, ankle to knee high at best. `;
+    }
+
+    // Wind and conditions
+    if (isOffshore && windSpeed < 10) {
+      report += `Light offshore winds at ${windSpeed} mph from the ${windDir} are grooming the faces nicely. `;
+    } else if (isOffshore && windSpeed < 15) {
+      report += `Offshore winds at ${windSpeed} mph from the ${windDir} are keeping it clean. `;
+    } else if (!isOffshore && windSpeed < 8) {
+      report += `Light onshore winds at ${windSpeed} mph from the ${windDir}, not too bad. `;
+    } else if (!isOffshore) {
+      report += `Onshore winds at ${windSpeed} mph from the ${windDir} are making it bumpy. `;
+    }
+
+    // Period info
+    if (periodNum >= 12) {
+      report += `Long period swell at ${period} means powerful waves with good shape. `;
+    } else if (periodNum >= 8) {
+      report += `Decent period at ${period} giving the waves some push. `;
+    } else if (periodNum > 0) {
+      report += `Short period at ${period}, waves are a bit choppy. `;
+    }
+
+    // Weather and water temp
     const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
     report += `Weather is ${weatherConditions.toLowerCase()} and water temp is ${waterTemp}. `;
 
-    const closings = {
-      high: ['Seriously, drop what you&apos;re doing and get out here!', 'This is the one you don&apos;t want to miss!'],
-      medium: ['Definitely worth checking out if you&apos;ve got time.', 'Should be a fun session, worth the paddle.'],
-      low: ['Maybe wait for the next swell, this one&apos;s not worth it.', 'Check back tomorrow, might be better.']
-    };
-
-    let closingPhrase = '';
-    if (rating >= 7) {
-      closingPhrase = selectRandom(closings.high);
+    // Closing recommendation
+    if (rating >= 8) {
+      const closings = [
+        'Drop everything and get out here!',
+        'This is the one you don\'t want to miss!',
+        'Absolutely worth the session!',
+      ];
+      report += selectRandom(closings);
+    } else if (rating >= 6) {
+      const closings = [
+        'Definitely worth checking out if you\'ve got time.',
+        'Should be a fun session.',
+        'Worth the paddle out.',
+      ];
+      report += selectRandom(closings);
     } else if (rating >= 4) {
-      closingPhrase = selectRandom(closings.medium);
+      const closings = [
+        'Could be fun for beginners or longboarders.',
+        'Decent for a mellow session.',
+        'Not epic but rideable.',
+      ];
+      report += selectRandom(closings);
     } else {
-      closingPhrase = selectRandom(closings.low);
+      const closings = [
+        'Maybe wait for the next swell.',
+        'Check back tomorrow, might be better.',
+        'Not really worth it today.',
+      ];
+      report += selectRandom(closings);
     }
-
-    report += closingPhrase;
 
     return report;
   } catch (error) {
@@ -272,6 +341,7 @@ Deno.serve(async (req) => {
     const today = getESTDate();
     console.log('Current EST date:', today);
 
+    // Fetch surf data for today
     let surfResult = await supabase
       .from('surf_conditions')
       .select('*')
@@ -288,6 +358,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
     }
 
+    // Fetch weather data for today
     let weatherResult = await supabase
       .from('weather_data')
       .select('*')
@@ -304,6 +375,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
     }
 
+    // Fetch tide data for today
     const tideResult = await supabase
       .from('tide_data')
       .select('*')
@@ -363,11 +435,13 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       };
 
+      // Delete old report for today
       const { error: deleteError } = await supabase
         .from('surf_reports')
         .delete()
         .eq('date', today);
 
+      // Insert new report
       const { data: insertData, error: reportError } = await supabase
         .from('surf_reports')
         .insert(noWaveDataReport)
@@ -405,6 +479,7 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Generate report with valid wave data
     const tideSummary = generateTideSummary(tideData);
     const rating = calculateSurfRating(surfData, weatherData);
     const reportText = generateReportText(surfData, weatherData, tideSummary, rating, null);
@@ -425,11 +500,13 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
+    // Delete old report for today
     const { error: deleteError } = await supabase
       .from('surf_reports')
       .delete()
       .eq('date', today);
 
+    // Insert new report
     const { data: insertData, error: reportError } = await supabase
       .from('surf_reports')
       .insert(surfReport)
