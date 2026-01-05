@@ -163,6 +163,10 @@ Deno.serve(async (req) => {
     const lines = buoyText.trim().split('\n');
 
     console.log(`Received ${lines.length} lines from buoy`);
+    console.log('First 5 lines of buoy data:');
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      console.log(`Line ${i}: ${lines[i]}`);
+    }
 
     if (lines.length < 3) {
       console.error('Insufficient buoy data');
@@ -180,6 +184,8 @@ Deno.serve(async (req) => {
     }
 
     const dataLine = lines[2].trim().split(/\s+/);
+    console.log('Data line split into fields:', dataLine);
+    console.log('Field count:', dataLine.length);
     
     const waveHeight = parseFloat(dataLine[8]);
     const dominantPeriod = parseFloat(dataLine[9]);
@@ -187,6 +193,15 @@ Deno.serve(async (req) => {
     const windDirection = parseFloat(dataLine[5]);
     const windSpeed = parseFloat(dataLine[6]);
     const waterTemp = parseFloat(dataLine[14]);
+    
+    console.log('Parsed values:', {
+      waveHeight,
+      dominantPeriod,
+      meanWaveDirection,
+      windDirection,
+      windSpeed,
+      waterTemp
+    });
 
     const waveHeightFt = waveHeight !== 99.0 && !isNaN(waveHeight) 
       ? (waveHeight * 3.28084).toFixed(1)
