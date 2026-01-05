@@ -83,6 +83,7 @@ Deno.serve(async (req) => {
       weather: null as any,
       tide: null as any,
       surf: null as any,
+      surfForecast: null as any,
       report: null as any,
     };
 
@@ -165,8 +166,32 @@ Deno.serve(async (req) => {
       results.surf = { success: false, error: errorMsg };
     }
 
+    console.log('Step 4: Fetching 7-day surf forecast...');
+    try {
+      const surfForecastResult = await invokeFunctionWithTimeout(
+        `${supabaseUrl}/functions/v1/fetch-surf-forecast`,
+        requestHeaders,
+        FUNCTION_TIMEOUT
+      );
+
+      results.surfForecast = surfForecastResult.data;
+      
+      if (surfForecastResult.status !== 200 || !surfForecastResult.data.success) {
+        const errorMsg = surfForecastResult.data.error || `HTTP ${surfForecastResult.status}`;
+        errors.push(`Surf Forecast: ${errorMsg}`);
+        console.error('Surf forecast fetch failed:', errorMsg);
+      } else {
+        console.log('7-day surf forecast fetched successfully');
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      errors.push(`Surf Forecast: ${errorMsg}`);
+      console.error('Surf forecast fetch error:', error);
+      results.surfForecast = { success: false, error: errorMsg };
+    }
+
     if (results.weather?.success && results.surf?.success) {
-      console.log('Step 4: Generating daily report...');
+      console.log('Step 5: Generating daily report...');
       try {
         const reportResult = await invokeFunctionWithTimeout(
           `${supabaseUrl}/functions/v1/generate-daily-report`,
@@ -197,13 +222,13 @@ Deno.serve(async (req) => {
 
     console.log('=== UPDATE ALL SURF DATA COMPLETED ===');
 
-    const criticalSuccess = results.weather?.success && results.surf?.success;
+    const criticalSuccess = results.weather?.success && results.surf?.success && results.surfForecast?.success;
 
     return new Response(
       JSON.stringify({
         success: criticalSuccess,
         message: criticalSuccess 
-          ? 'Surf data updated successfully for Folly Beach, SC' 
+          ? 'Surf data and 7-day forecast updated successfully for Folly Beach, SC' 
           : 'Failed to update critical surf data',
         location: 'Folly Beach, SC',
         results,

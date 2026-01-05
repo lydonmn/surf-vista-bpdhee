@@ -64,6 +64,7 @@ serve(async (req) => {
       tide: null as any,
       trends: null as any,
       weather: null as any,
+      surfForecast: null as any,
       report: null as any,
     };
 
@@ -117,7 +118,7 @@ serve(async (req) => {
       results.tide = { success: false, error: errorMsg };
     }
 
-    // Step 3: Analyze surf trends (NEW - AI predictions)
+    // Step 3: Analyze surf trends (AI predictions)
     console.log('Step 3: Analyzing surf trends with AI...');
     try {
       const trendsResult = await invokeFunctionWithTimeout(
@@ -161,9 +162,31 @@ serve(async (req) => {
       results.weather = { success: false, error: errorMsg };
     }
 
-    // Step 5: Generate daily report
+    // Step 5: Fetch 7-day surf forecast
+    console.log('Step 5: Fetching 7-day surf forecast...');
+    try {
+      const surfForecastResult = await invokeFunctionWithTimeout(
+        `${supabaseUrl}/functions/v1/fetch-surf-forecast`,
+        requestHeaders,
+        FUNCTION_TIMEOUT
+      );
+
+      results.surfForecast = surfForecastResult.data;
+      
+      if (surfForecastResult.status !== 200 || !surfForecastResult.data.success) {
+        errors.push(`Surf Forecast: ${surfForecastResult.data.error || 'Failed'}`);
+      } else {
+        console.log('✅ 7-day surf forecast fetched');
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      errors.push(`Surf Forecast: ${errorMsg}`);
+      results.surfForecast = { success: false, error: errorMsg };
+    }
+
+    // Step 6: Generate daily report
     if (results.weather?.success && results.surf?.success) {
-      console.log('Step 5: Generating daily report...');
+      console.log('Step 6: Generating daily report...');
       try {
         const reportResult = await invokeFunctionWithTimeout(
           `${supabaseUrl}/functions/v1/generate-daily-report`,
@@ -195,21 +218,23 @@ serve(async (req) => {
       tide: results.tide?.success ? 'SUCCESS' : 'FAILED',
       trends: results.trends?.success ? 'SUCCESS' : 'FAILED',
       weather: results.weather?.success ? 'SUCCESS' : 'FAILED',
+      surfForecast: results.surfForecast?.success ? 'SUCCESS' : 'FAILED',
       report: results.report?.success ? 'SUCCESS' : 'FAILED',
     });
 
-    const criticalSuccess = results.weather?.success && results.surf?.success;
+    const criticalSuccess = results.weather?.success && results.surf?.success && results.surfForecast?.success;
 
     return new Response(
       JSON.stringify({
         success: criticalSuccess,
         message: criticalSuccess 
-          ? 'Daily update with AI predictions completed successfully'
+          ? 'Daily update with AI predictions and 7-day surf forecast completed successfully'
           : 'Daily update failed',
         location: 'Folly Beach, SC',
         results,
         errors: errors.length > 0 ? errors : undefined,
         ai_enabled: results.trends?.success || false,
+        forecast_enabled: results.surfForecast?.success || false,
         timestamp: new Date().toISOString(),
       }),
       {

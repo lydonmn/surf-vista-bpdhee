@@ -184,6 +184,29 @@ export default function ForecastScreen() {
     return `${Math.round(numTemp)}°`;
   };
 
+  const getConfidenceBadge = (confidence: number | null, source: string | null) => {
+    if (!confidence || !source) return null;
+    
+    let badgeColor = '#4CAF50';
+    let badgeText = 'High Confidence';
+    
+    if (source === 'actual') {
+      badgeColor = '#2196F3';
+      badgeText = 'Live Data';
+    } else if (confidence >= 0.8) {
+      badgeColor = '#4CAF50';
+      badgeText = 'High Confidence';
+    } else if (confidence >= 0.5) {
+      badgeColor = '#FFC107';
+      badgeText = 'Medium Confidence';
+    } else {
+      badgeColor = '#FF9800';
+      badgeText = 'Low Confidence';
+    }
+    
+    return { color: badgeColor, text: badgeText };
+  };
+
   if (isLoading && combinedForecast.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -288,6 +311,11 @@ export default function ForecastScreen() {
         ) : (
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
+            const hasSurfData = day.weatherForecast?.swell_height_range;
+            const confidenceBadge = getConfidenceBadge(
+              day.weatherForecast?.prediction_confidence || null,
+              day.weatherForecast?.prediction_source || null
+            );
 
             return (
               <View
@@ -306,6 +334,19 @@ export default function ForecastScreen() {
                     <Text style={[styles.dayDate, { color: colors.textSecondary }]}>
                       {formatDate(day.date)}
                     </Text>
+                    {hasSurfData && (
+                      <View style={styles.surfPreview}>
+                        <IconSymbol
+                          ios_icon_name="water.waves"
+                          android_material_icon_name="waves"
+                          size={16}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.surfPreviewText, { color: colors.primary }]}>
+                          {day.weatherForecast?.swell_height_range}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.dayHeaderRight}>
@@ -336,7 +377,7 @@ export default function ForecastScreen() {
 
                 {isExpanded && (
                   <View style={styles.dayDetails}>
-                    {/* Surf Report Section - Always show */}
+                    {/* Surf Forecast Section - ENHANCED */}
                     <View style={styles.section}>
                       <View style={styles.sectionHeader}>
                         <IconSymbol
@@ -346,93 +387,85 @@ export default function ForecastScreen() {
                           color={colors.primary}
                         />
                         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                          Surf Conditions
+                          Surf Forecast
                         </Text>
+                        {confidenceBadge && (
+                          <View style={[styles.confidenceBadge, { backgroundColor: confidenceBadge.color }]}>
+                            <Text style={styles.confidenceBadgeText}>
+                              {confidenceBadge.text}
+                            </Text>
+                          </View>
+                        )}
                       </View>
 
-                      {day.surfReport ? (
+                      {hasSurfData ? (
                         <React.Fragment>
-                          <View style={styles.stokeRating}>
-                            <Text style={[styles.stokeLabel, { color: colors.textSecondary }]}>
-                              Stoke Rating
+                          <View style={styles.surfHeightDisplay}>
+                            <Text style={[styles.surfHeightLabel, { color: colors.textSecondary }]}>
+                              Predicted Surf Height
                             </Text>
-                            <View style={styles.stokeValue}>
-                              <Text style={[styles.stokeNumber, { color: getStokeColor(day.surfReport.rating) }]}>
-                                {day.surfReport.rating || 'N/A'}
+                            <Text style={[styles.surfHeightValue, { color: colors.primary }]}>
+                              {day.weatherForecast?.swell_height_range}
+                            </Text>
+                            {day.weatherForecast?.prediction_source && (
+                              <Text style={[styles.surfSource, { color: colors.textSecondary }]}>
+                                Source: {day.weatherForecast.prediction_source === 'actual' ? 'Live Buoy Data' : 
+                                         day.weatherForecast.prediction_source === 'buoy_estimation' ? 'Buoy Estimation' : 
+                                         day.weatherForecast.prediction_source === 'ai_prediction' ? 'AI Prediction' : 'Baseline'}
                               </Text>
-                              <Text style={[styles.stokeMax, { color: colors.textSecondary }]}>
-                                / 10
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.detailsGrid}>
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Wave Height
-                              </Text>
-                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.surfReport.wave_height || 'N/A'}
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Wave Period
-                              </Text>
-                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.surfReport.wave_period || 'N/A'}
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Wind
-                              </Text>
-                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.surfReport.wind_speed || 'N/A'} {day.surfReport.wind_direction || ''}
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Water Temp
-                              </Text>
-                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.surfReport.water_temp || 'N/A'}
-                              </Text>
-                            </View>
-
-                            {day.surfReport.swell_direction && (
-                              <View style={styles.detailItem}>
-                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                  Swell Direction
-                                </Text>
-                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                  {day.surfReport.swell_direction}
-                                </Text>
-                              </View>
                             )}
                           </View>
 
-                          {day.surfReport.report_text && (
-                            <View style={[styles.reportTextBox, { backgroundColor: colors.highlight }]}>
-                              <Text style={[styles.reportText, { color: theme.colors.text }]}>
-                                {day.surfReport.report_text}
-                              </Text>
+                          {day.surfReport && (
+                            <View style={styles.detailsGrid}>
+                              <View style={styles.detailItem}>
+                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                  Wave Height
+                                </Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                  {day.surfReport.wave_height || 'N/A'}
+                                </Text>
+                              </View>
+
+                              <View style={styles.detailItem}>
+                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                  Wave Period
+                                </Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                  {day.surfReport.wave_period || 'N/A'}
+                                </Text>
+                              </View>
+
+                              <View style={styles.detailItem}>
+                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                  Wind
+                                </Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                  {day.surfReport.wind_speed || 'N/A'} {day.surfReport.wind_direction || ''}
+                                </Text>
+                              </View>
+
+                              <View style={styles.detailItem}>
+                                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                                  Stoke Rating
+                                </Text>
+                                <Text style={[styles.detailValue, { color: getStokeColor(day.surfReport.rating || null) }]}>
+                                  {day.surfReport.rating || 'N/A'} / 10
+                                </Text>
+                              </View>
                             </View>
                           )}
                         </React.Fragment>
                       ) : (
                         <View style={styles.noDataContainer}>
                           <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            No surf data available for this day
+                            Surf forecast data will be available soon
                           </Text>
                         </View>
                       )}
                     </View>
 
-                    {/* Weather Section - Always show */}
+                    {/* Weather Section */}
                     <View style={styles.section}>
                       <View style={styles.sectionHeader}>
                         <IconSymbol
@@ -503,7 +536,7 @@ export default function ForecastScreen() {
                       )}
                     </View>
 
-                    {/* Tides Section - Always show */}
+                    {/* Tides Section */}
                     <View style={styles.section}>
                       <View style={styles.sectionHeader}>
                         <IconSymbol
@@ -574,7 +607,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: 48,
     paddingBottom: 16,
   },
   backButton: {
@@ -658,6 +691,17 @@ const styles = StyleSheet.create({
   },
   dayDate: {
     fontSize: 14,
+    marginBottom: 4,
+  },
+  surfPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  surfPreviewText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   dayHeaderRight: {
     flexDirection: 'row',
@@ -693,27 +737,35 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
+    flex: 1,
   },
-  stokeRating: {
-    flexDirection: 'row',
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  confidenceBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  surfHeightDisplay: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 16,
+    gap: 8,
   },
-  stokeLabel: {
-    fontSize: 14,
+  surfHeightLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  stokeValue: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
-  stokeNumber: {
-    fontSize: 32,
+  surfHeightValue: {
+    fontSize: 36,
     fontWeight: 'bold',
   },
-  stokeMax: {
-    fontSize: 18,
+  surfSource: {
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   detailsGrid: {
     flexDirection: 'row',
@@ -730,15 +782,6 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  reportTextBox: {
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  reportText: {
-    fontSize: 14,
-    lineHeight: 20,
   },
   conditionsBox: {
     padding: 12,
