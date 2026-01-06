@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -8,13 +8,16 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/hooks/useVideos";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function VideoPlayerScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { videoId } = useLocalSearchParams();
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
@@ -173,6 +176,11 @@ export default function VideoPlayerScreen() {
     }
   }, [videoUrl, player]);
 
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(!isFullscreen);
+    console.log('[VideoPlayer] Fullscreen toggled:', !isFullscreen);
+  }, [isFullscreen]);
+
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -262,6 +270,40 @@ export default function VideoPlayerScreen() {
     );
   }
 
+  // Fullscreen mode - video takes entire screen
+  if (isFullscreen) {
+    return (
+      <View style={[styles.fullscreenContainer, { backgroundColor: '#000000' }]}>
+        <VideoView
+          style={styles.fullscreenVideo}
+          player={player}
+          allowsFullscreen
+          allowsPictureInPicture
+          contentFit="contain"
+          nativeControls={true}
+        />
+        
+        {/* Fullscreen controls overlay - positioned safely */}
+        <View style={[styles.fullscreenControlsOverlay, { paddingTop: insets.top + 12 }]}>
+          {/* Exit fullscreen button - top left with safe area padding */}
+          <TouchableOpacity
+            style={[styles.fullscreenExitButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
+            onPress={toggleFullscreen}
+            activeOpacity={0.8}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.down.right.and.arrow.up.left"
+              android_material_icon_name="fullscreen_exit"
+              size={28}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Normal mode - video with info below
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -276,6 +318,22 @@ export default function VideoPlayerScreen() {
           contentFit="contain"
           nativeControls={true}
         />
+        
+        {/* Fullscreen button overlay - positioned safely in top-left */}
+        <View style={[styles.videoControlsOverlay, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity
+            style={[styles.fullscreenButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
+            onPress={toggleFullscreen}
+            activeOpacity={0.8}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.up.left.and.arrow.down.right"
+              android_material_icon_name="fullscreen"
+              size={28}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.controls}>
@@ -415,10 +473,58 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 16 / 9,
     backgroundColor: '#000000',
+    position: 'relative',
   },
   video: {
     width: '100%',
     height: '100%',
+  },
+  videoControlsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  fullscreenButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.3)',
+    elevation: 5,
+  },
+  fullscreenContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  fullscreenVideo: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  fullscreenControlsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  fullscreenExitButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.3)',
+    elevation: 5,
   },
   controls: {
     flexDirection: 'row',
