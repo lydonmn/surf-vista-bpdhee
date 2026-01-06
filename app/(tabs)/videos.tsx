@@ -113,7 +113,7 @@ export default function VideosScreen() {
   }, []);
 
   const handleVideoPress = React.useCallback((videoId: string) => {
-    console.log('[VideosScreen] Opening video player for:', videoId);
+    console.log('[VideosScreen] Opening fullscreen video player for:', videoId);
     router.push({
       pathname: '/video-player',
       params: { videoId }
@@ -265,12 +265,15 @@ export default function VideosScreen() {
                         onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate(video.id)}
                       />
                       <View style={styles.videoOverlay}>
-                        <IconSymbol
-                          ios_icon_name="play.circle.fill"
-                          android_material_icon_name="play_circle"
-                          size={64}
-                          color="rgba(255, 255, 255, 0.9)"
-                        />
+                        <View style={styles.playButtonContainer}>
+                          <IconSymbol
+                            ios_icon_name="play.circle.fill"
+                            android_material_icon_name="play_circle"
+                            size={64}
+                            color="rgba(255, 255, 255, 0.9)"
+                          />
+                          <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                        </View>
                       </View>
                     </View>
                     {video.duration && (
@@ -481,7 +484,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  playButtonContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  tapToPlayText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   durationBadge: {
     position: 'absolute',

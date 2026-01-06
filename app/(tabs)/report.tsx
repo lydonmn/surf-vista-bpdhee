@@ -224,7 +224,7 @@ export default function ReportScreen() {
 
   const handleVideoPress = React.useCallback(() => {
     if (latestVideo) {
-      console.log('[ReportScreen] Opening video player for:', latestVideo.id);
+      console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
       router.push({
         pathname: '/video-player',
         params: { videoId: latestVideo.id }
@@ -703,12 +703,15 @@ export default function ReportScreen() {
               />
               {videoReady && (
                 <View style={styles.videoOverlay}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play_circle"
-                    size={64}
-                    color="rgba(255, 255, 255, 0.9)"
-                  />
+                  <View style={styles.playButtonContainer}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play_circle"
+                      size={64}
+                      color="rgba(255, 255, 255, 0.9)"
+                    />
+                    <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -1079,7 +1082,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  playButtonContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  tapToPlayText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   videoInfo: {
     gap: 4,
