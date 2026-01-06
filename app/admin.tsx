@@ -27,6 +27,8 @@ interface VideoMetadata {
   size: number;
 }
 
+type UploadQuality = '2K' | '4K' | 'Original';
+
 // Video upload limits (no minimum quality requirement)
 const MAX_DURATION_SECONDS = 90; // 90 seconds max
 
@@ -53,6 +55,7 @@ export default function AdminScreen() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [uploadQuality, setUploadQuality] = useState<UploadQuality>('Original');
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -202,6 +205,17 @@ export default function AdminScreen() {
     if (width >= 1920) return `1080p (${width}x${height})`;
     if (width >= 1280) return `720p (${width}x${height})`;
     return `${width}x${height}`;
+  };
+
+  const getQualityDescription = (quality: UploadQuality): string => {
+    switch (quality) {
+      case '2K':
+        return '2560x1440 - High quality, smaller file size';
+      case '4K':
+        return '3840x2160 - Ultra HD, larger file size';
+      case 'Original':
+        return 'Upload at original resolution';
+    }
   };
 
   const validateVideoMetadata = async (
@@ -388,7 +402,7 @@ export default function AdminScreen() {
             
             Alert.alert(
               'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload and will play at its original quality.`,
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload. Select your preferred upload quality below.`,
               [{ text: 'OK' }]
             );
           }
@@ -428,6 +442,7 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Starting video upload...');
       console.log('[AdminScreen] Video URI:', selectedVideo);
+      console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
         resolution: formatResolution(videoMetadata.width, videoMetadata.height),
         duration: videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown',
@@ -501,7 +516,7 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
 
-      // Create video record in database with metadata
+      // Create video record in database with metadata and quality setting
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -512,7 +527,8 @@ export default function AdminScreen() {
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-          file_size_bytes: videoMetadata.size
+          file_size_bytes: videoMetadata.size,
+          upload_quality: uploadQuality
         });
 
       if (dbError) {
@@ -528,7 +544,7 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success!', 
-        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\n\nYour video will play at its original quality.`,
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\n\nYour video will play at its original quality.`,
         [
           {
             text: 'OK',
@@ -539,6 +555,7 @@ export default function AdminScreen() {
               setVideoMetadata(null);
               setValidationErrors([]);
               setUploadProgress(0);
+              setUploadQuality('Original');
               refreshVideos();
             }
           }
@@ -781,6 +798,121 @@ export default function AdminScreen() {
             )}
           </TouchableOpacity>
 
+          {videoMetadata && validationErrors.length === 0 && (
+            <View style={styles.qualitySection}>
+              <Text style={[styles.qualityTitle, { color: theme.colors.text }]}>
+                Upload Quality
+              </Text>
+              <Text style={[styles.qualitySubtitle, { color: colors.textSecondary }]}>
+                Select the quality for this upload
+              </Text>
+              
+              <View style={styles.qualityOptions}>
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { 
+                      backgroundColor: uploadQuality === '2K' ? colors.primary : theme.colors.background,
+                      borderColor: uploadQuality === '2K' ? colors.primary : colors.textSecondary
+                    }
+                  ]}
+                  onPress={() => setUploadQuality('2K')}
+                >
+                  <View style={styles.qualityOptionHeader}>
+                    <Text style={[
+                      styles.qualityOptionTitle,
+                      { color: uploadQuality === '2K' ? '#FFFFFF' : theme.colors.text }
+                    ]}>
+                      2K
+                    </Text>
+                    {uploadQuality === '2K' && (
+                      <IconSymbol
+                        ios_icon_name="checkmark.circle.fill"
+                        android_material_icon_name="check_circle"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.qualityOptionDescription,
+                    { color: uploadQuality === '2K' ? '#FFFFFF' : colors.textSecondary }
+                  ]}>
+                    {getQualityDescription('2K')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { 
+                      backgroundColor: uploadQuality === '4K' ? colors.primary : theme.colors.background,
+                      borderColor: uploadQuality === '4K' ? colors.primary : colors.textSecondary
+                    }
+                  ]}
+                  onPress={() => setUploadQuality('4K')}
+                >
+                  <View style={styles.qualityOptionHeader}>
+                    <Text style={[
+                      styles.qualityOptionTitle,
+                      { color: uploadQuality === '4K' ? '#FFFFFF' : theme.colors.text }
+                    ]}>
+                      4K
+                    </Text>
+                    {uploadQuality === '4K' && (
+                      <IconSymbol
+                        ios_icon_name="checkmark.circle.fill"
+                        android_material_icon_name="check_circle"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.qualityOptionDescription,
+                    { color: uploadQuality === '4K' ? '#FFFFFF' : colors.textSecondary }
+                  ]}>
+                    {getQualityDescription('4K')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { 
+                      backgroundColor: uploadQuality === 'Original' ? colors.primary : theme.colors.background,
+                      borderColor: uploadQuality === 'Original' ? colors.primary : colors.textSecondary
+                    }
+                  ]}
+                  onPress={() => setUploadQuality('Original')}
+                >
+                  <View style={styles.qualityOptionHeader}>
+                    <Text style={[
+                      styles.qualityOptionTitle,
+                      { color: uploadQuality === 'Original' ? '#FFFFFF' : theme.colors.text }
+                    ]}>
+                      Original
+                    </Text>
+                    {uploadQuality === 'Original' && (
+                      <IconSymbol
+                        ios_icon_name="checkmark.circle.fill"
+                        android_material_icon_name="check_circle"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    )}
+                  </View>
+                  <Text style={[
+                    styles.qualityOptionDescription,
+                    { color: uploadQuality === 'Original' ? '#FFFFFF' : colors.textSecondary }
+                  ]}>
+                    {getQualityDescription('Original')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {videoMetadata && (
             <View style={[
               styles.metadataBox,
@@ -886,7 +1018,7 @@ export default function AdminScreen() {
               </Text>
               {videoMetadata && (
                 <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Uploading {formatFileSize(videoMetadata.size)} - This may take several minutes
+                  Uploading {formatFileSize(videoMetadata.size)} at {uploadQuality} quality - This may take several minutes
                 </Text>
               )}
             </View>
@@ -926,7 +1058,8 @@ export default function AdminScreen() {
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Tips for video uploads:{'\n'}
               • Upload any resolution - from 720p to 6K+{'\n'}
-              • Videos play at their original quality{'\n'}
+              • Select 2K or 4K for optimized streaming{'\n'}
+              • Original quality preserves source resolution{'\n'}
               • Keep videos under 90 seconds{'\n'}
               • Use a stable, fast WiFi connection{'\n'}
               • Ensure sufficient storage space{'\n'}
@@ -1178,6 +1311,41 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  qualitySection: {
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  qualityTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  qualitySubtitle: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  qualityOptions: {
+    gap: 10,
+  },
+  qualityOption: {
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 2,
+  },
+  qualityOptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  qualityOptionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  qualityOptionDescription: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   metadataBox: {
     marginTop: 16,

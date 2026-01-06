@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
-import { VideoView, useVideoPlayer } from "expo-video";
+import { VideoView, useVideoPlayer, VideoAirPlayButton } from "expo-video";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
@@ -123,12 +123,13 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, [loadVideo]);
 
-  // Create video player
+  // Create video player with external playback enabled for AirPlay
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
       player.loop = false;
       player.muted = false;
+      player.allowsExternalPlayback = true; // Enable AirPlay
       
       // Add status change listener
       player.addListener('statusChange', (status) => {
@@ -270,34 +271,47 @@ export default function VideoPlayerScreen() {
     );
   }
 
-  // Fullscreen mode - video takes entire screen
+  // Fullscreen mode - video takes entire screen with custom controls
   if (isFullscreen) {
     return (
       <View style={[styles.fullscreenContainer, { backgroundColor: '#000000' }]}>
         <VideoView
           style={styles.fullscreenVideo}
           player={player}
-          allowsFullscreen
+          allowsFullscreen={false}
           allowsPictureInPicture
           contentFit="contain"
-          nativeControls={true}
+          nativeControls={false}
         />
         
-        {/* Fullscreen controls overlay - positioned safely */}
-        <View style={[styles.fullscreenControlsOverlay, { paddingTop: insets.top + 12 }]}>
-          {/* Exit fullscreen button - top left with safe area padding */}
-          <TouchableOpacity
-            style={[styles.fullscreenExitButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
-            onPress={toggleFullscreen}
-            activeOpacity={0.8}
-          >
-            <IconSymbol
-              ios_icon_name="arrow.down.right.and.arrow.up.left"
-              android_material_icon_name="fullscreen_exit"
-              size={28}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
+        {/* Custom controls overlay - bottom right */}
+        <View style={[styles.fullscreenControlsOverlay, { paddingBottom: insets.bottom + 20 }]}>
+          <View style={styles.controlsRow}>
+            {/* AirPlay button - iOS only */}
+            {Platform.OS === 'ios' && (
+              <View style={styles.airplayButtonContainer}>
+                <VideoAirPlayButton
+                  style={styles.airplayButton}
+                  tint="#FFFFFF"
+                  activeTint={colors.primary}
+                />
+              </View>
+            )}
+            
+            {/* Exit fullscreen button */}
+            <TouchableOpacity
+              style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+              onPress={toggleFullscreen}
+              activeOpacity={0.8}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.down.right.and.arrow.up.left"
+                android_material_icon_name="fullscreen_exit"
+                size={24}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -313,26 +327,40 @@ export default function VideoPlayerScreen() {
         <VideoView
           style={styles.video}
           player={player}
-          allowsFullscreen
+          allowsFullscreen={false}
           allowsPictureInPicture
           contentFit="contain"
-          nativeControls={true}
+          nativeControls={false}
         />
         
-        {/* Fullscreen button overlay - positioned safely in top-left */}
-        <View style={[styles.videoControlsOverlay, { paddingTop: insets.top + 12 }]}>
-          <TouchableOpacity
-            style={[styles.fullscreenButton, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}
-            onPress={toggleFullscreen}
-            activeOpacity={0.8}
-          >
-            <IconSymbol
-              ios_icon_name="arrow.up.left.and.arrow.down.right"
-              android_material_icon_name="fullscreen"
-              size={28}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
+        {/* Custom controls overlay - bottom right */}
+        <View style={styles.videoControlsOverlay}>
+          <View style={styles.controlsRow}>
+            {/* AirPlay button - iOS only */}
+            {Platform.OS === 'ios' && (
+              <View style={styles.airplayButtonContainer}>
+                <VideoAirPlayButton
+                  style={styles.airplayButton}
+                  tint="#FFFFFF"
+                  activeTint={colors.primary}
+                />
+              </View>
+            )}
+            
+            {/* Fullscreen button */}
+            <TouchableOpacity
+              style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+              onPress={toggleFullscreen}
+              activeOpacity={0.8}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.up.left.and.arrow.down.right"
+                android_material_icon_name="fullscreen"
+                size={24}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -481,22 +509,9 @@ const styles = StyleSheet.create({
   },
   videoControlsOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
+    bottom: 16,
+    right: 16,
     zIndex: 10,
-  },
-  fullscreenButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.3)',
-    elevation: 5,
   },
   fullscreenContainer: {
     flex: 1,
@@ -509,18 +524,32 @@ const styles = StyleSheet.create({
   },
   fullscreenControlsOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
+    bottom: 0,
+    right: 16,
     zIndex: 10,
   },
-  fullscreenExitButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  airplayButtonContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  airplayButton: {
+    width: 44,
+    height: 44,
+  },
+  controlIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.3)',
