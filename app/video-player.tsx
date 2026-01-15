@@ -27,6 +27,7 @@ export default function VideoPlayerScreen() {
   const [volume, setVolume] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -133,7 +134,7 @@ export default function VideoPlayerScreen() {
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
-      player.loop = false;
+      player.loop = false; // Play only once
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true; // Enable AirPlay
@@ -148,7 +149,7 @@ export default function VideoPlayerScreen() {
         }
         
         if (status.status === 'readyToPlay') {
-          console.log('[VideoPlayer] Video ready to play');
+          console.log('[VideoPlayer] Video ready to play, duration:', status.duration);
           setDuration(status.duration || 0);
         }
         
@@ -165,7 +166,9 @@ export default function VideoPlayerScreen() {
 
       // Add time update listener
       player.addListener('timeUpdate', (timeUpdate) => {
-        setCurrentTime(timeUpdate.currentTime);
+        if (!isSeeking) {
+          setCurrentTime(timeUpdate.currentTime);
+        }
       });
     }
   });
@@ -177,12 +180,8 @@ export default function VideoPlayerScreen() {
       try {
         player.replace(videoUrl);
         console.log('[VideoPlayer] Player source updated successfully');
-        
-        // Auto-play after a short delay
-        setTimeout(() => {
-          console.log('[VideoPlayer] Attempting auto-play');
-          player.play();
-        }, 500);
+        // DO NOT auto-play - user must press play button
+        console.log('[VideoPlayer] Video ready - waiting for user to press play');
       } catch (e) {
         console.error('[VideoPlayer] Error updating player source:', e);
         setError('Failed to load video source');
@@ -213,10 +212,21 @@ export default function VideoPlayerScreen() {
     }
   }, [isPlaying, player]);
 
-  const handleSeek = useCallback((value: number) => {
+  const handleSeekStart = useCallback(() => {
+    console.log('[VideoPlayer] Seek started');
+    setIsSeeking(true);
+  }, []);
+
+  const handleSeekChange = useCallback((value: number) => {
+    console.log('[VideoPlayer] Seeking to:', value);
+    setCurrentTime(value);
+  }, []);
+
+  const handleSeekComplete = useCallback((value: number) => {
+    console.log('[VideoPlayer] Seek completed at:', value);
     if (player) {
       player.currentTime = value;
-      console.log('[VideoPlayer] Seeked to:', value);
+      setIsSeeking(false);
     }
   }, [player]);
 
@@ -402,7 +412,9 @@ export default function VideoPlayerScreen() {
                   minimumValue={0}
                   maximumValue={duration}
                   value={currentTime}
-                  onSlidingComplete={handleSeek}
+                  onSlidingStart={handleSeekStart}
+                  onValueChange={handleSeekChange}
+                  onSlidingComplete={handleSeekComplete}
                   minimumTrackTintColor={colors.primary}
                   maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
                   thumbTintColor={colors.primary}
@@ -550,7 +562,9 @@ export default function VideoPlayerScreen() {
           minimumValue={0}
           maximumValue={duration}
           value={currentTime}
-          onSlidingComplete={handleSeek}
+          onSlidingStart={handleSeekStart}
+          onValueChange={handleSeekChange}
+          onSlidingComplete={handleSeekComplete}
           minimumTrackTintColor={colors.primary}
           maximumTrackTintColor={colors.textSecondary}
           thumbTintColor={colors.primary}
