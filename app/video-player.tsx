@@ -28,6 +28,7 @@ export default function VideoPlayerScreen() {
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState(0);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -134,7 +135,7 @@ export default function VideoPlayerScreen() {
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
-      player.loop = false; // Play only once
+      player.loop = true; // Enable looping so users can play as much as they'd like
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true; // Enable AirPlay
@@ -168,6 +169,7 @@ export default function VideoPlayerScreen() {
       player.addListener('timeUpdate', (timeUpdate) => {
         if (!isSeeking) {
           setCurrentTime(timeUpdate.currentTime);
+          setSeekValue(timeUpdate.currentTime);
         }
       });
     }
@@ -208,27 +210,38 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] Paused');
     } else {
       player.play();
-      console.log('[VideoPlayer] Playing');
+      console.log('[VideoPlayer] Playing from:', player.currentTime);
     }
   }, [isPlaying, player]);
 
   const handleSeekStart = useCallback(() => {
-    console.log('[VideoPlayer] Seek started');
+    console.log('[VideoPlayer] User started seeking');
     setIsSeeking(true);
   }, []);
 
   const handleSeekChange = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seeking to:', value);
+    console.log('[VideoPlayer] Seek slider moved to:', value);
+    setSeekValue(value);
     setCurrentTime(value);
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seek completed at:', value);
+    console.log('[VideoPlayer] User released seek slider at:', value);
     if (player) {
-      player.currentTime = value;
+      // Seek the video to the new position
+      player.seekBy(value - player.currentTime);
+      console.log('[VideoPlayer] Video seeked to:', value);
+      setCurrentTime(value);
+      setSeekValue(value);
       setIsSeeking(false);
+      
+      // If the video was playing before seeking, continue playing
+      if (isPlaying) {
+        console.log('[VideoPlayer] Resuming playback after seek');
+        player.play();
+      }
     }
-  }, [player]);
+  }, [player, isPlaying]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -406,12 +419,12 @@ export default function VideoPlayerScreen() {
             <View style={styles.bottomControls}>
               {/* Time and scrubbing bar */}
               <View style={styles.scrubberContainer}>
-                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                <Text style={styles.timeText}>{formatTime(isSeeking ? seekValue : currentTime)}</Text>
                 <Slider
                   style={styles.scrubber}
                   minimumValue={0}
                   maximumValue={duration}
-                  value={currentTime}
+                  value={isSeeking ? seekValue : currentTime}
                   onSlidingStart={handleSeekStart}
                   onValueChange={handleSeekChange}
                   onSlidingComplete={handleSeekComplete}
@@ -540,9 +553,10 @@ export default function VideoPlayerScreen() {
         <TouchableOpacity
           style={[styles.controlButton, { backgroundColor: colors.secondary }]}
           onPress={() => {
-            player.currentTime = 0;
+            console.log('[VideoPlayer] User tapped restart button');
+            player.seekBy(-player.currentTime); // Seek to beginning
             player.play();
-            console.log('[VideoPlayer] Restarted');
+            console.log('[VideoPlayer] Video restarted from beginning');
           }}
         >
           <IconSymbol
@@ -556,12 +570,14 @@ export default function VideoPlayerScreen() {
 
       {/* Scrubbing bar in normal mode */}
       <View style={styles.normalScrubberContainer}>
-        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>{formatTime(currentTime)}</Text>
+        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
+          {formatTime(isSeeking ? seekValue : currentTime)}
+        </Text>
         <Slider
           style={styles.normalScrubber}
           minimumValue={0}
           maximumValue={duration}
-          value={currentTime}
+          value={isSeeking ? seekValue : currentTime}
           onSlidingStart={handleSeekStart}
           onValueChange={handleSeekChange}
           onSlidingComplete={handleSeekComplete}
@@ -569,7 +585,9 @@ export default function VideoPlayerScreen() {
           maximumTrackTintColor={colors.textSecondary}
           thumbTintColor={colors.primary}
         />
-        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>{formatTime(duration)}</Text>
+        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
+          {formatTime(duration)}
+        </Text>
       </View>
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
