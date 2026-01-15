@@ -228,8 +228,8 @@ export default function VideoPlayerScreen() {
   const handleSeekComplete = useCallback((value: number) => {
     console.log('[VideoPlayer] User released seek slider at:', value);
     if (player) {
-      // Seek the video to the new position
-      player.seekBy(value - player.currentTime);
+      // Set the absolute position directly
+      player.currentTime = value;
       console.log('[VideoPlayer] Video seeked to:', value);
       setCurrentTime(value);
       setSeekValue(value);
@@ -492,184 +492,191 @@ export default function VideoPlayerScreen() {
 
   // Normal mode - video with info below
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.scrollContent}
-    >
-      <View style={styles.videoContainer}>
-        <VideoView
-          style={styles.video}
-          player={player}
-          allowsFullscreen={false}
-          allowsPictureInPicture
-          contentFit="contain"
-          nativeControls={false}
-        />
-        
-        {/* Custom controls overlay - bottom right */}
-        <View style={styles.videoControlsOverlay}>
-          <View style={styles.controlsRow}>
-            {/* AirPlay button - iOS only */}
-            {Platform.OS === 'ios' && (
-              <View style={styles.airplayButtonContainer}>
-                <VideoAirPlayButton
-                  style={styles.airplayButton}
-                  tint="#FFFFFF"
-                  activeTint={colors.primary}
-                />
-              </View>
-            )}
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView 
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <View style={styles.videoWrapper}>
+          <View style={styles.videoContainer}>
+            <VideoView
+              style={styles.video}
+              player={player}
+              allowsFullscreen={false}
+              allowsPictureInPicture
+              contentFit="contain"
+              nativeControls={false}
+            />
             
-            {/* Fullscreen button */}
+            {/* Custom controls overlay - bottom right */}
+            <View style={styles.videoControlsOverlay}>
+              <View style={styles.controlsRow}>
+                {/* AirPlay button - iOS only */}
+                {Platform.OS === 'ios' && (
+                  <View style={styles.airplayButtonContainer}>
+                    <VideoAirPlayButton
+                      style={styles.airplayButton}
+                      tint="#FFFFFF"
+                      activeTint={colors.primary}
+                    />
+                  </View>
+                )}
+                
+                {/* Fullscreen button */}
+                <TouchableOpacity
+                  style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+                  onPress={toggleFullscreen}
+                  activeOpacity={0.8}
+                >
+                  <IconSymbol
+                    ios_icon_name="arrow.up.left.and.arrow.down.right"
+                    android_material_icon_name="fullscreen"
+                    size={24}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.controls}>
             <TouchableOpacity
-              style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
-              onPress={toggleFullscreen}
-              activeOpacity={0.8}
+              style={[styles.controlButton, { backgroundColor: colors.primary }]}
+              onPress={togglePlayPause}
             >
               <IconSymbol
-                ios_icon_name="arrow.up.left.and.arrow.down.right"
-                android_material_icon_name="fullscreen"
+                ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
+                android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
                 size={24}
                 color="#FFFFFF"
               />
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.controlButton, { backgroundColor: colors.secondary }]}
+              onPress={() => {
+                console.log('[VideoPlayer] User tapped restart button');
+                player.currentTime = 0; // Seek to beginning
+                player.play();
+                console.log('[VideoPlayer] Video restarted from beginning');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.counterclockwise"
+                android_material_icon_name="replay"
+                size={24}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Scrubbing bar in normal mode */}
+          <View style={styles.normalScrubberContainer}>
+            <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
+              {formatTime(isSeeking ? seekValue : currentTime)}
+            </Text>
+            <Slider
+              style={styles.normalScrubber}
+              minimumValue={0}
+              maximumValue={duration}
+              value={isSeeking ? seekValue : currentTime}
+              onSlidingStart={handleSeekStart}
+              onValueChange={handleSeekChange}
+              onSlidingComplete={handleSeekComplete}
+              minimumTrackTintColor={colors.primary}
+              maximumTrackTintColor={colors.textSecondary}
+              thumbTintColor={colors.primary}
+            />
+            <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
+              {formatTime(duration)}
+            </Text>
           </View>
         </View>
-      </View>
 
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.controlButton, { backgroundColor: colors.primary }]}
-          onPress={togglePlayPause}
-        >
+        <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+            {video.title}
+          </Text>
+          <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+            {new Date(video.created_at).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </Text>
+          {video.duration && (
+            <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+              Duration: {video.duration}
+            </Text>
+          )}
+        </View>
+
+        {video.description && (
+          <View style={[styles.descriptionCard, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.descriptionTitle, { color: theme.colors.text }]}>
+              About This Video
+            </Text>
+            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
+              {video.description}
+            </Text>
+          </View>
+        )}
+
+        <View style={[styles.infoBox, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
-            ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
-            android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
-            size={24}
-            color="#FFFFFF"
+            ios_icon_name="info.circle.fill"
+            android_material_icon_name="info"
+            size={20}
+            color={colors.primary}
           />
-        </TouchableOpacity>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            High-resolution drone footage captured at Folly Beach, South Carolina. 
+            This exclusive content is available only to SurfVista subscribers.
+          </Text>
+        </View>
+
+        {debugInfo && (
+          <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+              Debug Info
+            </Text>
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              Video ID: {videoId}
+            </Text>
+            <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={3}>
+              URL: {videoUrl}
+            </Text>
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              Status: {debugInfo}
+            </Text>
+          </View>
+        )}
 
         <TouchableOpacity
-          style={[styles.controlButton, { backgroundColor: colors.secondary }]}
-          onPress={() => {
-            console.log('[VideoPlayer] User tapped restart button');
-            player.seekBy(-player.currentTime); // Seek to beginning
-            player.play();
-            console.log('[VideoPlayer] Video restarted from beginning');
-          }}
+          style={[styles.backButtonLarge, { backgroundColor: colors.secondary }]}
+          onPress={() => router.back()}
         >
           <IconSymbol
-            ios_icon_name="arrow.counterclockwise"
-            android_material_icon_name="replay"
-            size={24}
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow_back"
+            size={20}
             color={colors.text}
           />
+          <Text style={[styles.backButtonLargeText, { color: colors.text }]}>
+            Back to Videos
+          </Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Scrubbing bar in normal mode */}
-      <View style={styles.normalScrubberContainer}>
-        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
-          {formatTime(isSeeking ? seekValue : currentTime)}
-        </Text>
-        <Slider
-          style={styles.normalScrubber}
-          minimumValue={0}
-          maximumValue={duration}
-          value={isSeeking ? seekValue : currentTime}
-          onSlidingStart={handleSeekStart}
-          onValueChange={handleSeekChange}
-          onSlidingComplete={handleSeekComplete}
-          minimumTrackTintColor={colors.primary}
-          maximumTrackTintColor={colors.textSecondary}
-          thumbTintColor={colors.primary}
-        />
-        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
-          {formatTime(duration)}
-        </Text>
-      </View>
-
-      <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-          {video.title}
-        </Text>
-        <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-          {new Date(video.created_at).toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
-          })}
-        </Text>
-        {video.duration && (
-          <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
-            Duration: {video.duration}
-          </Text>
-        )}
-      </View>
-
-      {video.description && (
-        <View style={[styles.descriptionCard, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.descriptionTitle, { color: theme.colors.text }]}>
-            About This Video
-          </Text>
-          <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-            {video.description}
-          </Text>
-        </View>
-      )}
-
-      <View style={[styles.infoBox, { backgroundColor: theme.colors.card }]}>
-        <IconSymbol
-          ios_icon_name="info.circle.fill"
-          android_material_icon_name="info"
-          size={20}
-          color={colors.primary}
-        />
-        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          High-resolution drone footage captured at Folly Beach, South Carolina. 
-          This exclusive content is available only to SurfVista subscribers.
-        </Text>
-      </View>
-
-      {debugInfo && (
-        <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
-            Debug Info
-          </Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-            Video ID: {videoId}
-          </Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={3}>
-            URL: {videoUrl}
-          </Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-            Status: {debugInfo}
-          </Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[styles.backButtonLarge, { backgroundColor: colors.secondary }]}
-        onPress={() => router.back()}
-      >
-        <IconSymbol
-          ios_icon_name="chevron.left"
-          android_material_icon_name="arrow_back"
-          size={20}
-          color={colors.text}
-        />
-        <Text style={[styles.backButtonLargeText, { color: colors.text }]}>
-          Back to Videos
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  scrollContainer: {
     flex: 1,
   },
   scrollContent: {
@@ -685,9 +692,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 16,
   },
+  videoWrapper: {
+    width: '100%',
+    backgroundColor: '#000000',
+  },
   videoContainer: {
     width: '100%',
-    aspectRatio: 16 / 9,
+    aspectRatio: 9 / 16, // Portrait aspect ratio for vertical videos
     backgroundColor: '#000000',
     position: 'relative',
   },
@@ -810,6 +821,7 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingVertical: 16,
     paddingHorizontal: 16,
+    backgroundColor: '#000000',
   },
   controlButton: {
     width: 56,
@@ -823,7 +835,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingVertical: 12,
+    backgroundColor: '#000000',
   },
   normalScrubber: {
     flex: 1,
@@ -862,6 +875,7 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     marginHorizontal: 16,
+    marginTop: 16,
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
