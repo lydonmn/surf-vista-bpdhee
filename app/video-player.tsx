@@ -150,8 +150,15 @@ export default function VideoPlayerScreen() {
         }
         
         if (status.status === 'readyToPlay') {
-          console.log('[VideoPlayer] Video ready to play, duration:', status.duration);
-          setDuration(status.duration || 0);
+          const videoDuration = status.duration || 0;
+          console.log('[VideoPlayer] Video ready to play, duration:', videoDuration);
+          setDuration(videoDuration);
+          
+          // Also get duration directly from player as backup
+          if (player.duration && player.duration > 0) {
+            console.log('[VideoPlayer] Player duration:', player.duration);
+            setDuration(player.duration);
+          }
         }
         
         if (status.status === 'loading') {
@@ -165,11 +172,18 @@ export default function VideoPlayerScreen() {
         setIsPlaying(isPlaying);
       });
 
-      // Add time update listener
+      // Add time update listener - update every frame
       player.addListener('timeUpdate', (timeUpdate) => {
         if (!isSeeking) {
-          setCurrentTime(timeUpdate.currentTime);
-          setSeekValue(timeUpdate.currentTime);
+          const newTime = timeUpdate.currentTime || 0;
+          setCurrentTime(newTime);
+          setSeekValue(newTime);
+          
+          // Update duration if we have it and it's not set yet
+          if (duration === 0 && player.duration && player.duration > 0) {
+            console.log('[VideoPlayer] Setting duration from player:', player.duration);
+            setDuration(player.duration);
+          }
         }
       });
     }
@@ -182,6 +196,15 @@ export default function VideoPlayerScreen() {
       try {
         player.replace(videoUrl);
         console.log('[VideoPlayer] Player source updated successfully');
+        
+        // Wait a bit for the video to load, then get duration
+        setTimeout(() => {
+          if (player.duration && player.duration > 0) {
+            console.log('[VideoPlayer] Duration from player after load:', player.duration);
+            setDuration(player.duration);
+          }
+        }, 500);
+        
         // DO NOT auto-play - user must press play button
         console.log('[VideoPlayer] Video ready - waiting for user to press play');
       } catch (e) {
@@ -198,6 +221,20 @@ export default function VideoPlayerScreen() {
     }
   }, [volume, player]);
 
+  // Periodically check for duration if not set
+  useEffect(() => {
+    if (player && duration === 0) {
+      const interval = setInterval(() => {
+        if (player.duration && player.duration > 0) {
+          console.log('[VideoPlayer] Duration check - setting from player:', player.duration);
+          setDuration(player.duration);
+        }
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [player, duration]);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(!isFullscreen);
     setShowControls(true);
@@ -207,7 +244,7 @@ export default function VideoPlayerScreen() {
   const togglePlayPause = useCallback(() => {
     if (isPlaying) {
       player.pause();
-      console.log('[VideoPlayer] Paused');
+      console.log('[VideoPlayer] Paused at:', player.currentTime);
     } else {
       player.play();
       console.log('[VideoPlayer] Playing from:', player.currentTime);
@@ -215,9 +252,13 @@ export default function VideoPlayerScreen() {
   }, [isPlaying, player]);
 
   const handleSeekStart = useCallback(() => {
-    console.log('[VideoPlayer] User started seeking');
+    console.log('[VideoPlayer] User started seeking from:', currentTime);
     setIsSeeking(true);
-  }, []);
+    // Pause during seeking for smoother experience
+    if (isPlaying) {
+      player.pause();
+    }
+  }, [currentTime, isPlaying, player]);
 
   const handleSeekChange = useCallback((value: number) => {
     console.log('[VideoPlayer] Seek slider moved to:', value);
@@ -226,24 +267,38 @@ export default function VideoPlayerScreen() {
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    console.log('[VideoPlayer] User released seek slider at:', value);
+    console.log('[VideoPlayer] User released seek slider at:', value, 'seconds');
+    console.log('[VideoPlayer] Video duration:', duration);
+    
     if (player) {
-      // Set the absolute position directly
-      player.currentTime = value;
-      console.log('[VideoPlayer] Video seeked to:', value);
-      setCurrentTime(value);
-      setSeekValue(value);
+      // Ensure the seek value is within bounds
+      const clampedValue = Math.max(0, Math.min(value, duration));
+      console.log('[VideoPlayer] Clamped seek value:', clampedValue);
+      
+      // Seek to the position
+      player.currentTime = clampedValue;
+      console.log('[VideoPlayer] Set player.currentTime to:', clampedValue);
+      console.log('[VideoPlayer] Player.currentTime is now:', player.currentTime);
+      
+      // Update state
+      setCurrentTime(clampedValue);
+      setSeekValue(clampedValue);
       setIsSeeking(false);
       
-      // If the video was playing before seeking, continue playing
-      if (isPlaying) {
-        console.log('[VideoPlayer] Resuming playback after seek');
-        player.play();
-      }
+      // Resume playback if it was playing before
+      setTimeout(() => {
+        if (isPlaying) {
+          console.log('[VideoPlayer] Resuming playback after seek');
+          player.play();
+        }
+      }, 100);
     }
-  }, [player, isPlaying]);
+  }, [player, duration, isPlaying]);
 
   const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) {
+      return '0:00';
+    }
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -423,7 +478,7 @@ export default function VideoPlayerScreen() {
                 <Slider
                   style={styles.scrubber}
                   minimumValue={0}
-                  maximumValue={duration}
+                  maximumValue={duration > 0 ? duration : 100}
                   value={isSeeking ? seekValue : currentTime}
                   onSlidingStart={handleSeekStart}
                   onValueChange={handleSeekChange}
@@ -578,7 +633,7 @@ export default function VideoPlayerScreen() {
             <Slider
               style={styles.normalScrubber}
               minimumValue={0}
-              maximumValue={duration}
+              maximumValue={duration > 0 ? duration : 100}
               value={isSeeking ? seekValue : currentTime}
               onSlidingStart={handleSeekStart}
               onValueChange={handleSeekChange}
@@ -608,6 +663,11 @@ export default function VideoPlayerScreen() {
           {video.duration && (
             <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
               Duration: {video.duration}
+            </Text>
+          )}
+          {duration > 0 && (
+            <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+              Actual Duration: {formatTime(duration)}
             </Text>
           )}
         </View>
@@ -649,6 +709,12 @@ export default function VideoPlayerScreen() {
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
               Status: {debugInfo}
+            </Text>
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              Duration: {duration}s ({formatTime(duration)})
+            </Text>
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              Current Time: {currentTime}s ({formatTime(currentTime)})
             </Text>
           </View>
         )}
