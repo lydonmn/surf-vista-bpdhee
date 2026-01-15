@@ -9,6 +9,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/hooks/useVideos";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Slider from '@react-native-community/slider';
 
 export default function VideoPlayerScreen() {
   const theme = useTheme();
@@ -21,6 +22,11 @@ export default function VideoPlayerScreen() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1.0);
+  const [showControls, setShowControls] = useState(true);
+  const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -129,6 +135,7 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] Initializing player with URL:', videoUrl);
       player.loop = false;
       player.muted = false;
+      player.volume = volume;
       player.allowsExternalPlayback = true; // Enable AirPlay
       
       // Add status change listener
@@ -142,6 +149,7 @@ export default function VideoPlayerScreen() {
         
         if (status.status === 'readyToPlay') {
           console.log('[VideoPlayer] Video ready to play');
+          setDuration(status.duration || 0);
         }
         
         if (status.status === 'loading') {
@@ -153,6 +161,11 @@ export default function VideoPlayerScreen() {
       player.addListener('playingChange', (isPlaying) => {
         console.log('[VideoPlayer] Playing state changed:', isPlaying);
         setIsPlaying(isPlaying);
+      });
+
+      // Add time update listener
+      player.addListener('timeUpdate', (timeUpdate) => {
+        setCurrentTime(timeUpdate.currentTime);
       });
     }
   });
@@ -177,10 +190,66 @@ export default function VideoPlayerScreen() {
     }
   }, [videoUrl, player]);
 
+  // Update player volume when volume state changes
+  useEffect(() => {
+    if (player) {
+      player.volume = volume;
+    }
+  }, [volume, player]);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(!isFullscreen);
+    setShowControls(true);
     console.log('[VideoPlayer] Fullscreen toggled:', !isFullscreen);
   }, [isFullscreen]);
+
+  const togglePlayPause = useCallback(() => {
+    if (isPlaying) {
+      player.pause();
+      console.log('[VideoPlayer] Paused');
+    } else {
+      player.play();
+      console.log('[VideoPlayer] Playing');
+    }
+  }, [isPlaying, player]);
+
+  const handleSeek = useCallback((value: number) => {
+    if (player) {
+      player.currentTime = value;
+      console.log('[VideoPlayer] Seeked to:', value);
+    }
+  }, [player]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Auto-hide controls in fullscreen after 3 seconds of inactivity
+  const resetControlsTimeout = useCallback(() => {
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+    setShowControls(true);
+    if (isFullscreen && isPlaying) {
+      const timeout = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+      setControlsTimeout(timeout);
+    }
+  }, [controlsTimeout, isFullscreen, isPlaying]);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      resetControlsTimeout();
+    }
+    return () => {
+      if (controlsTimeout) {
+        clearTimeout(controlsTimeout);
+      }
+    };
+  }, [isFullscreen, isPlaying]);
 
   if (isLoading) {
     return (
@@ -274,7 +343,11 @@ export default function VideoPlayerScreen() {
   // Fullscreen mode - video takes entire screen with custom controls
   if (isFullscreen) {
     return (
-      <View style={[styles.fullscreenContainer, { backgroundColor: '#000000' }]}>
+      <TouchableOpacity 
+        style={[styles.fullscreenContainer, { backgroundColor: '#000000' }]}
+        activeOpacity={1}
+        onPress={resetControlsTimeout}
+      >
         <VideoView
           style={styles.fullscreenVideo}
           player={player}
@@ -284,36 +357,111 @@ export default function VideoPlayerScreen() {
           nativeControls={false}
         />
         
-        {/* Custom controls overlay - bottom right */}
-        <View style={[styles.fullscreenControlsOverlay, { paddingBottom: insets.bottom + 20 }]}>
-          <View style={styles.controlsRow}>
-            {/* AirPlay button - iOS only */}
-            {Platform.OS === 'ios' && (
-              <View style={styles.airplayButtonContainer}>
-                <VideoAirPlayButton
-                  style={styles.airplayButton}
-                  tint="#FFFFFF"
-                  activeTint={colors.primary}
+        {/* Custom controls overlay - visible when showControls is true */}
+        {showControls && (
+          <View style={[styles.fullscreenControlsContainer, { paddingBottom: insets.bottom + 20, paddingTop: insets.top + 20 }]}>
+            {/* Top controls - Exit fullscreen */}
+            <View style={styles.topControls}>
+              <TouchableOpacity
+                style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+                onPress={toggleFullscreen}
+                activeOpacity={0.8}
+              >
+                <IconSymbol
+                  ios_icon_name="xmark"
+                  android_material_icon_name="close"
+                  size={24}
+                  color="#FFFFFF"
                 />
+              </TouchableOpacity>
+            </View>
+
+            {/* Center controls - Play/Pause */}
+            <View style={styles.centerControls}>
+              <TouchableOpacity
+                style={[styles.playPauseButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+                onPress={togglePlayPause}
+                activeOpacity={0.8}
+              >
+                <IconSymbol
+                  ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
+                  android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
+                  size={48}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Bottom controls - Scrubbing, volume, AirPlay */}
+            <View style={styles.bottomControls}>
+              {/* Time and scrubbing bar */}
+              <View style={styles.scrubberContainer}>
+                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                <Slider
+                  style={styles.scrubber}
+                  minimumValue={0}
+                  maximumValue={duration}
+                  value={currentTime}
+                  onSlidingComplete={handleSeek}
+                  minimumTrackTintColor={colors.primary}
+                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                  thumbTintColor={colors.primary}
+                />
+                <Text style={styles.timeText}>{formatTime(duration)}</Text>
               </View>
-            )}
-            
-            {/* Exit fullscreen button */}
-            <TouchableOpacity
-              style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
-              onPress={toggleFullscreen}
-              activeOpacity={0.8}
-            >
-              <IconSymbol
-                ios_icon_name="arrow.down.right.and.arrow.up.left"
-                android_material_icon_name="fullscreen_exit"
-                size={24}
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
+
+              {/* Volume and other controls */}
+              <View style={styles.bottomControlsRow}>
+                {/* Volume control */}
+                <View style={styles.volumeContainer}>
+                  <IconSymbol
+                    ios_icon_name={volume === 0 ? "speaker.slash.fill" : "speaker.wave.2.fill"}
+                    android_material_icon_name={volume === 0 ? "volume_off" : "volume_up"}
+                    size={20}
+                    color="#FFFFFF"
+                  />
+                  <Slider
+                    style={styles.volumeSlider}
+                    minimumValue={0}
+                    maximumValue={1}
+                    value={volume}
+                    onValueChange={setVolume}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                    thumbTintColor={colors.primary}
+                  />
+                </View>
+
+                {/* AirPlay and fullscreen buttons */}
+                <View style={styles.rightControls}>
+                  {Platform.OS === 'ios' && (
+                    <View style={styles.airplayButtonContainer}>
+                      <VideoAirPlayButton
+                        style={styles.airplayButton}
+                        tint="#FFFFFF"
+                        activeTint={colors.primary}
+                      />
+                    </View>
+                  )}
+                  
+                  <TouchableOpacity
+                    style={[styles.controlIconButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+                    onPress={toggleFullscreen}
+                    activeOpacity={0.8}
+                  >
+                    <IconSymbol
+                      ios_icon_name="arrow.down.right.and.arrow.up.left"
+                      android_material_icon_name="fullscreen_exit"
+                      size={24}
+                      color="#FFFFFF"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
+        )}
+      </TouchableOpacity>
     );
   }
 
@@ -367,15 +515,7 @@ export default function VideoPlayerScreen() {
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.controlButton, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            if (isPlaying) {
-              player.pause();
-              console.log('[VideoPlayer] Paused');
-            } else {
-              player.play();
-              console.log('[VideoPlayer] Playing');
-            }
-          }}
+          onPress={togglePlayPause}
         >
           <IconSymbol
             ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
@@ -400,6 +540,22 @@ export default function VideoPlayerScreen() {
             color={colors.text}
           />
         </TouchableOpacity>
+      </View>
+
+      {/* Scrubbing bar in normal mode */}
+      <View style={styles.normalScrubberContainer}>
+        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>{formatTime(currentTime)}</Text>
+        <Slider
+          style={styles.normalScrubber}
+          minimumValue={0}
+          maximumValue={duration}
+          value={currentTime}
+          onSlidingComplete={handleSeek}
+          minimumTrackTintColor={colors.primary}
+          maximumTrackTintColor={colors.textSecondary}
+          thumbTintColor={colors.primary}
+        />
+        <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>{formatTime(duration)}</Text>
       </View>
 
       <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
@@ -522,11 +678,72 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  fullscreenControlsOverlay: {
+  fullscreenControlsContainer: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     bottom: 0,
-    right: 16,
+    justifyContent: 'space-between',
     zIndex: 10,
+  },
+  topControls: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+  },
+  centerControls: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playPauseButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bottomControls: {
+    paddingHorizontal: 16,
+  },
+  scrubberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  scrubber: {
+    flex: 1,
+    height: 40,
+  },
+  timeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 45,
+    textAlign: 'center',
+  },
+  bottomControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  volumeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    maxWidth: 200,
+  },
+  volumeSlider: {
+    flex: 1,
+    height: 40,
+  },
+  rightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   controlsRow: {
     flexDirection: 'row',
@@ -568,6 +785,22 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  normalScrubberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  normalScrubber: {
+    flex: 1,
+    height: 40,
+  },
+  normalTimeText: {
+    fontSize: 12,
+    minWidth: 40,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 18,
