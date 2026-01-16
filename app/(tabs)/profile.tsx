@@ -168,18 +168,11 @@ export default function ProfileScreen() {
     
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
-      console.log('[ProfileScreen] ⚠️ Payment system not available');
+      console.log('[ProfileScreen] ⚠️ Payment system not available - showing demo paywall');
       checkPaymentConfiguration();
       
-      Alert.alert(
-        'Subscription Setup Required',
-        'The subscription system is being configured. This usually means:\n\n' +
-        '• Products need to be set up in RevenueCat dashboard\n' +
-        '• Paywalls need to be configured\n' +
-        '• Offerings need to be created\n\n' +
-        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
-        [{ text: 'OK' }]
-      );
+      // Show demo paywall directly
+      router.push('/demo-paywall');
       return;
     }
 
@@ -194,6 +187,14 @@ export default function ProfileScreen() {
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
       console.log('[ProfileScreen] 📊 Paywall result:', result);
+      
+      // Check if demo mode
+      if (result.state === 'error' && result.message === 'DEMO_MODE') {
+        console.log('[ProfileScreen] 🎬 Demo mode - showing demo paywall');
+        router.push('/demo-paywall');
+        setIsSubscribing(false);
+        return;
+      }
       
       // Refresh profile to get updated subscription status
       console.log('[ProfileScreen] 🔄 Refreshing profile...');

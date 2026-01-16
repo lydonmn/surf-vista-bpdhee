@@ -168,18 +168,11 @@ export default function ProfileScreen() {
     
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
-      console.log('[ProfileScreen iOS] ⚠️ Payment system not available');
+      console.log('[ProfileScreen iOS] ⚠️ Payment system not available - showing demo paywall');
       checkPaymentConfiguration();
       
-      Alert.alert(
-        'Subscription Setup Required',
-        'The subscription system is being configured. This usually means:\n\n' +
-        '• Products need to be set up in RevenueCat dashboard\n' +
-        '• Paywalls need to be configured\n' +
-        '• Offerings need to be created\n\n' +
-        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
-        [{ text: 'OK' }]
-      );
+      // Show demo paywall directly
+      router.push('/demo-paywall');
       return;
     }
 
