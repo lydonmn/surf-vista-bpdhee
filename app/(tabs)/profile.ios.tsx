@@ -195,6 +195,14 @@ export default function ProfileScreen() {
       
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
       
+      // Check if demo mode
+      if (result.state === 'error' && result.message === 'DEMO_MODE') {
+        console.log('[ProfileScreen iOS] 🎬 Demo mode - showing demo paywall');
+        router.push('/demo-paywall');
+        setIsSubscribing(false);
+        return;
+      }
+      
       // Refresh profile to get updated subscription status
       console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
       await refreshProfile();

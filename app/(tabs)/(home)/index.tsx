@@ -166,6 +166,14 @@ export default function HomeScreen() {
       
       console.log('[HomeScreen] 📊 Paywall result:', result);
       
+      // Check if demo mode
+      if (result.state === 'error' && result.message === 'DEMO_MODE') {
+        console.log('[HomeScreen] 🎬 Demo mode - showing demo paywall');
+        router.push('/demo-paywall');
+        setIsSubscribing(false);
+        return;
+      }
+      
       // Refresh profile to get updated subscription status
       await refreshProfile();
       

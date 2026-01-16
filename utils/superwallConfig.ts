@@ -52,6 +52,11 @@ const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_PRODUCTION_KEY_HERE'; // �
 // Select the appropriate key based on platform
 const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
 
+// 🎬 DEMO MODE FOR SCREENSHOTS
+// Set this to true to show a demo paywall for Apple Developer screenshots
+// ⚠️ MUST BE FALSE FOR PRODUCTION RELEASE
+const ENABLE_DEMO_MODE = true;
+
 // Product Identifiers (must match App Store Connect / Google Play Console)
 export const PAYMENT_CONFIG = {
   // Product Identifiers - These are the ones you configured in RevenueCat
@@ -231,6 +236,17 @@ export const presentPaywall = async (
   try {
     console.log('[RevenueCat] 🎨 ===== PRESENTING PAYWALL UI =====');
     
+    // 🎬 DEMO MODE - Show demo paywall for screenshots
+    if (ENABLE_DEMO_MODE && (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE'))) {
+      console.log('[RevenueCat] 🎬 DEMO MODE ENABLED - Showing demo paywall for screenshots');
+      
+      // Return a special state that will trigger the demo paywall UI
+      return {
+        state: 'error',
+        message: 'DEMO_MODE'
+      };
+    }
+    
     // Check if using test key
     if (REVENUECAT_API_KEY.startsWith('test_')) {
       console.error('[RevenueCat] ❌ Cannot present paywall with TEST API key!');
@@ -247,7 +263,7 @@ export const presentPaywall = async (
       };
     }
     
-    // Check if using placeholder key
+    // Check if using placeholder key (and not in demo mode)
     if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
       console.error('[RevenueCat] ❌ Cannot present paywall with placeholder API key!');
       return {
