@@ -46,7 +46,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 // - iOS: appl_xxxxxxxxxxxxxxxxx
 // - Android: goog_xxxxxxxxxxxxxxxxx
 
-const REVENUECAT_API_KEY_IOS = 'appl_YOUR_IOS_PRODUCTION_KEY_HERE'; // ⚠️ REPLACE WITH YOUR iOS PRODUCTION KEY
+const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda'; // ✅ iOS Production Key
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_PRODUCTION_KEY_HERE'; // ⚠️ REPLACE WITH YOUR Android PRODUCTION KEY
 
 // Select the appropriate key based on platform
