@@ -454,40 +454,41 @@ export default function VideoPlayerScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Center controls - Play/Pause */}
-            <View style={styles.centerControls}>
-              <TouchableOpacity
-                style={[styles.playPauseButton, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
-                onPress={togglePlayPause}
-                activeOpacity={0.8}
-              >
-                <IconSymbol
-                  ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
-                  android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
-                  size={48}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Bottom controls - Scrubbing, volume, AirPlay */}
+            {/* Bottom controls - Play/Pause, Scrubbing, volume, AirPlay */}
             <View style={styles.bottomControls}>
-              {/* Time and scrubbing bar */}
-              <View style={styles.scrubberContainer}>
-                <Text style={styles.timeText}>{formatTime(isSeeking ? seekValue : currentTime)}</Text>
-                <Slider
-                  style={styles.scrubber}
-                  minimumValue={0}
-                  maximumValue={duration > 0 ? duration : 100}
-                  value={isSeeking ? seekValue : currentTime}
-                  onSlidingStart={handleSeekStart}
-                  onValueChange={handleSeekChange}
-                  onSlidingComplete={handleSeekComplete}
-                  minimumTrackTintColor={colors.primary}
-                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-                  thumbTintColor={colors.primary}
-                />
-                <Text style={styles.timeText}>{formatTime(duration)}</Text>
+              {/* Play/Pause button and scrubbing bar */}
+              <View style={styles.playbackControlsRow}>
+                {/* Play/Pause button */}
+                <TouchableOpacity
+                  style={[styles.playPauseButtonSmall, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}
+                  onPress={togglePlayPause}
+                  activeOpacity={0.8}
+                >
+                  <IconSymbol
+                    ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
+                    android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
+                    size={24}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+
+                {/* Time and scrubbing bar */}
+                <View style={styles.scrubberContainer}>
+                  <Text style={styles.timeText}>{formatTime(isSeeking ? seekValue : currentTime)}</Text>
+                  <Slider
+                    style={styles.scrubber}
+                    minimumValue={0}
+                    maximumValue={duration > 0 ? duration : 100}
+                    value={isSeeking ? seekValue : currentTime}
+                    onSlidingStart={handleSeekStart}
+                    onValueChange={handleSeekChange}
+                    onSlidingComplete={handleSeekComplete}
+                    minimumTrackTintColor={colors.primary}
+                    maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                    thumbTintColor={colors.primary}
+                  />
+                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                </View>
               </View>
 
               {/* Volume and other controls */}
@@ -801,26 +802,27 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingHorizontal: 16,
   },
-  centerControls: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playPauseButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   bottomControls: {
     paddingHorizontal: 16,
   },
-  scrubberContainer: {
+  playbackControlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 12,
+  },
+  playPauseButtonSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrubberContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   scrubber: {
     flex: 1,
