@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -28,7 +28,9 @@ export default function VideoPlayerScreen() {
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
-  const [seekValue, setSeekValue] = useState(0);
+  
+  // Use ref to track if we're currently seeking to avoid state update conflicts
+  const isSeekingRef = useRef(false);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -174,10 +176,10 @@ export default function VideoPlayerScreen() {
 
       // Add time update listener - update every frame
       player.addListener('timeUpdate', (timeUpdate) => {
-        if (!isSeeking) {
+        // Only update if we're not currently seeking
+        if (!isSeekingRef.current) {
           const newTime = timeUpdate.currentTime || 0;
           setCurrentTime(newTime);
-          setSeekValue(newTime);
           
           // Update duration if we have it and it's not set yet
           if (duration === 0 && player.duration && player.duration > 0) {
@@ -254,6 +256,7 @@ export default function VideoPlayerScreen() {
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] User started seeking from:', currentTime);
     setIsSeeking(true);
+    isSeekingRef.current = true;
     // Pause during seeking for smoother experience
     if (isPlaying) {
       player.pause();
@@ -262,7 +265,6 @@ export default function VideoPlayerScreen() {
 
   const handleSeekChange = useCallback((value: number) => {
     console.log('[VideoPlayer] Seek slider moved to:', value);
-    setSeekValue(value);
     setCurrentTime(value);
   }, []);
 
@@ -282,11 +284,12 @@ export default function VideoPlayerScreen() {
       
       // Update state
       setCurrentTime(clampedValue);
-      setSeekValue(clampedValue);
-      setIsSeeking(false);
       
       // Resume playback if it was playing before
       setTimeout(() => {
+        setIsSeeking(false);
+        isSeekingRef.current = false;
+        
         if (isPlaying) {
           console.log('[VideoPlayer] Resuming playback after seek');
           player.play();
@@ -474,12 +477,12 @@ export default function VideoPlayerScreen() {
 
                 {/* Time and scrubbing bar */}
                 <View style={styles.scrubberContainer}>
-                  <Text style={styles.timeText}>{formatTime(isSeeking ? seekValue : currentTime)}</Text>
+                  <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
                   <Slider
                     style={styles.scrubber}
                     minimumValue={0}
                     maximumValue={duration > 0 ? duration : 100}
-                    value={isSeeking ? seekValue : currentTime}
+                    value={currentTime}
                     onSlidingStart={handleSeekStart}
                     onValueChange={handleSeekChange}
                     onSlidingComplete={handleSeekComplete}
@@ -629,13 +632,13 @@ export default function VideoPlayerScreen() {
           {/* Scrubbing bar in normal mode */}
           <View style={styles.normalScrubberContainer}>
             <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
-              {formatTime(isSeeking ? seekValue : currentTime)}
+              {formatTime(currentTime)}
             </Text>
             <Slider
               style={styles.normalScrubber}
               minimumValue={0}
               maximumValue={duration > 0 ? duration : 100}
-              value={isSeeking ? seekValue : currentTime}
+              value={currentTime}
               onSlidingStart={handleSeekStart}
               onValueChange={handleSeekChange}
               onSlidingComplete={handleSeekComplete}
