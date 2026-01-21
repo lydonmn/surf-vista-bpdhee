@@ -55,7 +55,7 @@ const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVE
 // 🎬 DEMO MODE FOR SCREENSHOTS
 // Set this to true to show a demo paywall for Apple Developer screenshots
 // ⚠️ MUST BE FALSE FOR PRODUCTION RELEASE
-const ENABLE_DEMO_MODE = true;
+const ENABLE_DEMO_MODE = false;
 
 // Product Identifiers (must match App Store Connect / Google Play Console)
 export const PAYMENT_CONFIG = {
