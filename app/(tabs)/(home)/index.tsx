@@ -11,22 +11,14 @@ import { SurfReport } from "@/types";
 import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
+import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
-// Helper function to get EST date
+// Get today's date in EST timezone
 function getESTDate(): string {
   const now = new Date();
-  const estDateString = now.toLocaleString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  const [month, day, year] = estDateString.split('/');
-  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  
-  return estDate;
+  const estOffset = -5 * 60; // EST is UTC-5
+  const estTime = new Date(now.getTime() + (estOffset + now.getTimezoneOffset()) * 60000);
+  return estTime.toISOString().split('T')[0];
 }
 
 export default function HomeScreen() {
@@ -36,7 +28,6 @@ export default function HomeScreen() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-  const [dataFetchKey, setDataFetchKey] = useState(0); // Force refresh key
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
@@ -48,8 +39,8 @@ export default function HomeScreen() {
   }, [profile, checkSubscription]);
 
   // Memoize loadData to prevent recreation on every render
-  const loadData = useCallback(async (forceRefresh = false) => {
-    if (isLoadingData && !forceRefresh) {
+  const loadData = useCallback(async () => {
+    if (isLoadingData) {
       console.log('[HomeScreen] Already loading data, skipping...');
       return;
     }
@@ -58,30 +49,21 @@ export default function HomeScreen() {
       setIsLoadingData(true);
       console.log('[HomeScreen] Fetching reports...');
 
-      // Get today's date in EST
+      // Load today's surf report
       const today = getESTDate();
-      console.log('[HomeScreen] Fetching report for EST date:', today);
-
-      // Load today's surf report with a fresh query (no cache)
       const { data: reportData, error: reportError } = await supabase
         .from('surf_reports')
         .select('*')
         .eq('date', today)
-        .order('updated_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
 
       if (reportError) {
         console.log('[HomeScreen] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen] Report loaded:', {
-          date: reportData.date,
-          wave_height: reportData.wave_height,
-          updated_at: reportData.updated_at,
-        });
+        console.log('[HomeScreen] Report loaded for:', today);
         setTodayReport(reportData);
       } else {
-        console.log('[HomeScreen] No report found for today:', today);
+        console.log('[HomeScreen] No report found for today');
         setTodayReport(null);
       }
     } catch (error) {
@@ -99,32 +81,21 @@ export default function HomeScreen() {
       hasUser: !!user,
       hasSession: !!session,
       hasProfile: !!profile,
-      hasSubscription,
-      dataFetchKey,
+      hasSubscription
     });
 
     // Only load data when fully initialized, not loading, has user, profile, and subscription
     if (isInitialized && !isLoading && user && profile && hasSubscription) {
       console.log('[HomeScreen] Conditions met, loading content data...');
-      loadData(true); // Force refresh
+      loadData();
     } else {
       console.log('[HomeScreen] Not loading data - conditions not met');
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, session, dataFetchKey]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
 
   const handleRefresh = useCallback(async () => {
-    console.log('[HomeScreen] Manual refresh triggered');
     setIsRefreshing(true);
-    
-    // Force a fresh data fetch
-    await Promise.all([
-      loadData(true),
-      refreshData()
-    ]);
-    
-    // Increment the fetch key to force a re-render
-    setDataFetchKey(prev => prev + 1);
-    
+    await Promise.all([loadData(), refreshData()]);
     setIsRefreshing(false);
   }, [loadData, refreshData]);
 
@@ -145,30 +116,28 @@ export default function HomeScreen() {
   }, []);
 
   const handleSubscribeNow = useCallback(async () => {
-    // Check if payment system is available
+    console.log('[HomeScreen] Subscribe Now button tapped');
+    
+    // Check if payment system is available FIRST
     if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
-      Alert.alert(
-        'Subscribe Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
-        [{ text: 'OK' }]
-      );
+      console.log('[HomeScreen] Payment system not available - navigating to demo paywall');
+      router.push('/demo-paywall');
       return;
     }
 
     setIsSubscribing(true);
 
     try {
-      console.log('[HomeScreen] 🎨 Opening subscription paywall...');
+      console.log('[HomeScreen] Opening subscription paywall...');
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[HomeScreen] 📊 Paywall result:', result);
+      console.log('[HomeScreen] Paywall result:', result);
       
-      // Check if demo mode
+      // Check if demo mode error
       if (result.state === 'error' && result.message === 'DEMO_MODE') {
-        console.log('[HomeScreen] 🎬 Demo mode - showing demo paywall');
+        console.log('[HomeScreen] Demo mode detected - navigating to demo paywall');
         router.push('/demo-paywall');
         setIsSubscribing(false);
         return;
@@ -185,7 +154,7 @@ export default function HomeScreen() {
         );
       } else if (result.state === 'error') {
         Alert.alert(
-          'Purchase Failed',
+          'Subscribe Failed',
           result.message || 'Unable to complete purchase. Please try again.',
           [{ text: 'OK' }]
         );
@@ -193,12 +162,19 @@ export default function HomeScreen() {
       // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
-      console.error('[HomeScreen] ❌ Subscribe error:', error);
-      Alert.alert(
-        'Subscribe Failed',
-        error.message || 'Unable to open subscription page. Please try again later.',
-        [{ text: 'OK' }]
-      );
+      console.error('[HomeScreen] Subscribe error:', error);
+      
+      // Check if it's a demo mode error
+      if (error?.message?.includes('DEMO_MODE')) {
+        console.log('[HomeScreen] Demo mode error caught - navigating to demo paywall');
+        router.push('/demo-paywall');
+      } else {
+        Alert.alert(
+          'Subscribe Failed',
+          error.message || 'Unable to open subscription page. Please try again later.',
+          [{ text: 'OK' }]
+        );
+      }
     } finally {
       setIsSubscribing(false);
     }
@@ -317,12 +293,7 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
-  console.log('[HomeScreen] Rendering: Subscribed content with report:', {
-    hasReport: !!todayReport,
-    reportDate: todayReport?.date,
-    reportWaveHeight: todayReport?.wave_height,
-  });
-  
+  console.log('[HomeScreen] Rendering: Subscribed content');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -461,7 +432,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    paddingTop: 40,
+    paddingTop: 48,
     paddingBottom: 24,
     paddingHorizontal: 16,
   },

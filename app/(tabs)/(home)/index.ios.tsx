@@ -11,7 +11,15 @@ import { SurfReport } from "@/types";
 import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { presentPaywall, isPaymentSystemAvailable, checkPaymentConfiguration } from "@/utils/superwallConfig";
+import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
+
+// Get today's date in EST timezone
+function getESTDate(): string {
+  const now = new Date();
+  const estOffset = -5 * 60; // EST is UTC-5
+  const estTime = new Date(now.getTime() + (estOffset + now.getTimezoneOffset()) * 60000);
+  return estTime.toISOString().split('T')[0];
+}
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -42,7 +50,7 @@ export default function HomeScreen() {
       console.log('[HomeScreen iOS] Fetching reports...');
 
       // Load today's surf report
-      const today = new Date().toISOString().split('T')[0];
+      const today = getESTDate();
       const { data: reportData, error: reportError } = await supabase
         .from('surf_reports')
         .select('*')
@@ -108,26 +116,32 @@ export default function HomeScreen() {
   }, []);
 
   const handleSubscribeNow = useCallback(async () => {
-    // Check if payment system is available
+    console.log('[HomeScreen iOS] Subscribe Now button tapped');
+    
+    // Check if payment system is available FIRST
     if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
-      Alert.alert(
-        'Subscribe Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
-        [{ text: 'OK' }]
-      );
+      console.log('[HomeScreen iOS] Payment system not available - navigating to demo paywall');
+      router.push('/demo-paywall');
       return;
     }
 
     setIsSubscribing(true);
 
     try {
-      console.log('[HomeScreen iOS] 🎨 Opening subscription paywall...');
+      console.log('[HomeScreen iOS] Opening subscription paywall...');
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[HomeScreen iOS] 📊 Paywall result:', result);
+      console.log('[HomeScreen iOS] Paywall result:', result);
+      
+      // Check if demo mode error
+      if (result.state === 'error' && result.message === 'DEMO_MODE') {
+        console.log('[HomeScreen iOS] Demo mode detected - navigating to demo paywall');
+        router.push('/demo-paywall');
+        setIsSubscribing(false);
+        return;
+      }
       
       // Refresh profile to get updated subscription status
       await refreshProfile();
@@ -140,7 +154,7 @@ export default function HomeScreen() {
         );
       } else if (result.state === 'error') {
         Alert.alert(
-          'Purchase Failed',
+          'Subscribe Failed',
           result.message || 'Unable to complete purchase. Please try again.',
           [{ text: 'OK' }]
         );
@@ -148,12 +162,19 @@ export default function HomeScreen() {
       // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
-      console.error('[HomeScreen iOS] ❌ Subscribe error:', error);
-      Alert.alert(
-        'Subscribe Failed',
-        error.message || 'Unable to open subscription page. Please try again later.',
-        [{ text: 'OK' }]
-      );
+      console.error('[HomeScreen iOS] Subscribe error:', error);
+      
+      // Check if it's a demo mode error
+      if (error?.message?.includes('DEMO_MODE')) {
+        console.log('[HomeScreen iOS] Demo mode error caught - navigating to demo paywall');
+        router.push('/demo-paywall');
+      } else {
+        Alert.alert(
+          'Subscribe Failed',
+          error.message || 'Unable to open subscription page. Please try again later.',
+          [{ text: 'OK' }]
+        );
+      }
     } finally {
       setIsSubscribing(false);
     }
