@@ -20,6 +20,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; message: string }>;
   refreshProfile: () => Promise<void>;
   checkSubscription: () => boolean;
   isAdmin: () => boolean;
@@ -361,6 +362,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteAccount = async (): Promise<{ success: boolean; message: string }> => {
+    console.log('[AuthContext] ===== DELETE ACCOUNT STARTED =====');
+    console.log('[AuthContext] User to delete:', user?.email);
+    
+    if (!user) {
+      console.log('[AuthContext] No user to delete');
+      return { success: false, message: 'No user is currently signed in' };
+    }
+
+    try {
+      const userId = user.id;
+      console.log('[AuthContext] Deleting user ID:', userId);
+
+      // First, delete the profile from the profiles table
+      console.log('[AuthContext] Deleting profile from database...');
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (profileError) {
+        console.error('[AuthContext] Error deleting profile:', profileError);
+        return { success: false, message: 'Failed to delete profile data: ' + profileError.message };
+      }
+
+      console.log('[AuthContext] ✅ Profile deleted successfully');
+
+      // Then delete the auth user account
+      console.log('[AuthContext] Deleting auth account...');
+      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+
+      if (authError) {
+        console.error('[AuthContext] Error deleting auth account:', authError);
+        // If auth deletion fails, we still want to sign out
+        await signOut();
+        return { success: false, message: 'Account data deleted but auth deletion failed. Please contact support.' };
+      }
+
+      console.log('[AuthContext] ✅ Auth account deleted successfully');
+
+      // Clear local state
+      console.log('[AuthContext] Clearing local state...');
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setIsLoading(false);
+
+      // Logout from RevenueCat
+      try {
+        await logoutUser();
+      } catch (error) {
+        console.error('[AuthContext] Error logging out from RevenueCat (non-critical):', error);
+      }
+
+      console.log('[AuthContext] ===== DELETE ACCOUNT COMPLETE =====');
+      return { success: true, message: 'Your account has been permanently deleted' };
+    } catch (error: any) {
+      console.error('[AuthContext] ❌ Delete account exception:', error);
+      // Try to sign out on error
+      await signOut();
+      return { success: false, message: error.message || 'An unexpected error occurred while deleting your account' };
+    }
+  };
+
   // Memoize checkSubscription to prevent infinite loops
   const checkSubscription = useCallback((): boolean => {
     // Don't check subscription while loading
@@ -410,6 +475,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp,
       signIn, 
       signOut,
+      deleteAccount,
       refreshProfile,
       checkSubscription,
       isAdmin 

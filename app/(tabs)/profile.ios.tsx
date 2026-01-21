@@ -16,10 +16,11 @@ import {
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, profile, signOut, refreshProfile, checkSubscription, isAdmin } = useAuth();
+  const { user, profile, signOut, deleteAccount, refreshProfile, checkSubscription, isAdmin } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
   const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -50,6 +51,76 @@ export default function ProfileScreen() {
               // Still try to navigate even if there was an error
               router.replace('/login');
             }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    const userEmail = user?.email || 'your account';
+    
+    Alert.alert(
+      'Delete Account',
+      `Are you sure you want to permanently delete ${userEmail}?\n\nThis action cannot be undone. All your data will be permanently deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              'Final Confirmation',
+              'This is your last chance. Are you absolutely sure you want to delete your account?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete Forever',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      console.log('[ProfileScreen iOS] ===== DELETE ACCOUNT BUTTON PRESSED =====');
+                      console.log('[ProfileScreen iOS] User confirmed account deletion');
+                      console.log('[ProfileScreen iOS] Current user:', user?.email);
+                      
+                      setIsDeleting(true);
+                      
+                      console.log('[ProfileScreen iOS] Calling deleteAccount()...');
+                      const result = await deleteAccount();
+                      
+                      setIsDeleting(false);
+                      
+                      if (result.success) {
+                        console.log('[ProfileScreen iOS] ✅ Account deleted successfully');
+                        Alert.alert(
+                          'Account Deleted',
+                          result.message,
+                          [
+                            {
+                              text: 'OK',
+                              onPress: () => {
+                                console.log('[ProfileScreen iOS] Navigating to login screen...');
+                                router.replace('/login');
+                              }
+                            }
+                          ]
+                        );
+                      } else {
+                        console.error('[ProfileScreen iOS] ❌ Account deletion failed:', result.message);
+                        Alert.alert('Error', result.message);
+                      }
+                      
+                      console.log('[ProfileScreen iOS] ===== DELETE ACCOUNT PROCESS COMPLETE =====');
+                    } catch (error: any) {
+                      console.error('[ProfileScreen iOS] ❌ Error during account deletion:', error);
+                      setIsDeleting(false);
+                      Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
+                    }
+                  }
+                }
+              ]
+            );
           }
         }
       ]
@@ -468,6 +539,30 @@ export default function ProfileScreen() {
             Sign Out
           </Text>
         </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={handleDeleteAccount}
+          disabled={isDeleting}
+        >
+          {isDeleting ? (
+            <ActivityIndicator size="small" color="#FF3B30" />
+          ) : (
+            <React.Fragment>
+              <IconSymbol
+                ios_icon_name="trash.fill"
+                android_material_icon_name="delete"
+                size={24}
+                color="#FF3B30"
+              />
+              <Text style={[styles.actionText, { color: '#FF3B30' }]}>
+                Delete Account
+              </Text>
+            </React.Fragment>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Debug Info */}
@@ -674,6 +769,11 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 16,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E5E5',
+    marginVertical: 12,
   },
   debugCard: {
     borderRadius: 12,
