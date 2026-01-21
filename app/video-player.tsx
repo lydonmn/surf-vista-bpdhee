@@ -27,10 +27,11 @@ export default function VideoPlayerScreen() {
   const [volume, setVolume] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
   
   // Use ref to track if we're currently seeking to avoid state update conflicts
   const isSeekingRef = useRef(false);
+  // Use ref to store the latest current time for smoother updates
+  const currentTimeRef = useRef(0);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -174,18 +175,23 @@ export default function VideoPlayerScreen() {
         setIsPlaying(isPlaying);
       });
 
-      // Add time update listener - update every frame
+      // Add time update listener - this fires frequently during playback
       player.addListener('timeUpdate', (timeUpdate) => {
-        // Only update if we're not currently seeking
+        const newTime = timeUpdate.currentTime || 0;
+        
+        // Always update the ref for the latest time
+        currentTimeRef.current = newTime;
+        
+        // Only update state if we're not currently seeking
+        // This prevents the slider from jumping while the user is dragging it
         if (!isSeekingRef.current) {
-          const newTime = timeUpdate.currentTime || 0;
           setCurrentTime(newTime);
-          
-          // Update duration if we have it and it's not set yet
-          if (duration === 0 && player.duration && player.duration > 0) {
-            console.log('[VideoPlayer] Setting duration from player:', player.duration);
-            setDuration(player.duration);
-          }
+        }
+        
+        // Update duration if we have it and it's not set yet
+        if (duration === 0 && player.duration && player.duration > 0) {
+          console.log('[VideoPlayer] Setting duration from player:', player.duration);
+          setDuration(player.duration);
         }
       });
     }
@@ -255,7 +261,6 @@ export default function VideoPlayerScreen() {
 
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] User started seeking from:', currentTime);
-    setIsSeeking(true);
     isSeekingRef.current = true;
     // Pause during seeking for smoother experience
     if (isPlaying) {
@@ -264,7 +269,7 @@ export default function VideoPlayerScreen() {
   }, [currentTime, isPlaying, player]);
 
   const handleSeekChange = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seek slider moved to:', value);
+    // Update the displayed time immediately as user drags
     setCurrentTime(value);
   }, []);
 
@@ -280,21 +285,19 @@ export default function VideoPlayerScreen() {
       // Seek to the position
       player.currentTime = clampedValue;
       console.log('[VideoPlayer] Set player.currentTime to:', clampedValue);
-      console.log('[VideoPlayer] Player.currentTime is now:', player.currentTime);
       
-      // Update state
+      // Update both state and ref
       setCurrentTime(clampedValue);
+      currentTimeRef.current = clampedValue;
+      
+      // Clear the seeking flag immediately so timeUpdate can resume updating
+      isSeekingRef.current = false;
       
       // Resume playback if it was playing before
-      setTimeout(() => {
-        setIsSeeking(false);
-        isSeekingRef.current = false;
-        
-        if (isPlaying) {
-          console.log('[VideoPlayer] Resuming playback after seek');
-          player.play();
-        }
-      }, 100);
+      if (isPlaying) {
+        console.log('[VideoPlayer] Resuming playback after seek');
+        player.play();
+      }
     }
   }, [player, duration, isPlaying]);
 
