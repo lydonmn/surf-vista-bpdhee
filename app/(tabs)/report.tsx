@@ -70,6 +70,26 @@ export default function ReportScreen() {
     }
   }, [surfReports]);
 
+  // Find the last report with valid surf data (fallback data)
+  const lastValidReport = useMemo(() => {
+    const validReport = surfReports.find(report => {
+      const surfHeight = report.surf_height || report.wave_height;
+      const isValid = surfHeight && 
+                     surfHeight !== 'N/A' && 
+                     surfHeight !== '' && 
+                     !surfHeight.toString().toLowerCase().includes('n/a');
+      return isValid;
+    });
+    
+    console.log('[ReportScreen] Last valid report:', validReport ? {
+      date: validReport.date,
+      surf_height: validReport.surf_height || validReport.wave_height,
+      id: validReport.id
+    } : 'none found');
+    
+    return validReport;
+  }, [surfReports]);
+
   // Fetch real-time surf conditions
   const fetchSurfConditions = React.useCallback(async () => {
     try {
@@ -322,17 +342,46 @@ export default function ReportScreen() {
   };
 
   const renderReportCard = (report: any, index: number) => {
-    // Use real-time surf conditions ONLY if they have valid data
-    // Otherwise, fall back to the report data (last successfully pulled data)
+    // Priority order for data display:
+    // 1. Use real-time surf conditions if they have valid data
+    // 2. Use today's report if it has valid data
+    // 3. Fall back to last valid report from any day
     const hasValidLiveData = hasValidSurfData(surfConditions);
-    const displayData = hasValidLiveData ? surfConditions : report;
+    const hasValidTodayReport = hasValidSurfData(report);
+    
+    let displayData;
+    let dataSource;
+    let dataDate;
+    
+    if (hasValidLiveData) {
+      displayData = surfConditions;
+      dataSource = 'live';
+      dataDate = report.date;
+      console.log('[ReportScreen] Using live surf_conditions data');
+    } else if (hasValidTodayReport) {
+      displayData = report;
+      dataSource = 'today';
+      dataDate = report.date;
+      console.log('[ReportScreen] Using today\'s report data');
+    } else if (lastValidReport) {
+      displayData = lastValidReport;
+      dataSource = 'historical';
+      dataDate = lastValidReport.date;
+      console.log('[ReportScreen] Falling back to last valid report from:', lastValidReport.date);
+    } else {
+      displayData = report;
+      dataSource = 'unavailable';
+      dataDate = report.date;
+      console.log('[ReportScreen] No valid data available, showing N/A');
+    }
     
     console.log('[ReportScreen] Rendering with data:', {
       hasLiveData: !!surfConditions,
       hasValidLiveData,
-      usingLiveData: hasValidLiveData,
+      hasValidTodayReport,
+      hasLastValidReport: !!lastValidReport,
+      dataSource,
       surfHeight: displayData.surf_height || displayData.wave_height,
-      source: hasValidLiveData ? 'live surf_conditions' : 'report data'
     });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
@@ -402,12 +451,25 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        {/* Real-time data indicator - only show if we have valid live data */}
-        {hasValidLiveData && (
+        {/* Data source indicator */}
+        {dataSource === 'live' && (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
               Live Data
+            </Text>
+          </View>
+        )}
+        {dataSource === 'historical' && lastValidReport && (
+          <View style={[styles.liveIndicator, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="clock.fill"
+              android_material_icon_name="schedule"
+              size={12}
+              color="#FF9800"
+            />
+            <Text style={[styles.liveText, { color: '#FF9800' }]}>
+              Showing last available data from {new Date(lastValidReport.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </Text>
           </View>
         )}
@@ -876,7 +938,7 @@ export default function ReportScreen() {
             • NOAA Tides & Currents (Charleston) - Tide predictions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            Surf height shown is the rideable face height (calculated from wave height and period). Live data updates automatically. Surf conditions report text is updated when a new report is generated.
+            Surf height shown is the rideable face height (calculated from wave height and period). When live buoy data is unavailable, the app displays the most recent valid data.
           </Text>
         </View>
       </View>
