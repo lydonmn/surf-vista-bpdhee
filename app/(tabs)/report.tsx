@@ -52,8 +52,8 @@ export default function ReportScreen() {
     try {
       const today = getESTDate();
       
-      console.log('Current EST date:', today);
-      console.log('Available reports:', surfReports.map(r => ({ date: r.date, id: r.id })));
+      console.log('[ReportScreen] Current EST date:', today);
+      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id })));
       
       return surfReports.filter(report => {
         if (!report.date) return false;
@@ -61,11 +61,11 @@ export default function ReportScreen() {
         // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
         const reportDate = report.date.split('T')[0];
         
-        console.log('Comparing report date:', reportDate, 'with today:', today);
+        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today);
         return reportDate === today;
       });
     } catch (error) {
-      console.error('Error filtering reports:', error);
+      console.error('[ReportScreen] Error filtering reports:', error);
       return [];
     }
   }, [surfReports]);
@@ -128,7 +128,7 @@ export default function ReportScreen() {
   }, []);
 
   useEffect(() => {
-    console.log('ReportScreen - Auth state:', {
+    console.log('[ReportScreen] Auth state:', {
       hasUser: !!user,
       hasProfile: !!profile,
       isSubscribed,
@@ -181,6 +181,7 @@ export default function ReportScreen() {
   }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions]);
 
   const handleRefresh = async () => {
+    console.log('[ReportScreen] User initiated refresh');
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo(), fetchSurfConditions()]);
     setIsRefreshing(false);
@@ -332,9 +333,18 @@ export default function ReportScreen() {
     // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     
-    // Get last updated timestamp
-    const dataUpdatedAt = displayData.updated_at || report.updated_at;
+    // Get last updated timestamp - prioritize surf_conditions updated_at
+    const dataUpdatedAt = surfConditions?.updated_at || displayData.updated_at || report.updated_at;
     const lastUpdatedText = formatLastUpdated(dataUpdatedAt);
+    
+    console.log('[ReportScreen] Rendering report card:', {
+      hasSurfConditions: !!surfConditions,
+      surfConditionsUpdatedAt: surfConditions?.updated_at,
+      displayDataUpdatedAt: displayData.updated_at,
+      reportUpdatedAt: report.updated_at,
+      finalUpdatedAt: dataUpdatedAt,
+      formattedText: lastUpdatedText
+    });
     
     return (
       <View 
@@ -346,17 +356,19 @@ export default function ReportScreen() {
             <Text style={[styles.reportDate, { color: theme.colors.text }]}>
               {estDisplayDate}
             </Text>
-            <View style={styles.lastUpdatedContainer}>
-              <IconSymbol
-                ios_icon_name="clock.fill"
-                android_material_icon_name="schedule"
-                size={12}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
-                Buoy data last updated {lastUpdatedText}
-              </Text>
-            </View>
+            {dataUpdatedAt && (
+              <View style={styles.lastUpdatedContainer}>
+                <IconSymbol
+                  ios_icon_name="clock.fill"
+                  android_material_icon_name="schedule"
+                  size={12}
+                  color={colors.textSecondary}
+                />
+                <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
+                  Buoy data last updated {lastUpdatedText}
+                </Text>
+              </View>
+            )}
           </View>
           <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
             <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
@@ -595,7 +607,7 @@ export default function ReportScreen() {
   }
 
   if (!user || !isSubscribed) {
-    console.log('ReportScreen - Showing locked content');
+    console.log('[ReportScreen] Showing locked content');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -629,7 +641,7 @@ export default function ReportScreen() {
     );
   }
 
-  console.log('ReportScreen - Showing surf reports');
+  console.log('[ReportScreen] Showing surf reports');
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
