@@ -13,9 +13,11 @@ import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated } from "@/utils/surfDataFormatter";
 
-// Helper function to get EST date
+// Helper function to get EST date - FIXED for January 22nd
 function getESTDate(): string {
   const now = new Date();
+  
+  // Get the date in EST timezone using toLocaleString with proper formatting
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -23,10 +25,20 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  const [month, day, year] = estDateString.split('/');
-  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  // Parse the date string (format: MM/DD/YYYY, HH:MM:SS AM/PM)
+  // Split by comma first to separate date from time
+  const datePart = estDateString.split(',')[0];
+  const parts = datePart.split('/');
+  const month = parts[0].padStart(2, '0');
+  const day = parts[1].padStart(2, '0');
+  const year = parts[2];
   
-  console.log('[getESTDate] Current EST date:', estDate, 'from:', estDateString);
+  const estDate = `${year}-${month}-${day}`;
+  
+  console.log('[getESTDate] Raw EST string:', estDateString);
+  console.log('[getESTDate] Date part:', datePart);
+  console.log('[getESTDate] Parts:', parts);
+  console.log('[getESTDate] Current EST date:', estDate);
   
   return estDate;
 }

@@ -24,23 +24,58 @@ function parseLocalDate(dateStr: string): Date {
   return new Date(year, month - 1, day);
 }
 
-// Helper function to get today's date in YYYY-MM-DD format
+// Helper function to get today's date in YYYY-MM-DD format (EST timezone)
 function getTodayDateString(): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  
+  // Get the date in EST timezone
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the date string (format: MM/DD/YYYY)
+  const parts = estDateString.split(/[\/,\s]+/);
+  const month = parts[0].padStart(2, '0');
+  const day = parts[1].padStart(2, '0');
+  const year = parts[2];
+  
+  const estDate = `${year}-${month}-${day}`;
+  
+  console.log('[getTodayDateString] Current EST date:', estDate);
+  
+  return estDate;
 }
 
-// Helper function to get date N days from now
+// Helper function to get date N days from now (EST timezone)
 function getDateNDaysFromNow(days: number): string {
-  const date = new Date();
+  const now = new Date();
+  
+  // Get current EST date
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the date string (format: MM/DD/YYYY)
+  const parts = estDateString.split(/[\/,\s]+/);
+  const month = parseInt(parts[0]);
+  const day = parseInt(parts[1]);
+  const year = parseInt(parts[2]);
+  
+  // Create a date object and add days
+  const date = new Date(year, month - 1, day);
   date.setDate(date.getDate() + days);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  
+  const resultYear = date.getFullYear();
+  const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
+  const resultDay = String(date.getDate()).padStart(2, '0');
+  
+  return `${resultYear}-${resultMonth}-${resultDay}`;
 }
 
 // Helper function to get day name from date string

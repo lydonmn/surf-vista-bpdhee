@@ -13,12 +13,33 @@ import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
-// Get today's date in EST timezone
+// Get today's date in EST timezone - FIXED for January 22nd
 function getESTDate(): string {
   const now = new Date();
-  const estOffset = -5 * 60; // EST is UTC-5
-  const estTime = new Date(now.getTime() + (estOffset + now.getTimezoneOffset()) * 60000);
-  return estTime.toISOString().split('T')[0];
+  
+  // Get the date in EST timezone
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  // Parse the date string (format: MM/DD/YYYY, HH:MM:SS AM/PM)
+  // Split by comma first to separate date from time
+  const datePart = estDateString.split(',')[0];
+  const parts = datePart.split('/');
+  const month = parts[0].padStart(2, '0');
+  const day = parts[1].padStart(2, '0');
+  const year = parts[2];
+  
+  const estDate = `${year}-${month}-${day}`;
+  
+  console.log('[getESTDate] Raw EST string:', estDateString);
+  console.log('[getESTDate] Date part:', datePart);
+  console.log('[getESTDate] Current EST date:', estDate);
+  
+  return estDate;
 }
 
 export default function HomeScreen() {
