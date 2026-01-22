@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -48,7 +48,7 @@ export default function AdminDataScreen() {
     setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
   };
 
-  const loadDataCounts = async () => {
+  const loadDataCounts = useCallback(async () => {
     try {
       addLog('Loading data counts...');
       
@@ -85,12 +85,12 @@ export default function AdminDataScreen() {
       console.error('Error loading data counts:', error);
       addLog(`Error loading data counts: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
-  };
+  }, [addLog]);
 
   useEffect(() => {
     console.log('[AdminDataScreen] Component mounted, loading data counts');
     loadDataCounts();
-  }, []);
+  }, [loadDataCounts]);
 
   const handleTriggerDailyUpdate = async () => {
     setIsLoading(true);

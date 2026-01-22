@@ -673,7 +673,7 @@ const checkSubscriptionInSupabase = async (userId: string): Promise<{
 // USER IDENTIFICATION
 // ============================================
 
-export const identifyUser = async (userId: string, email?: string) => {
+export const identifyUser = async (userId: string, email?: string): Promise<void> => {
   try {
     if (!isPaymentSystemAvailable()) {
       return;
@@ -692,7 +692,7 @@ export const identifyUser = async (userId: string, email?: string) => {
   }
 };
 
-export const logoutUser = async () => {
+export const logoutUser = async (): Promise<void> => {
   try {
     if (!isPaymentSystemAvailable()) {
       return;

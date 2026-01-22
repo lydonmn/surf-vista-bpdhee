@@ -385,7 +385,7 @@ export default function VideoPlayerScreen() {
         clearTimeout(controlsTimeout);
       }
     };
-  }, [isFullscreen, isPlaying]);
+  }, [isFullscreen, isPlaying, resetControlsTimeout, controlsTimeout]);
 
   // Prepare button icon text variables (ATOMIC JSX)
   const playPauseIconIOS = isPlaying ? "pause.fill" : "play.fill";
