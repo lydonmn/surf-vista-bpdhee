@@ -22,6 +22,7 @@ export default function EditReportScreen() {
   const [saving, setSaving] = useState(false);
   const [report, setReport] = useState<SurfReport | null>(null);
   const [reportText, setReportText] = useState('');
+  const [rating, setRating] = useState('5');
   const [showPreview, setShowPreview] = useState(false);
 
   const loadReport = useCallback(async () => {
@@ -42,6 +43,7 @@ export default function EditReportScreen() {
 
       setReport(data);
       setReportText(data.report_text || data.conditions || '');
+      setRating(String(data.rating || 5));
     } catch (error) {
       console.error('Exception loading report:', error);
       Alert.alert('Error', 'Failed to load report');
@@ -58,6 +60,14 @@ export default function EditReportScreen() {
   const handleSave = async () => {
     if (!report || !user) return;
 
+    const ratingNum = parseInt(rating);
+    const ratingValue = ratingNum;
+    
+    if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 10) {
+      Alert.alert('Invalid Rating', 'Rating must be a number between 0 and 10');
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -65,6 +75,7 @@ export default function EditReportScreen() {
         .from('surf_reports')
         .update({
           report_text: reportText,
+          rating: ratingValue,
           edited_by: user.id,
           edited_at: new Date().toISOString(),
         })
@@ -92,7 +103,7 @@ export default function EditReportScreen() {
 
     Alert.alert(
       'Reset to Auto-Generated',
-      'This will remove your custom text and use the auto-generated report. Continue?',
+      'This will remove your custom text and rating, and use the auto-generated report. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -106,6 +117,7 @@ export default function EditReportScreen() {
                 .from('surf_reports')
                 .update({
                   report_text: null,
+                  rating: null,
                   edited_by: null,
                   edited_at: null,
                 })
@@ -131,6 +143,16 @@ export default function EditReportScreen() {
       ]
     );
   };
+
+  const getRatingColor = (ratingValue: number): string => {
+    if (ratingValue >= 8) return '#22C55E';
+    if (ratingValue >= 6) return '#FFC107';
+    if (ratingValue >= 4) return '#FF9800';
+    return '#F44336';
+  };
+
+  const ratingNum = parseInt(rating) || 5;
+  const ratingColor = getRatingColor(ratingNum);
 
   if (!profile?.is_admin) {
     return (
@@ -253,13 +275,83 @@ export default function EditReportScreen() {
                 {report.water_temp}
               </Text>
             </View>
-            <View style={styles.dataRow}>
-              <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Rating:
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.ratingHeader}>
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Stoke Rating
+            </Text>
+            <View style={[styles.ratingBadge, { backgroundColor: ratingColor }]}>
+              <Text style={styles.ratingBadgeText}>
+                {rating}/10
               </Text>
-              <Text style={[styles.dataValue, { color: theme.colors.text }]}>
-                {report.rating || 5}/10
-              </Text>
+            </View>
+          </View>
+          
+          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+            Rate the surf conditions from 0 (flat) to 10 (epic). This helps surfers quickly assess if it&apos;s worth paddling out.
+          </Text>
+
+          <View style={styles.ratingInputContainer}>
+            <TextInput
+              style={[
+                styles.ratingInput,
+                {
+                  backgroundColor: theme.colors.background,
+                  color: theme.colors.text,
+                  borderColor: ratingColor,
+                }
+              ]}
+              value={rating}
+              onChangeText={setRating}
+              keyboardType="number-pad"
+              maxLength={2}
+              placeholder="5"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <View style={styles.ratingScale}>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: colors.textSecondary }]}>
+                  0
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
+                  Flat
+                </Text>
+              </View>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: colors.textSecondary }]}>
+                  3
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
+                  Small
+                </Text>
+              </View>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: colors.textSecondary }]}>
+                  5
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
+                  Fair
+                </Text>
+              </View>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: colors.textSecondary }]}>
+                  7
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
+                  Good
+                </Text>
+              </View>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: colors.textSecondary }]}>
+                  10
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
+                  Epic
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -468,6 +560,49 @@ const styles = StyleSheet.create({
   dataValue: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  ratingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  ratingBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  ratingBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  ratingInputContainer: {
+    gap: 16,
+  },
+  ratingInput: {
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  ratingScale: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  ratingScaleItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingScaleValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  ratingScaleLabel: {
+    fontSize: 11,
   },
   editorHeader: {
     flexDirection: 'row',
