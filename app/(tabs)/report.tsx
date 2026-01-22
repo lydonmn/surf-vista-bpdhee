@@ -354,7 +354,7 @@ export default function ReportScreen() {
                 color={colors.textSecondary}
               />
               <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
-                Updated {lastUpdatedText}
+                Buoy data last updated {lastUpdatedText}
               </Text>
             </View>
           </View>
