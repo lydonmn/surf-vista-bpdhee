@@ -43,6 +43,9 @@ export default function ReportScreen() {
   const [surfConditions, setSurfConditions] = useState<any>(null);
   const [isLoadingConditions, setIsLoadingConditions] = useState(false);
 
+  // Determine if we're in dark mode
+  const isDarkMode = theme.dark;
+
   // Filter to show only today's report (EST timezone)
   const todaysReport = useMemo(() => {
     try {
@@ -317,6 +320,10 @@ export default function ReportScreen() {
       month: 'long',
       day: 'numeric'
     });
+
+    // Dynamic colors based on theme
+    const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
+    const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
     return (
       <View 
@@ -352,10 +359,10 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                <Text style={[styles.conditionLabel, { color: labelColor }]}>
                   Surf Height
                 </Text>
-                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                <Text style={[styles.conditionValue, { color: valueColor }]}>
                   {displayData.surf_height || displayData.wave_height || 'N/A'}
                 </Text>
               </View>
@@ -369,10 +376,10 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                <Text style={[styles.conditionLabel, { color: labelColor }]}>
                   Wind Speed
                 </Text>
-                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                <Text style={[styles.conditionValue, { color: valueColor }]}>
                   {displayData.wind_speed || 'N/A'}
                 </Text>
               </View>
@@ -388,10 +395,10 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                <Text style={[styles.conditionLabel, { color: labelColor }]}>
                   Wind Direction
                 </Text>
-                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                <Text style={[styles.conditionValue, { color: valueColor }]}>
                   {displayData.wind_direction || 'N/A'}
                 </Text>
               </View>
@@ -405,10 +412,10 @@ export default function ReportScreen() {
                 color={colors.primary}
               />
               <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                <Text style={[styles.conditionLabel, { color: labelColor }]}>
                   Water Temp
                 </Text>
-                <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                <Text style={[styles.conditionValue, { color: valueColor }]}>
                   {displayData.water_temp || 'N/A'}
                 </Text>
               </View>
@@ -426,10 +433,10 @@ export default function ReportScreen() {
                     color={colors.primary}
                   />
                   <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                    <Text style={[styles.conditionLabel, { color: labelColor }]}>
                       Wave Period
                     </Text>
-                    <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                    <Text style={[styles.conditionValue, { color: valueColor }]}>
                       {displayData.wave_period}
                     </Text>
                   </View>
@@ -445,10 +452,10 @@ export default function ReportScreen() {
                     color={colors.primary}
                   />
                   <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+                    <Text style={[styles.conditionLabel, { color: labelColor }]}>
                       Swell Direction
                     </Text>
-                    <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+                    <Text style={[styles.conditionValue, { color: valueColor }]}>
                       {displayData.swell_direction}
                     </Text>
                   </View>
@@ -459,10 +466,10 @@ export default function ReportScreen() {
 
           <View style={styles.tideContainer}>
             <View style={styles.conditionTextContainer}>
-              <Text style={[styles.conditionLabel, { color: colors.reportLabel }]}>
+              <Text style={[styles.conditionLabel, { color: labelColor }]}>
                 Tide
               </Text>
-              <Text style={[styles.conditionValue, { color: colors.reportBoldText }]}>
+              <Text style={[styles.conditionValue, { color: valueColor }]}>
                 {report.tide || 'Check tide chart'}
               </Text>
             </View>
