@@ -53,7 +53,7 @@ export default function ReportScreen() {
       const today = getESTDate();
       
       console.log('[ReportScreen] Current EST date:', today);
-      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id })));
+      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id, wave_height: r.wave_height })));
       
       return surfReports.filter(report => {
         if (!report.date) return false;
@@ -70,25 +70,55 @@ export default function ReportScreen() {
     }
   }, [surfReports]);
 
+  // Helper function to check if surf data is valid (not N/A)
+  const hasValidSurfData = (data: any) => {
+    if (!data) return false;
+    
+    // Check if surf height or wave height is valid (not null, not N/A, not empty)
+    const surfHeight = data.surf_height || data.wave_height;
+    const isValidHeight = surfHeight && 
+                         surfHeight !== 'N/A' && 
+                         surfHeight !== '' && 
+                         !surfHeight.toString().toLowerCase().includes('n/a');
+    
+    return isValidHeight;
+  };
+
   // Find the last report with valid surf data (fallback data)
   const lastValidReport = useMemo(() => {
-    const validReport = surfReports.find(report => {
-      const surfHeight = report.surf_height || report.wave_height;
-      const isValid = surfHeight && 
-                     surfHeight !== 'N/A' && 
-                     surfHeight !== '' && 
-                     !surfHeight.toString().toLowerCase().includes('n/a');
-      return isValid;
+    // Sort reports by date descending to get most recent first
+    const sortedReports = [...surfReports].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA; // Most recent first
     });
     
-    console.log('[ReportScreen] Last valid report:', validReport ? {
-      date: validReport.date,
-      surf_height: validReport.surf_height || validReport.wave_height,
-      id: validReport.id
-    } : 'none found');
+    const validReport = sortedReports.find(report => hasValidSurfData(report));
+    
+    console.log('[ReportScreen] Last valid report search:', {
+      totalReports: sortedReports.length,
+      foundValid: !!validReport,
+      validReportDate: validReport?.date,
+      validReportWaveHeight: validReport?.wave_height || validReport?.surf_height,
+      allReportDates: sortedReports.map(r => ({ date: r.date, wave_height: r.wave_height }))
+    });
     
     return validReport;
   }, [surfReports]);
+
+  // Find the last surf_conditions with valid data
+  const lastValidConditions = useMemo(() => {
+    if (!surfConditions) return null;
+    
+    // If current surf_conditions has valid data, use it
+    if (hasValidSurfData(surfConditions)) {
+      console.log('[ReportScreen] Current surf_conditions has valid data');
+      return surfConditions;
+    }
+    
+    console.log('[ReportScreen] Current surf_conditions has no valid data');
+    return null;
+  }, [surfConditions]);
 
   // Fetch real-time surf conditions
   const fetchSurfConditions = React.useCallback(async () => {
@@ -98,7 +128,8 @@ export default function ReportScreen() {
       
       console.log('[ReportScreen] Fetching surf conditions for:', today);
       
-      const { data, error } = await supabase
+      // First try to get today's conditions
+      let { data, error } = await supabase
         .from('surf_conditions')
         .select('*')
         .eq('date', today)
@@ -106,9 +137,31 @@ export default function ReportScreen() {
 
       if (error) {
         console.error('[ReportScreen] Error fetching surf conditions:', error);
-      } else {
-        console.log('[ReportScreen] Surf conditions loaded:', data);
+      } else if (data) {
+        console.log('[ReportScreen] Surf conditions loaded for today:', data);
         setSurfConditions(data);
+      } else {
+        // If no data for today, get the most recent surf_conditions with valid data
+        console.log('[ReportScreen] No surf conditions for today, fetching most recent valid data...');
+        const { data: recentData, error: recentError } = await supabase
+          .from('surf_conditions')
+          .select('*')
+          .order('date', { ascending: false })
+          .limit(10);
+        
+        if (recentError) {
+          console.error('[ReportScreen] Error fetching recent surf conditions:', recentError);
+        } else if (recentData && recentData.length > 0) {
+          // Find the first one with valid data
+          const validCondition = recentData.find(c => hasValidSurfData(c));
+          if (validCondition) {
+            console.log('[ReportScreen] Found valid surf conditions from:', validCondition.date);
+            setSurfConditions(validCondition);
+          } else {
+            console.log('[ReportScreen] No valid surf conditions found in recent data');
+            setSurfConditions(null);
+          }
+        }
       }
     } catch (error) {
       console.error('[ReportScreen] Error in fetchSurfConditions:', error);
@@ -327,20 +380,6 @@ export default function ReportScreen() {
     return { ios: 'location.north.fill', android: 'navigation' };
   };
 
-  // Helper function to check if surf conditions data is valid (not N/A)
-  const hasValidSurfData = (data: any) => {
-    if (!data) return false;
-    
-    // Check if surf height is valid (not null, not N/A, not empty)
-    const surfHeight = data.surf_height || data.wave_height;
-    const isValidHeight = surfHeight && 
-                         surfHeight !== 'N/A' && 
-                         surfHeight !== '' && 
-                         !surfHeight.toString().toLowerCase().includes('n/a');
-    
-    return isValidHeight;
-  };
-
   const renderReportCard = (report: any, index: number) => {
     // Priority order for data display:
     // 1. Use real-time surf conditions if they have valid data
@@ -356,8 +395,8 @@ export default function ReportScreen() {
     if (hasValidLiveData) {
       displayData = surfConditions;
       dataSource = 'live';
-      dataDate = report.date;
-      console.log('[ReportScreen] Using live surf_conditions data');
+      dataDate = surfConditions.date;
+      console.log('[ReportScreen] Using live surf_conditions data from:', surfConditions.date);
     } else if (hasValidTodayReport) {
       displayData = report;
       dataSource = 'today';
@@ -381,6 +420,7 @@ export default function ReportScreen() {
       hasValidTodayReport,
       hasLastValidReport: !!lastValidReport,
       dataSource,
+      dataDate,
       surfHeight: displayData.surf_height || displayData.wave_height,
     });
     
