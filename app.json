@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "SurfVista",
@@ -52,21 +53,14 @@
           "savePhotosPermission": "Allow SurfVista to save videos.",
           "isAccessMediaLocationEnabled": true
         }
-      ],
-      [
-        "react-native-purchases",
-        {
-          "apiKey": "appl_uyUNhkTURhBCqiVsRaBqBYbhIda"
-        }
       ]
     ],
-    "scheme": "natively",
+    "scheme": "surfvista",
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {}
     }
-  },
-  "scheme": "SurfVista"
+  }
 }
