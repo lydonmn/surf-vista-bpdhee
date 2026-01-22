@@ -13,11 +13,11 @@ import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated } from "@/utils/surfDataFormatter";
 
-// Helper function to get EST date - FIXED for January 22nd
+// Helper function to get EST date for Charleston, SC - FIXED for January 22nd, 2026
 function getESTDate(): string {
   const now = new Date();
   
-  // Get the date in EST timezone using toLocaleString with proper formatting
+  // Get the date in EST timezone (America/New_York = Charleston, SC timezone)
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -25,20 +25,17 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  // Parse the date string (format: MM/DD/YYYY, HH:MM:SS AM/PM)
-  // Split by comma first to separate date from time
-  const datePart = estDateString.split(',')[0];
-  const parts = datePart.split('/');
-  const month = parts[0].padStart(2, '0');
-  const day = parts[1].padStart(2, '0');
-  const year = parts[2];
+  // Parse the date string (format: "MM/DD/YYYY, HH:MM:SS AM/PM")
+  // Split by comma to get just the date part
+  const datePart = estDateString.split(',')[0].trim();
+  const [month, day, year] = datePart.split('/');
   
-  const estDate = `${year}-${month}-${day}`;
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
   console.log('[getESTDate] Raw EST string:', estDateString);
   console.log('[getESTDate] Date part:', datePart);
-  console.log('[getESTDate] Parts:', parts);
-  console.log('[getESTDate] Current EST date:', estDate);
+  console.log('[getESTDate] Parsed components:', { month, day, year });
+  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
   
   return estDate;
 }
@@ -75,12 +72,12 @@ export default function ReportScreen() {
     return isValidHeight;
   };
 
-  // Find today's report (EST timezone)
+  // Find today's report (EST timezone for Charleston, SC)
   const todaysReport = useMemo(() => {
     try {
       const today = getESTDate();
       
-      console.log('[ReportScreen] Current EST date:', today);
+      console.log('[ReportScreen] Current EST date for Charleston, SC:', today);
       console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id, wave_height: r.wave_height })));
       
       const todayReports = surfReports.filter(report => {
@@ -179,7 +176,7 @@ export default function ReportScreen() {
       setIsLoadingConditions(true);
       const today = getESTDate();
       
-      console.log('[ReportScreen] Fetching surf conditions for:', today);
+      console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', today);
       
       // First try to get today's conditions
       let { data, error } = await supabase

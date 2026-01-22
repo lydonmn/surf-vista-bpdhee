@@ -13,11 +13,11 @@ import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
-// Get today's date in EST timezone - FIXED for January 22nd
+// Get today's date in EST timezone for Charleston, SC - FIXED for January 22nd, 2026
 function getESTDate(): string {
   const now = new Date();
   
-  // Get the date in EST timezone
+  // Get the date in EST timezone (America/New_York = Charleston, SC timezone)
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -25,19 +25,16 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  // Parse the date string (format: MM/DD/YYYY, HH:MM:SS AM/PM)
-  // Split by comma first to separate date from time
-  const datePart = estDateString.split(',')[0];
-  const parts = datePart.split('/');
-  const month = parts[0].padStart(2, '0');
-  const day = parts[1].padStart(2, '0');
-  const year = parts[2];
+  // Parse the date string (format: "MM/DD/YYYY, HH:MM:SS AM/PM")
+  // Split by comma to get just the date part
+  const datePart = estDateString.split(',')[0].trim();
+  const [month, day, year] = datePart.split('/');
   
-  const estDate = `${year}-${month}-${day}`;
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
   console.log('[getESTDate] Raw EST string:', estDateString);
   console.log('[getESTDate] Date part:', datePart);
-  console.log('[getESTDate] Current EST date:', estDate);
+  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
   
   return estDate;
 }
