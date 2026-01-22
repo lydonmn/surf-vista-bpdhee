@@ -603,7 +603,7 @@ export const checkSubscriptionStatus = async (userId: string): Promise<{
 // SUPABASE INTEGRATION
 // ============================================
 
-const updateSubscriptionInSupabase = async (userId: string, customerInfo: CustomerInfo) => {
+export const updateSubscriptionInSupabase = async (userId: string, customerInfo: CustomerInfo): Promise<void> => {
   try {
     const hasActiveSubscription = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID] !== undefined;
     
@@ -637,7 +637,7 @@ const updateSubscriptionInSupabase = async (userId: string, customerInfo: Custom
   }
 };
 
-const checkSubscriptionInSupabase = async (userId: string): Promise<{
+export const checkSubscriptionInSupabase = async (userId: string): Promise<{
   isActive: boolean;
   endDate: string | null;
 }> => {
@@ -705,80 +705,3 @@ export const logoutUser = async (): Promise<void> => {
     console.error('[RevenueCat] ❌ Error logging out user:', error);
   }
 };
-</write file>
-
-Now let me update the app.json to ensure the RevenueCat plugin is properly configured:
-
-<write file="app.json">
-{
-  "expo": {
-    "name": "SurfVista",
-    "slug": "SurfVista",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#87CEEB"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.Natively",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload 6K drone videos.",
-        "NSCameraUsageDescription": "SurfVista needs access to your camera to record videos.",
-        "NSMicrophoneUsageDescription": "SurfVista needs access to your microphone to record videos with audio."
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
-        "backgroundColor": "#87CEEB"
-      },
-      "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.Natively",
-      "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_VIDEO",
-        "CAMERA",
-        "RECORD_AUDIO"
-      ]
-    },
-    "web": {
-      "favicon": "./assets/images/final_quest_240x240.png",
-      "bundler": "metro"
-    },
-    "plugins": [
-      "expo-font",
-      "expo-router",
-      "expo-web-browser",
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "Allow SurfVista to access your photos to upload 6K drone videos.",
-          "savePhotosPermission": "Allow SurfVista to save videos.",
-          "isAccessMediaLocationEnabled": true
-        }
-      ],
-      [
-        "react-native-purchases",
-        {
-          "apiKey": "appl_uyUNhkTURhBCqiVsRaBqBYbhIda"
-        }
-      ]
-    ],
-    "scheme": "natively",
-    "experiments": {
-      "typedRoutes": true
-    },
-    "extra": {
-      "router": {}
-    }
-  },
-  "scheme": "SurfVista"
-}

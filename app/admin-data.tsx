@@ -41,12 +41,12 @@ export default function AdminDataScreen() {
   });
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
 
-  const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
     console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     const id = `${Date.now()}-${Math.random()}`;
     setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
-  };
+  }, []);
 
   const loadDataCounts = useCallback(async () => {
     try {
