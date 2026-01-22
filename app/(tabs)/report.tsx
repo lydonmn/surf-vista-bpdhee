@@ -47,29 +47,6 @@ export default function ReportScreen() {
   // Determine if we're in dark mode
   const isDarkMode = theme.dark;
 
-  // Filter to show only today's report (EST timezone)
-  const todaysReport = useMemo(() => {
-    try {
-      const today = getESTDate();
-      
-      console.log('[ReportScreen] Current EST date:', today);
-      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id, wave_height: r.wave_height })));
-      
-      return surfReports.filter(report => {
-        if (!report.date) return false;
-        
-        // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
-        const reportDate = report.date.split('T')[0];
-        
-        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today);
-        return reportDate === today;
-      });
-    } catch (error) {
-      console.error('[ReportScreen] Error filtering reports:', error);
-      return [];
-    }
-  }, [surfReports]);
-
   // Helper function to check if surf data is valid (not N/A)
   const hasValidSurfData = (data: any) => {
     if (!data) return false;
@@ -83,6 +60,31 @@ export default function ReportScreen() {
     
     return isValidHeight;
   };
+
+  // Find today's report (EST timezone)
+  const todaysReport = useMemo(() => {
+    try {
+      const today = getESTDate();
+      
+      console.log('[ReportScreen] Current EST date:', today);
+      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id, wave_height: r.wave_height })));
+      
+      const todayReports = surfReports.filter(report => {
+        if (!report.date) return false;
+        
+        // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
+        const reportDate = report.date.split('T')[0];
+        
+        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today);
+        return reportDate === today;
+      });
+      
+      return todayReports.length > 0 ? todayReports[0] : null;
+    } catch (error) {
+      console.error('[ReportScreen] Error filtering reports:', error);
+      return null;
+    }
+  }, [surfReports]);
 
   // Find the last report with valid surf data (fallback data)
   const lastValidReport = useMemo(() => {
@@ -105,6 +107,43 @@ export default function ReportScreen() {
     
     return validReport;
   }, [surfReports]);
+
+  // Determine which report to display
+  const displayReport = useMemo(() => {
+    // Priority:
+    // 1. Today's report if it has valid data
+    // 2. Last valid report from any day
+    // 3. Today's report even if it has N/A (to show the date)
+    
+    const hasTodayReport = !!todaysReport;
+    const todayHasValidData = todaysReport && hasValidSurfData(todaysReport);
+    
+    console.log('[ReportScreen] Display report decision:', {
+      hasTodayReport,
+      todayHasValidData,
+      hasLastValidReport: !!lastValidReport,
+      todayDate: todaysReport?.date,
+      lastValidDate: lastValidReport?.date
+    });
+    
+    if (todayHasValidData) {
+      console.log('[ReportScreen] Using today\'s report with valid data');
+      return todaysReport;
+    }
+    
+    if (lastValidReport) {
+      console.log('[ReportScreen] Using last valid report from:', lastValidReport.date);
+      return lastValidReport;
+    }
+    
+    if (hasTodayReport) {
+      console.log('[ReportScreen] Using today\'s report (even though data is N/A)');
+      return todaysReport;
+    }
+    
+    console.log('[ReportScreen] No report to display');
+    return null;
+  }, [todaysReport, lastValidReport]);
 
   // Find the last surf_conditions with valid data
   const lastValidConditions = useMemo(() => {
@@ -383,30 +422,27 @@ export default function ReportScreen() {
   const renderReportCard = (report: any, index: number) => {
     // Priority order for data display:
     // 1. Use real-time surf conditions if they have valid data
-    // 2. Use today's report if it has valid data
-    // 3. Fall back to last valid report from any day
+    // 2. Use the report's data if it has valid data
+    // 3. Show N/A if no valid data is available
     const hasValidLiveData = hasValidSurfData(surfConditions);
-    const hasValidTodayReport = hasValidSurfData(report);
+    const hasValidReportData = hasValidSurfData(report);
     
     let displayData;
     let dataSource;
     let dataDate;
+    const today = getESTDate();
+    const isToday = report.date.split('T')[0] === today;
     
     if (hasValidLiveData) {
       displayData = surfConditions;
       dataSource = 'live';
       dataDate = surfConditions.date;
       console.log('[ReportScreen] Using live surf_conditions data from:', surfConditions.date);
-    } else if (hasValidTodayReport) {
+    } else if (hasValidReportData) {
       displayData = report;
-      dataSource = 'today';
+      dataSource = isToday ? 'today' : 'historical';
       dataDate = report.date;
-      console.log('[ReportScreen] Using today\'s report data');
-    } else if (lastValidReport) {
-      displayData = lastValidReport;
-      dataSource = 'historical';
-      dataDate = lastValidReport.date;
-      console.log('[ReportScreen] Falling back to last valid report from:', lastValidReport.date);
+      console.log('[ReportScreen] Using report data from:', report.date);
     } else {
       displayData = report;
       dataSource = 'unavailable';
@@ -417,10 +453,10 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Rendering with data:', {
       hasLiveData: !!surfConditions,
       hasValidLiveData,
-      hasValidTodayReport,
-      hasLastValidReport: !!lastValidReport,
+      hasValidReportData,
       dataSource,
       dataDate,
+      isToday,
       surfHeight: displayData.surf_height || displayData.wave_height,
     });
     
@@ -470,7 +506,7 @@ export default function ReportScreen() {
         <View style={styles.reportHeader}>
           <View style={styles.reportHeaderLeft}>
             <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-              {estDisplayDate}
+              {isToday ? 'Today\'s Report' : estDisplayDate}
             </Text>
             {dataUpdatedAt && (
               <View style={styles.lastUpdatedContainer}>
@@ -500,7 +536,7 @@ export default function ReportScreen() {
             </Text>
           </View>
         )}
-        {dataSource === 'historical' && lastValidReport && (
+        {dataSource === 'historical' && !isToday && (
           <View style={[styles.liveIndicator, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
             <IconSymbol
               ios_icon_name="clock.fill"
@@ -509,7 +545,7 @@ export default function ReportScreen() {
               color="#FF9800"
             />
             <Text style={[styles.liveText, { color: '#FF9800' }]}>
-              Showing last available data from {new Date(lastValidReport.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              Showing last available data from {new Date(report.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </Text>
           </View>
         )}
@@ -842,7 +878,7 @@ export default function ReportScreen() {
             Loading surf reports...
           </Text>
         </View>
-      ) : todaysReport.length === 0 ? (
+      ) : !displayReport ? (
         <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
             ios_icon_name="water.waves"
@@ -851,10 +887,10 @@ export default function ReportScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No Report Available Today
+            No Report Available
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Today&apos;s surf report will be generated automatically from NOAA data.
+            Surf reports will be generated automatically from NOAA data.
           </Text>
           {profile?.is_admin && (
             <TouchableOpacity
@@ -862,19 +898,13 @@ export default function ReportScreen() {
               onPress={handleUpdateData}
             >
               <Text style={styles.generateButtonText}>
-                Generate Today&apos;s Report
+                Generate Report
               </Text>
             </TouchableOpacity>
           )}
         </View>
       ) : (
-        <React.Fragment>
-          {todaysReport.map((report, index) => (
-            <React.Fragment key={report.id ? `report-${report.id}` : `report-index-${index}`}>
-              {renderReportCard(report, index)}
-            </React.Fragment>
-          ))}
-        </React.Fragment>
+        renderReportCard(displayReport, 0)
       )}
 
       {/* Latest Drone Video Section */}
