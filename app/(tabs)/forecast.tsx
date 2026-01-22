@@ -37,7 +37,7 @@ function getTodayDateString(): string {
   });
   
   // Parse the date string (format: MM/DD/YYYY)
-  const parts = estDateString.split(/[\/,\s]+/);
+  const parts = estDateString.split(/[/,\s]+/);
   const month = parts[0].padStart(2, '0');
   const day = parts[1].padStart(2, '0');
   const year = parts[2];
@@ -62,7 +62,7 @@ function getDateNDaysFromNow(days: number): string {
   });
   
   // Parse the date string (format: MM/DD/YYYY)
-  const parts = estDateString.split(/[\/,\s]+/);
+  const parts = estDateString.split(/[/,\s]+/);
   const month = parseInt(parts[0]);
   const day = parseInt(parts[1]);
   const year = parseInt(parts[2]);
