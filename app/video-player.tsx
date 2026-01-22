@@ -155,7 +155,8 @@ export default function VideoPlayerScreen() {
     const statusListener = player.addListener('statusChange', (status) => {
       console.log('[VideoPlayer] Status changed:', status);
       
-      if (status.error) {
+      // Only show error if it's a string message, not an object
+      if (status.error && typeof status.error === 'string') {
         console.error('[VideoPlayer] Player error:', status.error);
         setError(`Playback error: ${status.error}`);
       }
@@ -178,9 +179,9 @@ export default function VideoPlayerScreen() {
     });
 
     // Playing state listener
-    const playingListener = player.addListener('playingChange', (isPlaying) => {
-      console.log('[VideoPlayer] Playing state changed:', isPlaying);
-      setIsPlaying(isPlaying);
+    const playingListener = player.addListener('playingChange', (newIsPlaying) => {
+      console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
+      setIsPlaying(newIsPlaying);
     });
 
     // Time update listener - this fires frequently during playback
@@ -259,6 +260,30 @@ export default function VideoPlayerScreen() {
       return () => clearInterval(interval);
     }
   }, [player, duration]);
+
+  // Polling mechanism to update scrub bar position during playback
+  // This ensures the scrub bar moves even if timeUpdate events are delayed
+  useEffect(() => {
+    if (!player || !isPlaying) {
+      return;
+    }
+
+    console.log('[VideoPlayer] Starting scrub bar polling (player is playing)');
+    
+    const interval = setInterval(() => {
+      // Only update if we're not seeking
+      if (!isSeekingRef.current && player.currentTime !== undefined) {
+        const playerTime = player.currentTime;
+        console.log('[VideoPlayer] Polling update - player.currentTime:', playerTime);
+        setCurrentTime(playerTime);
+      }
+    }, 100); // Update every 100ms for smooth scrub bar movement
+    
+    return () => {
+      console.log('[VideoPlayer] Stopping scrub bar polling');
+      clearInterval(interval);
+    };
+  }, [player, isPlaying]);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(!isFullscreen);
