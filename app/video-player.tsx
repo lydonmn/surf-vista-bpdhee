@@ -30,8 +30,6 @@ export default function VideoPlayerScreen() {
   
   // Use ref to track if we're currently seeking to avoid state update conflicts
   const isSeekingRef = useRef(false);
-  // Use ref to store the latest current time for smoother updates
-  const currentTimeRef = useRef(0);
 
   const loadVideo = useCallback(async () => {
     try {
@@ -179,9 +177,6 @@ export default function VideoPlayerScreen() {
       player.addListener('timeUpdate', (timeUpdate) => {
         const newTime = timeUpdate.currentTime || 0;
         
-        // Always update the ref for the latest time
-        currentTimeRef.current = newTime;
-        
         // Only update state if we're not currently seeking
         // This prevents the slider from jumping while the user is dragging it
         if (!isSeekingRef.current) {
@@ -262,11 +257,7 @@ export default function VideoPlayerScreen() {
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] User started seeking from:', currentTime);
     isSeekingRef.current = true;
-    // Pause during seeking for smoother experience
-    if (isPlaying) {
-      player.pause();
-    }
-  }, [currentTime, isPlaying, player]);
+  }, [currentTime]);
 
   const handleSeekChange = useCallback((value: number) => {
     // Update the displayed time immediately as user drags
@@ -286,20 +277,17 @@ export default function VideoPlayerScreen() {
       player.currentTime = clampedValue;
       console.log('[VideoPlayer] Set player.currentTime to:', clampedValue);
       
-      // Update both state and ref
+      // Update state
       setCurrentTime(clampedValue);
-      currentTimeRef.current = clampedValue;
       
-      // Clear the seeking flag immediately so timeUpdate can resume updating
-      isSeekingRef.current = false;
-      
-      // Resume playback if it was playing before
-      if (isPlaying) {
-        console.log('[VideoPlayer] Resuming playback after seek');
-        player.play();
-      }
+      // Use a small delay before clearing the seeking flag
+      // This gives the player time to actually seek before timeUpdate resumes
+      setTimeout(() => {
+        isSeekingRef.current = false;
+        console.log('[VideoPlayer] Seeking complete, timeUpdate will now resume updating scrub bar');
+      }, 100);
     }
-  }, [player, duration, isPlaying]);
+  }, [player, duration]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) {
