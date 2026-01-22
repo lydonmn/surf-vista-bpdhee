@@ -140,62 +140,79 @@ export default function VideoPlayerScreen() {
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true; // Enable AirPlay
-      
-      // Add status change listener
-      player.addListener('statusChange', (status) => {
-        console.log('[VideoPlayer] Status changed:', status);
-        
-        if (status.error) {
-          console.error('[VideoPlayer] Player error:', status.error);
-          setError(`Playback error: ${status.error}`);
-        }
-        
-        if (status.status === 'readyToPlay') {
-          const videoDuration = status.duration || 0;
-          console.log('[VideoPlayer] Video ready to play, duration:', videoDuration);
-          setDuration(videoDuration);
-          
-          // Also get duration directly from player as backup
-          if (player.duration && player.duration > 0) {
-            console.log('[VideoPlayer] Player duration:', player.duration);
-            setDuration(player.duration);
-          }
-        }
-        
-        if (status.status === 'loading') {
-          console.log('[VideoPlayer] Video loading...');
-        }
-      });
-
-      // Add playback status listener
-      player.addListener('playingChange', (isPlaying) => {
-        console.log('[VideoPlayer] Playing state changed:', isPlaying);
-        setIsPlaying(isPlaying);
-      });
-
-      // Add time update listener - this fires frequently during playback
-      player.addListener('timeUpdate', (timeUpdate) => {
-        const newTime = timeUpdate.currentTime || 0;
-        
-        console.log('[VideoPlayer] timeUpdate fired - currentTime:', newTime, 'isSeeking:', isSeekingRef.current);
-        
-        // Only update state if we're not currently seeking
-        // This prevents the slider from jumping while the user is dragging it
-        if (!isSeekingRef.current) {
-          console.log('[VideoPlayer] Updating scrub bar position to:', newTime);
-          setCurrentTime(newTime);
-        } else {
-          console.log('[VideoPlayer] Skipping scrub bar update because user is seeking');
-        }
-        
-        // Update duration if we have it and it's not set yet
-        if (duration === 0 && player.duration && player.duration > 0) {
-          console.log('[VideoPlayer] Setting duration from player:', player.duration);
-          setDuration(player.duration);
-        }
-      });
     }
   });
+
+  // Set up event listeners for the player
+  useEffect(() => {
+    if (!player) {
+      return;
+    }
+
+    console.log('[VideoPlayer] Setting up player event listeners');
+
+    // Status change listener
+    const statusListener = player.addListener('statusChange', (status) => {
+      console.log('[VideoPlayer] Status changed:', status);
+      
+      if (status.error) {
+        console.error('[VideoPlayer] Player error:', status.error);
+        setError(`Playback error: ${status.error}`);
+      }
+      
+      if (status.status === 'readyToPlay') {
+        const videoDuration = status.duration || 0;
+        console.log('[VideoPlayer] Video ready to play, duration:', videoDuration);
+        setDuration(videoDuration);
+        
+        // Also get duration directly from player as backup
+        if (player.duration && player.duration > 0) {
+          console.log('[VideoPlayer] Player duration:', player.duration);
+          setDuration(player.duration);
+        }
+      }
+      
+      if (status.status === 'loading') {
+        console.log('[VideoPlayer] Video loading...');
+      }
+    });
+
+    // Playing state listener
+    const playingListener = player.addListener('playingChange', (isPlaying) => {
+      console.log('[VideoPlayer] Playing state changed:', isPlaying);
+      setIsPlaying(isPlaying);
+    });
+
+    // Time update listener - this fires frequently during playback
+    const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
+      const newTime = timeUpdate.currentTime || 0;
+      
+      console.log('[VideoPlayer] timeUpdate fired - currentTime:', newTime, 'isSeeking:', isSeekingRef.current);
+      
+      // Only update state if we're not currently seeking
+      // This prevents the slider from jumping while the user is dragging it
+      if (!isSeekingRef.current) {
+        console.log('[VideoPlayer] Updating scrub bar position to:', newTime);
+        setCurrentTime(newTime);
+      } else {
+        console.log('[VideoPlayer] Skipping scrub bar update because user is seeking');
+      }
+      
+      // Update duration if we have it and it's not set yet
+      if (duration === 0 && player.duration && player.duration > 0) {
+        console.log('[VideoPlayer] Setting duration from player:', player.duration);
+        setDuration(player.duration);
+      }
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      console.log('[VideoPlayer] Cleaning up player event listeners');
+      statusListener.remove();
+      playingListener.remove();
+      timeUpdateListener.remove();
+    };
+  }, [player, duration]);
 
   // Update player source when videoUrl changes
   useEffect(() => {
