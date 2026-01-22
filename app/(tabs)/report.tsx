@@ -11,6 +11,7 @@ import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated } from "@/utils/surfDataFormatter";
 
 // Helper function to get EST date
 function getESTDate(): string {
@@ -325,15 +326,38 @@ export default function ReportScreen() {
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
+    // Format surf height to feet
+    const surfHeightFeet = parseSurfHeightToFeet(displayData.surf_height || displayData.wave_height);
+    
+    // Format water temperature
+    const waterTempFormatted = formatWaterTemp(displayData.water_temp);
+    
+    // Get last updated timestamp
+    const dataUpdatedAt = displayData.updated_at || report.updated_at;
+    const lastUpdatedText = formatLastUpdated(dataUpdatedAt);
+    
     return (
       <View 
         key={reportKey}
         style={[styles.reportCard, { backgroundColor: theme.colors.card }]}
       >
         <View style={styles.reportHeader}>
-          <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-            {estDisplayDate}
-          </Text>
+          <View style={styles.reportHeaderLeft}>
+            <Text style={[styles.reportDate, { color: theme.colors.text }]}>
+              {estDisplayDate}
+            </Text>
+            <View style={styles.lastUpdatedContainer}>
+              <IconSymbol
+                ios_icon_name="clock.fill"
+                android_material_icon_name="schedule"
+                size={12}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
+                Updated {lastUpdatedText}
+              </Text>
+            </View>
+          </View>
           <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
             <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
           </View>
@@ -344,7 +368,7 @@ export default function ReportScreen() {
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
-              Live Data • Updated {surfConditions.updated_at ? new Date(surfConditions.updated_at).toLocaleTimeString() : 'recently'}
+              Live Data
             </Text>
           </View>
         )}
@@ -363,7 +387,7 @@ export default function ReportScreen() {
                   Surf Height
                 </Text>
                 <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {displayData.surf_height || displayData.wave_height || 'N/A'}
+                  {surfHeightFeet}
                 </Text>
               </View>
             </View>
@@ -416,7 +440,7 @@ export default function ReportScreen() {
                   Water Temp
                 </Text>
                 <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {displayData.water_temp || 'N/A'}
+                  {waterTempFormatted}
                 </Text>
               </View>
             </View>
@@ -977,13 +1001,25 @@ const styles = StyleSheet.create({
   reportHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
+  },
+  reportHeaderLeft: {
+    flex: 1,
+    gap: 4,
   },
   reportDate: {
     fontSize: 18,
     fontWeight: 'bold',
-    flex: 1,
+  },
+  lastUpdatedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  lastUpdatedText: {
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   ratingBadge: {
     paddingHorizontal: 12,

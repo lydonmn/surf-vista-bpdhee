@@ -5,6 +5,7 @@ import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { WeatherData, SurfReport } from '@/types';
+import { parseSurfHeightToFeet, formatWaterTemp } from '@/utils/surfDataFormatter';
 
 interface CurrentConditionsProps {
   weather: WeatherData | null;
@@ -68,6 +69,12 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
       </View>
     );
   }
+
+  // Format surf height to feet
+  const surfHeightFeet = parseSurfHeightToFeet(surfReport?.wave_height);
+  
+  // Format water temperature
+  const waterTempFormatted = formatWaterTemp(surfReport?.water_temp);
 
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -151,16 +158,16 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   Surf Height
                 </Text>
                 <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {surfReport.wave_height || '--'}
+                  {surfHeightFeet}
                 </Text>
               </View>
 
               <View style={styles.surfItem}>
                 <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
-                  Water
+                  Water Temp
                 </Text>
                 <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {surfReport.water_temp || '--'}
+                  {waterTempFormatted}
                 </Text>
               </View>
 
