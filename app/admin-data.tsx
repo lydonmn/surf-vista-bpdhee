@@ -42,6 +42,7 @@ export default function AdminDataScreen() {
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
+    console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     const id = `${Date.now()}-${Math.random()}`;
     setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
@@ -87,15 +88,49 @@ export default function AdminDataScreen() {
   };
 
   useEffect(() => {
+    console.log('[AdminDataScreen] Component mounted, loading data counts');
     loadDataCounts();
   }, []);
+
+  const handleTriggerDailyUpdate = async () => {
+    setIsLoading(true);
+    addLog('Manually triggering daily update (same as 5 AM automatic update)...');
+
+    try {
+      const response = await supabase.functions.invoke('daily-update-cron');
+      
+      console.log('Daily update response:', response);
+      addLog(`Daily update response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+
+      if (response.error) {
+        const errorMsg = response.error.message || JSON.stringify(response.error);
+        addLog(`❌ Daily update error: ${errorMsg}`, 'error');
+        Alert.alert('Error', errorMsg);
+      } else if (response.data?.success) {
+        addLog('✅ Daily update completed successfully!', 'success');
+        Alert.alert('Success', 'Daily update completed! Data refreshed and new report generated.');
+        await loadDataCounts();
+      } else {
+        const errorMsg = response.data?.error || 'Daily update failed';
+        addLog(`❌ Daily update failed: ${errorMsg}`, 'error');
+        Alert.alert('Error', errorMsg);
+      }
+    } catch (error) {
+      console.error('Error triggering daily update:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Daily update exception: ${errorMsg}`, 'error');
+      Alert.alert('Error', `Failed to trigger daily update: ${errorMsg}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleUpdateAll = async () => {
     setIsLoading(true);
     addLog('Starting periodic data update (no report generation)...');
 
     try {
-      const response = await supabase.functions.invoke('periodic-data-update');
+      const response = await supabase.functions.invoke('update-all-surf-data');
       
       console.log('Update response:', response);
       addLog(`Update response received: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -328,6 +363,7 @@ export default function AdminDataScreen() {
   };
 
   const handleClearLog = () => {
+    console.log('[AdminDataScreen] Clearing activity log');
     setActivityLog([]);
     addLog('Activity log cleared');
   };
@@ -342,6 +378,34 @@ export default function AdminDataScreen() {
     }
   };
 
+  const backIconName = 'chevron.left';
+  const backMaterialIconName = 'arrow_back';
+  const backButtonTextContent = 'Back';
+  const headerTitleText = 'Data Sources';
+  const sectionTitleText1 = 'Current Data (Today)';
+  const countLabelTides = 'Tides';
+  const countLabelWeather = 'Weather';
+  const countLabelForecast = 'Forecast';
+  const countLabelSurf = 'Surf';
+  const infoTitleText = '⏰ Automated Update Schedule';
+  const infoTextContent = `✅ ACTIVE - Automated updates are running!
+
+• 5:00 AM EST: Full data update + report generation
+• Every 15 min (5 AM - 9 PM): Data updates only
+• Failed fetches preserve existing data
+
+The system will automatically generate a new surf report every morning at 5 AM EST and update data throughout the day.`;
+  const buttonText1 = '🌅 Trigger Daily Update (5 AM Simulation)';
+  const buttonText2 = '🔄 Update Data Only (No Report)';
+  const buttonText3 = '📝 Generate New Surf Report';
+  const sectionTitleText2 = 'Individual Updates';
+  const buttonText4 = '🌤️ Fetch Weather & Forecast';
+  const buttonText5 = '🌊 Fetch Tide Data';
+  const buttonText6 = '🏄 Fetch Surf Report';
+  const sectionTitleText3 = 'Activity Log';
+  const clearButtonText = 'Clear';
+  const logEmptyText = 'No activity yet';
+
   return (
     <View style={styles.container}>
       {/* Custom Header with Back Button */}
@@ -351,63 +415,74 @@ export default function AdminDataScreen() {
           onPress={handleGoBack}
         >
           <IconSymbol
-            ios_icon_name="chevron.left"
-            android_material_icon_name="arrow_back"
+            ios_icon_name={backIconName}
+            android_material_icon_name={backMaterialIconName}
             size={24}
             color={colors.primary}
           />
           <Text style={[styles.backButtonText, { color: colors.primary }]}>
-            Back
+            {backButtonTextContent}
           </Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Data Sources</Text>
+        <Text style={styles.headerTitle}>{headerTitleText}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Data Counts */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Current Data (Today)</Text>
+          <Text style={styles.sectionTitle}>{sectionTitleText1}</Text>
           <View style={styles.countsGrid}>
             <View style={styles.countCard} key="tides-count">
               <Text style={styles.countValue}>{dataCounts.tides}</Text>
-              <Text style={styles.countLabel}>Tides</Text>
+              <Text style={styles.countLabel}>{countLabelTides}</Text>
             </View>
             <View style={styles.countCard} key="weather-count">
               <Text style={styles.countValue}>{dataCounts.weather}</Text>
-              <Text style={styles.countLabel}>Weather</Text>
+              <Text style={styles.countLabel}>{countLabelWeather}</Text>
             </View>
             <View style={styles.countCard} key="forecast-count">
               <Text style={styles.countValue}>{dataCounts.forecast}</Text>
-              <Text style={styles.countLabel}>Forecast</Text>
+              <Text style={styles.countLabel}>{countLabelForecast}</Text>
             </View>
             <View style={styles.countCard} key="surf-count">
               <Text style={styles.countValue}>{dataCounts.surf}</Text>
-              <Text style={styles.countLabel}>Surf</Text>
+              <Text style={styles.countLabel}>{countLabelSurf}</Text>
             </View>
           </View>
         </View>
 
         {/* Automated Update Schedule Info */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>⏰ Automated Update Schedule</Text>
+          <Text style={styles.infoTitle}>{infoTitleText}</Text>
           <Text style={styles.infoText}>
-            • 5:00 AM EST: Full data update + report generation{'\n'}
-            • Every 15 min (5 AM - 9 PM): Data updates only{'\n'}
-            • Failed fetches preserve existing data
+            {infoTextContent}
           </Text>
         </View>
 
-        {/* Update All Button */}
+        {/* Manual Daily Update Button (simulates 5 AM automatic update) */}
         <TouchableOpacity
           style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
+          onPress={handleTriggerDailyUpdate}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>{buttonText1}</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Update Data Only Button */}
+        <TouchableOpacity
+          style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
           onPress={handleUpdateAll}
           disabled={isLoading}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>🔄 Update Data Now (No Report)</Text>
+            <Text style={styles.buttonText}>{buttonText2}</Text>
           )}
         </TouchableOpacity>
 
@@ -420,20 +495,20 @@ export default function AdminDataScreen() {
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>📝 Generate New Surf Report</Text>
+            <Text style={styles.buttonText}>{buttonText3}</Text>
           )}
         </TouchableOpacity>
 
         {/* Individual Updates */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Individual Updates</Text>
+          <Text style={styles.sectionTitle}>{sectionTitleText2}</Text>
           
           <TouchableOpacity
             style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
             onPress={handleFetchWeather}
             disabled={isLoading}
           >
-            <Text style={styles.buttonText}>🌤️ Fetch Weather & Forecast</Text>
+            <Text style={styles.buttonText}>{buttonText4}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -441,7 +516,7 @@ export default function AdminDataScreen() {
             onPress={handleFetchTides}
             disabled={isLoading}
           >
-            <Text style={styles.buttonText}>🌊 Fetch Tide Data</Text>
+            <Text style={styles.buttonText}>{buttonText5}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -449,36 +524,39 @@ export default function AdminDataScreen() {
             onPress={handleFetchSurf}
             disabled={isLoading}
           >
-            <Text style={styles.buttonText}>🏄 Fetch Surf Report</Text>
+            <Text style={styles.buttonText}>{buttonText6}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Activity Log */}
         <View style={styles.section}>
           <View style={styles.logHeader}>
-            <Text style={styles.sectionTitle}>Activity Log</Text>
+            <Text style={styles.sectionTitle}>{sectionTitleText3}</Text>
             <TouchableOpacity onPress={handleClearLog}>
-              <Text style={styles.clearButton}>Clear</Text>
+              <Text style={styles.clearButton}>{clearButtonText}</Text>
             </TouchableOpacity>
           </View>
           
           <View style={styles.logContainer}>
             {activityLog.length === 0 ? (
-              <Text style={styles.logEmpty}>No activity yet</Text>
+              <Text style={styles.logEmpty}>{logEmptyText}</Text>
             ) : (
               <React.Fragment>
-                {activityLog.map((log) => (
-                  <View key={log.id} style={styles.logEntry}>
-                    <Text style={styles.logTimestamp}>[{log.timestamp}]</Text>
-                    <Text style={[
-                      styles.logMessage,
-                      log.type === 'error' && styles.logError,
-                      log.type === 'success' && styles.logSuccess,
-                    ]}>
-                      {log.message}
-                    </Text>
-                  </View>
-                ))}
+                {activityLog.map((log) => {
+                  const logTimestampText = `[${log.timestamp}]`;
+                  return (
+                    <View key={log.id} style={styles.logEntry}>
+                      <Text style={styles.logTimestamp}>{logTimestampText}</Text>
+                      <Text style={[
+                        styles.logMessage,
+                        log.type === 'error' && styles.logError,
+                        log.type === 'success' && styles.logSuccess,
+                      ]}>
+                        {log.message}
+                      </Text>
+                    </View>
+                  );
+                })}
               </React.Fragment>
             )}
           </View>
