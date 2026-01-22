@@ -15,14 +15,20 @@ interface CurrentConditionsProps {
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
-  console.log('[CurrentConditions] Rendering with data:', {
-    hasWeather: !!weather,
-    hasSurfReport: !!surfReport,
-    surfHeight: surfReport?.wave_height,
-    temperature: weather?.temperature,
+  // Format surf height to feet - use wave_height from surf_reports table
+  // Note: surf_reports.wave_height is already in feet format (e.g., "2.6 ft")
+  const rawSurfHeight = surfReport?.wave_height;
+  const surfHeightFeet = parseSurfHeightToFeet(rawSurfHeight);
+  
+  console.log('[CurrentConditions] Surf height data:', {
+    rawValue: rawSurfHeight,
+    formattedValue: surfHeightFeet,
+    reportId: surfReport?.id,
     reportDate: surfReport?.date,
-    reportUpdatedAt: surfReport?.updated_at,
   });
+
+  // Format water temperature
+  const waterTempFormatted = formatWaterTemp(surfReport?.water_temp);
 
   // Check if data is from today
   const isDataCurrent = () => {
@@ -70,11 +76,15 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     );
   }
 
-  // Format surf height to feet
-  const surfHeightFeet = parseSurfHeightToFeet(surfReport?.wave_height);
-  
-  // Format water temperature
-  const waterTempFormatted = formatWaterTemp(surfReport?.water_temp);
+  // Prepare display values
+  const temperatureDisplay = weather?.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--';
+  const weatherConditionsDisplay = weather?.conditions || '';
+  const windSpeedDisplay = weather?.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--';
+  const windDirectionDisplay = weather?.wind_direction || '';
+  const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
+  const stokeRatingDisplay = surfReport?.rating || 5;
+  const wavePeriodDisplay = surfReport?.wave_period || null;
+  const swellDirectionDisplay = surfReport?.swell_direction || null;
 
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -103,11 +113,11 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             <View style={styles.mainWeather}>
               <View style={styles.temperatureSection}>
                 <Text style={[styles.temperature, { color: theme.colors.text }]}>
-                  {weather.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--'}
+                  {temperatureDisplay}
                 </Text>
-                {weather.conditions && (
+                {weatherConditionsDisplay && (
                   <Text style={[styles.weatherConditions, { color: colors.textSecondary }]}>
-                    {weather.conditions}
+                    {weatherConditionsDisplay}
                   </Text>
                 )}
               </View>
@@ -122,7 +132,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   color={colors.primary}
                 />
                 <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                  {weather.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--'} {weather.wind_direction || ''}
+                  {windSpeedDisplay} {windDirectionDisplay}
                 </Text>
               </View>
 
@@ -131,7 +141,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                   Humidity:
                 </Text>
                 <Text style={[styles.detailText, { color: theme.colors.text }]}>
-                  {weather.humidity ? `${weather.humidity}%` : '--'}
+                  {humidityDisplay}
                 </Text>
               </View>
             </View>
@@ -174,15 +184,15 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               <View style={styles.surfItem}>
                 <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>Stoke Rating</Text>
                 <Text style={[styles.surfValue, { color: colors.accent }]}>
-                  {surfReport.rating || 5}/10
+                  {stokeRatingDisplay}/10
                 </Text>
               </View>
             </View>
 
             {/* Additional surf details */}
-            {(surfReport.wave_period || surfReport.swell_direction) && (
+            {(wavePeriodDisplay || swellDirectionDisplay) && (
               <View style={styles.additionalDetails}>
-                {surfReport.wave_period && (
+                {wavePeriodDisplay && (
                   <View style={styles.detailItem}>
                     <IconSymbol
                       ios_icon_name="timer"
@@ -191,11 +201,11 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                       color={colors.textSecondary}
                     />
                     <Text style={[styles.detailSmallText, { color: colors.textSecondary }]}>
-                      Period: {surfReport.wave_period}
+                      Period: {wavePeriodDisplay}
                     </Text>
                   </View>
                 )}
-                {surfReport.swell_direction && (
+                {swellDirectionDisplay && (
                   <View style={styles.detailItem}>
                     <IconSymbol
                       ios_icon_name="location.north.fill"
@@ -204,7 +214,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                       color={colors.textSecondary}
                     />
                     <Text style={[styles.detailSmallText, { color: colors.textSecondary }]}>
-                      Swell: {surfReport.swell_direction}
+                      Swell: {swellDirectionDisplay}
                     </Text>
                   </View>
                 )}

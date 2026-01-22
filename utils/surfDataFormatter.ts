@@ -14,21 +14,54 @@ export function metersToFeet(meters: number): number {
 
 /**
  * Parse surf height string and convert to feet
- * Handles formats like "1.5m", "1.5 m", "1.5 meters", or just "1.5"
- * @param heightStr - Height string (e.g., "1.5m" or "1.5")
+ * Handles formats like "1.5m", "1.5 m", "1.5 meters", "4.9 ft", or just "1.5"
+ * @param heightStr - Height string (e.g., "1.5m", "4.9 ft", or "1.5")
  * @returns Formatted height in feet (e.g., "4.9 ft")
  */
 export function parseSurfHeightToFeet(heightStr: string | null | undefined): string {
-  if (!heightStr) return 'N/A';
+  console.log('[parseSurfHeightToFeet] Input:', heightStr);
+  
+  if (!heightStr) {
+    console.log('[parseSurfHeightToFeet] No input, returning N/A');
+    return 'N/A';
+  }
+  
+  // If it's already in feet format (contains "ft"), return as-is
+  if (heightStr.includes('ft') || heightStr.includes('feet')) {
+    console.log('[parseSurfHeightToFeet] Already in feet format:', heightStr);
+    return heightStr;
+  }
+  
+  // If it says "N/A" or similar, return as-is
+  if (heightStr.toUpperCase().includes('N/A') || heightStr.toUpperCase().includes('UNAVAILABLE')) {
+    console.log('[parseSurfHeightToFeet] Unavailable data:', heightStr);
+    return 'N/A';
+  }
+  
+  // Check if it's in meters (contains "m" but not "mph")
+  const isMeters = (heightStr.includes('m') || heightStr.includes('meter')) && !heightStr.includes('mph');
   
   // Remove any non-numeric characters except decimal point and negative sign
   const numericStr = heightStr.replace(/[^\d.-]/g, '');
-  const meters = parseFloat(numericStr);
+  const numericValue = parseFloat(numericStr);
   
-  if (isNaN(meters)) return heightStr; // Return original if can't parse
+  if (isNaN(numericValue)) {
+    console.log('[parseSurfHeightToFeet] Could not parse numeric value from:', heightStr);
+    return heightStr; // Return original if can't parse
+  }
   
-  const feet = metersToFeet(meters);
-  return `${feet.toFixed(1)} ft`;
+  if (isMeters) {
+    // Convert meters to feet
+    const feet = metersToFeet(numericValue);
+    const result = `${feet.toFixed(1)} ft`;
+    console.log('[parseSurfHeightToFeet] Converted from meters:', numericValue, 'm →', result);
+    return result;
+  } else {
+    // Assume it's already in feet (just a number)
+    const result = `${numericValue.toFixed(1)} ft`;
+    console.log('[parseSurfHeightToFeet] Assumed feet:', numericValue, '→', result);
+    return result;
+  }
 }
 
 /**
