@@ -4,13 +4,13 @@
     "slug": "SurfVista",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/natively-dark.png",
+    "icon": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/natively-dark.png",
+      "image": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#87CEEB"
     },
     "ios": {
       "supportsTablet": true,
@@ -24,8 +24,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/natively-dark.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/images/24ddf601-3a1f-4b13-9dd1-352e94c2d396.png",
+        "backgroundColor": "#87CEEB"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.Natively",

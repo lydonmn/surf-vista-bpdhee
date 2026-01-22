@@ -465,14 +465,58 @@ export default function ReportScreen() {
           )}
 
           <View style={styles.tideContainer}>
-            <View style={styles.conditionTextContainer}>
+            <View style={styles.tideHeader}>
+              <IconSymbol
+                ios_icon_name="arrow.up.arrow.down"
+                android_material_icon_name="swap_vert"
+                size={20}
+                color={colors.primary}
+              />
               <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                Tide
-              </Text>
-              <Text style={[styles.conditionValue, { color: valueColor }]}>
-                {report.tide || 'Check tide chart'}
+                Tide Schedule
               </Text>
             </View>
+            {tideData.length > 0 ? (
+              <View style={styles.tideTimesContainer}>
+                {tideData
+                  .filter(tide => tide.date === report.date)
+                  .map((tide, tideIndex) => {
+                    const isHighTide = tide.type === 'high' || tide.type === 'High';
+                    const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
+                    const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    });
+                    const tideTypeText = isHighTide ? 'High' : 'Low';
+                    const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
+                    
+                    return (
+                      <View key={tideIndex} style={styles.tideTimeItem}>
+                        <IconSymbol
+                          ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
+                          android_material_icon_name={isHighTide ? 'north' : 'south'}
+                          size={16}
+                          color={tideIconColor}
+                        />
+                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                          {tideTypeText}
+                        </Text>
+                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                          {tideTime}
+                        </Text>
+                        <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
+                          {tideHeightText}
+                        </Text>
+                      </View>
+                    );
+                  })}
+              </View>
+            ) : (
+              <Text style={[styles.conditionValue, { color: valueColor }]}>
+                No tide data available
+              </Text>
+            )}
           </View>
         </View>
 
@@ -998,8 +1042,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   tideContainer: {
+    marginTop: 8,
+  },
+  tideHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  tideTimesContainer: {
+    gap: 8,
+  },
+  tideTimeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  tideTimeText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tideHeightText: {
+    fontSize: 12,
+    marginLeft: 'auto',
   },
   conditionsBox: {
     padding: 16,
