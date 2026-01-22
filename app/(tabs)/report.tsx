@@ -307,9 +307,33 @@ export default function ReportScreen() {
     return { ios: 'location.north.fill', android: 'navigation' };
   };
 
+  // Helper function to check if surf conditions data is valid (not N/A)
+  const hasValidSurfData = (data: any) => {
+    if (!data) return false;
+    
+    // Check if surf height is valid (not null, not N/A, not empty)
+    const surfHeight = data.surf_height || data.wave_height;
+    const isValidHeight = surfHeight && 
+                         surfHeight !== 'N/A' && 
+                         surfHeight !== '' && 
+                         !surfHeight.toString().toLowerCase().includes('n/a');
+    
+    return isValidHeight;
+  };
+
   const renderReportCard = (report: any, index: number) => {
-    // Use real-time surf conditions if available, otherwise fall back to report data
-    const displayData = surfConditions || report;
+    // Use real-time surf conditions ONLY if they have valid data
+    // Otherwise, fall back to the report data (last successfully pulled data)
+    const hasValidLiveData = hasValidSurfData(surfConditions);
+    const displayData = hasValidLiveData ? surfConditions : report;
+    
+    console.log('[ReportScreen] Rendering with data:', {
+      hasLiveData: !!surfConditions,
+      hasValidLiveData,
+      usingLiveData: hasValidLiveData,
+      surfHeight: displayData.surf_height || displayData.wave_height,
+      source: hasValidLiveData ? 'live surf_conditions' : 'report data'
+    });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
@@ -333,12 +357,15 @@ export default function ReportScreen() {
     // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     
-    // Get last updated timestamp - prioritize surf_conditions updated_at
-    const dataUpdatedAt = surfConditions?.updated_at || displayData.updated_at || report.updated_at;
+    // Get last updated timestamp - prioritize surf_conditions updated_at if using live data
+    const dataUpdatedAt = hasValidLiveData 
+      ? (surfConditions?.updated_at || displayData.updated_at || report.updated_at)
+      : (displayData.updated_at || report.updated_at);
     const lastUpdatedText = formatLastUpdated(dataUpdatedAt);
     
     console.log('[ReportScreen] Rendering report card:', {
       hasSurfConditions: !!surfConditions,
+      hasValidLiveData,
       surfConditionsUpdatedAt: surfConditions?.updated_at,
       displayDataUpdatedAt: displayData.updated_at,
       reportUpdatedAt: report.updated_at,
@@ -375,8 +402,8 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        {/* Real-time data indicator */}
-        {surfConditions && (
+        {/* Real-time data indicator - only show if we have valid live data */}
+        {hasValidLiveData && (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
