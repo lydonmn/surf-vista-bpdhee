@@ -26,6 +26,8 @@ function getESTDate(): string {
   const [month, day, year] = estDateString.split('/');
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
+  console.log('[getESTDate] Current EST date:', estDate, 'from:', estDateString);
+  
   return estDate;
 }
 
@@ -464,9 +466,13 @@ export default function ReportScreen() {
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
     // Parse the report date in EST timezone for display
-    const reportDate = new Date(report.date + 'T00:00:00');
+    const reportDateParts = report.date.split('T')[0].split('-');
+    const reportYear = parseInt(reportDateParts[0]);
+    const reportMonth = parseInt(reportDateParts[1]) - 1;
+    const reportDay = parseInt(reportDateParts[2]);
+    const reportDate = new Date(reportYear, reportMonth, reportDay);
+    
     const estDisplayDate = reportDate.toLocaleDateString('en-US', {
-      timeZone: 'America/New_York',
       weekday: 'long',
       month: 'long',
       day: 'numeric'

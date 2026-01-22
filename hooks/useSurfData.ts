@@ -26,12 +26,19 @@ const FUNCTION_TIMEOUT = 60000; // 60 seconds
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
-  // Convert to EST by subtracting 5 hours (EST is UTC-5)
-  const estTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-  const year = estTime.getUTCFullYear();
-  const month = String(estTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(estTime.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const estDateString = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const [month, day, year] = estDateString.split('/');
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  console.log('[getESTDate] Current EST date:', estDate, 'from:', estDateString);
+  
+  return estDate;
 }
 
 export function useSurfData() {

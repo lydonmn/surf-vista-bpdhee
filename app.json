@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "SurfVista",
@@ -62,5 +61,6 @@
     "extra": {
       "router": {}
     }
-  }
+  },
+  "scheme": "SurfVista"
 }
