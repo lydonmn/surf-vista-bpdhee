@@ -484,7 +484,22 @@ export default function ReportScreen() {
     const estDisplayDate = reportDate.toLocaleDateString('en-US', {
       weekday: 'long',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      year: 'numeric'
+    });
+
+    // Parse the data date for display
+    const dataDateParts = dataDate.split('T')[0].split('-');
+    const dataYear = parseInt(dataDateParts[0]);
+    const dataMonth = parseInt(dataDateParts[1]) - 1;
+    const dataDay = parseInt(dataDateParts[2]);
+    const dataDateObj = new Date(dataYear, dataMonth, dataDay);
+    
+    const dataDisplayDate = dataDateObj.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
     });
 
     // Dynamic colors based on theme
@@ -523,6 +538,9 @@ export default function ReportScreen() {
             <Text style={[styles.reportDate, { color: theme.colors.text }]}>
               {isToday ? 'Today\'s Report' : estDisplayDate}
             </Text>
+            <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
+              Report for {estDisplayDate}
+            </Text>
             {dataUpdatedAt && (
               <View style={styles.lastUpdatedContainer}>
                 <IconSymbol
@@ -542,12 +560,12 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        {/* Data source indicator */}
+        {/* Data source indicator with date */}
         {dataSource === 'live' && (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
-              Live Data
+              Live Data from {dataDisplayDate}
             </Text>
           </View>
         )}
@@ -560,7 +578,20 @@ export default function ReportScreen() {
               color="#FF9800"
             />
             <Text style={[styles.liveText, { color: '#FF9800' }]}>
-              Showing last available data from {new Date(report.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              Showing data from {dataDisplayDate}
+            </Text>
+          </View>
+        )}
+        {dataSource === 'today' && isToday && (
+          <View style={styles.liveIndicator}>
+            <IconSymbol
+              ios_icon_name="calendar"
+              android_material_icon_name="calendar_today"
+              size={12}
+              color={colors.primary}
+            />
+            <Text style={[styles.liveText, { color: colors.primary }]}>
+              Data from {dataDisplayDate}
             </Text>
           </View>
         )}
@@ -1198,10 +1229,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  reportSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   lastUpdatedContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: 4,
   },
   lastUpdatedText: {
     fontSize: 11,
