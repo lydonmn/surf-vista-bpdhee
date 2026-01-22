@@ -292,14 +292,23 @@ export default function VideoPlayerScreen() {
   }, [isFullscreen]);
 
   const togglePlayPause = useCallback(() => {
-    if (isPlaying) {
-      player.pause();
-      console.log('[VideoPlayer] Paused at:', player.currentTime);
-    } else {
-      player.play();
-      console.log('[VideoPlayer] Playing from:', player.currentTime);
+    if (!player) {
+      console.log('[VideoPlayer] togglePlayPause called but player is not ready');
+      return;
     }
-  }, [isPlaying, player]);
+    
+    // Check the player's actual playing state directly instead of relying on React state
+    const currentlyPlaying = player.playing;
+    console.log('[VideoPlayer] togglePlayPause - player.playing:', currentlyPlaying);
+    
+    if (currentlyPlaying) {
+      console.log('[VideoPlayer] Pausing video at:', player.currentTime);
+      player.pause();
+    } else {
+      console.log('[VideoPlayer] Playing video from:', player.currentTime);
+      player.play();
+    }
+  }, [player]);
 
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] User started seeking from:', currentTime);
