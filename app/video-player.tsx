@@ -178,9 +178,9 @@ export default function VideoPlayerScreen() {
       }
     });
 
-    // Playing state listener
+    // Playing state listener - CRITICAL for button state
     const playingListener = player.addListener('playingChange', (newIsPlaying) => {
-      console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
+      console.log('[VideoPlayer] playingChange event fired - newIsPlaying:', newIsPlaying);
       setIsPlaying(newIsPlaying);
     });
 
@@ -261,26 +261,32 @@ export default function VideoPlayerScreen() {
     }
   }, [player, duration]);
 
-  // Polling mechanism to update scrub bar position during playback
-  // This ensures the scrub bar moves even if timeUpdate events are delayed
+  // Polling mechanism to update scrub bar position AND playing state during playback
+  // This ensures the scrub bar moves and button state is correct even if events are delayed
   useEffect(() => {
-    if (!player || !isPlaying) {
+    if (!player) {
       return;
     }
 
-    console.log('[VideoPlayer] Starting scrub bar polling (player is playing)');
+    console.log('[VideoPlayer] Starting state polling');
     
     const interval = setInterval(() => {
-      // Only update if we're not seeking
-      if (!isSeekingRef.current && player.currentTime !== undefined) {
+      // Update playing state from player directly
+      const playerIsPlaying = player.playing;
+      if (playerIsPlaying !== isPlaying) {
+        console.log('[VideoPlayer] Polling detected playing state mismatch - updating from', isPlaying, 'to', playerIsPlaying);
+        setIsPlaying(playerIsPlaying);
+      }
+      
+      // Only update time if we're not seeking and player is playing
+      if (!isSeekingRef.current && playerIsPlaying && player.currentTime !== undefined) {
         const playerTime = player.currentTime;
-        console.log('[VideoPlayer] Polling update - player.currentTime:', playerTime);
         setCurrentTime(playerTime);
       }
-    }, 100); // Update every 100ms for smooth scrub bar movement
+    }, 100); // Poll every 100ms for smooth updates
     
     return () => {
-      console.log('[VideoPlayer] Stopping scrub bar polling');
+      console.log('[VideoPlayer] Stopping state polling');
       clearInterval(interval);
     };
   }, [player, isPlaying]);
@@ -304,9 +310,13 @@ export default function VideoPlayerScreen() {
     if (currentlyPlaying) {
       console.log('[VideoPlayer] Pausing video at:', player.currentTime);
       player.pause();
+      // Immediately update state to ensure button changes right away
+      setIsPlaying(false);
     } else {
       console.log('[VideoPlayer] Playing video from:', player.currentTime);
       player.play();
+      // Immediately update state to ensure button changes right away
+      setIsPlaying(true);
     }
   }, [player]);
 
@@ -377,13 +387,18 @@ export default function VideoPlayerScreen() {
     };
   }, [isFullscreen, isPlaying]);
 
+  // Prepare button icon text variables (ATOMIC JSX)
+  const playPauseIconIOS = isPlaying ? "pause.fill" : "play.fill";
+  const playPauseIconAndroid = isPlaying ? "pause" : "play_arrow";
+
   if (isLoading) {
+    const loadingMessage = "Loading video...";
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading video...
+            {loadingMessage}
           </Text>
         </View>
       </View>
@@ -391,6 +406,16 @@ export default function VideoPlayerScreen() {
   }
 
   if (error || !video) {
+    const errorMessage = error || 'Video not found';
+    const errorReason1 = "- Storage bucket RLS policies not configured";
+    const errorReason2 = "- Video file not accessible or deleted";
+    const errorReason3 = "- Network connectivity issues";
+    const errorReason4 = "- CORS configuration on storage bucket";
+    const errorTitle = "This could be due to:";
+    const debugTitle = "Debug Info";
+    const retryText = "Retry";
+    const backText = "Go Back";
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <ScrollView contentContainerStyle={styles.centerContent}>
@@ -401,28 +426,28 @@ export default function VideoPlayerScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            {error || 'Video not found'}
+            {errorMessage}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            This could be due to:
+            {errorTitle}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            - Storage bucket RLS policies not configured
+            {errorReason1}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            - Video file not accessible or deleted
+            {errorReason2}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            - Network connectivity issues
+            {errorReason3}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            - CORS configuration on storage bucket
+            {errorReason4}
           </Text>
           
           {debugInfo && (
             <View style={[styles.debugCard, { backgroundColor: theme.colors.card, marginTop: 16 }]}>
               <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
-                Debug Info
+                {debugTitle}
               </Text>
               <Text style={[styles.debugText, { color: colors.textSecondary }]}>
                 {debugInfo}
@@ -440,13 +465,13 @@ export default function VideoPlayerScreen() {
               size={20}
               color="#FFFFFF"
             />
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{retryText}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.secondary }]}
             onPress={() => router.back()}
           >
-            <Text style={[styles.backButtonText, { color: colors.text }]}>Go Back</Text>
+            <Text style={[styles.backButtonText, { color: colors.text }]}>{backText}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -454,12 +479,13 @@ export default function VideoPlayerScreen() {
   }
 
   if (!videoUrl) {
+    const preparingMessage = "Preparing video...";
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Preparing video...
+            {preparingMessage}
           </Text>
         </View>
       </View>
@@ -468,6 +494,9 @@ export default function VideoPlayerScreen() {
 
   // Fullscreen mode - video takes entire screen with custom controls
   if (isFullscreen) {
+    const currentTimeText = formatTime(currentTime);
+    const durationText = formatTime(duration);
+    
     return (
       <TouchableOpacity 
         style={[styles.fullscreenContainer, { backgroundColor: '#000000' }]}
@@ -513,8 +542,8 @@ export default function VideoPlayerScreen() {
                   activeOpacity={0.8}
                 >
                   <IconSymbol
-                    ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
-                    android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
+                    ios_icon_name={playPauseIconIOS}
+                    android_material_icon_name={playPauseIconAndroid}
                     size={24}
                     color="#FFFFFF"
                   />
@@ -522,7 +551,7 @@ export default function VideoPlayerScreen() {
 
                 {/* Time and scrubbing bar */}
                 <View style={styles.scrubberContainer}>
-                  <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                  <Text style={styles.timeText}>{currentTimeText}</Text>
                   <Slider
                     style={styles.scrubber}
                     minimumValue={0}
@@ -535,7 +564,7 @@ export default function VideoPlayerScreen() {
                     maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
                     thumbTintColor={colors.primary}
                   />
-                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                  <Text style={styles.timeText}>{durationText}</Text>
                 </View>
               </View>
 
@@ -595,6 +624,30 @@ export default function VideoPlayerScreen() {
   }
 
   // Normal mode - video with info below
+  const videoTitle = video.title;
+  const videoDateFormatted = new Date(video.created_at).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const videoDurationLabel = "Duration: ";
+  const videoDurationValue = video.duration || '';
+  const actualDurationLabel = "Actual Duration: ";
+  const actualDurationValue = formatTime(duration);
+  const aboutTitle = "About This Video";
+  const videoDescription = video.description || '';
+  const infoMessage = "High-resolution drone footage captured at Folly Beach, South Carolina. This exclusive content is available only to SurfVista subscribers.";
+  const debugTitle = "Debug Info";
+  const debugVideoId = `Video ID: ${videoId}`;
+  const debugUrl = `URL: ${videoUrl}`;
+  const debugStatus = `Status: ${debugInfo}`;
+  const debugDuration = `Duration: ${duration}s (${formatTime(duration)})`;
+  const debugCurrentTime = `Current Time: ${currentTime}s (${formatTime(currentTime)})`;
+  const backButtonText = "Back to Videos";
+  const currentTimeText = formatTime(currentTime);
+  const durationText = formatTime(duration);
+  
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView 
@@ -649,8 +702,8 @@ export default function VideoPlayerScreen() {
               onPress={togglePlayPause}
             >
               <IconSymbol
-                ios_icon_name={isPlaying ? "pause.fill" : "play.fill"}
-                android_material_icon_name={isPlaying ? "pause" : "play_arrow"}
+                ios_icon_name={playPauseIconIOS}
+                android_material_icon_name={playPauseIconAndroid}
                 size={24}
                 color="#FFFFFF"
               />
@@ -677,7 +730,7 @@ export default function VideoPlayerScreen() {
           {/* Scrubbing bar in normal mode */}
           <View style={styles.normalScrubberContainer}>
             <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
-              {formatTime(currentTime)}
+              {currentTimeText}
             </Text>
             <Slider
               style={styles.normalScrubber}
@@ -692,42 +745,47 @@ export default function VideoPlayerScreen() {
               thumbTintColor={colors.primary}
             />
             <Text style={[styles.normalTimeText, { color: colors.textSecondary }]}>
-              {formatTime(duration)}
+              {durationText}
             </Text>
           </View>
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-            {video.title}
+            {videoTitle}
           </Text>
           <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-            {new Date(video.created_at).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric'
-            })}
+            {videoDateFormatted}
           </Text>
           {video.duration && (
-            <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
-              Duration: {video.duration}
-            </Text>
+            <View style={{ flexDirection: 'row' }}>
+              <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+                {videoDurationLabel}
+              </Text>
+              <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+                {videoDurationValue}
+              </Text>
+            </View>
           )}
           {duration > 0 && (
-            <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
-              Actual Duration: {formatTime(duration)}
-            </Text>
+            <View style={{ flexDirection: 'row' }}>
+              <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+                {actualDurationLabel}
+              </Text>
+              <Text style={[styles.videoDuration, { color: colors.textSecondary }]}>
+                {actualDurationValue}
+              </Text>
+            </View>
           )}
         </View>
 
         {video.description && (
           <View style={[styles.descriptionCard, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.descriptionTitle, { color: theme.colors.text }]}>
-              About This Video
+              {aboutTitle}
             </Text>
             <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              {video.description}
+              {videoDescription}
             </Text>
           </View>
         )}
@@ -740,30 +798,29 @@ export default function VideoPlayerScreen() {
             color={colors.primary}
           />
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            High-resolution drone footage captured at Folly Beach, South Carolina. 
-            This exclusive content is available only to SurfVista subscribers.
+            {infoMessage}
           </Text>
         </View>
 
         {debugInfo && (
           <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
-              Debug Info
+              {debugTitle}
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              Video ID: {videoId}
+              {debugVideoId}
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]} numberOfLines={3}>
-              URL: {videoUrl}
+              {debugUrl}
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              Status: {debugInfo}
+              {debugStatus}
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              Duration: {duration}s ({formatTime(duration)})
+              {debugDuration}
             </Text>
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              Current Time: {currentTime}s ({formatTime(currentTime)})
+              {debugCurrentTime}
             </Text>
           </View>
         )}
@@ -779,7 +836,7 @@ export default function VideoPlayerScreen() {
             color={colors.text}
           />
           <Text style={[styles.backButtonLargeText, { color: colors.text }]}>
-            Back to Videos
+            {backButtonText}
           </Text>
         </TouchableOpacity>
       </ScrollView>
