@@ -177,10 +177,15 @@ export default function VideoPlayerScreen() {
       player.addListener('timeUpdate', (timeUpdate) => {
         const newTime = timeUpdate.currentTime || 0;
         
+        console.log('[VideoPlayer] timeUpdate fired - currentTime:', newTime, 'isSeeking:', isSeekingRef.current);
+        
         // Only update state if we're not currently seeking
         // This prevents the slider from jumping while the user is dragging it
         if (!isSeekingRef.current) {
+          console.log('[VideoPlayer] Updating scrub bar position to:', newTime);
           setCurrentTime(newTime);
+        } else {
+          console.log('[VideoPlayer] Skipping scrub bar update because user is seeking');
         }
         
         // Update duration if we have it and it's not set yet
@@ -260,6 +265,7 @@ export default function VideoPlayerScreen() {
   }, [currentTime]);
 
   const handleSeekChange = useCallback((value: number) => {
+    console.log('[VideoPlayer] User dragging slider to:', value);
     // Update the displayed time immediately as user drags
     setCurrentTime(value);
   }, []);
@@ -280,12 +286,9 @@ export default function VideoPlayerScreen() {
       // Update state
       setCurrentTime(clampedValue);
       
-      // Use a small delay before clearing the seeking flag
-      // This gives the player time to actually seek before timeUpdate resumes
-      setTimeout(() => {
-        isSeekingRef.current = false;
-        console.log('[VideoPlayer] Seeking complete, timeUpdate will now resume updating scrub bar');
-      }, 100);
+      // Clear the seeking flag immediately so timeUpdate can resume
+      isSeekingRef.current = false;
+      console.log('[VideoPlayer] Seeking complete, timeUpdate will now resume updating scrub bar');
     }
   }, [player, duration]);
 
