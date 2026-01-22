@@ -92,10 +92,10 @@ export default function AdminDataScreen() {
 
   const handleUpdateAll = async () => {
     setIsLoading(true);
-    addLog('Starting data update...');
+    addLog('Starting periodic data update (no report generation)...');
 
     try {
-      const response = await supabase.functions.invoke('update-all-surf-data');
+      const response = await supabase.functions.invoke('periodic-data-update');
       
       console.log('Update response:', response);
       addLog(`Update response received: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -388,6 +388,16 @@ export default function AdminDataScreen() {
           </View>
         </View>
 
+        {/* Automated Update Schedule Info */}
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>⏰ Automated Update Schedule</Text>
+          <Text style={styles.infoText}>
+            • 5:00 AM EST: Full data update + report generation{'\n'}
+            • Every 15 min (5 AM - 9 PM): Data updates only{'\n'}
+            • Failed fetches preserve existing data
+          </Text>
+        </View>
+
         {/* Update All Button */}
         <TouchableOpacity
           style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
@@ -397,7 +407,7 @@ export default function AdminDataScreen() {
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>🔄 Update All Data</Text>
+            <Text style={styles.buttonText}>🔄 Update Data Now (No Report)</Text>
           )}
         </TouchableOpacity>
 
@@ -621,5 +631,24 @@ const styles = StyleSheet.create({
   },
   logSuccess: {
     color: '#44ff44',
+  },
+  infoCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });
