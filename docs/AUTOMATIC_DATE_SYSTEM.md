@@ -7,13 +7,43 @@ The SurfVista app is designed to **automatically update all date-dependent featu
 
 ## How It Works
 
-### 1. Dynamic Date Calculation
+### 1. Dynamic Date Calculation - Centralized Utilities
 
-All edge functions use the `getESTDate()` helper function to calculate the current date in EST timezone:
+**🎯 SINGLE SOURCE OF TRUTH:** All date calculations now use centralized utility functions from `utils/surfDataFormatter.ts`
+
+#### Available Date Utilities
 
 ```typescript
-function getESTDate(): string {
+// Import from centralized utilities
+import { 
+  getESTDate,        // Get current EST date (YYYY-MM-DD)
+  getESTDateTime,    // Get current EST date/time as Date object
+  parseLocalDate,    // Parse date string as local date (not UTC)
+  getESTDateOffset   // Get date N days from now in EST
+} from '@/utils/surfDataFormatter';
+
+// Get current date in EST (YYYY-MM-DD format)
+const today = getESTDate(); // "2026-01-22"
+
+// Get current date and time in EST
+const now = getESTDateTime(); // Date object in EST timezone
+
+// Parse date string as local date (prevents timezone shifts)
+const date = parseLocalDate("2026-01-22"); // Local Date object
+
+// Get date N days from now in EST
+const tomorrow = getESTDateOffset(1);   // "2026-01-23"
+const yesterday = getESTDateOffset(-1); // "2026-01-21"
+const nextWeek = getESTDateOffset(7);   // "2026-01-29"
+```
+
+#### Implementation Details
+
+```typescript
+export function getESTDate(): string {
   const now = new Date();
+  
+  // Get the date in EST timezone (America/New_York = Charleston, SC)
   const estDateString = now.toLocaleString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -21,16 +51,26 @@ function getESTDate(): string {
     day: '2-digit'
   });
   
-  const [month, day, year] = estDateString.split('/');
-  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  // Parse: "01/22/2026, 3:45:00 PM" → "2026-01-22"
+  const datePart = estDateString.split(',')[0].trim();
+  const [month, day, year] = datePart.split('/');
+  
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  
+  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
+  
+  return estDate;
 }
 ```
 
 **Key Points:**
 - ✅ Uses `toLocaleString` with `America/New_York` timezone
-- ✅ Automatically handles EST/EDT transitions
+- ✅ Automatically handles EST/EDT transitions (Daylight Saving Time)
 - ✅ No hardcoded dates anywhere in the system
 - ✅ Always returns current date in YYYY-MM-DD format
+- ✅ Centralized in one location for consistency
+- ✅ Comprehensive logging for debugging
+- ✅ Works correctly regardless of device timezone
 
 ### 2. Edge Functions (Data Fetching)
 
@@ -325,16 +365,91 @@ Configure to call:
 - `https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/daily-update-cron` at 6:00 AM EST
 - `https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/cleanup-old-reports` at 2:00 AM EST
 
+## Best Practices for Date Handling
+
+### ✅ DO THIS:
+
+```typescript
+// ✅ CORRECT - Use centralized utilities
+import { getESTDate, parseLocalDate, getESTDateOffset } from '@/utils/surfDataFormatter';
+
+const today = getESTDate();
+const date = parseLocalDate("2026-01-22");
+const tomorrow = getESTDateOffset(1);
+
+// ✅ CORRECT - Always log dates for debugging
+console.log('[MyComponent] Using EST date:', today);
+
+// ✅ CORRECT - Use EST date for database queries
+const { data } = await supabase
+  .from('surf_reports')
+  .select('*')
+  .eq('date', getESTDate());
+```
+
+### ❌ DON'T DO THIS:
+
+```typescript
+// ❌ WRONG - Uses device timezone, not EST
+const today = new Date().toISOString().split('T')[0];
+
+// ❌ WRONG - May shift date due to UTC conversion
+const date = new Date("2026-01-22");
+
+// ❌ WRONG - Hardcoded date
+const today = "2026-01-22";
+
+// ❌ WRONG - Manual date calculation
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+// ❌ WRONG - No logging
+const today = getESTDate(); // Missing console.log
+```
+
+### When Adding New Features
+
+If you add new features that use dates:
+
+1. **Always import the utility functions:**
+   ```typescript
+   import { getESTDate, parseLocalDate, getESTDateOffset } from '@/utils/surfDataFormatter';
+   ```
+
+2. **Never use `new Date()` directly for date comparisons**
+
+3. **Always log the date being used:**
+   ```typescript
+   const today = getESTDate();
+   console.log('[MyComponent] Using EST date:', today);
+   ```
+
+4. **Use `parseLocalDate()` when parsing date strings:**
+   ```typescript
+   const reportDate = parseLocalDate(report.date);
+   ```
+
 ## Summary
 
 The SurfVista app uses a **fully automatic date system** that:
 
 1. ✅ Calculates current date dynamically in EST timezone
-2. ✅ Fetches data for current date automatically
-3. ✅ Updates data every 15 minutes in the app
-4. ✅ Runs scheduled updates daily at 6:00 AM EST
-5. ✅ Cleans up old data automatically
-6. ✅ Displays dates correctly in the UI
-7. ✅ Requires **zero manual date management**
+2. ✅ Uses centralized utility functions for consistency
+3. ✅ Fetches data for current date automatically
+4. ✅ Updates data every 15 minutes in the app
+5. ✅ Runs scheduled updates daily at 6:00 AM EST
+6. ✅ Cleans up old data automatically
+7. ✅ Displays dates correctly in the UI
+8. ✅ Handles Daylight Saving Time automatically
+9. ✅ Works correctly regardless of device timezone
+10. ✅ Requires **zero manual date management**
 
 **The system will continue to work correctly indefinitely without any manual intervention!** 🎉
+
+### Key Takeaways
+
+- 🎯 **Single Source of Truth**: All date utilities are centralized in `utils/surfDataFormatter.ts`
+- 🌍 **Timezone Independent**: Works correctly for users anywhere in the world
+- 🔄 **Automatic Updates**: Data refreshes automatically without manual intervention
+- 🐛 **Easy Debugging**: Comprehensive logging helps troubleshoot any issues
+- 🚀 **Future-Proof**: Will work correctly indefinitely with zero maintenance
