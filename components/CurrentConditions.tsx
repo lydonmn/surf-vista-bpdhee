@@ -85,14 +85,20 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const windDirectionDisplay = weather?.wind_direction || '';
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
-  // CRITICAL FIX: Use the actual rating from today's report, don't default to 5
-  // If rating is 0 or null, show it as-is (the report page will explain why)
+  // CRITICAL FIX: Always use today's report rating to match the report page
+  // The report page ALWAYS shows today's rating, even if displaying historical wave data
+  // This ensures consistency between home page and report page
   const stokeRatingDisplay = surfReport?.rating ?? null;
   
   const wavePeriodDisplay = surfReport?.wave_period || null;
   const swellDirectionDisplay = surfReport?.swell_direction || null;
 
-  console.log('[CurrentConditions] Displaying stoke rating:', stokeRatingDisplay, 'from report:', surfReport?.id);
+  console.log('[CurrentConditions] Displaying stoke rating:', stokeRatingDisplay, 'from report:', {
+    reportId: surfReport?.id,
+    reportDate: surfReport?.date,
+    rating: surfReport?.rating,
+    waveHeight: surfReport?.wave_height
+  });
 
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>

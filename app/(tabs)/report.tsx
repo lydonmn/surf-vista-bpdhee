@@ -420,6 +420,10 @@ export default function ReportScreen() {
   };
 
   const renderReportCard = (report: any, index: number) => {
+    // CRITICAL FIX: Always use TODAY'S report for the rating to ensure consistency
+    // between home page and report page, even if we're displaying historical wave data
+    const todayReportForRating = todaysReport || report;
+    
     // Priority order for data display:
     // 1. Use real-time surf conditions if they have valid data
     // 2. Use the report's data if it has valid data
@@ -436,6 +440,11 @@ export default function ReportScreen() {
     console.log('[ReportScreen] ===== RENDER REPORT CARD =====');
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
+    console.log('[ReportScreen] Today\'s report for rating:', {
+      hasTodayReport: !!todaysReport,
+      todayRating: todayReportForRating.rating,
+      todayDate: todayReportForRating.date
+    });
     console.log('[ReportScreen] Surf conditions:', surfConditions ? {
       date: surfConditions.date,
       wave_height: surfConditions.wave_height,
@@ -474,6 +483,7 @@ export default function ReportScreen() {
       dataDate,
       isToday,
       waveHeight: displayData.wave_height,
+      displayRating: todayReportForRating.rating
     });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
@@ -576,8 +586,8 @@ export default function ReportScreen() {
               </View>
             )}
           </View>
-          <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(report.rating || 5) }]}>
-            <Text style={styles.ratingText}>{report.rating || 5}/10</Text>
+          <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(todayReportForRating.rating ?? 5) }]}>
+            <Text style={styles.ratingText}>{todayReportForRating.rating ?? 5}/10</Text>
           </View>
         </View>
 

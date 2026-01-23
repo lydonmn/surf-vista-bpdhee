@@ -348,6 +348,8 @@ Deno.serve(async (req) => {
       .eq('date', today)
       .maybeSingle();
 
+    let historicalDataDate: string | null = null;
+    
     if (!surfResult.data) {
       console.log('No surf data for today, fetching most recent...');
       surfResult = await supabase
@@ -356,6 +358,11 @@ Deno.serve(async (req) => {
         .order('date', { ascending: false })
         .limit(1)
         .maybeSingle();
+      
+      if (surfResult.data) {
+        historicalDataDate = surfResult.data.date;
+        console.log('Using historical surf data from:', historicalDataDate);
+      }
     }
 
     // Fetch weather data for today
@@ -482,7 +489,7 @@ Deno.serve(async (req) => {
     // Generate report with valid wave data
     const tideSummary = generateTideSummary(tideData);
     const rating = calculateSurfRating(surfData, weatherData);
-    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, null);
+    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate);
 
     const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
 
