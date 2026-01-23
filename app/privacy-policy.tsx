@@ -101,7 +101,7 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.sectionTitle}>9. Contact Us</Text>
           <Text style={styles.text}>
             If you have questions about this privacy policy or your data, please contact us at:{'\n'}
-            support@surfvista.com
+            lydon@droningcharleston.com
           </Text>
         </View>
 

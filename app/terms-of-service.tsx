@@ -116,7 +116,7 @@ export default function TermsOfServiceScreen() {
           <Text style={styles.sectionTitle}>11. Contact Information</Text>
           <Text style={styles.text}>
             For questions about these terms, please contact:{'\n'}
-            support@surfvista.com
+            lydon@droningcharleston.com
           </Text>
         </View>
 
