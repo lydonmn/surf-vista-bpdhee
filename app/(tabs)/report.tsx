@@ -111,54 +111,22 @@ export default function ReportScreen() {
 
   // Determine which report to display
   const displayReport = useMemo(() => {
-    // Priority:
-    // 1. Today's report if it has valid data
-    // 2. Last valid report from any day
-    // 3. Today's report even if it has N/A (to show the date)
-    
-    const hasTodayReport = !!todaysReport;
-    const todayHasValidData = todaysReport && hasValidSurfData(todaysReport);
-    
-    console.log('[ReportScreen] Display report decision:', {
-      hasTodayReport,
-      todayHasValidData,
-      hasLastValidReport: !!lastValidReport,
-      todayDate: todaysReport?.date,
-      lastValidDate: lastValidReport?.date
-    });
-    
-    if (todayHasValidData) {
-      console.log('[ReportScreen] Using today\'s report with valid data');
+    // Always use today's report if it exists
+    // The report will contain the narrative and current buoy status
+    if (todaysReport) {
+      console.log('[ReportScreen] Using today\'s report');
       return todaysReport;
     }
     
+    // Fallback to last valid report if no today's report
     if (lastValidReport) {
       console.log('[ReportScreen] Using last valid report from:', lastValidReport.date);
       return lastValidReport;
     }
     
-    if (hasTodayReport) {
-      console.log('[ReportScreen] Using today\'s report (even though data is N/A)');
-      return todaysReport;
-    }
-    
     console.log('[ReportScreen] No report to display');
     return null;
   }, [todaysReport, lastValidReport]);
-
-  // Find the last surf_conditions with valid data
-  const lastValidConditions = useMemo(() => {
-    if (!surfConditions) return null;
-    
-    // If current surf_conditions has valid data, use it
-    if (hasValidSurfData(surfConditions)) {
-      console.log('[ReportScreen] Current surf_conditions has valid data');
-      return surfConditions;
-    }
-    
-    console.log('[ReportScreen] Current surf_conditions has no valid data');
-    return null;
-  }, [surfConditions]);
 
   // Fetch real-time surf conditions
   const fetchSurfConditions = React.useCallback(async () => {
@@ -167,7 +135,7 @@ export default function ReportScreen() {
       
       console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', todayDate);
       
-      // First try to get today's conditions
+      // Get today's conditions
       let { data, error } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -180,27 +148,8 @@ export default function ReportScreen() {
         console.log('[ReportScreen] Surf conditions loaded for today:', data);
         setSurfConditions(data);
       } else {
-        // If no data for today, get the most recent surf_conditions with valid data
-        console.log('[ReportScreen] No surf conditions for today, fetching most recent valid data...');
-        const { data: recentData, error: recentError } = await supabase
-          .from('surf_conditions')
-          .select('*')
-          .order('date', { ascending: false })
-          .limit(10);
-        
-        if (recentError) {
-          console.error('[ReportScreen] Error fetching recent surf conditions:', recentError);
-        } else if (recentData && recentData.length > 0) {
-          // Find the first one with valid data
-          const validCondition = recentData.find(c => hasValidSurfData(c));
-          if (validCondition) {
-            console.log('[ReportScreen] Found valid surf conditions from:', validCondition.date);
-            setSurfConditions(validCondition);
-          } else {
-            console.log('[ReportScreen] No valid surf conditions found in recent data');
-            setSurfConditions(null);
-          }
-        }
+        console.log('[ReportScreen] No surf conditions for today');
+        setSurfConditions(null);
       }
     } catch (error) {
       console.error('[ReportScreen] Error in fetchSurfConditions:', error);
@@ -421,77 +370,29 @@ export default function ReportScreen() {
 
   const renderReportCard = (report: any, index: number) => {
     // CRITICAL FIX: Always use TODAY'S report for the rating to ensure consistency
-    // between home page and report page, even if we're displaying historical wave data
+    // between home page and report page
     const todayReportForRating = todaysReport || report;
     
-    // Priority order for data display:
-    // 1. Use real-time surf conditions if they have valid data
-    // 2. Use the report's data if it has valid data
-    // 3. Show N/A if no valid data is available
-    const hasValidLiveData = hasValidSurfData(surfConditions);
-    const hasValidReportData = hasValidSurfData(report);
+    // Use surf_conditions if available, otherwise use report data
+    const displayData = surfConditions || report;
+    const hasValidWaveData = hasValidSurfData(displayData);
     
-    let displayData;
-    let dataSource;
-    let dataDate;
     const reportDateStr = report.date.split('T')[0];
     const isToday = reportDateStr === todayDate;
     
     console.log('[ReportScreen] ===== RENDER REPORT CARD =====');
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
-    console.log('[ReportScreen] Today\'s report for rating:', {
-      hasTodayReport: !!todaysReport,
-      todayRating: todayReportForRating.rating,
-      todayDate: todayReportForRating.date
-    });
-    console.log('[ReportScreen] Surf conditions:', surfConditions ? {
-      date: surfConditions.date,
-      wave_height: surfConditions.wave_height,
-      updated_at: surfConditions.updated_at,
-      hasValidData: hasValidLiveData
-    } : 'null');
-    console.log('[ReportScreen] Report data:', {
-      date: report.date,
-      wave_height: report.wave_height,
-      updated_at: report.updated_at,
-      hasValidData: hasValidReportData
-    });
-    
-    if (hasValidLiveData) {
-      displayData = surfConditions;
-      dataSource = 'live';
-      dataDate = surfConditions.date;
-      console.log('[ReportScreen] ✓ Using live surf_conditions data from:', surfConditions.date);
-    } else if (hasValidReportData) {
-      displayData = report;
-      dataSource = isToday ? 'today' : 'historical';
-      dataDate = report.date;
-      console.log('[ReportScreen] ✓ Using report data from:', report.date, '(source:', dataSource + ')');
-    } else {
-      displayData = report;
-      dataSource = 'unavailable';
-      dataDate = report.date;
-      console.log('[ReportScreen] ✗ No valid data available, showing N/A');
-    }
-    
-    console.log('[ReportScreen] Rendering with data:', {
-      hasLiveData: !!surfConditions,
-      hasValidLiveData,
-      hasValidReportData,
-      dataSource,
-      dataDate,
-      isToday,
-      waveHeight: displayData.wave_height,
-      displayRating: todayReportForRating.rating
+    console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
+    console.log('[ReportScreen] Display data:', {
+      wave_height: displayData.wave_height,
+      wind_speed: displayData.wind_speed,
+      water_temp: displayData.water_temp,
+      updated_at: displayData.updated_at
     });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
-    
-    // Format the data date for display
-    const dataDateStr = dataDate.split('T')[0]; // Get YYYY-MM-DD
-    const dataDisplayDate = formatDateString(dataDateStr);
 
     // Dynamic colors based on theme
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
@@ -503,30 +404,9 @@ export default function ReportScreen() {
     // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     
-    // Get last updated timestamps
-    // 1. When was the buoy last checked (most recent surf_conditions check)
-    const buoyLastChecked = surfConditions?.updated_at || displayData.updated_at || report.updated_at;
-    const buoyLastCheckedText = formatLastUpdated(buoyLastChecked);
-    
-    // 2. When is the displayed wave data from (if historical)
-    const dataUpdatedAt = hasValidLiveData 
-      ? (surfConditions?.updated_at || displayData.updated_at || report.updated_at)
-      : (displayData.updated_at || report.updated_at);
-    const dataDateText = formatLastUpdated(dataUpdatedAt);
-    
-    // Determine if we should show both timestamps
-    const isShowingHistoricalData = !hasValidLiveData && dataSource === 'historical';
-    
-    console.log('[ReportScreen] Rendering report card:', {
-      hasSurfConditions: !!surfConditions,
-      hasValidLiveData,
-      surfConditionsUpdatedAt: surfConditions?.updated_at,
-      displayDataUpdatedAt: displayData.updated_at,
-      reportUpdatedAt: report.updated_at,
-      buoyLastChecked,
-      dataUpdatedAt,
-      isShowingHistoricalData
-    });
+    // Get last updated timestamp
+    const dataUpdatedAt = displayData.updated_at || report.updated_at;
+    const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
     // CRITICAL FIX: Get tides for TODAY, not the data date
     const reportTides = tideData.filter(tide => {
@@ -538,9 +418,7 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Tide data for TODAY:', {
       todayDate,
       totalTides: tideData.length,
-      matchingTides: reportTides.length,
-      tidesSample: tideData.slice(0, 5).map(t => ({ date: t.date, type: t.type, time: t.time })),
-      filteredTides: reportTides.map(t => ({ date: t.date, type: t.type, time: t.time }))
+      matchingTides: reportTides.length
     });
     
     // CRITICAL FIX: Always show today's date in the header
@@ -559,7 +437,7 @@ export default function ReportScreen() {
             <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
               Report for {todayDisplayDate}
             </Text>
-            {buoyLastChecked && (
+            {dataUpdatedAt && (
               <View style={styles.lastUpdatedContainer}>
                 <IconSymbol
                   ios_icon_name="clock.fill"
@@ -568,20 +446,7 @@ export default function ReportScreen() {
                   color={colors.textSecondary}
                 />
                 <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
-                  Buoy last checked {buoyLastCheckedText}
-                </Text>
-              </View>
-            )}
-            {isShowingHistoricalData && dataUpdatedAt && (
-              <View style={styles.lastUpdatedContainer}>
-                <IconSymbol
-                  ios_icon_name="info.circle"
-                  android_material_icon_name="info"
-                  size={12}
-                  color="#FF9800"
-                />
-                <Text style={[styles.lastUpdatedText, { color: '#FF9800' }]}>
-                  Wave data from {dataDateText} (most recent valid data)
+                  Buoy last checked {dataUpdatedText}
                 </Text>
               </View>
             )}
@@ -591,16 +456,15 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        {/* Data source indicator with date */}
-        {dataSource === 'live' && (
+        {/* Data source indicator */}
+        {hasValidWaveData ? (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
-              Live Buoy Data from {dataDisplayDate}
+              Live Buoy Data - Wave sensors reporting
             </Text>
           </View>
-        )}
-        {dataSource === 'historical' && !isToday && (
+        ) : (
           <View style={[styles.liveIndicator, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
             <IconSymbol
               ios_icon_name="info.circle"
@@ -609,33 +473,7 @@ export default function ReportScreen() {
               color="#FF9800"
             />
             <Text style={[styles.liveText, { color: '#FF9800' }]}>
-              Buoy checked today - showing most recent valid wave data from {dataDisplayDate}
-            </Text>
-          </View>
-        )}
-        {dataSource === 'today' && isToday && (
-          <View style={styles.liveIndicator}>
-            <IconSymbol
-              ios_icon_name="calendar"
-              android_material_icon_name="calendar_today"
-              size={12}
-              color={colors.primary}
-            />
-            <Text style={[styles.liveText, { color: colors.primary }]}>
-              Today&apos;s Buoy Data from {dataDisplayDate}
-            </Text>
-          </View>
-        )}
-        {dataSource === 'unavailable' && (
-          <View style={[styles.liveIndicator, { backgroundColor: 'rgba(244, 67, 54, 0.1)' }]}>
-            <IconSymbol
-              ios_icon_name="exclamationmark.triangle"
-              android_material_icon_name="warning"
-              size={14}
-              color="#F44336"
-            />
-            <Text style={[styles.liveText, { color: '#F44336' }]}>
-              Buoy data temporarily unavailable
+              Buoy online - Wave sensors temporarily offline (wind & water temp available)
             </Text>
           </View>
         )}
@@ -1096,7 +934,7 @@ export default function ReportScreen() {
             • NOAA Tides & Currents (Charleston) - Tide predictions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            Surf height shown is the rideable face height (calculated from wave height and period). When live buoy data is unavailable, the app displays the most recent valid data.
+            Surf height shown is the rideable face height (calculated from wave height and period). When wave sensors are temporarily offline, wind and water temperature data are still available from the buoy.
           </Text>
         </View>
       </View>
