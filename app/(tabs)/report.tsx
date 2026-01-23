@@ -13,27 +13,24 @@ import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated } from "@/utils/surfDataFormatter";
 
-// Helper function to get EST date for Charleston, SC - FIXED for January 22nd, 2026
+// Helper function to get EST date for Charleston, SC - FIXED to use toLocaleDateString
 function getESTDate(): string {
   const now = new Date();
   
-  // Get the date in EST timezone (America/New_York = Charleston, SC timezone)
-  const estDateString = now.toLocaleString('en-US', { 
+  // Get the date in EST timezone using toLocaleDateString (more reliable than toLocaleString)
+  const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
   
-  // Parse the date string (format: "MM/DD/YYYY, HH:MM:SS AM/PM")
-  // Split by comma to get just the date part
-  const datePart = estDateString.split(',')[0].trim();
-  const [month, day, year] = datePart.split('/');
+  // Parse the date string (format: "MM/DD/YYYY")
+  const [month, day, year] = estDateString.split('/');
   
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate] Raw EST string:', estDateString);
-  console.log('[getESTDate] Date part:', datePart);
+  console.log('[getESTDate] Raw EST date string:', estDateString);
   console.log('[getESTDate] Parsed components:', { month, day, year });
   console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
   

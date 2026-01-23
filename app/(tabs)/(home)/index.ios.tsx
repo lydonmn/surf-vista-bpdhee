@@ -13,30 +13,25 @@ import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
-// Get today's date in EST timezone - FIXED for January 22nd
+// Get today's date in EST timezone - FIXED to use toLocaleDateString
 function getESTDate(): string {
   const now = new Date();
   
-  // Get the date in EST timezone
-  const estDateString = now.toLocaleString('en-US', { 
+  // Get the date in EST timezone using toLocaleDateString (more reliable)
+  const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
   
-  // Parse the date string (format: MM/DD/YYYY, HH:MM:SS AM/PM)
-  // Split by comma first to separate date from time
-  const datePart = estDateString.split(',')[0];
-  const parts = datePart.split('/');
-  const month = parts[0].padStart(2, '0');
-  const day = parts[1].padStart(2, '0');
-  const year = parts[2];
+  // Parse the date string (format: "MM/DD/YYYY")
+  const [month, day, year] = estDateString.split('/');
   
-  const estDate = `${year}-${month}-${day}`;
+  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate iOS] Raw EST string:', estDateString);
-  console.log('[getESTDate iOS] Date part:', datePart);
+  console.log('[getESTDate iOS] Raw EST date string:', estDateString);
+  console.log('[getESTDate iOS] Parsed components:', { month, day, year });
   console.log('[getESTDate iOS] Current EST date:', estDate);
   
   return estDate;

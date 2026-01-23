@@ -15,22 +15,22 @@
 export function getESTDate(): string {
   const now = new Date();
   
-  // Get the date in EST timezone (America/New_York = Charleston, SC timezone)
-  const estDateString = now.toLocaleString('en-US', { 
+  // Get the date in EST timezone using toLocaleDateString which is more reliable
+  const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
   
-  // Parse the date string (format: "MM/DD/YYYY, HH:MM:SS AM/PM")
-  // Split by comma to get just the date part
-  const datePart = estDateString.split(',')[0].trim();
-  const [month, day, year] = datePart.split('/');
+  // Parse the date string (format: "MM/DD/YYYY")
+  const [month, day, year] = estDateString.split('/');
   
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate, 'from:', estDateString);
+  console.log('[getESTDate] Raw EST date string:', estDateString);
+  console.log('[getESTDate] Parsed components:', { month, day, year });
+  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
   
   return estDate;
 }
@@ -92,17 +92,16 @@ export function parseLocalDate(dateStr: string): Date {
 export function getESTDateOffset(daysOffset: number): string {
   const now = new Date();
   
-  // Get current EST date
-  const estDateString = now.toLocaleString('en-US', { 
+  // Get current EST date using toLocaleDateString
+  const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
   
-  // Parse the date string
-  const datePart = estDateString.split(',')[0].trim();
-  const [month, day, year] = datePart.split('/');
+  // Parse the date string (format: "MM/DD/YYYY")
+  const [month, day, year] = estDateString.split('/');
   
   // Create a date object and add days
   const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
