@@ -433,21 +433,37 @@ export default function ReportScreen() {
     const reportDateStr = report.date.split('T')[0];
     const isToday = reportDateStr === todayDate;
     
+    console.log('[ReportScreen] ===== RENDER REPORT CARD =====');
+    console.log('[ReportScreen] Today\'s date (EST):', todayDate);
+    console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
+    console.log('[ReportScreen] Surf conditions:', surfConditions ? {
+      date: surfConditions.date,
+      wave_height: surfConditions.wave_height,
+      updated_at: surfConditions.updated_at,
+      hasValidData: hasValidLiveData
+    } : 'null');
+    console.log('[ReportScreen] Report data:', {
+      date: report.date,
+      wave_height: report.wave_height,
+      updated_at: report.updated_at,
+      hasValidData: hasValidReportData
+    });
+    
     if (hasValidLiveData) {
       displayData = surfConditions;
       dataSource = 'live';
       dataDate = surfConditions.date;
-      console.log('[ReportScreen] Using live surf_conditions data from:', surfConditions.date);
+      console.log('[ReportScreen] ✓ Using live surf_conditions data from:', surfConditions.date);
     } else if (hasValidReportData) {
       displayData = report;
       dataSource = isToday ? 'today' : 'historical';
       dataDate = report.date;
-      console.log('[ReportScreen] Using report data from:', report.date);
+      console.log('[ReportScreen] ✓ Using report data from:', report.date, '(source:', dataSource + ')');
     } else {
       displayData = report;
       dataSource = 'unavailable';
       dataDate = report.date;
-      console.log('[ReportScreen] No valid data available, showing N/A');
+      console.log('[ReportScreen] ✗ No valid data available, showing N/A');
     }
     
     console.log('[ReportScreen] Rendering with data:', {
@@ -477,11 +493,19 @@ export default function ReportScreen() {
     // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     
-    // Get last updated timestamp - prioritize surf_conditions updated_at if using live data
+    // Get last updated timestamps
+    // 1. When was the buoy last checked (most recent surf_conditions check)
+    const buoyLastChecked = surfConditions?.updated_at || displayData.updated_at || report.updated_at;
+    const buoyLastCheckedText = formatLastUpdated(buoyLastChecked);
+    
+    // 2. When is the displayed wave data from (if historical)
     const dataUpdatedAt = hasValidLiveData 
       ? (surfConditions?.updated_at || displayData.updated_at || report.updated_at)
       : (displayData.updated_at || report.updated_at);
-    const lastUpdatedText = formatLastUpdated(dataUpdatedAt);
+    const dataDateText = formatLastUpdated(dataUpdatedAt);
+    
+    // Determine if we should show both timestamps
+    const isShowingHistoricalData = !hasValidLiveData && dataSource === 'historical';
     
     console.log('[ReportScreen] Rendering report card:', {
       hasSurfConditions: !!surfConditions,
@@ -489,8 +513,9 @@ export default function ReportScreen() {
       surfConditionsUpdatedAt: surfConditions?.updated_at,
       displayDataUpdatedAt: displayData.updated_at,
       reportUpdatedAt: report.updated_at,
-      finalUpdatedAt: dataUpdatedAt,
-      formattedText: lastUpdatedText
+      buoyLastChecked,
+      dataUpdatedAt,
+      isShowingHistoricalData
     });
     
     // CRITICAL FIX: Get tides for TODAY, not the data date
@@ -524,7 +549,7 @@ export default function ReportScreen() {
             <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
               Report for {todayDisplayDate}
             </Text>
-            {dataUpdatedAt && (
+            {buoyLastChecked && (
               <View style={styles.lastUpdatedContainer}>
                 <IconSymbol
                   ios_icon_name="clock.fill"
@@ -533,7 +558,20 @@ export default function ReportScreen() {
                   color={colors.textSecondary}
                 />
                 <Text style={[styles.lastUpdatedText, { color: colors.textSecondary }]}>
-                  Buoy data last updated {lastUpdatedText}
+                  Buoy last checked {buoyLastCheckedText}
+                </Text>
+              </View>
+            )}
+            {isShowingHistoricalData && dataUpdatedAt && (
+              <View style={styles.lastUpdatedContainer}>
+                <IconSymbol
+                  ios_icon_name="info.circle"
+                  android_material_icon_name="info"
+                  size={12}
+                  color="#FF9800"
+                />
+                <Text style={[styles.lastUpdatedText, { color: '#FF9800' }]}>
+                  Wave data from {dataDateText} (most recent valid data)
                 </Text>
               </View>
             )}
@@ -548,20 +586,20 @@ export default function ReportScreen() {
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={[styles.liveText, { color: colors.primary }]}>
-              Live Data from {dataDisplayDate}
+              Live Buoy Data from {dataDisplayDate}
             </Text>
           </View>
         )}
         {dataSource === 'historical' && !isToday && (
           <View style={[styles.liveIndicator, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
             <IconSymbol
-              ios_icon_name="clock.fill"
-              android_material_icon_name="schedule"
-              size={12}
+              ios_icon_name="info.circle"
+              android_material_icon_name="info"
+              size={14}
               color="#FF9800"
             />
             <Text style={[styles.liveText, { color: '#FF9800' }]}>
-              Showing data from {dataDisplayDate}
+              Buoy checked today - showing most recent valid wave data from {dataDisplayDate}
             </Text>
           </View>
         )}
@@ -574,7 +612,20 @@ export default function ReportScreen() {
               color={colors.primary}
             />
             <Text style={[styles.liveText, { color: colors.primary }]}>
-              Data from {dataDisplayDate}
+              Today&apos;s Buoy Data from {dataDisplayDate}
+            </Text>
+          </View>
+        )}
+        {dataSource === 'unavailable' && (
+          <View style={[styles.liveIndicator, { backgroundColor: 'rgba(244, 67, 54, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle"
+              android_material_icon_name="warning"
+              size={14}
+              color="#F44336"
+            />
+            <Text style={[styles.liveText, { color: '#F44336' }]}>
+              Buoy data temporarily unavailable
             </Text>
           </View>
         )}
