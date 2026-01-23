@@ -1,3 +1,4 @@
+
 {
   "cli": {
     "version": ">= 5.0.0"
@@ -19,24 +20,19 @@
     "production": {
       "ios": {
         "autoIncrement": true,
-        "simulator": false
+        "simulator": false,
+        "buildConfiguration": "Release"
       },
       "android": {
-        "autoIncrement": true
-      }
-    },
-    "production-ios": {
-      "extends": "production",
-      "ios": {
         "autoIncrement": true,
-        "buildConfiguration": "Release"
+        "buildType": "apk"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "YOUR_APPLE_ID_EMAIL",
+        "appleId": "YOUR_APPLE_ID_EMAIL@example.com",
         "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
         "appleTeamId": "YOUR_APPLE_TEAM_ID"
       }
