@@ -431,15 +431,26 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Check if we have valid wave data (required for narrative generation)
     const hasValidWaveData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
     
     if (!hasValidWaveData) {
-      const errorMsg = 'No valid wave data available - will retry until successful';
+      const errorMsg = 'No valid wave data available - will retry until wave sensors report data';
       console.log(errorMsg);
+      console.log('Current surf data:', {
+        wave_height: surfData.wave_height,
+        surf_height: surfData.surf_height,
+        wind_speed: surfData.wind_speed,
+        water_temp: surfData.water_temp
+      });
       return new Response(
         JSON.stringify({
           success: false,
           error: errorMsg,
+          hasWeatherData: !!weatherData,
+          hasTideData: tideData.length > 0,
+          hasSurfData: !!surfData,
+          hasValidWaveData: false,
           timestamp: new Date().toISOString(),
         }),
         {
@@ -448,6 +459,14 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    console.log('✅ Valid wave data available, proceeding with narrative generation');
+    console.log('Wave data:', {
+      wave_height: surfData.wave_height,
+      surf_height: surfData.surf_height,
+      wave_period: surfData.wave_period,
+      swell_direction: surfData.swell_direction
+    });
 
     // Generate report with valid wave data
     const tideSummary = generateTideSummary(tideData);

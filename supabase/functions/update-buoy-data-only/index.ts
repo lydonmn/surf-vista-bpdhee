@@ -176,11 +176,12 @@ Deno.serve(async (req) => {
 
     const newSurfData = surfResult.data;
 
-    // Check if we have valid wave data
+    // Check if we have valid wave data from the latest fetch
     const hasValidWaveData = newSurfData && (newSurfData.wave_height !== 'N/A' || newSurfData.surf_height !== 'N/A');
 
     if (!hasValidWaveData) {
-      console.log('No valid wave data available, looking for most recent successful data from today...');
+      console.log('⚠️ No valid wave data available from latest buoy fetch');
+      console.log('Looking for most recent successful buoy data from today to retain...');
       
       // Get the existing report for today
       const existingReportResult = await supabase
@@ -189,27 +190,44 @@ Deno.serve(async (req) => {
         .eq('date', today)
         .maybeSingle();
 
-      if (existingReportResult.data && existingReportResult.data.wave_height !== 'N/A') {
-        console.log('Keeping existing report with valid data from earlier today');
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: 'No new buoy data available, keeping existing report from today',
-            report: existingReportResult.data,
-            timestamp: new Date().toISOString(),
-          }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-          }
-        );
+      if (existingReportResult.data) {
+        const existingReport = existingReportResult.data;
+        const hasExistingValidData = existingReport.wave_height !== 'N/A';
+        
+        if (hasExistingValidData) {
+          console.log('✅ Keeping existing report with valid buoy data from earlier today');
+          console.log('Existing data:', {
+            wave_height: existingReport.wave_height,
+            wind_speed: existingReport.wind_speed,
+            water_temp: existingReport.water_temp,
+            updated_at: existingReport.updated_at
+          });
+          
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: 'No new buoy data available, retaining most recent successful buoy data from today',
+              report: existingReport,
+              fallbackMode: true,
+              timestamp: new Date().toISOString(),
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200,
+            }
+          );
+        } else {
+          console.log('⚠️ Existing report also has no valid wave data');
+        }
+      } else {
+        console.log('⚠️ No existing report found for today');
       }
 
-      console.log('No valid data available for today');
+      console.log('❌ No valid buoy data available for today');
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'No valid buoy data available',
+          error: 'No valid buoy data available and no fallback data from today',
           timestamp: new Date().toISOString(),
         }),
         {
@@ -218,6 +236,14 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    console.log('✅ Valid wave data available from latest buoy fetch');
+    console.log('New buoy data:', {
+      wave_height: newSurfData.wave_height,
+      surf_height: newSurfData.surf_height,
+      wind_speed: newSurfData.wind_speed,
+      water_temp: newSurfData.water_temp
+    });
 
     // Get the existing report for today to preserve the narrative
     const existingReportResult = await supabase
