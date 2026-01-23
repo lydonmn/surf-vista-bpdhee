@@ -11,56 +11,7 @@ import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
-import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated } from "@/utils/surfDataFormatter";
-
-// Helper function to get EST date for Charleston, SC - FIXED to use toLocaleDateString
-function getESTDate(): string {
-  const now = new Date();
-  
-  // Get the date in EST timezone using toLocaleDateString (more reliable than toLocaleString)
-  const estDateString = now.toLocaleDateString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  // Parse the date string (format: "MM/DD/YYYY")
-  const [month, day, year] = estDateString.split('/');
-  
-  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  
-  console.log('[getESTDate] Raw EST date string:', estDateString);
-  console.log('[getESTDate] Parsed components:', { month, day, year });
-  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
-  
-  return estDate;
-}
-
-// Helper function to format a date string (YYYY-MM-DD) to a readable format in EST timezone
-// This avoids timezone conversion issues by explicitly using EST timezone
-function formatDateString(dateStr: string): string {
-  // Extract date components from YYYY-MM-DD format
-  const datePart = dateStr.split('T')[0];
-  const [year, month, day] = datePart.split('-');
-  
-  // Create an ISO string at noon EST to avoid any timezone boundary issues
-  // Using noon (12:00) ensures we're solidly in the middle of the day
-  const isoString = `${year}-${month}-${day}T12:00:00`;
-  
-  // Format the date in EST timezone
-  const formatted = new Date(isoString).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'America/New_York'
-  });
-  
-  console.log('[formatDateString] Input:', dateStr, '→ Output:', formatted);
-  
-  return formatted;
-}
+import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 
 export default function ReportScreen() {
   const theme = useTheme();
@@ -99,8 +50,16 @@ export default function ReportScreen() {
     try {
       const today = getESTDate();
       
+      console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
       console.log('[ReportScreen] Current EST date for Charleston, SC:', today);
-      console.log('[ReportScreen] Available reports:', surfReports.map(r => ({ date: r.date, id: r.id, wave_height: r.wave_height })));
+      console.log('[ReportScreen] Total reports available:', surfReports.length);
+      console.log('[ReportScreen] All report dates:', surfReports.map(r => ({ 
+        date: r.date, 
+        id: r.id, 
+        wave_height: r.wave_height,
+        surf_height: r.surf_height,
+        rating: r.rating
+      })));
       
       const todayReports = surfReports.filter(report => {
         if (!report.date) return false;
@@ -108,11 +67,20 @@ export default function ReportScreen() {
         // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
         const reportDate = report.date.split('T')[0];
         
-        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today);
-        return reportDate === today;
+        const matches = reportDate === today;
+        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today, '→', matches ? 'MATCH' : 'no match');
+        return matches;
       });
       
-      return todayReports.length > 0 ? todayReports[0] : null;
+      console.log('[ReportScreen] Found', todayReports.length, 'reports for today');
+      
+      if (todayReports.length > 0) {
+        console.log('[ReportScreen] Using today\'s report:', todayReports[0]);
+        return todayReports[0];
+      } else {
+        console.log('[ReportScreen] No report found for today');
+        return null;
+      }
     } catch (error) {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
@@ -543,6 +511,10 @@ export default function ReportScreen() {
       tidesSample: tideData.slice(0, 3).map(t => ({ date: t.date, type: t.type, time: t.time }))
     });
     
+    // CRITICAL FIX: Always show today's date in the header, not the data date
+    const todayDate = getESTDate();
+    const todayDisplayDate = formatDateString(todayDate);
+    
     return (
       <View 
         key={reportKey}
@@ -551,10 +523,10 @@ export default function ReportScreen() {
         <View style={styles.reportHeader}>
           <View style={styles.reportHeaderLeft}>
             <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-              {isToday ? 'Today\'s Report' : estDisplayDate}
+              {todayDisplayDate}
             </Text>
             <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
-              Report for {estDisplayDate}
+              Report for {todayDisplayDate}
             </Text>
             {dataUpdatedAt && (
               <View style={styles.lastUpdatedContainer}>
