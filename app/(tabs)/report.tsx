@@ -100,6 +100,22 @@ export default function ReportScreen() {
       return dateB - dateA;
     });
     
+    // First, try to find today's report with any narrative (even if wave sensors are offline)
+    const todayReportWithNarrative = sortedReports.find(report => {
+      const reportDate = report.date.split('T')[0];
+      const narrative = report.report_text || report.conditions || '';
+      return reportDate === todayDate && narrative.length > 50;
+    });
+    
+    if (todayReportWithNarrative) {
+      console.log('[ReportScreen] Using today\'s narrative (prioritized):', {
+        date: todayReportWithNarrative.date,
+        narrativeLength: todayReportWithNarrative.conditions?.length || todayReportWithNarrative.report_text?.length || 0
+      });
+      return todayReportWithNarrative;
+    }
+    
+    // If no today's report, find the most recent report with valid wave data narrative
     const reportWithNarrative = sortedReports.find(report => {
       const narrative = report.report_text || report.conditions || '';
       const hasValidNarrative = narrative.length > 50 && 
@@ -116,7 +132,7 @@ export default function ReportScreen() {
     });
     
     return reportWithNarrative;
-  }, [surfReports]);
+  }, [surfReports, todayDate]);
 
   const displayReport = useMemo(() => {
     if (todaysReport) {
@@ -390,15 +406,20 @@ export default function ReportScreen() {
     const todayDisplayDate = formatDateString(todayDate);
     
     const currentNarrative = report.report_text || report.conditions || '';
-    const isCurrentNarrativeValid = currentNarrative.length > 50 && 
-                                   !currentNarrative.toLowerCase().includes('wave sensors') &&
-                                   !currentNarrative.toLowerCase().includes('offline');
+    const hasCurrentNarrative = currentNarrative.length > 50;
     
     let narrativeText = currentNarrative;
     let narrativeDate = todayDisplayDate;
     let isHistoricalNarrative = false;
     
-    if (!isCurrentNarrativeValid && lastReportWithNarrative) {
+    // If today's report has a narrative (even if wave sensors are offline), use it
+    if (isToday && hasCurrentNarrative) {
+      narrativeText = currentNarrative;
+      narrativeDate = todayDisplayDate;
+      isHistoricalNarrative = false;
+      console.log('[ReportScreen] ✅ Using today\'s narrative (current day prioritized)');
+    } else if (!hasCurrentNarrative && lastReportWithNarrative) {
+      // Only fall back to historical if today has no narrative at all
       narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
       narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
       isHistoricalNarrative = true;
@@ -659,7 +680,7 @@ export default function ReportScreen() {
           </View>
           {narrativeText ? (
             <>
-              {isHistoricalNarrative && (
+              {isHistoricalNarrative && !isToday && (
                 <View style={[styles.historicalBanner, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
                   <IconSymbol
                     ios_icon_name="clock.fill"
