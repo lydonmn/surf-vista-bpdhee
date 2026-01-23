@@ -37,6 +37,30 @@ function getESTDate(): string {
   return estDate;
 }
 
+// Helper function to format a date string (YYYY-MM-DD) to a readable format
+// This avoids timezone conversion issues by working directly with the date string
+function formatDateString(dateStr: string): string {
+  // Extract date components from YYYY-MM-DD format
+  const [year, month, day] = dateStr.split('T')[0].split('-');
+  
+  // Create a date string that explicitly represents the date in EST
+  // We use UTC to avoid any local timezone conversion
+  const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0));
+  
+  // Format the date
+  const formatted = date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC' // Use UTC since we set it to UTC above
+  });
+  
+  console.log('[formatDateString] Input:', dateStr, '→ Output:', formatted);
+  
+  return formatted;
+}
+
 export default function ReportScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
@@ -471,38 +495,13 @@ export default function ReportScreen() {
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
-    // Parse the report date in EST timezone for display
-    // IMPORTANT: Parse date components manually to avoid timezone issues
-    const reportDateParts = report.date.split('T')[0].split('-');
-    const reportYear = parseInt(reportDateParts[0]);
-    const reportMonth = parseInt(reportDateParts[1]);
-    const reportDay = parseInt(reportDateParts[2]);
-    
-    // Create date string in EST timezone format for display
-    const reportDateForDisplay = new Date(reportYear, reportMonth - 1, reportDay);
-    const estDisplayDate = reportDateForDisplay.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'America/New_York'
-    });
+    // Format the report date for display (avoiding timezone issues)
+    const reportDateStr = report.date.split('T')[0]; // Get YYYY-MM-DD
+    const estDisplayDate = formatDateString(reportDateStr);
 
-    // Parse the data date for display
-    const dataDateParts = dataDate.split('T')[0].split('-');
-    const dataYear = parseInt(dataDateParts[0]);
-    const dataMonth = parseInt(dataDateParts[1]);
-    const dataDay = parseInt(dataDateParts[2]);
-    
-    // Create date string in EST timezone format for display
-    const dataDateForDisplay = new Date(dataYear, dataMonth - 1, dataDay);
-    const dataDisplayDate = dataDateForDisplay.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'America/New_York'
-    });
+    // Format the data date for display
+    const dataDateStr = dataDate.split('T')[0]; // Get YYYY-MM-DD
+    const dataDisplayDate = formatDateString(dataDateStr);
 
     // Dynamic colors based on theme
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
