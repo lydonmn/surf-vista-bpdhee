@@ -1,30 +1,31 @@
 
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 13.2.5",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "resourceClass": "m-medium"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": true,
+        "resourceClass": "m-medium"
       }
     },
     "production": {
+      "autoIncrement": true,
       "ios": {
-        "autoIncrement": true,
-        "simulator": false,
-        "buildConfiguration": "Release"
+        "resourceClass": "m-medium",
+        "bundleIdentifier": "Therealfollysurfreport.SurfVista"
       },
       "android": {
-        "autoIncrement": true,
         "buildType": "apk"
       }
     }
@@ -32,9 +33,9 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "YOUR_APPLE_ID_EMAIL@example.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+        "appleId": "lydonmn@aol.com",
+        "ascAppId": "6756734521",
+        "appleTeamId": "YOUR_TEAM_ID"
       }
     }
   }
