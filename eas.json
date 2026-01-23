@@ -1,16 +1,46 @@
+
 {
+  "cli": {
+    "version": ">= 5.0.0"
+  },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "autoIncrement": true
+      "ios": {
+        "simulator": true
+      }
     },
     "preview": {
       "distribution": "internal",
-      "autoIncrement": true
+      "ios": {
+        "simulator": false
+      }
     },
     "production": {
-      "autoIncrement": true
+      "ios": {
+        "autoIncrement": true,
+        "simulator": false
+      },
+      "android": {
+        "autoIncrement": true
+      }
+    },
+    "production-ios": {
+      "extends": "production",
+      "ios": {
+        "autoIncrement": true,
+        "buildConfiguration": "Release"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "YOUR_APPLE_ID_EMAIL",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+      }
     }
   }
 }

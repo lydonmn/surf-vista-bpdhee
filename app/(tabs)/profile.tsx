@@ -523,6 +523,53 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
+      {/* Legal & Support */}
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={() => router.push('/privacy-policy')}
+        >
+          <IconSymbol
+            ios_icon_name="hand.raised.fill"
+            android_material_icon_name="privacy-tip"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Privacy Policy
+          </Text>
+          <IconSymbol
+            ios_icon_name="chevron.right"
+            android_material_icon_name="chevron-right"
+            size={20}
+            color={colors.textSecondary}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={() => router.push('/terms-of-service')}
+        >
+          <IconSymbol
+            ios_icon_name="doc.text.fill"
+            android_material_icon_name="description"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Terms of Service
+          </Text>
+          <IconSymbol
+            ios_icon_name="chevron.right"
+            android_material_icon_name="chevron-right"
+            size={20}
+            color={colors.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+
       {/* Account Actions */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <TouchableOpacity
@@ -766,6 +813,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 4,
+    flex: 1,
   },
   actionText: {
     fontSize: 16,
