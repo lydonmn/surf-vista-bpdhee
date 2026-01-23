@@ -85,9 +85,9 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const windDirectionDisplay = weather?.wind_direction || '';
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
-  // CRITICAL FIX: Always use today's rating from surfReport
-  // This ensures consistency with the report page which also shows today's rating
-  const stokeRatingDisplay = surfReport?.rating || 5;
+  // CRITICAL FIX: Use the actual rating from today's report, don't default to 5
+  // If rating is 0 or null, show it as-is (the report page will explain why)
+  const stokeRatingDisplay = surfReport?.rating ?? null;
   
   const wavePeriodDisplay = surfReport?.wave_period || null;
   const swellDirectionDisplay = surfReport?.swell_direction || null;
@@ -189,12 +189,14 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
                 </Text>
               </View>
 
-              <View style={styles.surfItem}>
-                <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>Stoke Rating</Text>
-                <Text style={[styles.surfValue, { color: colors.accent }]}>
-                  {stokeRatingDisplay}/10
-                </Text>
-              </View>
+              {stokeRatingDisplay !== null && (
+                <View style={styles.surfItem}>
+                  <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>Stoke Rating</Text>
+                  <Text style={[styles.surfValue, { color: colors.accent }]}>
+                    {stokeRatingDisplay}/10
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Additional surf details */}

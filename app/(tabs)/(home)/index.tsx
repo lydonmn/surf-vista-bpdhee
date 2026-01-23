@@ -14,7 +14,7 @@ import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
-// Get today's date in EST timezone for Charleston, SC - FIXED to use toLocaleDateString
+// Get today's date in EST timezone - FIXED to use toLocaleDateString
 function getESTDate(): string {
   const now = new Date();
   
@@ -33,7 +33,7 @@ function getESTDate(): string {
   
   console.log('[getESTDate] Raw EST date string:', estDateString);
   console.log('[getESTDate] Parsed components:', { month, day, year });
-  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
+  console.log('[getESTDate] Current EST date:', estDate);
   
   return estDate;
 }
@@ -77,7 +77,7 @@ export default function HomeScreen() {
       if (reportError) {
         console.log('[HomeScreen] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen] Report loaded for:', today);
+        console.log('[HomeScreen] Report loaded for:', today, 'Rating:', reportData.rating);
         setTodayReport(reportData);
       } else {
         console.log('[HomeScreen] No report found for today');
@@ -312,9 +312,21 @@ export default function HomeScreen() {
   // Subscribed - show content
   console.log('[HomeScreen] Rendering: Subscribed content');
   
-  // Prepare report text display variables
+  // CRITICAL FIX: Always show today's report text and rating
+  // Use today's report for both text and rating to ensure consistency with report page
   const reportTextDisplay = todayReport?.report_text || todayReport?.conditions || '';
   const isCustomReport = !!todayReport?.report_text;
+  
+  // CRITICAL FIX: Use today's actual rating, not a default
+  // This ensures consistency between home page and report page
+  const todayRating = todayReport?.rating ?? null;
+  
+  console.log('[HomeScreen] Today\'s report:', {
+    hasReport: !!todayReport,
+    rating: todayRating,
+    hasText: !!reportTextDisplay,
+    date: todayReport?.date
+  });
   
   return (
     <ScrollView 
@@ -376,10 +388,13 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Current Conditions */}
-      <CurrentConditions weather={weatherData} surfReport={todayReport} />
+      {/* Current Conditions - Pass today's rating explicitly */}
+      <CurrentConditions 
+        weather={weatherData} 
+        surfReport={todayReport}
+      />
 
-      {/* Today's Report Text */}
+      {/* Today's Report Text - ALWAYS show if we have today's report */}
       {todayReport && reportTextDisplay && (
         <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
           <View style={styles.reportHeader}>
@@ -482,7 +497,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    paddingTop: 48,
+    paddingTop: 40,
     paddingBottom: 24,
     paddingHorizontal: 16,
   },
@@ -534,8 +549,8 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginTop: 24,
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 8,
   },
   description: {
     fontSize: 16,

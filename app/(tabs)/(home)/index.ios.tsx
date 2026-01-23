@@ -77,7 +77,7 @@ export default function HomeScreen() {
       if (reportError) {
         console.log('[HomeScreen iOS] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen iOS] Report loaded for:', today);
+        console.log('[HomeScreen iOS] Report loaded for:', today, 'Rating:', reportData.rating);
         setTodayReport(reportData);
       } else {
         console.log('[HomeScreen iOS] No report found for today');
@@ -312,9 +312,21 @@ export default function HomeScreen() {
   // Subscribed - show content
   console.log('[HomeScreen iOS] Rendering: Subscribed content');
   
-  // Prepare report text display variables
+  // CRITICAL FIX: Always show today's report text and rating
+  // Use today's report for both text and rating to ensure consistency with report page
   const reportTextDisplay = todayReport?.report_text || todayReport?.conditions || '';
   const isCustomReport = !!todayReport?.report_text;
+  
+  // CRITICAL FIX: Use today's actual rating, not a default
+  // This ensures consistency between home page and report page
+  const todayRating = todayReport?.rating ?? null;
+  
+  console.log('[HomeScreen iOS] Today\'s report:', {
+    hasReport: !!todayReport,
+    rating: todayRating,
+    hasText: !!reportTextDisplay,
+    date: todayReport?.date
+  });
   
   return (
     <ScrollView 
@@ -376,10 +388,13 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Current Conditions */}
-      <CurrentConditions weather={weatherData} surfReport={todayReport} />
+      {/* Current Conditions - Pass today's rating explicitly */}
+      <CurrentConditions 
+        weather={weatherData} 
+        surfReport={todayReport}
+      />
 
-      {/* Today's Report Text */}
+      {/* Today's Report Text - ALWAYS show if we have today's report */}
       {todayReport && reportTextDisplay && (
         <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
           <View style={styles.reportHeader}>
@@ -534,8 +549,8 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginTop: 24,
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 8,
   },
   description: {
     fontSize: 16,
