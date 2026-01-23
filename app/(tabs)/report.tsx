@@ -429,7 +429,7 @@ export default function ReportScreen() {
     const isCustomReport = !!report.report_text;
     
     console.log('[ReportScreen] ===== NARRATIVE TEXT =====');
-    console.log('[ReportScreen] Current narrative valid:', isCurrentNarrativeValid);
+    console.log('[ReportScreen] Has current narrative:', hasCurrentNarrative);
     console.log('[ReportScreen] Using historical narrative:', isHistoricalNarrative);
     console.log('[ReportScreen] Narrative date:', narrativeDate);
     console.log('[ReportScreen] Narrative length:', narrativeText.length);
