@@ -11,6 +11,7 @@ import { SurfReport } from "@/types";
 import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 
 // Get today's date in EST timezone - FIXED to use toLocaleDateString
@@ -310,6 +311,11 @@ export default function HomeScreen() {
 
   // Subscribed - show content
   console.log('[HomeScreen iOS] Rendering: Subscribed content');
+  
+  // Prepare report text display variables
+  const reportTextDisplay = todayReport?.report_text || todayReport?.conditions || '';
+  const isCustomReport = !!todayReport?.report_text;
+  
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -372,6 +378,34 @@ export default function HomeScreen() {
 
       {/* Current Conditions */}
       <CurrentConditions weather={weatherData} surfReport={todayReport} />
+
+      {/* Today's Report Text */}
+      {todayReport && reportTextDisplay && (
+        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.reportHeader}>
+            <IconSymbol
+              ios_icon_name="doc.text.fill"
+              android_material_icon_name="description"
+              size={20}
+              color={colors.primary}
+            />
+            <Text style={[styles.reportTitle, { color: theme.colors.text }]}>
+              Today&apos;s Surf Report
+            </Text>
+          </View>
+          <View style={[styles.reportTextContainer, { backgroundColor: colors.reportBackground }]}>
+            <ReportTextDisplay 
+              text={reportTextDisplay}
+              isCustom={isCustomReport}
+            />
+          </View>
+          {todayReport.report_text && todayReport.edited_at && (
+            <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+              Edited {new Date(todayReport.edited_at).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+      )}
 
       {/* 7-Day Forecast */}
       {weatherForecast.length > 0 && (
@@ -518,6 +552,33 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  reportCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  reportTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  reportTextContainer: {
+    padding: 12,
+    borderRadius: 8,
+  },
+  editedNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   quickLinks: {
     flexDirection: 'row',
