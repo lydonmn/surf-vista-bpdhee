@@ -58,7 +58,10 @@ export default function ReportScreen() {
         date: r.date, 
         id: r.id, 
         wave_height: r.wave_height,
-        rating: r.rating
+        rating: r.rating,
+        has_report_text: !!r.report_text,
+        has_conditions: !!r.conditions,
+        conditions_preview: r.conditions ? r.conditions.substring(0, 50) : 'none'
       })));
       
       const todayReports = surfReports.filter(report => {
@@ -75,8 +78,18 @@ export default function ReportScreen() {
       console.log('[ReportScreen] Found', todayReports.length, 'reports for today');
       
       if (todayReports.length > 0) {
-        console.log('[ReportScreen] Using today\'s report:', todayReports[0]);
-        return todayReports[0];
+        const report = todayReports[0];
+        console.log('[ReportScreen] Using today\'s report:', {
+          id: report.id,
+          date: report.date,
+          rating: report.rating,
+          has_report_text: !!report.report_text,
+          has_conditions: !!report.conditions,
+          report_text_length: report.report_text?.length || 0,
+          conditions_length: report.conditions?.length || 0,
+          narrative_preview: (report.report_text || report.conditions || '').substring(0, 100)
+        });
+        return report;
       } else {
         console.log('[ReportScreen] No report found for today');
         return null;
@@ -669,10 +682,26 @@ export default function ReportScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <ReportTextDisplay 
-            text={report.report_text || report.conditions}
-            isCustom={!!report.report_text}
-          />
+          {(() => {
+            const narrativeText = report.report_text || report.conditions || '';
+            const isCustomReport = !!report.report_text;
+            
+            console.log('[ReportScreen] Rendering narrative:', {
+              reportId: report.id,
+              hasReportText: !!report.report_text,
+              hasConditions: !!report.conditions,
+              narrativeLength: narrativeText.length,
+              narrativePreview: narrativeText.substring(0, 100),
+              isCustom: isCustomReport
+            });
+            
+            return (
+              <ReportTextDisplay 
+                text={narrativeText}
+                isCustom={isCustomReport}
+              />
+            );
+          })()}
           {report.report_text && report.edited_at && (
             <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
               Edited {new Date(report.edited_at).toLocaleDateString()}
