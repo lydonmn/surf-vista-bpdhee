@@ -61,6 +61,8 @@ export default function ReportScreen() {
         rating: r.rating,
         has_report_text: !!r.report_text,
         has_conditions: !!r.conditions,
+        report_text_length: r.report_text?.length || 0,
+        conditions_length: r.conditions?.length || 0,
         conditions_preview: r.conditions ? r.conditions.substring(0, 50) : 'none'
       })));
       
@@ -79,19 +81,21 @@ export default function ReportScreen() {
       
       if (todayReports.length > 0) {
         const report = todayReports[0];
-        console.log('[ReportScreen] Using today\'s report:', {
-          id: report.id,
-          date: report.date,
-          rating: report.rating,
-          has_report_text: !!report.report_text,
-          has_conditions: !!report.conditions,
-          report_text_length: report.report_text?.length || 0,
-          conditions_length: report.conditions?.length || 0,
-          narrative_preview: (report.report_text || report.conditions || '').substring(0, 100)
-        });
+        console.log('[ReportScreen] ===== USING TODAY\'S REPORT =====');
+        console.log('[ReportScreen] Report ID:', report.id);
+        console.log('[ReportScreen] Report date:', report.date);
+        console.log('[ReportScreen] Rating:', report.rating);
+        console.log('[ReportScreen] Has report_text:', !!report.report_text);
+        console.log('[ReportScreen] Has conditions:', !!report.conditions);
+        console.log('[ReportScreen] report_text length:', report.report_text?.length || 0);
+        console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
+        console.log('[ReportScreen] report_text preview:', report.report_text ? report.report_text.substring(0, 100) : 'NONE');
+        console.log('[ReportScreen] conditions preview:', report.conditions ? report.conditions.substring(0, 100) : 'NONE');
+        console.log('[ReportScreen] Full conditions text:', report.conditions || 'NONE');
+        console.log('[ReportScreen] Full report_text:', report.report_text || 'NONE');
         return report;
       } else {
-        console.log('[ReportScreen] No report found for today');
+        console.log('[ReportScreen] ❌ No report found for today');
         return null;
       }
     } catch (error) {
@@ -127,7 +131,7 @@ export default function ReportScreen() {
     // Always use today's report if it exists
     // The report will contain the narrative and current buoy status
     if (todaysReport) {
-      console.log('[ReportScreen] Using today\'s report');
+      console.log('[ReportScreen] ✅ Using today\'s report for display');
       return todaysReport;
     }
     
@@ -137,7 +141,7 @@ export default function ReportScreen() {
       return lastValidReport;
     }
     
-    console.log('[ReportScreen] No report to display');
+    console.log('[ReportScreen] ❌ No report to display');
     return null;
   }, [todaysReport, lastValidReport]);
 
@@ -437,6 +441,18 @@ export default function ReportScreen() {
     // CRITICAL FIX: Always show today's date in the header
     const todayDisplayDate = formatDateString(todayDate);
     
+    // Get the narrative text - CRITICAL: Check both report_text and conditions
+    const narrativeText = report.report_text || report.conditions || '';
+    const isCustomReport = !!report.report_text;
+    
+    console.log('[ReportScreen] ===== NARRATIVE TEXT =====');
+    console.log('[ReportScreen] report.report_text:', report.report_text || 'NULL');
+    console.log('[ReportScreen] report.conditions:', report.conditions || 'NULL');
+    console.log('[ReportScreen] narrativeText (final):', narrativeText);
+    console.log('[ReportScreen] narrativeText length:', narrativeText.length);
+    console.log('[ReportScreen] isCustomReport:', isCustomReport);
+    console.log('[ReportScreen] Will display narrative:', narrativeText ? 'YES' : 'NO');
+    
     return (
       <View 
         key={reportKey}
@@ -682,29 +698,21 @@ export default function ReportScreen() {
               </TouchableOpacity>
             )}
           </View>
-          {(() => {
-            const narrativeText = report.report_text || report.conditions || '';
-            const isCustomReport = !!report.report_text;
-            
-            console.log('[ReportScreen] Rendering narrative:', {
-              reportId: report.id,
-              hasReportText: !!report.report_text,
-              hasConditions: !!report.conditions,
-              narrativeLength: narrativeText.length,
-              narrativePreview: narrativeText.substring(0, 100),
-              isCustom: isCustomReport
-            });
-            
-            return (
+          {narrativeText ? (
+            <>
               <ReportTextDisplay 
                 text={narrativeText}
                 isCustom={isCustomReport}
               />
-            );
-          })()}
-          {report.report_text && report.edited_at && (
-            <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-              Edited {new Date(report.edited_at).toLocaleDateString()}
+              {report.report_text && report.edited_at && (
+                <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                  Edited {new Date(report.edited_at).toLocaleDateString()}
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text style={[styles.conditionsText, { color: colors.reportText }]}>
+              No surf conditions narrative available for today.
             </Text>
           )}
         </View>
