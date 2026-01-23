@@ -41,19 +41,19 @@ function getESTDate(): string {
 // This avoids timezone conversion issues by working directly with the date string
 function formatDateString(dateStr: string): string {
   // Extract date components from YYYY-MM-DD format
-  const [year, month, day] = dateStr.split('T')[0].split('-');
+  const datePart = dateStr.split('T')[0];
+  const [year, month, day] = datePart.split('-');
   
-  // Create a date string that explicitly represents the date in EST
-  // We use UTC to avoid any local timezone conversion
-  const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0));
+  // Create date using the local date components directly
+  // We use the Date constructor with year, month, day to avoid timezone issues
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
   
   // Format the date
   const formatted = date.toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC' // Use UTC since we set it to UTC above
+    year: 'numeric'
   });
   
   console.log('[formatDateString] Input:', dateStr, '→ Output:', formatted);
@@ -463,7 +463,8 @@ export default function ReportScreen() {
     let dataSource;
     let dataDate;
     const today = getESTDate();
-    const isToday = report.date.split('T')[0] === today;
+    const reportDateStr = report.date.split('T')[0];
+    const isToday = reportDateStr === today;
     
     if (hasValidLiveData) {
       displayData = surfConditions;
@@ -496,7 +497,6 @@ export default function ReportScreen() {
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
     // Format the report date for display (avoiding timezone issues)
-    const reportDateStr = report.date.split('T')[0]; // Get YYYY-MM-DD
     const estDisplayDate = formatDateString(reportDateStr);
 
     // Format the data date for display
@@ -527,6 +527,19 @@ export default function ReportScreen() {
       reportUpdatedAt: report.updated_at,
       finalUpdatedAt: dataUpdatedAt,
       formattedText: lastUpdatedText
+    });
+    
+    // Get tides for this report's date
+    const reportTides = tideData.filter(tide => {
+      const tideDate = tide.date.split('T')[0];
+      return tideDate === reportDateStr;
+    });
+    
+    console.log('[ReportScreen] Tide data for report:', {
+      reportDate: reportDateStr,
+      totalTides: tideData.length,
+      matchingTides: reportTides.length,
+      tidesSample: tideData.slice(0, 3).map(t => ({ date: t.date, type: t.type, time: t.time }))
     });
     
     return (
@@ -724,41 +737,39 @@ export default function ReportScreen() {
                 Tide Schedule
               </Text>
             </View>
-            {tideData.length > 0 ? (
+            {reportTides.length > 0 ? (
               <View style={styles.tideTimesContainer}>
-                {tideData
-                  .filter(tide => tide.date === report.date)
-                  .map((tide, tideIndex) => {
-                    const isHighTide = tide.type === 'high' || tide.type === 'High';
-                    const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
-                    const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    });
-                    const tideTypeText = isHighTide ? 'High' : 'Low';
-                    const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
-                    
-                    return (
-                      <View key={tideIndex} style={styles.tideTimeItem}>
-                        <IconSymbol
-                          ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
-                          android_material_icon_name={isHighTide ? 'north' : 'south'}
-                          size={16}
-                          color={tideIconColor}
-                        />
-                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                          {tideTypeText}
-                        </Text>
-                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                          {tideTime}
-                        </Text>
-                        <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
-                          {tideHeightText}
-                        </Text>
-                      </View>
-                    );
-                  })}
+                {reportTides.map((tide, tideIndex) => {
+                  const isHighTide = tide.type === 'high' || tide.type === 'High';
+                  const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
+                  const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  });
+                  const tideTypeText = isHighTide ? 'High' : 'Low';
+                  const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
+                  
+                  return (
+                    <View key={tideIndex} style={styles.tideTimeItem}>
+                      <IconSymbol
+                        ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
+                        android_material_icon_name={isHighTide ? 'north' : 'south'}
+                        size={16}
+                        color={tideIconColor}
+                      />
+                      <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                        {tideTypeText}
+                      </Text>
+                      <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                        {tideTime}
+                      </Text>
+                      <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
+                        {tideHeightText}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             ) : (
               <Text style={[styles.conditionValue, { color: valueColor }]}>
