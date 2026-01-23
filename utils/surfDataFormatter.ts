@@ -84,6 +84,36 @@ export function parseLocalDate(dateStr: string): Date {
 }
 
 /**
+ * Format a date string (YYYY-MM-DD) to a readable format in EST timezone
+ * This avoids timezone conversion issues by explicitly using EST timezone
+ * 
+ * @param dateStr - Date string in YYYY-MM-DD format
+ * @returns Formatted date string (e.g., "Thursday, January 23, 2026")
+ */
+export function formatDateString(dateStr: string): string {
+  // Extract date components from YYYY-MM-DD format
+  const datePart = dateStr.split('T')[0];
+  const [year, month, day] = datePart.split('-');
+  
+  // Create an ISO string at noon EST to avoid any timezone boundary issues
+  // Using noon (12:00) ensures we're solidly in the middle of the day
+  const isoString = `${year}-${month}-${day}T12:00:00`;
+  
+  // Format the date in EST timezone
+  const formatted = new Date(isoString).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/New_York'
+  });
+  
+  console.log('[formatDateString] Input:', dateStr, '→ Output:', formatted);
+  
+  return formatted;
+}
+
+/**
  * Get date N days from now in EST timezone (YYYY-MM-DD format)
  * 
  * @param daysOffset - Number of days to offset (positive for future, negative for past)

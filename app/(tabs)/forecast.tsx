@@ -8,6 +8,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { useSurfData } from '@/hooks/useSurfData';
 import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { supabase } from '@/app/integrations/supabase/client';
+import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 
 interface DayForecast {
   date: string;
@@ -17,65 +18,14 @@ interface DayForecast {
   tides: TideData[];
 }
 
-// Helper function to parse date string as local date (not UTC)
-function parseLocalDate(dateStr: string): Date {
-  // Parse YYYY-MM-DD as local date, not UTC
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
 // Helper function to get today's date in YYYY-MM-DD format (EST timezone)
 function getTodayDateString(): string {
-  const now = new Date();
-  
-  // Get the date in EST timezone
-  const estDateString = now.toLocaleString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  // Parse the date string (format: MM/DD/YYYY)
-  const parts = estDateString.split(/[/,\s]+/);
-  const month = parts[0].padStart(2, '0');
-  const day = parts[1].padStart(2, '0');
-  const year = parts[2];
-  
-  const estDate = `${year}-${month}-${day}`;
-  
-  console.log('[getTodayDateString] Current EST date:', estDate);
-  
-  return estDate;
+  return getESTDate();
 }
 
 // Helper function to get date N days from now (EST timezone)
 function getDateNDaysFromNow(days: number): string {
-  const now = new Date();
-  
-  // Get current EST date
-  const estDateString = now.toLocaleString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  // Parse the date string (format: MM/DD/YYYY)
-  const parts = estDateString.split(/[/,\s]+/);
-  const month = parseInt(parts[0]);
-  const day = parseInt(parts[1]);
-  const year = parseInt(parts[2]);
-  
-  // Create a date object and add days
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + days);
-  
-  const resultYear = date.getFullYear();
-  const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
-  const resultDay = String(date.getDate()).padStart(2, '0');
-  
-  return `${resultYear}-${resultMonth}-${resultDay}`;
+  return getESTDateOffset(days);
 }
 
 // Helper function to get day name from date string

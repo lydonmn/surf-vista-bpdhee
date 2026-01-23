@@ -37,23 +37,24 @@ function getESTDate(): string {
   return estDate;
 }
 
-// Helper function to format a date string (YYYY-MM-DD) to a readable format
-// This avoids timezone conversion issues by working directly with the date string
+// Helper function to format a date string (YYYY-MM-DD) to a readable format in EST timezone
+// This avoids timezone conversion issues by explicitly using EST timezone
 function formatDateString(dateStr: string): string {
   // Extract date components from YYYY-MM-DD format
   const datePart = dateStr.split('T')[0];
   const [year, month, day] = datePart.split('-');
   
-  // Create date using the local date components directly
-  // We use the Date constructor with year, month, day to avoid timezone issues
-  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  // Create an ISO string at noon EST to avoid any timezone boundary issues
+  // Using noon (12:00) ensures we're solidly in the middle of the day
+  const isoString = `${year}-${month}-${day}T12:00:00`;
   
-  // Format the date
-  const formatted = date.toLocaleDateString('en-US', {
+  // Format the date in EST timezone
+  const formatted = new Date(isoString).toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'America/New_York'
   });
   
   console.log('[formatDateString] Input:', dateStr, '→ Output:', formatted);
