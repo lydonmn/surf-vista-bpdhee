@@ -23,20 +23,26 @@ const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
 const RETRY_DELAY = 5000; // 5 seconds
 const FUNCTION_TIMEOUT = 60000; // 60 seconds
 
-// Helper function to get EST date
+// Helper function to get EST date - FIXED to use toLocaleDateString
 function getESTDate(): string {
   const now = new Date();
-  const estDateString = now.toLocaleString('en-US', { 
+  
+  // Get the date in EST timezone using toLocaleDateString (more reliable than toLocaleString)
+  const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
   
+  // Parse the date string (format: "MM/DD/YYYY")
   const [month, day, year] = estDateString.split('/');
+  
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate] Current EST date:', estDate, 'from:', estDateString);
+  console.log('[useSurfData getESTDate] Raw EST date string:', estDateString);
+  console.log('[useSurfData getESTDate] Parsed components:', { month, day, year });
+  console.log('[useSurfData getESTDate] Current EST date:', estDate);
   
   return estDate;
 }
