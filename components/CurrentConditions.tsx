@@ -25,6 +25,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     formattedValue: surfHeightFeet,
     reportId: surfReport?.id,
     reportDate: surfReport?.date,
+    rating: surfReport?.rating,
   });
 
   // Format water temperature
@@ -35,7 +36,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     if (!surfReport?.date) return true;
     
     const now = new Date();
-    const estDateString = now.toLocaleString('en-US', { 
+    const estDateString = now.toLocaleDateString('en-US', { 
       timeZone: 'America/New_York',
       year: 'numeric',
       month: '2-digit',
@@ -45,7 +46,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     const [month, day, year] = estDateString.split('/');
     const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     
-    return surfReport.date === today;
+    const reportDate = surfReport.date.split('T')[0];
+    return reportDate === today;
   };
 
   const dataIsCurrent = isDataCurrent();
@@ -82,9 +84,15 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const windSpeedDisplay = weather?.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--';
   const windDirectionDisplay = weather?.wind_direction || '';
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
+  
+  // CRITICAL FIX: Always use today's rating from surfReport
+  // This ensures consistency with the report page which also shows today's rating
   const stokeRatingDisplay = surfReport?.rating || 5;
+  
   const wavePeriodDisplay = surfReport?.wave_period || null;
   const swellDirectionDisplay = surfReport?.swell_direction || null;
+
+  console.log('[CurrentConditions] Displaying stoke rating:', stokeRatingDisplay, 'from report:', surfReport?.id);
 
   return (
     <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -101,7 +109,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               color={colors.accent}
             />
             <Text style={[styles.dataBadgeText, { color: colors.accent }]}>
-              Data from {surfReport.date}
+              Data from {surfReport.date.split('T')[0]}
             </Text>
           </View>
         )}
