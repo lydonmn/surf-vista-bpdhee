@@ -45,19 +45,19 @@ export default function ReportScreen() {
     return isValidHeight;
   };
 
+  // Get today's date in EST
+  const todayDate = useMemo(() => getESTDate(), []);
+
   // Find today's report (EST timezone for Charleston, SC)
   const todaysReport = useMemo(() => {
     try {
-      const today = getESTDate();
-      
       console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
-      console.log('[ReportScreen] Current EST date for Charleston, SC:', today);
+      console.log('[ReportScreen] Current EST date for Charleston, SC:', todayDate);
       console.log('[ReportScreen] Total reports available:', surfReports.length);
       console.log('[ReportScreen] All report dates:', surfReports.map(r => ({ 
         date: r.date, 
         id: r.id, 
         wave_height: r.wave_height,
-        surf_height: r.surf_height,
         rating: r.rating
       })));
       
@@ -67,8 +67,8 @@ export default function ReportScreen() {
         // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
         const reportDate = report.date.split('T')[0];
         
-        const matches = reportDate === today;
-        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', today, '→', matches ? 'MATCH' : 'no match');
+        const matches = reportDate === todayDate;
+        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', todayDate, '→', matches ? 'MATCH' : 'no match');
         return matches;
       });
       
@@ -85,7 +85,7 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [surfReports]);
+  }, [surfReports, todayDate]);
 
   // Find the last report with valid surf data (fallback data)
   const lastValidReport = useMemo(() => {
@@ -102,7 +102,7 @@ export default function ReportScreen() {
       totalReports: sortedReports.length,
       foundValid: !!validReport,
       validReportDate: validReport?.date,
-      validReportWaveHeight: validReport?.wave_height || validReport?.surf_height,
+      validReportWaveHeight: validReport?.wave_height,
       allReportDates: sortedReports.map(r => ({ date: r.date, wave_height: r.wave_height }))
     });
     
@@ -164,15 +164,14 @@ export default function ReportScreen() {
   const fetchSurfConditions = React.useCallback(async () => {
     try {
       setIsLoadingConditions(true);
-      const today = getESTDate();
       
-      console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', today);
+      console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', todayDate);
       
       // First try to get today's conditions
       let { data, error } = await supabase
         .from('surf_conditions')
         .select('*')
-        .eq('date', today)
+        .eq('date', todayDate)
         .maybeSingle();
 
       if (error) {
@@ -208,7 +207,7 @@ export default function ReportScreen() {
     } finally {
       setIsLoadingConditions(false);
     }
-  }, []);
+  }, [todayDate]);
 
   // Load latest video
   const loadLatestVideo = React.useCallback(async () => {
@@ -431,9 +430,8 @@ export default function ReportScreen() {
     let displayData;
     let dataSource;
     let dataDate;
-    const today = getESTDate();
     const reportDateStr = report.date.split('T')[0];
-    const isToday = reportDateStr === today;
+    const isToday = reportDateStr === todayDate;
     
     if (hasValidLiveData) {
       displayData = surfConditions;
@@ -459,15 +457,12 @@ export default function ReportScreen() {
       dataSource,
       dataDate,
       isToday,
-      surfHeight: displayData.surf_height || displayData.wave_height,
+      waveHeight: displayData.wave_height,
     });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
-    // Format the report date for display (avoiding timezone issues)
-    const estDisplayDate = formatDateString(reportDateStr);
-
     // Format the data date for display
     const dataDateStr = dataDate.split('T')[0]; // Get YYYY-MM-DD
     const dataDisplayDate = formatDateString(dataDateStr);
@@ -477,7 +472,7 @@ export default function ReportScreen() {
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
     // Format surf height to feet
-    const surfHeightFeet = parseSurfHeightToFeet(displayData.surf_height || displayData.wave_height);
+    const surfHeightFeet = parseSurfHeightToFeet(displayData.wave_height);
     
     // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
@@ -498,21 +493,22 @@ export default function ReportScreen() {
       formattedText: lastUpdatedText
     });
     
-    // Get tides for this report's date
+    // CRITICAL FIX: Get tides for TODAY, not the data date
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
-      return tideDate === reportDateStr;
+      const matches = tideDate === todayDate;
+      return matches;
     });
     
-    console.log('[ReportScreen] Tide data for report:', {
-      reportDate: reportDateStr,
+    console.log('[ReportScreen] Tide data for TODAY:', {
+      todayDate,
       totalTides: tideData.length,
       matchingTides: reportTides.length,
-      tidesSample: tideData.slice(0, 3).map(t => ({ date: t.date, type: t.type, time: t.time }))
+      tidesSample: tideData.slice(0, 5).map(t => ({ date: t.date, type: t.type, time: t.time })),
+      filteredTides: reportTides.map(t => ({ date: t.date, type: t.type, time: t.time }))
     });
     
-    // CRITICAL FIX: Always show today's date in the header, not the data date
-    const todayDate = getESTDate();
+    // CRITICAL FIX: Always show today's date in the header
     const todayDisplayDate = formatDateString(todayDate);
     
     return (
