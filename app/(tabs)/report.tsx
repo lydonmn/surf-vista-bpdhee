@@ -100,7 +100,8 @@ export default function ReportScreen() {
       return dateB - dateA;
     });
     
-    // First, try to find today's report with any narrative (even if wave sensors are offline)
+    // ALWAYS prioritize today's report if it exists with any narrative
+    // This ensures we show today's report even if wave sensors are offline
     const todayReportWithNarrative = sortedReports.find(report => {
       const reportDate = report.date.split('T')[0];
       const narrative = report.report_text || report.conditions || '';
@@ -108,24 +109,21 @@ export default function ReportScreen() {
     });
     
     if (todayReportWithNarrative) {
-      console.log('[ReportScreen] Using today\'s narrative (prioritized):', {
+      console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized):', {
         date: todayReportWithNarrative.date,
-        narrativeLength: todayReportWithNarrative.conditions?.length || todayReportWithNarrative.report_text?.length || 0
+        narrativeLength: todayReportWithNarrative.conditions?.length || todayReportWithNarrative.report_text?.length || 0,
+        hasWaveData: hasValidSurfData(todayReportWithNarrative)
       });
       return todayReportWithNarrative;
     }
     
-    // If no today's report, find the most recent report with valid wave data narrative
+    // Only if today has NO report at all, fall back to most recent report with narrative
     const reportWithNarrative = sortedReports.find(report => {
       const narrative = report.report_text || report.conditions || '';
-      const hasValidNarrative = narrative.length > 50 && 
-                               !narrative.toLowerCase().includes('wave sensors') &&
-                               !narrative.toLowerCase().includes('buoy') &&
-                               !narrative.toLowerCase().includes('offline');
-      return hasValidNarrative;
+      return narrative.length > 50;
     });
     
-    console.log('[ReportScreen] Last report with valid narrative:', {
+    console.log('[ReportScreen] No today report, using most recent with narrative:', {
       found: !!reportWithNarrative,
       date: reportWithNarrative?.date,
       narrativeLength: reportWithNarrative?.conditions?.length || reportWithNarrative?.report_text?.length || 0
@@ -412,18 +410,18 @@ export default function ReportScreen() {
     let narrativeDate = todayDisplayDate;
     let isHistoricalNarrative = false;
     
-    // If today's report has a narrative (even if wave sensors are offline), use it
+    // ALWAYS use today's report narrative if it exists, regardless of wave data availability
     if (isToday && hasCurrentNarrative) {
       narrativeText = currentNarrative;
       narrativeDate = todayDisplayDate;
       isHistoricalNarrative = false;
-      console.log('[ReportScreen] ✅ Using today\'s narrative (current day prioritized)');
-    } else if (!hasCurrentNarrative && lastReportWithNarrative) {
-      // Only fall back to historical if today has no narrative at all
+      console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized for current day)');
+    } else if (!isToday && lastReportWithNarrative) {
+      // Only use historical narrative if we're NOT showing today's report
       narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
       narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
       isHistoricalNarrative = true;
-      console.log('[ReportScreen] ✅ Using historical narrative from:', narrativeDate);
+      console.log('[ReportScreen] Using historical narrative from:', narrativeDate);
     }
     
     const isCustomReport = !!report.report_text;
@@ -680,7 +678,7 @@ export default function ReportScreen() {
           </View>
           {narrativeText ? (
             <>
-              {isHistoricalNarrative && !isToday && (
+              {isHistoricalNarrative && (
                 <View style={[styles.historicalBanner, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
                   <IconSymbol
                     ios_icon_name="clock.fill"
@@ -689,7 +687,7 @@ export default function ReportScreen() {
                     color="#FF9800"
                   />
                   <Text style={[styles.historicalBannerText, { color: '#FF9800' }]}>
-                    Showing surf report from {narrativeDate} (most recent report with wave data)
+                    Showing surf report from {narrativeDate} (most recent available report)
                   </Text>
                 </View>
               )}
