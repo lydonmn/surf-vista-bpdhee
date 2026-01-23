@@ -24,18 +24,14 @@ export default function ReportScreen() {
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = React.useRef<ExpoVideo>(null);
   
-  // State for real-time surf conditions
   const [surfConditions, setSurfConditions] = useState<any>(null);
   const [isLoadingConditions, setIsLoadingConditions] = useState(false);
 
-  // Determine if we're in dark mode
   const isDarkMode = theme.dark;
 
-  // Helper function to check if surf data is valid (not N/A)
   const hasValidSurfData = (data: any) => {
     if (!data) return false;
     
-    // Check if surf height or wave height is valid (not null, not N/A, not empty)
     const surfHeight = data.surf_height || data.wave_height;
     const isValidHeight = surfHeight && 
                          surfHeight !== 'N/A' && 
@@ -45,36 +41,18 @@ export default function ReportScreen() {
     return isValidHeight;
   };
 
-  // Get today's date in EST
   const todayDate = useMemo(() => getESTDate(), []);
 
-  // Find today's report (EST timezone for Charleston, SC)
   const todaysReport = useMemo(() => {
     try {
       console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
       console.log('[ReportScreen] Current EST date for Charleston, SC:', todayDate);
       console.log('[ReportScreen] Total reports available:', surfReports.length);
-      console.log('[ReportScreen] All report dates:', surfReports.map(r => ({ 
-        date: r.date, 
-        id: r.id, 
-        wave_height: r.wave_height,
-        rating: r.rating,
-        has_report_text: !!r.report_text,
-        has_conditions: !!r.conditions,
-        report_text_length: r.report_text?.length || 0,
-        conditions_length: r.conditions?.length || 0,
-        conditions_preview: r.conditions ? r.conditions.substring(0, 50) : 'none'
-      })));
       
       const todayReports = surfReports.filter(report => {
         if (!report.date) return false;
-        
-        // Extract just the date portion from the report date (handles both YYYY-MM-DD and ISO formats)
         const reportDate = report.date.split('T')[0];
-        
-        const matches = reportDate === todayDate;
-        console.log('[ReportScreen] Comparing report date:', reportDate, 'with today:', todayDate, '→', matches ? 'MATCH' : 'no match');
-        return matches;
+        return reportDate === todayDate;
       });
       
       console.log('[ReportScreen] Found', todayReports.length, 'reports for today');
@@ -83,16 +61,8 @@ export default function ReportScreen() {
         const report = todayReports[0];
         console.log('[ReportScreen] ===== USING TODAY\'S REPORT =====');
         console.log('[ReportScreen] Report ID:', report.id);
-        console.log('[ReportScreen] Report date:', report.date);
-        console.log('[ReportScreen] Rating:', report.rating);
-        console.log('[ReportScreen] Has report_text:', !!report.report_text);
         console.log('[ReportScreen] Has conditions:', !!report.conditions);
-        console.log('[ReportScreen] report_text length:', report.report_text?.length || 0);
         console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
-        console.log('[ReportScreen] report_text preview:', report.report_text ? report.report_text.substring(0, 100) : 'NONE');
-        console.log('[ReportScreen] conditions preview:', report.conditions ? report.conditions.substring(0, 100) : 'NONE');
-        console.log('[ReportScreen] Full conditions text:', report.conditions || 'NONE');
-        console.log('[ReportScreen] Full report_text:', report.report_text || 'NONE');
         return report;
       } else {
         console.log('[ReportScreen] ❌ No report found for today');
@@ -104,13 +74,11 @@ export default function ReportScreen() {
     }
   }, [surfReports, todayDate]);
 
-  // Find the last report with valid surf data (fallback data)
   const lastValidReport = useMemo(() => {
-    // Sort reports by date descending to get most recent first
     const sortedReports = [...surfReports].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
-      return dateB - dateA; // Most recent first
+      return dateB - dateA;
     });
     
     const validReport = sortedReports.find(report => hasValidSurfData(report));
@@ -119,23 +87,43 @@ export default function ReportScreen() {
       totalReports: sortedReports.length,
       foundValid: !!validReport,
       validReportDate: validReport?.date,
-      validReportWaveHeight: validReport?.wave_height,
-      allReportDates: sortedReports.map(r => ({ date: r.date, wave_height: r.wave_height }))
+      validReportWaveHeight: validReport?.wave_height
     });
     
     return validReport;
   }, [surfReports]);
 
-  // Determine which report to display
+  const lastReportWithNarrative = useMemo(() => {
+    const sortedReports = [...surfReports].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+    
+    const reportWithNarrative = sortedReports.find(report => {
+      const narrative = report.report_text || report.conditions || '';
+      const hasValidNarrative = narrative.length > 50 && 
+                               !narrative.toLowerCase().includes('wave sensors') &&
+                               !narrative.toLowerCase().includes('buoy') &&
+                               !narrative.toLowerCase().includes('offline');
+      return hasValidNarrative;
+    });
+    
+    console.log('[ReportScreen] Last report with valid narrative:', {
+      found: !!reportWithNarrative,
+      date: reportWithNarrative?.date,
+      narrativeLength: reportWithNarrative?.conditions?.length || reportWithNarrative?.report_text?.length || 0
+    });
+    
+    return reportWithNarrative;
+  }, [surfReports]);
+
   const displayReport = useMemo(() => {
-    // Always use today's report if it exists
-    // The report will contain the narrative and current buoy status
     if (todaysReport) {
       console.log('[ReportScreen] ✅ Using today\'s report for display');
       return todaysReport;
     }
     
-    // Fallback to last valid report if no today's report
     if (lastValidReport) {
       console.log('[ReportScreen] Using last valid report from:', lastValidReport.date);
       return lastValidReport;
@@ -145,14 +133,12 @@ export default function ReportScreen() {
     return null;
   }, [todaysReport, lastValidReport]);
 
-  // Fetch real-time surf conditions
   const fetchSurfConditions = React.useCallback(async () => {
     try {
       setIsLoadingConditions(true);
       
       console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', todayDate);
       
-      // Get today's conditions
       let { data, error } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -175,7 +161,6 @@ export default function ReportScreen() {
     }
   }, [todayDate]);
 
-  // Load latest video
   const loadLatestVideo = React.useCallback(async () => {
     try {
       setIsLoadingVideo(true);
@@ -211,16 +196,10 @@ export default function ReportScreen() {
       hasProfile: !!profile,
       isSubscribed,
       authLoading,
-      isInitialized,
-      profileData: profile ? {
-        is_admin: profile.is_admin,
-        is_subscribed: profile.is_subscribed,
-        subscription_end_date: profile.subscription_end_date
-      } : null
+      isInitialized
     });
   }, [user, profile, isSubscribed, authLoading, isInitialized]);
 
-  // Load video and surf conditions when user is subscribed
   useEffect(() => {
     if (isInitialized && !authLoading && user && profile && isSubscribed) {
       loadLatestVideo();
@@ -228,7 +207,6 @@ export default function ReportScreen() {
     }
   }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions]);
 
-  // Set up real-time subscription for surf_conditions
   useEffect(() => {
     if (!isInitialized || authLoading || !user || !profile || !isSubscribed) {
       return;
@@ -280,7 +258,6 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Update error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
-      // Parse the error message to provide more specific feedback
       let userMessage = errorMessage;
       let detailMessage = 'Please check your internet connection and try again.';
       
@@ -316,13 +293,11 @@ export default function ReportScreen() {
   }, [latestVideo]);
 
   const handleVideoPlaybackStatusUpdate = React.useCallback((status: any) => {
-    // Mark video as ready when it's loaded and can play
     if (status.isLoaded && !videoReady) {
       console.log('[ReportScreen] Video is ready to play');
       setVideoReady(true);
     }
     
-    // Stop video after it finishes playing once
     if (status.didJustFinish) {
       console.log('[ReportScreen] Video finished playing');
       if (videoRef.current) {
@@ -337,7 +312,6 @@ export default function ReportScreen() {
     
     const upper = direction.toUpperCase().trim();
     
-    // Handle cardinal and intercardinal directions
     if (upper === 'N' || upper === 'NORTH') {
       return { ios: 'arrow.up', android: 'north' };
     } else if (upper === 'NE' || upper === 'NORTHEAST' || upper.includes('NORTH') && upper.includes('EAST')) {
@@ -356,7 +330,6 @@ export default function ReportScreen() {
       return { ios: 'arrow.up.left', android: 'north_west' };
     }
     
-    // Handle degree-based directions (0-360)
     const degreeMatch = direction.match(/(\d+)/);
     if (degreeMatch) {
       const degrees = parseInt(degreeMatch[1]);
@@ -381,16 +354,12 @@ export default function ReportScreen() {
       }
     }
     
-    // Default to navigation icon if direction format is unknown
     return { ios: 'location.north.fill', android: 'navigation' };
   };
 
   const renderReportCard = (report: any, index: number) => {
-    // CRITICAL FIX: Always use TODAY'S report for the rating to ensure consistency
-    // between home page and report page
     const todayReportForRating = todaysReport || report;
     
-    // Use surf_conditions if available, otherwise use report data
     const displayData = surfConditions || report;
     const hasValidWaveData = hasValidSurfData(displayData);
     
@@ -401,57 +370,48 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
     console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
-    console.log('[ReportScreen] Display data:', {
-      wave_height: displayData.wave_height,
-      wind_speed: displayData.wind_speed,
-      water_temp: displayData.water_temp,
-      updated_at: displayData.updated_at
-    });
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
 
-    // Dynamic colors based on theme
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
-    // Format surf height to feet
     const surfHeightFeet = parseSurfHeightToFeet(displayData.wave_height);
-    
-    // Format water temperature
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
-    
-    // Get last updated timestamp
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
-    // CRITICAL FIX: Get tides for TODAY, not the data date
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
-      const matches = tideDate === todayDate;
-      return matches;
+      return tideDate === todayDate;
     });
     
-    console.log('[ReportScreen] Tide data for TODAY:', {
-      todayDate,
-      totalTides: tideData.length,
-      matchingTides: reportTides.length
-    });
-    
-    // CRITICAL FIX: Always show today's date in the header
     const todayDisplayDate = formatDateString(todayDate);
     
-    // Get the narrative text - CRITICAL: Check both report_text and conditions
-    const narrativeText = report.report_text || report.conditions || '';
+    const currentNarrative = report.report_text || report.conditions || '';
+    const isCurrentNarrativeValid = currentNarrative.length > 50 && 
+                                   !currentNarrative.toLowerCase().includes('wave sensors') &&
+                                   !currentNarrative.toLowerCase().includes('offline');
+    
+    let narrativeText = currentNarrative;
+    let narrativeDate = todayDisplayDate;
+    let isHistoricalNarrative = false;
+    
+    if (!isCurrentNarrativeValid && lastReportWithNarrative) {
+      narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
+      narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
+      isHistoricalNarrative = true;
+      console.log('[ReportScreen] ✅ Using historical narrative from:', narrativeDate);
+    }
+    
     const isCustomReport = !!report.report_text;
     
     console.log('[ReportScreen] ===== NARRATIVE TEXT =====');
-    console.log('[ReportScreen] report.report_text:', report.report_text || 'NULL');
-    console.log('[ReportScreen] report.conditions:', report.conditions || 'NULL');
-    console.log('[ReportScreen] narrativeText (final):', narrativeText);
-    console.log('[ReportScreen] narrativeText length:', narrativeText.length);
-    console.log('[ReportScreen] isCustomReport:', isCustomReport);
-    console.log('[ReportScreen] Will display narrative:', narrativeText ? 'YES' : 'NO');
+    console.log('[ReportScreen] Current narrative valid:', isCurrentNarrativeValid);
+    console.log('[ReportScreen] Using historical narrative:', isHistoricalNarrative);
+    console.log('[ReportScreen] Narrative date:', narrativeDate);
+    console.log('[ReportScreen] Narrative length:', narrativeText.length);
     
     return (
       <View 
@@ -485,7 +445,6 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        {/* Data source indicator */}
         {hasValidWaveData ? (
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
@@ -700,6 +659,19 @@ export default function ReportScreen() {
           </View>
           {narrativeText ? (
             <>
+              {isHistoricalNarrative && (
+                <View style={[styles.historicalBanner, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                  <IconSymbol
+                    ios_icon_name="clock.fill"
+                    android_material_icon_name="schedule"
+                    size={16}
+                    color="#FF9800"
+                  />
+                  <Text style={[styles.historicalBannerText, { color: '#FF9800' }]}>
+                    Showing surf report from {narrativeDate} (most recent report with wave data)
+                  </Text>
+                </View>
+              )}
               <ReportTextDisplay 
                 text={narrativeText}
                 isCustom={isCustomReport}
@@ -712,7 +684,7 @@ export default function ReportScreen() {
             </>
           ) : (
             <Text style={[styles.conditionsText, { color: colors.reportText }]}>
-              No surf conditions narrative available for today.
+              No surf conditions narrative available.
             </Text>
           )}
         </View>
@@ -720,7 +692,6 @@ export default function ReportScreen() {
     );
   };
 
-  // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -870,7 +841,6 @@ export default function ReportScreen() {
         renderReportCard(displayReport, 0)
       )}
 
-      {/* Latest Drone Video Section */}
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         <View style={styles.sectionHeader}>
           <IconSymbol
@@ -980,10 +950,10 @@ export default function ReportScreen() {
 }
 
 function getRatingColor(rating: number): string {
-  if (rating >= 8) return '#22C55E'; // Vibrant Green
-  if (rating >= 6) return '#FFC107'; // Bright Yellow
-  if (rating >= 4) return '#FF9800'; // Warm Orange
-  return '#F44336'; // Bold Red
+  if (rating >= 8) return '#22C55E';
+  if (rating >= 6) return '#FFC107';
+  if (rating >= 4) return '#FF9800';
+  return '#F44336';
 }
 
 const styles = StyleSheet.create({
@@ -1271,6 +1241,19 @@ const styles = StyleSheet.create({
   conditionsText: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  historicalBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  historicalBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   editedNote: {
     fontSize: 11,
