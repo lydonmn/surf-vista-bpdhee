@@ -472,31 +472,36 @@ export default function ReportScreen() {
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
     
     // Parse the report date in EST timezone for display
+    // IMPORTANT: Parse date components manually to avoid timezone issues
     const reportDateParts = report.date.split('T')[0].split('-');
     const reportYear = parseInt(reportDateParts[0]);
-    const reportMonth = parseInt(reportDateParts[1]) - 1;
+    const reportMonth = parseInt(reportDateParts[1]);
     const reportDay = parseInt(reportDateParts[2]);
-    const reportDate = new Date(reportYear, reportMonth, reportDay);
     
-    const estDisplayDate = reportDate.toLocaleDateString('en-US', {
+    // Create date string in EST timezone format for display
+    const reportDateForDisplay = new Date(reportYear, reportMonth - 1, reportDay);
+    const estDisplayDate = reportDateForDisplay.toLocaleDateString('en-US', {
       weekday: 'long',
       month: 'long',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
+      timeZone: 'America/New_York'
     });
 
     // Parse the data date for display
     const dataDateParts = dataDate.split('T')[0].split('-');
     const dataYear = parseInt(dataDateParts[0]);
-    const dataMonth = parseInt(dataDateParts[1]) - 1;
+    const dataMonth = parseInt(dataDateParts[1]);
     const dataDay = parseInt(dataDateParts[2]);
-    const dataDateObj = new Date(dataYear, dataMonth, dataDay);
     
-    const dataDisplayDate = dataDateObj.toLocaleDateString('en-US', {
+    // Create date string in EST timezone format for display
+    const dataDateForDisplay = new Date(dataYear, dataMonth - 1, dataDay);
+    const dataDisplayDate = dataDateForDisplay.toLocaleDateString('en-US', {
       weekday: 'long',
       month: 'long',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
+      timeZone: 'America/New_York'
     });
 
     // Dynamic colors based on theme
