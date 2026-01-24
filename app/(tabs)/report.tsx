@@ -11,7 +11,7 @@ import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
-import { parseSurfHeightToFeet, formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
+import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 
 export default function ReportScreen() {
   const theme = useTheme();
@@ -32,6 +32,7 @@ export default function ReportScreen() {
   const hasValidSurfData = (data: any) => {
     if (!data) return false;
     
+    // Check surf_height first (rideable surf height), then fall back to wave_height (swell height)
     const surfHeight = data.surf_height || data.wave_height;
     const isValidHeight = surfHeight && 
                          surfHeight !== 'N/A' && 
@@ -87,6 +88,7 @@ export default function ReportScreen() {
       totalReports: sortedReports.length,
       foundValid: !!validReport,
       validReportDate: validReport?.date,
+      validReportSurfHeight: validReport?.surf_height,
       validReportWaveHeight: validReport?.wave_height
     });
     
@@ -384,6 +386,8 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
     console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
+    console.log('[ReportScreen] Display data surf_height:', displayData.surf_height);
+    console.log('[ReportScreen] Display data wave_height:', displayData.wave_height);
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
@@ -391,7 +395,15 @@ export default function ReportScreen() {
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
-    const surfHeightFeet = parseSurfHeightToFeet(displayData.wave_height);
+    // CRITICAL FIX: Prioritize surf_height (rideable surf height) over wave_height (swell height)
+    // surf_height is the calculated rideable wave face height based on period
+    // wave_height is the raw swell height from the buoy
+    const surfHeightDisplay = displayData.surf_height && displayData.surf_height !== 'N/A' 
+      ? displayData.surf_height 
+      : (displayData.wave_height && displayData.wave_height !== 'N/A' ? displayData.wave_height : 'N/A');
+    
+    console.log('[ReportScreen] Surf height to display:', surfHeightDisplay);
+    
     const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
@@ -499,7 +511,7 @@ export default function ReportScreen() {
                   Surf Height
                 </Text>
                 <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {surfHeightFeet}
+                  {surfHeightDisplay}
                 </Text>
               </View>
             </View>
