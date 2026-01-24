@@ -91,6 +91,9 @@ const getLogServerUrl = (): string | null => {
 // Track if we've logged fetch errors to avoid spam
 let fetchErrorLogged = false;
 
+// Store original console methods at module level (before any overrides)
+let originalLog: typeof console.log | null = null;
+
 // Flush the log queue to server
 const flushLogs = async () => {
   if (logQueue.length === 0) return;
@@ -113,12 +116,10 @@ const flushLogs = async () => {
         body: JSON.stringify(log),
       }).catch((e) => {
         // Log fetch errors only once to avoid spam
-        if (!fetchErrorLogged) {
+        if (!fetchErrorLogged && originalLog) {
           fetchErrorLogged = true;
-          // Use a different method to avoid recursion - write directly without going through our intercept
-          if (typeof window !== 'undefined' && window.console) {
-            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat):', e.message || e);
-          }
+          // Use the original console.log to avoid recursion
+          originalLog('[Natively] Fetch error (will not repeat):', e.message || e);
         }
       });
     } catch (e) {
@@ -284,6 +285,9 @@ export const setupErrorLogging = () => {
   const originalConsoleLog = console.log;
   const originalConsoleWarn = console.warn;
   const originalConsoleError = console.error;
+
+  // Store original log at module level for use in flushLogs
+  originalLog = originalConsoleLog;
 
   // Log initialization info using original console (not intercepted)
   const logServerUrl = getLogServerUrl();
