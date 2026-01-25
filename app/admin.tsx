@@ -450,14 +450,13 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Step 2/5: Getting Supabase upload URL...');
       
-      // Get the Supabase project URL and anon key
       const supabaseUrl = supabase.supabaseUrl;
       const supabaseKey = supabase.supabaseKey;
       
-      // Construct the upload URL for Supabase storage
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] 🔧 CRITICAL FIX: Using PUT method (not POST) for Supabase Storage');
       setUploadProgress(15);
 
       console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync()...');
@@ -465,12 +464,10 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Perfect for large 6K videos - no string length limits!');
       
       const startTime = Date.now();
-      let lastProgressUpdate = Date.now();
-      let lastBytesWritten = 0;
       
       try {
         const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-          httpMethod: 'POST',
+          httpMethod: 'PUT',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
           headers: {
             'Authorization': `Bearer ${supabaseKey}`,
@@ -500,7 +497,6 @@ export default function AdminScreen() {
 
         console.log('[AdminScreen] Step 4/5: Verifying uploaded file...');
         
-        // Wait a moment for Supabase to process the file
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         const { data: fileData, error: fileCheckError } = await supabase.storage
@@ -545,7 +541,6 @@ export default function AdminScreen() {
           console.warn('[AdminScreen] Expected:', expectedSize, 'Got:', uploadedSize);
           console.warn('[AdminScreen] Difference:', Math.abs(uploadedSize - expectedSize), 'bytes');
           
-          // If the difference is more than 1%, throw an error
           const percentDiff = Math.abs(uploadedSize - expectedSize) / expectedSize * 100;
           if (percentDiff > 1) {
             throw new Error(
@@ -587,12 +582,12 @@ export default function AdminScreen() {
             throw new Error('Thumbnail file is empty');
           }
           
-          console.log('[AdminScreen] Uploading thumbnail using FileSystem.uploadAsync()...');
+          console.log('[AdminScreen] Uploading thumbnail using FileSystem.uploadAsync() with PUT method...');
           const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
           const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
           
           const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
-            httpMethod: 'POST',
+            httpMethod: 'PUT',
             uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
             headers: {
               'Authorization': `Bearer ${supabaseKey}`,
@@ -912,7 +907,10 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Direct File Streaming Upload ✓
+                Direct File Streaming Upload ✓ FIXED
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • 🔧 CRITICAL FIX: Now uses PUT method (not POST) for Supabase
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Uses FileSystem.uploadAsync() for direct streaming
@@ -1263,6 +1261,7 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
+              • 🔧 FIXED: Now uses PUT method for Supabase Storage{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Uses FileSystem.uploadAsync() for direct streaming{'\n'}
