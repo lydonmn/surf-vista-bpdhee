@@ -428,37 +428,60 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Preparing video file for upload...');
       setUploadProgress(5);
 
-      // Read video file as blob
-      console.log('[AdminScreen] Reading video file as binary blob...');
-      const videoResponse = await fetch(selectedVideo);
-      const videoBlob = await videoResponse.blob();
-
-      console.log('[AdminScreen] Video blob created, size:', videoBlob.size, 'bytes');
+      // Verify file exists and has size
+      console.log('[AdminScreen] Verifying video file...');
+      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
+      console.log('[AdminScreen] File info before upload:', fileInfo);
       
-      // Verify blob has content
-      if (videoBlob.size === 0) {
-        throw new Error('Video file is empty. Please try selecting the video again.');
+      if (!fileInfo.exists) {
+        throw new Error('Video file not found. Please select the video again.');
       }
+      
+      if (!('size' in fileInfo) || fileInfo.size === 0) {
+        throw new Error('Video file is empty or cannot be read. Please try selecting the video again.');
+      }
+      
+      console.log('[AdminScreen] File verified, size:', fileInfo.size, 'bytes');
+      setUploadProgress(10);
+
+      // Get upload URL from Supabase
+      console.log('[AdminScreen] Getting upload URL from Supabase...');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('Not authenticated. Please log in again.');
+      }
+
+      // Construct storage URL from Supabase URL
+      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
       
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Uploading video to Supabase storage...');
+      // Upload using FileSystem.uploadAsync for large files
+      console.log('[AdminScreen] Starting upload with FileSystem.uploadAsync...');
       const startTime = Date.now();
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, videoBlob, {
-          contentType: `video/${fileExt}`,
-          cacheControl: '3600',
-          upsert: false
-        });
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': `video/${fileExt}`,
+          'x-upsert': 'false',
+        },
+      });
 
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw uploadError;
+      console.log('[AdminScreen] Upload result:', uploadResult);
+
+      if (uploadResult.status !== 200) {
+        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Upload response:', uploadResult.body);
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
       }
 
-      console.log('[AdminScreen] Video uploaded successfully:', uploadData);
+      console.log('[AdminScreen] Video uploaded successfully');
       
       // Verify the uploaded file exists and has size
       const { data: fileData, error: fileCheckError } = await supabase.storage
@@ -514,29 +537,23 @@ export default function AdminScreen() {
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
-        console.log('[AdminScreen] Reading thumbnail as binary blob...');
-        const thumbnailResponse = await fetch(thumbnailUri);
-        const thumbnailBlob = await thumbnailResponse.blob();
-
-        console.log('[AdminScreen] Thumbnail blob created, size:', thumbnailBlob.size, 'bytes');
-        
-        // Verify thumbnail blob has content
-        if (thumbnailBlob.size === 0) {
-          throw new Error('Thumbnail blob is empty');
-        }
-        
         console.log('[AdminScreen] Uploading thumbnail to Supabase...');
-        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-          .from('videos')
-          .upload(thumbnailFileName, thumbnailBlob, {
-            contentType: 'image/jpeg',
-            cacheControl: '3600',
-            upsert: false
-          });
+        
+        const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
+        
+        const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'image/jpeg',
+            'x-upsert': 'false',
+          },
+        });
 
-        if (thumbnailUploadError) {
-          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
-          throw thumbnailUploadError;
+        if (thumbnailUploadResult.status !== 200) {
+          console.error('[AdminScreen] Thumbnail upload failed with status:', thumbnailUploadResult.status);
+          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
         }
         
         // Verify thumbnail was uploaded
