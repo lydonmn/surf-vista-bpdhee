@@ -686,6 +686,35 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Cron Job Diagnostics Card */}
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin-cron-logs')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="clock.fill"
+              android_material_icon_name="schedule"
+              size={32}
+              color="#9C27B0"
+            />
+            <View style={styles.cardHeaderText}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Cron Job Diagnostics
+              </Text>
+              <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+                Check 5 AM report generation and 15-min updates
+              </Text>
+            </View>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron_right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
+
         {/* Video Upload Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
