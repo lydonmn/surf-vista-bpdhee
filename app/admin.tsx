@@ -394,18 +394,34 @@ export default function AdminScreen() {
   };
 
   const readFileAsBlob = async (uri: string, fileSize: number): Promise<Blob> => {
-    console.log('[AdminScreen] Reading file as blob using fetch API...');
+    console.log('[AdminScreen] Reading file as blob using FileSystem...');
     console.log('[AdminScreen] File URI:', uri);
     console.log('[AdminScreen] Expected size:', formatFileSize(fileSize));
     
     try {
-      const response = await fetch(uri);
+      // Use FileSystem to read the file as base64
+      console.log('[AdminScreen] Reading file as base64...');
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
-      if (!response.ok) {
-        throw new Error(`Fetch failed with status ${response.status}`);
+      console.log('[AdminScreen] Base64 string length:', base64.length);
+      
+      if (!base64 || base64.length === 0) {
+        throw new Error('Failed to read file - base64 string is empty');
       }
       
-      const blob = await response.blob();
+      // Convert base64 to blob
+      console.log('[AdminScreen] Converting base64 to blob...');
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'video/mp4' });
       
       console.log('[AdminScreen] Blob created:', {
         size: blob.size,
@@ -414,7 +430,7 @@ export default function AdminScreen() {
       });
       
       if (blob.size === 0) {
-        throw new Error('Blob is empty (0 bytes)');
+        throw new Error('Blob is empty (0 bytes) after conversion');
       }
       
       if (blob.size < fileSize * 0.5) {
@@ -423,8 +439,33 @@ export default function AdminScreen() {
       
       return blob;
     } catch (error: any) {
-      console.error('[AdminScreen] Fetch blob error:', error.message);
-      throw error;
+      console.error('[AdminScreen] FileSystem blob error:', error.message);
+      
+      // Fallback to fetch API
+      console.log('[AdminScreen] Trying fallback fetch method...');
+      try {
+        const response = await fetch(uri);
+        
+        if (!response.ok) {
+          throw new Error(`Fetch failed with status ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        
+        console.log('[AdminScreen] Fallback blob created:', {
+          size: blob.size,
+          type: blob.type
+        });
+        
+        if (blob.size === 0) {
+          throw new Error('Fallback blob is also empty (0 bytes)');
+        }
+        
+        return blob;
+      } catch (fetchError: any) {
+        console.error('[AdminScreen] Fallback fetch also failed:', fetchError.message);
+        throw new Error(`Failed to read file with both methods: ${error.message}`);
+      }
     }
   };
 
