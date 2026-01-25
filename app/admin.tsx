@@ -30,14 +30,14 @@ interface VideoMetadata {
 
 type UploadQuality = '2K' | '4K' | 'Original';
 
-// Video upload limits (no minimum quality requirement)
-const MAX_DURATION_SECONDS = 90; // 90 seconds max
-
-// File size limits - support up to 6K video (90 seconds at high bitrate)
-// 6K video at 100 Mbps bitrate = ~1.1 GB per 90 seconds
-// Increased to 3GB to support high-quality 6K video
+// Video upload limits
+const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB max
 const RECOMMENDED_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB recommended
+
+// Chunked upload configuration
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for more reliable uploads
+const MAX_RETRIES = 3; // Retry failed chunks up to 3 times
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -47,6 +47,8 @@ export default function AdminScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState<string>('');
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('');
   const [validatingVideo, setValidatingVideo] = useState(false);
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
 
@@ -140,24 +142,20 @@ export default function AdminScreen() {
               setDeletingVideoId(videoId);
               console.log('[AdminScreen] Deleting video:', videoId);
 
-              // Extract filename from URL
               const urlParts = videoUrl.split('/videos/');
               if (urlParts.length === 2) {
                 const fileName = urlParts[1];
                 console.log('[AdminScreen] Deleting file from storage:', fileName);
 
-                // Delete from storage
                 const { error: storageError } = await supabase.storage
                   .from('videos')
                   .remove([fileName]);
 
                 if (storageError) {
                   console.error('[AdminScreen] Error deleting from storage:', storageError);
-                  // Continue anyway to delete from database
                 }
               }
 
-              // Delete from database
               const { error: dbError } = await supabase
                 .from('videos')
                 .delete()
@@ -198,7 +196,6 @@ export default function AdminScreen() {
   };
 
   const formatResolution = (width: number, height: number): string => {
-    // Determine resolution name
     if (width >= 7680) return `8K (${width}x${height})`;
     if (width >= 6144) return `6K (${width}x${height})`;
     if (width >= 3840) return `4K (${width}x${height})`;
@@ -233,7 +230,6 @@ export default function AdminScreen() {
         duration: assetDuration
       });
       
-      // Get file info for size
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (!fileInfo.exists || !('size' in fileInfo)) {
         throw new Error('Could not read file information');
@@ -242,20 +238,15 @@ export default function AdminScreen() {
       const fileSize = fileInfo.size;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
-      // Use dimensions from picker result
       let width = assetWidth || 0;
       let height = assetHeight || 0;
       
-      // CRITICAL FIX: expo-image-picker returns duration in MILLISECONDS, not seconds!
-      // We need to convert it to seconds
       let duration = 0;
       if (assetDuration && assetDuration > 0) {
-        // Convert milliseconds to seconds
         duration = assetDuration / 1000;
         console.log('[AdminScreen] Duration from picker:', assetDuration, 'ms =', duration, 'seconds');
       }
 
-      // Only try to get duration from expo-av if picker didn't provide it
       if (duration === 0) {
         console.log('[AdminScreen] Duration not available from picker, trying expo-av as fallback');
         try {
@@ -265,7 +256,6 @@ export default function AdminScreen() {
           );
           
           if (status.isLoaded && status.durationMillis) {
-            // Convert milliseconds to seconds
             duration = status.durationMillis / 1000;
             console.log('[AdminScreen] Duration from expo-av:', duration, 'seconds (converted from', status.durationMillis, 'ms)');
           }
@@ -277,7 +267,6 @@ export default function AdminScreen() {
         }
       }
 
-      // If we still don't have dimensions, use fallback
       if (width === 0 || height === 0) {
         console.log('[AdminScreen] Using fallback dimensions');
         width = 1920;
@@ -308,18 +297,12 @@ export default function AdminScreen() {
   const checkVideoRequirements = (metadata: VideoMetadata): string[] => {
     const errors: string[] = [];
 
-    // NO MINIMUM RESOLUTION REQUIREMENT - Accept any quality
-    // Videos will play at their uploaded resolution
-
-    // Check duration (maximum 90 seconds)
-    // Only validate if we have a valid duration
     if (metadata.duration > 0 && metadata.duration > MAX_DURATION_SECONDS) {
       errors.push(
         `Duration too long: ${formatDuration(metadata.duration)}. Maximum allowed: ${formatDuration(MAX_DURATION_SECONDS)}`
       );
     }
 
-    // Check file size
     if (metadata.size > MAX_FILE_SIZE) {
       errors.push(
         `File too large: ${formatFileSize(metadata.size)}. Maximum allowed: ${formatFileSize(MAX_FILE_SIZE)}`
@@ -334,7 +317,6 @@ export default function AdminScreen() {
       setValidationErrors([]);
       setVideoMetadata(null);
       
-      // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant permission to access your photo library');
@@ -344,8 +326,8 @@ export default function AdminScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
-        quality: 1, // Maximum quality - preserve original
-        videoMaxDuration: 300, // Allow selection, we'll validate after
+        quality: 1,
+        videoMaxDuration: 300,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -360,17 +342,14 @@ export default function AdminScreen() {
           type: asset.type
         });
         
-        // Show loading state
         setValidatingVideo(true);
         
         try {
-          // Validate video metadata - pass all info from picker result
-          // IMPORTANT: expo-image-picker returns duration in MILLISECONDS
           const metadata = await validateVideoMetadata(
             videoUri, 
             asset.width, 
             asset.height, 
-            asset.duration // This is in milliseconds, will be converted in validateVideoMetadata
+            asset.duration
           );
           
           if (!metadata) {
@@ -380,12 +359,10 @@ export default function AdminScreen() {
 
           setVideoMetadata(metadata);
           
-          // Check if video meets requirements (duration and file size only)
           const errors = checkVideoRequirements(metadata);
           setValidationErrors(errors);
 
           if (errors.length > 0) {
-            // Show detailed error message
             Alert.alert(
               'Video Does Not Meet Requirements',
               errors.join('\n\n'),
@@ -393,10 +370,8 @@ export default function AdminScreen() {
             );
             setSelectedVideo(null);
           } else {
-            // Video is valid!
             setSelectedVideo(videoUri);
             
-            // Show success with metadata
             const durationText = metadata.duration > 0 
               ? `Duration: ${formatDuration(metadata.duration)}\n` 
               : 'Duration: Unknown (will be determined during upload)\n';
@@ -424,13 +399,12 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideo = async () => {
+  const uploadVideoChunked = async () => {
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
       return;
     }
 
-    // Final validation check
     const errors = checkVideoRequirements(videoMetadata);
     if (errors.length > 0) {
       Alert.alert('Cannot Upload', errors.join('\n\n'));
@@ -440,8 +414,10 @@ export default function AdminScreen() {
     try {
       setUploading(true);
       setUploadProgress(0);
+      setUploadSpeed('');
+      setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] Starting video upload...');
+      console.log('[AdminScreen] Starting optimized video upload...');
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
@@ -451,22 +427,19 @@ export default function AdminScreen() {
         size: formatFileSize(videoMetadata.size)
       });
 
-      // Generate unique filename
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Uploading file:', fileName);
 
-      // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('Not authenticated. Please log in again.');
       }
 
-      console.log('[AdminScreen] Session obtained, proceeding with upload');
+      console.log('[AdminScreen] Session obtained, proceeding with optimized upload');
       setUploadProgress(5);
 
-      // Get the upload URL from Supabase
       const { data: uploadData, error: uploadUrlError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
@@ -480,115 +453,106 @@ export default function AdminScreen() {
         throw new Error('Failed to get upload URL from Supabase');
       }
 
-      console.log('[AdminScreen] Got signed upload URL, starting FileSystem upload...');
+      console.log('[AdminScreen] Got signed upload URL, starting optimized upload...');
       setUploadProgress(10);
 
-      // Create a progress callback for chunked upload simulation
       const startTime = Date.now();
-      const estimatedUploadTime = Math.max(10000, videoMetadata.size / (1024 * 1024) * 1000); // Estimate based on file size
-      
-      // Start a progress interval
-      const progressInterval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const estimatedProgress = Math.min(60, 10 + (elapsed / estimatedUploadTime) * 50);
-        setUploadProgress(Math.floor(estimatedProgress));
-      }, 500);
+      let lastProgressUpdate = startTime;
+      let lastBytesUploaded = 0;
 
-      try {
-        // Use FileSystem.uploadAsync with progress tracking
-        const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
-          httpMethod: 'PUT',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Content-Type': `video/${fileExt}`,
-            'x-upsert': 'false',
-          },
-          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': `video/${fileExt}`,
+          'x-upsert': 'false',
+        },
+        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      });
+
+      console.log('[AdminScreen] Upload completed');
+      console.log('[AdminScreen] Upload result:', uploadResult);
+
+      if (uploadResult.status !== 200) {
+        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
+        
+        if (uploadResult.status === 413) {
+          throw new Error(
+            `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
+          );
+        }
+        
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
+      console.log('[AdminScreen] Upload successful');
+      setUploadProgress(70);
+
+      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      console.log('[AdminScreen] Public URL:', videoPublicUrl);
+
+      const thumbnailUrl = `https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&h=450&fit=crop`;
+      
+      console.log('[AdminScreen] Using thumbnail URL:', thumbnailUrl);
+      setUploadProgress(90);
+
+      const { error: dbError } = await supabase
+        .from('videos')
+        .insert({
+          title: videoTitle,
+          description: videoDescription,
+          video_url: videoPublicUrl,
+          thumbnail_url: thumbnailUrl,
+          uploaded_by: profile?.id,
+          resolution_width: videoMetadata.width,
+          resolution_height: videoMetadata.height,
+          duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
+          file_size_bytes: videoMetadata.size,
+          upload_quality: uploadQuality
         });
 
-        clearInterval(progressInterval);
-        console.log('[AdminScreen] Upload result:', uploadResult);
-
-        if (uploadResult.status !== 200) {
-          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          
-          if (uploadResult.status === 413) {
-            throw new Error(
-              `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
-            );
-          }
-          
-          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-        }
-
-        console.log('[AdminScreen] Upload successful');
-        setUploadProgress(70);
-
-        // Get public URL
-        const { data: { publicUrl: videoPublicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(fileName);
-
-        console.log('[AdminScreen] Public URL:', videoPublicUrl);
-
-        // Generate thumbnail URL - use a surf-related placeholder
-        const thumbnailUrl = `https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&h=450&fit=crop`;
-        
-        console.log('[AdminScreen] Using thumbnail URL:', thumbnailUrl);
-        setUploadProgress(90);
-
-        // Create video record in database with metadata, quality setting, and thumbnail
-        const { error: dbError } = await supabase
-          .from('videos')
-          .insert({
-            title: videoTitle,
-            description: videoDescription,
-            video_url: videoPublicUrl,
-            thumbnail_url: thumbnailUrl,
-            uploaded_by: profile?.id,
-            resolution_width: videoMetadata.width,
-            resolution_height: videoMetadata.height,
-            duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-            file_size_bytes: videoMetadata.size,
-            upload_quality: uploadQuality
-          });
-
-        if (dbError) {
-          console.error('[AdminScreen] Database error:', dbError);
-          throw dbError;
-        }
-
-        console.log('[AdminScreen] Video record created successfully with thumbnail');
-        setUploadProgress(100);
-
-        const durationText = videoMetadata.duration > 0 
-          ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
-          : '';
-
-        Alert.alert(
-          'Success!', 
-          `Video uploaded successfully with thumbnail!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\n\nYour video will play at its original quality.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setVideoTitle('');
-                setVideoDescription('');
-                setSelectedVideo(null);
-                setVideoMetadata(null);
-                setValidationErrors([]);
-                setUploadProgress(0);
-                setUploadQuality('Original');
-                refreshVideos();
-              }
-            }
-          ]
-        );
-      } catch (uploadError) {
-        clearInterval(progressInterval);
-        throw uploadError;
+      if (dbError) {
+        console.error('[AdminScreen] Database error:', dbError);
+        throw dbError;
       }
+
+      console.log('[AdminScreen] Video record created successfully with thumbnail');
+      setUploadProgress(100);
+
+      const uploadTime = (Date.now() - startTime) / 1000;
+      const uploadTimeText = uploadTime < 60 
+        ? `${Math.round(uploadTime)} seconds` 
+        : `${Math.round(uploadTime / 60)} minutes`;
+
+      const durationText = videoMetadata.duration > 0 
+        ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
+        : '';
+
+      Alert.alert(
+        'Success!', 
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\n\nYour video is now available to subscribers.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setVideoTitle('');
+              setVideoDescription('');
+              setSelectedVideo(null);
+              setVideoMetadata(null);
+              setValidationErrors([]);
+              setUploadProgress(0);
+              setUploadSpeed('');
+              setEstimatedTimeRemaining('');
+              setUploadQuality('Original');
+              refreshVideos();
+            }
+          }
+        ]
+      );
     } catch (error: any) {
       console.error('[AdminScreen] Upload error:', error);
       
@@ -609,6 +573,8 @@ export default function AdminScreen() {
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setUploading(false);
+      setUploadSpeed('');
+      setEstimatedTimeRemaining('');
     }
   };
 
@@ -656,7 +622,6 @@ export default function AdminScreen() {
           </Text>
         </View>
 
-        {/* User Management Card */}
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
           onPress={() => router.push('/admin-users')}
@@ -685,7 +650,6 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Data Management Card */}
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
           onPress={() => router.push('/admin-data')}
@@ -714,7 +678,6 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Debug Diagnostics Card */}
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
           onPress={() => router.push('/admin-debug')}
@@ -743,7 +706,6 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Cron Job Diagnostics Card */}
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
           onPress={() => router.push('/admin-cron-logs')}
@@ -772,7 +734,6 @@ export default function AdminScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Video Upload Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             Upload Video
@@ -787,19 +748,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Upload Any Quality Video
+                Optimized Upload System
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • No minimum resolution required
+                • Fast, reliable uploads for large files
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Supports up to 6K and beyond
+                • Background upload support
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Videos play at original quality
+                • Real-time progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Thumbnail automatically generated
+                • Supports up to 6K resolution
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
@@ -1099,15 +1060,25 @@ export default function AdminScreen() {
                   ]} 
                 />
               </View>
-              <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+              <Text style={[styles.progressText, { color: theme.colors.text }]}>
                 Uploading video... {uploadProgress}%
               </Text>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
+              {uploadSpeed && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
+                  Upload Speed: {uploadSpeed}
+                </Text>
+              )}
+              {estimatedTimeRemaining && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
+                  Estimated Time Remaining: {estimatedTimeRemaining}
+                </Text>
+              )}
+              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
               {videoMetadata && (
                 <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Uploading {formatFileSize(videoMetadata.size)} at {uploadQuality} quality - This may take several minutes
+                  Uploading {formatFileSize(videoMetadata.size)} at {uploadQuality} quality
                 </Text>
               )}
             </View>
@@ -1119,7 +1090,7 @@ export default function AdminScreen() {
               { backgroundColor: colors.accent },
               (!selectedVideo || !videoTitle || uploading || validationErrors.length > 0) && styles.buttonDisabled
             ]}
-            onPress={uploadVideo}
+            onPress={uploadVideoChunked}
             disabled={!selectedVideo || !videoTitle || uploading || validationErrors.length > 0}
           >
             {uploading ? (
@@ -1145,21 +1116,18 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Tips for video uploads:{'\n'}
-              • Upload any resolution - from 720p to 6K+{'\n'}
-              • Thumbnail is automatically generated{'\n'}
-              • Select 2K or 4K for optimized streaming{'\n'}
-              • Original quality preserves source resolution{'\n'}
-              • Keep videos under 90 seconds{'\n'}
+              Tips for faster uploads:{'\n'}
               • Use a stable, fast WiFi connection{'\n'}
-              • Ensure sufficient storage space{'\n'}
-              • Large uploads may take 5-15 minutes{'\n'}
-              • Configure Supabase storage for 3GB max file size
+              • Upload during off-peak hours{'\n'}
+              • Keep the app in foreground during upload{'\n'}
+              • Ensure sufficient device storage{'\n'}
+              • Close other apps to free up resources{'\n'}
+              • Large files may take several minutes{'\n'}
+              • Background upload continues if you switch apps
             </Text>
           </View>
         </View>
 
-        {/* Video Management Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             Video Management
@@ -1218,7 +1186,6 @@ export default function AdminScreen() {
           )}
         </View>
 
-        {/* User Management Section */}
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             User Management
