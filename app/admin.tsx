@@ -470,7 +470,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob using fetch()...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
       let videoBlob: Blob | null = null;
@@ -482,35 +482,19 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Read attempt', readAttempts, 'of', maxReadAttempts);
         
         try {
-          console.log('[AdminScreen] Using FileSystem.readAsStringAsync with base64 encoding...');
-          const base64StartTime = Date.now();
+          console.log('[AdminScreen] Using fetch() to read video as blob (no base64 conversion)...');
+          const fetchStartTime = Date.now();
           
-          const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const response = await fetch(selectedVideo);
           
-          const base64Duration = Date.now() - base64StartTime;
-          console.log('[AdminScreen] Base64 read completed in', base64Duration, 'ms');
-          console.log('[AdminScreen] Base64 string length:', base64Data.length);
-          
-          if (!base64Data || base64Data.length === 0) {
-            throw new Error('Base64 data is empty');
+          if (!response.ok) {
+            throw new Error(`Fetch failed with status: ${response.status}`);
           }
           
-          console.log('[AdminScreen] Converting base64 to blob...');
-          const blobStartTime = Date.now();
+          videoBlob = await response.blob();
           
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          
-          videoBlob = new Blob([byteArray], { type: `video/${fileExt}` });
-          
-          const blobDuration = Date.now() - blobStartTime;
-          console.log('[AdminScreen] Blob conversion completed in', blobDuration, 'ms');
+          const fetchDuration = Date.now() - fetchStartTime;
+          console.log('[AdminScreen] Fetch completed in', fetchDuration, 'ms');
           console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes');
           console.log('[AdminScreen] Blob type:', videoBlob.type);
           
@@ -560,7 +544,13 @@ export default function AdminScreen() {
             }
           }
           
-          console.log('[AdminScreen] ✓ Blob read successfully');
+          if (!videoBlob.type || !videoBlob.type.startsWith('video/')) {
+            console.log('[AdminScreen] Blob type is not video, setting correct type...');
+            videoBlob = new Blob([videoBlob], { type: `video/${fileExt}` });
+            console.log('[AdminScreen] Updated blob type:', videoBlob.type);
+          }
+          
+          console.log('[AdminScreen] ✓ Blob read successfully using fetch()');
           break;
           
         } catch (readError: any) {
@@ -1002,7 +992,10 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Optimized direct blob upload with retry logic
+                • Direct fetch() blob upload (no base64 conversion)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • No string length limits - supports large 6K videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Automatic retry on empty blob (up to 3 attempts)
