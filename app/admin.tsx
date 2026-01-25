@@ -329,41 +329,6 @@ export default function AdminScreen() {
     return errors;
   };
 
-  const generateThumbnail = async (videoUri: string): Promise<string | null> => {
-    try {
-      console.log('[AdminScreen] Generating thumbnail from video:', videoUri);
-      
-      // For now, we'll use expo-image-picker's thumbnail if available
-      // In a production app, you'd want to extract a frame from the video
-      // Since React Native doesn't have built-in video frame extraction,
-      // we'll use a placeholder approach
-      
-      // Try to get the first frame using expo-image-picker's thumbnail
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
-        allowsEditing: false,
-        quality: 0.5,
-        videoMaxDuration: 1,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        console.log('[AdminScreen] Could not generate thumbnail, using placeholder');
-        return null;
-      }
-
-      // If the picker provides a thumbnail URI, use it
-      if (result.assets[0].uri) {
-        console.log('[AdminScreen] Using video frame as thumbnail');
-        return result.assets[0].uri;
-      }
-
-      return null;
-    } catch (error) {
-      console.error('[AdminScreen] Error generating thumbnail:', error);
-      return null;
-    }
-  };
-
   const pickVideo = async () => {
     try {
       setValidationErrors([]);
@@ -499,6 +464,7 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Session obtained, proceeding with upload');
+      setUploadProgress(5);
 
       // Get the upload URL from Supabase
       const { data: uploadData, error: uploadUrlError } = await supabase.storage
@@ -515,97 +481,114 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Got signed upload URL, starting FileSystem upload...');
+      setUploadProgress(10);
 
-      // Use FileSystem.uploadAsync with progress tracking
-      const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
-        httpMethod: 'PUT',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Content-Type': `video/${fileExt}`,
-          'x-upsert': 'false',
-        },
-        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-      });
-
-      console.log('[AdminScreen] Upload result:', uploadResult);
-
-      if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        
-        if (uploadResult.status === 413) {
-          throw new Error(
-            `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
-          );
-        }
-        
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-      }
-
-      console.log('[AdminScreen] Upload successful');
-      setUploadProgress(70);
-
-      // Get public URL
-      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-
-      console.log('[AdminScreen] Public URL:', videoPublicUrl);
-
-      // Generate thumbnail URL (use a placeholder for now)
-      // In production, you would extract a frame from the video
-      const thumbnailUrl = `https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&h=450&fit=crop`;
+      // Create a progress callback for chunked upload simulation
+      const startTime = Date.now();
+      const estimatedUploadTime = Math.max(10000, videoMetadata.size / (1024 * 1024) * 1000); // Estimate based on file size
       
-      console.log('[AdminScreen] Using thumbnail URL:', thumbnailUrl);
-      setUploadProgress(90);
+      // Start a progress interval
+      const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const estimatedProgress = Math.min(60, 10 + (elapsed / estimatedUploadTime) * 50);
+        setUploadProgress(Math.floor(estimatedProgress));
+      }, 500);
 
-      // Create video record in database with metadata, quality setting, and thumbnail
-      const { error: dbError } = await supabase
-        .from('videos')
-        .insert({
-          title: videoTitle,
-          description: videoDescription,
-          video_url: videoPublicUrl,
-          thumbnail_url: thumbnailUrl,
-          uploaded_by: profile?.id,
-          resolution_width: videoMetadata.width,
-          resolution_height: videoMetadata.height,
-          duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-          file_size_bytes: videoMetadata.size,
-          upload_quality: uploadQuality
+      try {
+        // Use FileSystem.uploadAsync with progress tracking
+        const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            'Content-Type': `video/${fileExt}`,
+            'x-upsert': 'false',
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         });
 
-      if (dbError) {
-        console.error('[AdminScreen] Database error:', dbError);
-        throw dbError;
-      }
+        clearInterval(progressInterval);
+        console.log('[AdminScreen] Upload result:', uploadResult);
 
-      console.log('[AdminScreen] Video record created successfully with thumbnail');
-      setUploadProgress(100);
-
-      const durationText = videoMetadata.duration > 0 
-        ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
-        : '';
-
-      Alert.alert(
-        'Success!', 
-        `Video uploaded successfully with thumbnail!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\n\nYour video will play at its original quality.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setVideoTitle('');
-              setVideoDescription('');
-              setSelectedVideo(null);
-              setVideoMetadata(null);
-              setValidationErrors([]);
-              setUploadProgress(0);
-              setUploadQuality('Original');
-              refreshVideos();
-            }
+        if (uploadResult.status !== 200) {
+          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          
+          if (uploadResult.status === 413) {
+            throw new Error(
+              `File size exceeds storage limits.\n\nYour file: ${formatFileSize(videoMetadata.size)}\n\nPlease ensure your Supabase storage bucket is configured to accept files up to ${formatFileSize(MAX_FILE_SIZE)}.\n\nTo fix this:\n1. Go to Supabase Dashboard\n2. Storage → videos bucket → Settings\n3. Increase "Maximum file size" to 3GB (3221225472 bytes)`
+            );
           }
-        ]
-      );
+          
+          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+        }
+
+        console.log('[AdminScreen] Upload successful');
+        setUploadProgress(70);
+
+        // Get public URL
+        const { data: { publicUrl: videoPublicUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(fileName);
+
+        console.log('[AdminScreen] Public URL:', videoPublicUrl);
+
+        // Generate thumbnail URL - use a surf-related placeholder
+        const thumbnailUrl = `https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&h=450&fit=crop`;
+        
+        console.log('[AdminScreen] Using thumbnail URL:', thumbnailUrl);
+        setUploadProgress(90);
+
+        // Create video record in database with metadata, quality setting, and thumbnail
+        const { error: dbError } = await supabase
+          .from('videos')
+          .insert({
+            title: videoTitle,
+            description: videoDescription,
+            video_url: videoPublicUrl,
+            thumbnail_url: thumbnailUrl,
+            uploaded_by: profile?.id,
+            resolution_width: videoMetadata.width,
+            resolution_height: videoMetadata.height,
+            duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
+            file_size_bytes: videoMetadata.size,
+            upload_quality: uploadQuality
+          });
+
+        if (dbError) {
+          console.error('[AdminScreen] Database error:', dbError);
+          throw dbError;
+        }
+
+        console.log('[AdminScreen] Video record created successfully with thumbnail');
+        setUploadProgress(100);
+
+        const durationText = videoMetadata.duration > 0 
+          ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
+          : '';
+
+        Alert.alert(
+          'Success!', 
+          `Video uploaded successfully with thumbnail!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\n\nYour video will play at its original quality.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setVideoTitle('');
+                setVideoDescription('');
+                setSelectedVideo(null);
+                setVideoMetadata(null);
+                setValidationErrors([]);
+                setUploadProgress(0);
+                setUploadQuality('Original');
+                refreshVideos();
+              }
+            }
+          ]
+        );
+      } catch (uploadError) {
+        clearInterval(progressInterval);
+        throw uploadError;
+      }
     } catch (error: any) {
       console.error('[AdminScreen] Upload error:', error);
       
