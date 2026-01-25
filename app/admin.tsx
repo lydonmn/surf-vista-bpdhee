@@ -411,7 +411,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] Starting video upload...');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD ==========');
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
@@ -425,12 +425,15 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Preparing video file for upload...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
 
-      console.log('[AdminScreen] Verifying video file...');
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      console.log('[AdminScreen] File info before upload:', fileInfo);
+      console.log('[AdminScreen] File info:', {
+        exists: fileInfo.exists,
+        size: ('size' in fileInfo) ? fileInfo.size : 'unknown',
+        uri: fileInfo.uri
+      });
       
       if (!fileInfo.exists) {
         throw new Error('Video file not found. Please select the video again.');
@@ -440,23 +443,26 @@ export default function AdminScreen() {
         throw new Error('Video file is empty or cannot be read. Please try selecting the video again.');
       }
       
-      console.log('[AdminScreen] File verified, size:', fileInfo.size, 'bytes');
+      console.log('[AdminScreen] ✓ File verified successfully');
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Getting upload URL from Supabase...');
+      console.log('[AdminScreen] Step 2/5: Getting authentication session...');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
         throw new Error('Not authenticated. Please log in again.');
       }
 
+      console.log('[AdminScreen] ✓ Session obtained');
       const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       console.log('[AdminScreen] Upload URL:', uploadUrl);
       
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Starting upload with FileSystem.uploadAsync...');
+      console.log('[AdminScreen] Step 3/5: Uploading video file...');
+      console.log('[AdminScreen] File size:', fileInfo.size, 'bytes');
+      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
       const startTime = Date.now();
 
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
@@ -469,16 +475,20 @@ export default function AdminScreen() {
         },
       });
 
-      console.log('[AdminScreen] Upload result:', uploadResult);
+      const uploadTime = (Date.now() - startTime) / 1000;
+      console.log('[AdminScreen] Upload completed in', uploadTime, 'seconds');
+      console.log('[AdminScreen] Upload result status:', uploadResult.status);
+      console.log('[AdminScreen] Upload result body:', uploadResult.body);
 
       if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Upload response:', uploadResult.body);
+        console.error('[AdminScreen] ✗ Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
         throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
       }
 
-      console.log('[AdminScreen] Video uploaded successfully');
+      console.log('[AdminScreen] ✓ Video uploaded successfully');
       
+      console.log('[AdminScreen] Verifying uploaded file in storage...');
       const { data: fileData, error: fileCheckError } = await supabase.storage
         .from('videos')
         .list('', {
@@ -487,11 +497,19 @@ export default function AdminScreen() {
       
       if (fileCheckError) {
         console.error('[AdminScreen] Error checking uploaded file:', fileCheckError);
-      } else if (fileData && fileData.length > 0) {
-        console.log('[AdminScreen] Uploaded file verified:', fileData[0]);
-        if (fileData[0].metadata && fileData[0].metadata.size === 0) {
-          throw new Error('Video upload failed - file has 0 bytes. Please try again.');
-        }
+        throw new Error(`Failed to verify upload: ${fileCheckError.message}`);
+      }
+      
+      if (!fileData || fileData.length === 0) {
+        console.error('[AdminScreen] ✗ File not found in storage after upload');
+        throw new Error('Video upload failed - file not found in storage. Please try again.');
+      }
+      
+      console.log('[AdminScreen] ✓ File verified in storage:', fileData[0]);
+      
+      if (fileData[0].metadata && fileData[0].metadata.size === 0) {
+        console.error('[AdminScreen] ✗ Uploaded file has 0 bytes');
+        throw new Error('Video upload failed - file has 0 bytes. Please try again.');
       }
       
       setUploadProgress(60);
@@ -503,7 +521,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
       setUploadProgress(70);
 
-      console.log('[AdminScreen] Generating thumbnail from video...');
+      console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
       let thumbnailUrl = null;
       
       try {
@@ -518,7 +536,7 @@ export default function AdminScreen() {
           }
         );
         
-        console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
+        console.log('[AdminScreen] Thumbnail generated at:', thumbnailUri);
         setUploadProgress(75);
         
         const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
@@ -529,8 +547,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Thumbnail file size:', thumbnailInfo.size, 'bytes');
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
-        
-        console.log('[AdminScreen] Uploading thumbnail to Supabase...');
+        console.log('[AdminScreen] Uploading thumbnail as:', thumbnailFileName);
         
         const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
         
@@ -544,11 +561,14 @@ export default function AdminScreen() {
           },
         });
 
+        console.log('[AdminScreen] Thumbnail upload status:', thumbnailUploadResult.status);
+
         if (thumbnailUploadResult.status !== 200) {
           console.error('[AdminScreen] Thumbnail upload failed with status:', thumbnailUploadResult.status);
           throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
         }
         
+        console.log('[AdminScreen] Verifying thumbnail in storage...');
         const { data: thumbnailFileData, error: thumbnailCheckError } = await supabase.storage
           .from('videos')
           .list('', {
@@ -558,13 +578,16 @@ export default function AdminScreen() {
         if (thumbnailCheckError) {
           console.error('[AdminScreen] Error checking uploaded thumbnail:', thumbnailCheckError);
           throw thumbnailCheckError;
-        } else if (thumbnailFileData && thumbnailFileData.length > 0) {
-          console.log('[AdminScreen] Thumbnail file verified:', thumbnailFileData[0]);
-          if (thumbnailFileData[0].metadata && thumbnailFileData[0].metadata.size === 0) {
-            throw new Error('Thumbnail upload failed - file has 0 bytes');
-          }
-        } else {
+        }
+        
+        if (!thumbnailFileData || thumbnailFileData.length === 0) {
           throw new Error('Thumbnail file not found after upload');
+        }
+        
+        console.log('[AdminScreen] ✓ Thumbnail verified in storage:', thumbnailFileData[0]);
+        
+        if (thumbnailFileData[0].metadata && thumbnailFileData[0].metadata.size === 0) {
+          throw new Error('Thumbnail upload failed - file has 0 bytes');
         }
 
         const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
@@ -572,16 +595,16 @@ export default function AdminScreen() {
           .getPublicUrl(thumbnailFileName);
         
         thumbnailUrl = thumbnailPublicUrl;
-        console.log('[AdminScreen] Thumbnail uploaded successfully:', thumbnailUrl);
+        console.log('[AdminScreen] ✓ Thumbnail uploaded successfully:', thumbnailUrl);
       } catch (thumbnailError) {
-        console.error('[AdminScreen] Error generating/uploading thumbnail:', thumbnailError);
+        console.error('[AdminScreen] ✗ Error generating/uploading thumbnail:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
       }
       
       setUploadProgress(85);
 
-      console.log('[AdminScreen] Creating database record...');
-      const { error: dbError } = await supabase
+      console.log('[AdminScreen] Step 5/5: Creating database record...');
+      const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
           title: videoTitle,
@@ -593,17 +616,21 @@ export default function AdminScreen() {
           resolution_height: videoMetadata.height,
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           file_size_bytes: videoMetadata.size,
-        });
+        })
+        .select();
 
       if (dbError) {
-        console.error('[AdminScreen] Database error:', dbError);
-        throw dbError;
+        console.error('[AdminScreen] ✗ Database error:', dbError);
+        console.error('[AdminScreen] Error details:', JSON.stringify(dbError, null, 2));
+        throw new Error(`Database error: ${dbError.message}`);
       }
 
-      console.log('[AdminScreen] Video record created successfully');
+      console.log('[AdminScreen] ✓ Video record created successfully');
+      console.log('[AdminScreen] Inserted data:', insertedData);
       setUploadProgress(100);
 
-      const uploadTime = (Date.now() - startTime) / 1000;
+      console.log('[AdminScreen] ========== UPLOAD COMPLETE ==========');
+
       const uploadTimeText = uploadTime < 60 
         ? `${Math.round(uploadTime)} seconds` 
         : `${Math.round(uploadTime / 60)} minutes`;
@@ -636,20 +663,25 @@ export default function AdminScreen() {
         ]
       );
     } catch (error: any) {
-      console.error('[AdminScreen] Upload error:', error);
+      console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
+      console.error('[AdminScreen] Error:', error);
+      console.error('[AdminScreen] Error message:', error.message);
+      console.error('[AdminScreen] Error stack:', error.stack);
       
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('File too large') || error.message?.includes('413')) {
         errorMessage = 'File is too large. The maximum file size is 3GB. Please compress your video or reduce its quality.';
-      } else if (error.message?.includes('Network request failed')) {
+      } else if (error.message?.includes('Network request failed') || error.message?.includes('network')) {
         errorMessage += 'Network connection lost. Please check your internet connection and try again.';
-      } else if (error.message?.includes('Not authenticated')) {
+      } else if (error.message?.includes('Not authenticated') || error.message?.includes('session')) {
         errorMessage += 'Your session has expired. Please log out and log in again.';
       } else if (error.message?.includes('storage')) {
         errorMessage += 'Storage service error. Please try again later or contact support.';
       } else if (error.message?.includes('0 bytes') || error.message?.includes('empty')) {
         errorMessage = error.message + ' This may be due to a network issue or file access problem. Please try again.';
+      } else if (error.message?.includes('Database error')) {
+        errorMessage += error.message + ' The video was uploaded but could not be saved to the database. Please contact support.';
       } else {
         errorMessage += error.message || 'An unknown error occurred. Please try again.';
       }
