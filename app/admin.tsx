@@ -1,4 +1,4 @@
-
+upload fail
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform, Image } from 'react-native';
 import { useTheme } from '@react-navigation/native';
