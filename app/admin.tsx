@@ -454,37 +454,57 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] ✓ Session obtained');
-      const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video file...');
-      console.log('[AdminScreen] File size:', fileInfo.size, 'bytes');
-      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
-      const startTime = Date.now();
+      console.log('[AdminScreen] Step 3/5: Reading video file as blob...');
+      
+      let videoBlob: Blob;
+      try {
+        const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        console.log('[AdminScreen] File read as base64, length:', base64Data.length);
+        
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        videoBlob = new Blob([byteArray], { type: `video/${fileExt}` });
+        
+        console.log('[AdminScreen] Blob created, size:', videoBlob.size, 'bytes');
+        
+        if (videoBlob.size === 0) {
+          throw new Error('Created blob is empty. File may be corrupted or inaccessible.');
+        }
+      } catch (blobError: any) {
+        console.error('[AdminScreen] Error creating blob:', blobError);
+        throw new Error(`Failed to read video file: ${blobError.message}. Try selecting the video again.`);
+      }
+      
+      setUploadProgress(30);
 
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': `video/${fileExt}`,
-          'x-upsert': 'false',
-        },
-      });
+      console.log('[AdminScreen] Step 4/5: Uploading video to Supabase storage...');
+      const startTime = Date.now();
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, videoBlob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: `video/${fileExt}`,
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
 
       const uploadTime = (Date.now() - startTime) / 1000;
       console.log('[AdminScreen] Upload completed in', uploadTime, 'seconds');
-      console.log('[AdminScreen] Upload result status:', uploadResult.status);
-      console.log('[AdminScreen] Upload result body:', uploadResult.body);
-
-      if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] ✗ Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-      }
+      console.log('[AdminScreen] Upload data:', uploadData);
 
       console.log('[AdminScreen] ✓ Video uploaded successfully');
       
@@ -521,7 +541,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
       setUploadProgress(70);
 
-      console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
+      console.log('[AdminScreen] Step 5/5: Generating thumbnail...');
       let thumbnailUrl = null;
       
       try {
@@ -546,27 +566,41 @@ export default function AdminScreen() {
         
         console.log('[AdminScreen] Thumbnail file size:', thumbnailInfo.size, 'bytes');
         
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        const thumbnailByteCharacters = atob(thumbnailBase64);
+        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
+        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
+          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
+        }
+        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
+        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
+        
+        console.log('[AdminScreen] Thumbnail blob size:', thumbnailBlob.size, 'bytes');
+        
+        if (thumbnailBlob.size === 0) {
+          throw new Error('Thumbnail blob is empty');
+        }
+        
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         console.log('[AdminScreen] Uploading thumbnail as:', thumbnailFileName);
         
-        const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
-        
-        const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'image/jpeg',
-            'x-upsert': 'false',
-          },
-        });
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'image/jpeg',
+          });
 
-        console.log('[AdminScreen] Thumbnail upload status:', thumbnailUploadResult.status);
-
-        if (thumbnailUploadResult.status !== 200) {
-          console.error('[AdminScreen] Thumbnail upload failed with status:', thumbnailUploadResult.status);
-          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
+        if (thumbnailUploadError) {
+          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
+          throw thumbnailUploadError;
         }
+
+        console.log('[AdminScreen] Thumbnail upload data:', thumbnailUploadData);
         
         console.log('[AdminScreen] Verifying thumbnail in storage...');
         const { data: thumbnailFileData, error: thumbnailCheckError } = await supabase.storage
@@ -603,7 +637,7 @@ export default function AdminScreen() {
       
       setUploadProgress(85);
 
-      console.log('[AdminScreen] Step 5/5: Creating database record...');
+      console.log('[AdminScreen] Step 6/6: Creating database record...');
       const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -670,7 +704,9 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Payload too large') || error.message?.includes('File too large') || error.message?.includes('413')) {
+      if (error.message?.includes('String length exceeds limit') || error.message?.includes('out of memory')) {
+        errorMessage = 'Video file is too large to process in memory. Please try:\n\n1. Compress the video to a smaller file size\n2. Reduce the video quality/resolution\n3. Shorten the video duration\n\nMaximum recommended size: 500MB';
+      } else if (error.message?.includes('Payload too large') || error.message?.includes('File too large') || error.message?.includes('413')) {
         errorMessage = 'File is too large. The maximum file size is 3GB. Please compress your video or reduce its quality.';
       } else if (error.message?.includes('Network request failed') || error.message?.includes('network')) {
         errorMessage += 'Network connection lost. Please check your internet connection and try again.';
@@ -682,6 +718,8 @@ export default function AdminScreen() {
         errorMessage = error.message + ' This may be due to a network issue or file access problem. Please try again.';
       } else if (error.message?.includes('Database error')) {
         errorMessage += error.message + ' The video was uploaded but could not be saved to the database. Please contact support.';
+      } else if (error.message?.includes('Failed to read video file')) {
+        errorMessage = error.message;
       } else {
         errorMessage += error.message || 'An unknown error occurred. Please try again.';
       }
@@ -914,7 +952,7 @@ export default function AdminScreen() {
                 • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Storage bucket configured for large files
+                • Recommended: Videos under 500MB for best performance
               </Text>
             </View>
           </View>
@@ -1234,7 +1272,7 @@ export default function AdminScreen() {
               Upload Tips:{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • Large 6K videos may take several minutes{'\n'}
+              • For large 6K videos, consider compressing to under 500MB{'\n'}
               • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
             </Text>
