@@ -1,4 +1,4 @@
-upload fail
+
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform, Image } from 'react-native';
 import { useTheme } from '@react-navigation/native';
@@ -428,7 +428,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Preparing video file for upload...');
       setUploadProgress(5);
 
-      // Verify file exists and has size
       console.log('[AdminScreen] Verifying video file...');
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
       console.log('[AdminScreen] File info before upload:', fileInfo);
@@ -444,7 +443,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File verified, size:', fileInfo.size, 'bytes');
       setUploadProgress(10);
 
-      // Get upload URL from Supabase
       console.log('[AdminScreen] Getting upload URL from Supabase...');
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -452,14 +450,12 @@ export default function AdminScreen() {
         throw new Error('Not authenticated. Please log in again.');
       }
 
-      // Construct storage URL from Supabase URL
       const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       console.log('[AdminScreen] Upload URL:', uploadUrl);
       
       setUploadProgress(15);
 
-      // Upload using FileSystem.uploadAsync for large files
       console.log('[AdminScreen] Starting upload with FileSystem.uploadAsync...');
       const startTime = Date.now();
 
@@ -483,7 +479,6 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Video uploaded successfully');
       
-      // Verify the uploaded file exists and has size
       const { data: fileData, error: fileCheckError } = await supabase.storage
         .from('videos')
         .list('', {
@@ -508,7 +503,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
       setUploadProgress(70);
 
-      // Generate thumbnail
       console.log('[AdminScreen] Generating thumbnail from video...');
       let thumbnailUrl = null;
       
@@ -527,7 +521,6 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
         setUploadProgress(75);
         
-        // Verify thumbnail file exists
         const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
         if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
           throw new Error('Thumbnail file is empty or does not exist');
@@ -556,7 +549,6 @@ export default function AdminScreen() {
           throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
         }
         
-        // Verify thumbnail was uploaded
         const { data: thumbnailFileData, error: thumbnailCheckError } = await supabase.storage
           .from('videos')
           .list('', {
@@ -584,7 +576,6 @@ export default function AdminScreen() {
       } catch (thumbnailError) {
         console.error('[AdminScreen] Error generating/uploading thumbnail:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
-        // Don't throw - continue without thumbnail
       }
       
       setUploadProgress(85);
