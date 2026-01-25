@@ -418,32 +418,58 @@ export default function AdminScreen() {
         resolution: formatResolution(videoMetadata.width, videoMetadata.height),
         duration: videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown',
         durationSeconds: videoMetadata.duration,
-        size: formatFileSize(videoMetadata.size)
+        size: formatFileSize(videoMetadata.size),
+        sizeBytes: videoMetadata.size
+      });
+      console.log('[AdminScreen] Platform:', Platform.OS);
+      console.log('[AdminScreen] Device info:', {
+        isIOS: Platform.OS === 'ios',
+        isAndroid: Platform.OS === 'android',
+        version: Platform.Version
       });
 
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
+      console.log('[AdminScreen] File extension:', fileExt);
       console.log('[AdminScreen] Step 1/6: Verifying video file...');
       setUploadProgress(5);
 
+      // Verify file exists and is readable
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      console.log('[AdminScreen] File info:', {
+      console.log('[AdminScreen] File info from FileSystem:', {
         exists: fileInfo.exists,
         size: ('size' in fileInfo) ? fileInfo.size : 'unknown',
-        uri: fileInfo.uri
+        uri: fileInfo.uri,
+        isDirectory: ('isDirectory' in fileInfo) ? fileInfo.isDirectory : 'unknown'
       });
       
       if (!fileInfo.exists) {
-        throw new Error('Video file not found. Please select the video again.');
+        console.error('[AdminScreen] ✗ File does not exist at URI:', selectedVideo);
+        throw new Error('Video file not found at the specified location. Please select the video again.');
       }
       
-      if (!('size' in fileInfo) || fileInfo.size === 0) {
-        throw new Error('Video file is empty or cannot be read. Please try selecting the video again.');
+      if (!('size' in fileInfo)) {
+        console.error('[AdminScreen] ✗ Cannot read file size');
+        throw new Error('Cannot read video file information. Please try selecting the video again.');
       }
       
-      console.log('[AdminScreen] ✓ File verified successfully');
+      if (fileInfo.size === 0) {
+        console.error('[AdminScreen] ✗ File size is 0 bytes');
+        throw new Error('Video file is empty (0 bytes). The file may be corrupted or inaccessible. Please try a different video.');
+      }
+      
+      // Verify file size matches metadata
+      if (Math.abs(fileInfo.size - videoMetadata.size) > 1024) { // Allow 1KB difference
+        console.warn('[AdminScreen] ⚠️ File size mismatch between FileSystem and metadata:', {
+          fileSystemSize: fileInfo.size,
+          metadataSize: videoMetadata.size,
+          difference: Math.abs(fileInfo.size - videoMetadata.size)
+        });
+      }
+      
+      console.log('[AdminScreen] ✓ File verified successfully:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
       console.log('[AdminScreen] Step 2/6: Getting authentication session...');
@@ -478,30 +504,175 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
       
       let videoBlob: Blob;
+      let readMethod = 'unknown';
+      
       try {
-        console.log('[AdminScreen] Using fetch() to read video file directly as blob');
-        const response = await fetch(selectedVideo);
+        console.log('[AdminScreen] Attempting to read video file...');
+        console.log('[AdminScreen] Video URI:', selectedVideo);
+        console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
         
-        if (!response.ok) {
-          throw new Error(`Failed to fetch video file: ${response.status} ${response.statusText}`);
+        // Method 1: Try fetch() first (most reliable for large files)
+        try {
+          console.log('[AdminScreen] Method 1: Using fetch() to read video file as blob');
+          const fetchStartTime = Date.now();
+          
+          const response = await fetch(selectedVideo);
+          
+          console.log('[AdminScreen] Fetch completed in', Date.now() - fetchStartTime, 'ms');
+          console.log('[AdminScreen] Fetch response status:', response.status, response.statusText);
+          
+          const contentLength = response.headers.get('content-length');
+          if (contentLength) {
+            console.log('[AdminScreen] Content-Length header:', contentLength, 'bytes');
+          }
+          
+          if (!response.ok) {
+            throw new Error(`Fetch failed with status ${response.status}: ${response.statusText}`);
+          }
+          
+          // Get the blob
+          const blobStartTime = Date.now();
+          videoBlob = await response.blob();
+          console.log('[AdminScreen] Blob conversion completed in', Date.now() - blobStartTime, 'ms');
+          
+          readMethod = 'fetch';
+          
+          console.log('[AdminScreen] ✓ Blob created successfully via fetch()');
+          console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes (', formatFileSize(videoBlob.size), ')');
+          console.log('[AdminScreen] Blob type:', videoBlob.type || 'not set');
+          
+          // Critical check: Verify blob is not empty
+          if (videoBlob.size === 0) {
+            console.error('[AdminScreen] ✗ CRITICAL: Blob is empty (0 bytes) after fetch()');
+            throw new Error('Blob is empty after fetch()');
+          }
+          
+          // Verify blob size is reasonable
+          const sizeDifference = Math.abs(videoBlob.size - videoMetadata.size);
+          const sizeTolerancePercent = 0.15; // 15% tolerance
+          
+          if (sizeDifference > videoMetadata.size * sizeTolerancePercent) {
+            console.warn('[AdminScreen] ⚠️ Significant blob size mismatch:', {
+              blobSize: videoBlob.size,
+              expectedSize: videoMetadata.size,
+              difference: sizeDifference,
+              differencePercent: ((sizeDifference / videoMetadata.size) * 100).toFixed(2) + '%'
+            });
+            
+            // If blob is significantly smaller, this is a problem
+            if (videoBlob.size < videoMetadata.size * 0.5) {
+              console.error('[AdminScreen] ✗ Blob is less than 50% of expected size - likely incomplete read');
+              throw new Error('Blob size is too small - file may not have been read completely');
+            }
+          } else {
+            console.log('[AdminScreen] ✓ Blob size matches expected size (within tolerance)');
+          }
+          
+        } catch (fetchError: any) {
+          console.error('[AdminScreen] ✗ fetch() method failed:', fetchError.message);
+          console.error('[AdminScreen] Fetch error details:', {
+            message: fetchError.message,
+            name: fetchError.name,
+            stack: fetchError.stack?.substring(0, 200)
+          });
+          
+          // Method 2: Fallback to XMLHttpRequest for smaller files
+          if (videoMetadata.size < 100 * 1024 * 1024) { // Only for files < 100MB
+            console.log('[AdminScreen] Method 2: Attempting XMLHttpRequest fallback (file is < 100MB)');
+            
+            try {
+              videoBlob = await new Promise<Blob>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', selectedVideo, true);
+                xhr.responseType = 'blob';
+                
+                xhr.onload = () => {
+                  if (xhr.status === 200) {
+                    console.log('[AdminScreen] XMLHttpRequest succeeded');
+                    resolve(xhr.response);
+                  } else {
+                    reject(new Error(`XMLHttpRequest failed with status ${xhr.status}`));
+                  }
+                };
+                
+                xhr.onerror = () => {
+                  reject(new Error('XMLHttpRequest network error'));
+                };
+                
+                xhr.send();
+              });
+              
+              readMethod = 'xhr';
+              console.log('[AdminScreen] ✓ Blob created via XMLHttpRequest');
+              console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes');
+              
+              if (videoBlob.size === 0) {
+                throw new Error('Blob is empty after XMLHttpRequest');
+              }
+              
+            } catch (xhrError: any) {
+              console.error('[AdminScreen] ✗ XMLHttpRequest method also failed:', xhrError.message);
+              throw new Error(`All file reading methods failed. Last error: ${xhrError.message}`);
+            }
+          } else {
+            console.error('[AdminScreen] File is too large for fallback methods (> 100MB)');
+            throw fetchError; // Re-throw original fetch error
+          }
         }
         
-        videoBlob = await response.blob();
-        
-        console.log('[AdminScreen] Blob created from fetch, size:', videoBlob.size, 'bytes');
-        console.log('[AdminScreen] Blob type:', videoBlob.type);
-        
-        if (videoBlob.size === 0) {
-          throw new Error('Created blob is empty. File may be corrupted or inaccessible.');
+        // Ensure correct MIME type
+        if (!videoBlob.type || !videoBlob.type.startsWith('video/')) {
+          console.log('[AdminScreen] Blob type is missing or incorrect:', videoBlob.type);
+          const correctType = `video/${fileExt}`;
+          console.log('[AdminScreen] Creating new blob with correct type:', correctType);
+          
+          const oldSize = videoBlob.size;
+          videoBlob = new Blob([videoBlob], { type: correctType });
+          
+          console.log('[AdminScreen] New blob created:');
+          console.log('[AdminScreen] - Type:', videoBlob.type);
+          console.log('[AdminScreen] - Size:', videoBlob.size, 'bytes');
+          
+          if (videoBlob.size !== oldSize) {
+            console.error('[AdminScreen] ✗ CRITICAL: Blob size changed after type conversion!', {
+              oldSize,
+              newSize: videoBlob.size
+            });
+            throw new Error('Blob size changed during type conversion - this should not happen');
+          }
         }
         
-        if (videoBlob.type && !videoBlob.type.startsWith('video/')) {
-          console.log('[AdminScreen] Warning: Blob type is not video, overriding to video/' + fileExt);
-          videoBlob = new Blob([videoBlob], { type: `video/${fileExt}` });
-        }
+        console.log('[AdminScreen] ✓ Final blob ready for upload:', {
+          method: readMethod,
+          size: formatFileSize(videoBlob.size),
+          sizeBytes: videoBlob.size,
+          type: videoBlob.type,
+          expectedSize: formatFileSize(videoMetadata.size)
+        });
+        
       } catch (blobError: any) {
-        console.error('[AdminScreen] Error creating blob:', blobError);
-        throw new Error(`Failed to read video file: ${blobError.message}. Try selecting the video again.`);
+        console.error('[AdminScreen] ========== BLOB CREATION FAILED ==========');
+        console.error('[AdminScreen] Error:', blobError.message);
+        console.error('[AdminScreen] Error name:', blobError.name);
+        console.error('[AdminScreen] Error stack:', blobError.stack);
+        console.error('[AdminScreen] Video URI:', selectedVideo);
+        console.error('[AdminScreen] Expected size:', videoMetadata.size, 'bytes');
+        console.error('[AdminScreen] Read method attempted:', readMethod);
+        
+        throw new Error(
+          `Failed to read video file: ${blobError.message}\n\n` +
+          `This error occurred while trying to read the video file into memory. ` +
+          `Possible causes:\n\n` +
+          `1. File format not supported by the device\n` +
+          `2. Insufficient memory to load the file\n` +
+          `3. File access permissions issue\n` +
+          `4. Corrupted video file\n\n` +
+          `Please try:\n` +
+          `• Using a smaller video file (< 500MB recommended)\n` +
+          `• Compressing the video before upload\n` +
+          `• Restarting the app\n` +
+          `• Trying a different video`
+        );
       }
       
       setUploadProgress(35);
@@ -557,20 +728,43 @@ export default function AdminScreen() {
         });
       
       if (fileCheckError) {
-        console.error('[AdminScreen] Error checking uploaded file:', fileCheckError);
+        console.error('[AdminScreen] ✗ Error checking uploaded file:', fileCheckError);
         throw new Error(`Failed to verify upload: ${fileCheckError.message}`);
       }
       
       if (!fileData || fileData.length === 0) {
         console.error('[AdminScreen] ✗ File not found in storage after upload');
-        throw new Error('Video upload failed - file not found in storage. Please try again.');
+        console.error('[AdminScreen] This usually means the upload did not complete successfully');
+        throw new Error('Video upload verification failed - file not found in storage.\n\nThis may be due to:\n• Network interruption during upload\n• Storage bucket permissions\n• File size exceeding limits\n\nPlease try again with a stable connection.');
       }
       
-      console.log('[AdminScreen] ✓ File verified in storage:', fileData[0]);
+      console.log('[AdminScreen] ✓ File found in storage:', fileData[0]);
+      console.log('[AdminScreen] File details:', {
+        name: fileData[0].name,
+        size: fileData[0].metadata?.size || 'unknown',
+        created: fileData[0].created_at,
+        updated: fileData[0].updated_at
+      });
       
+      // Critical check: Verify uploaded file is not empty
       if (fileData[0].metadata && fileData[0].metadata.size === 0) {
-        console.error('[AdminScreen] ✗ Uploaded file has 0 bytes');
-        throw new Error('Video upload failed - file has 0 bytes. Please try again.');
+        console.error('[AdminScreen] ✗ CRITICAL: Uploaded file has 0 bytes in storage');
+        console.error('[AdminScreen] This means the blob was empty when uploaded');
+        console.error('[AdminScreen] Original blob size was:', videoBlob.size, 'bytes');
+        console.error('[AdminScreen] Expected file size was:', videoMetadata.size, 'bytes');
+        throw new Error('Video upload failed - file has 0 bytes in storage.\n\nThe video file could not be read correctly. This may be due to:\n\n1. File format not supported by the device\n2. Video file is corrupted\n3. Insufficient permissions to read the file\n4. Memory constraints on the device\n\nPlease try:\n• Using a different video\n• Compressing the video to a smaller size\n• Restarting the app\n• Checking the video plays in your gallery');
+      }
+      
+      // Verify uploaded size matches what we sent
+      const uploadedSize = fileData[0].metadata?.size || 0;
+      if (uploadedSize !== videoBlob.size) {
+        console.warn('[AdminScreen] ⚠️ Uploaded file size mismatch:', {
+          uploadedSize,
+          blobSize: videoBlob.size,
+          difference: Math.abs(uploadedSize - videoBlob.size)
+        });
+      } else {
+        console.log('[AdminScreen] ✓ File size verified:', formatFileSize(uploadedSize));
       }
       
       setUploadProgress(60);
