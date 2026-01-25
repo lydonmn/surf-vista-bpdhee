@@ -441,6 +441,22 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Session obtained, proceeding with optimized upload');
       setUploadProgress(5);
 
+      // Check if file still exists before uploading
+      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
+      if (!fileInfo.exists) {
+        throw new Error('Video file no longer exists. Please select the video again.');
+      }
+      
+      if (!('size' in fileInfo) || fileInfo.size === 0) {
+        throw new Error('Video file is empty or unreadable. Please select a different video.');
+      }
+      
+      console.log('[AdminScreen] File verified:', {
+        exists: fileInfo.exists,
+        size: formatFileSize(fileInfo.size),
+        uri: selectedVideo.substring(0, 50) + '...'
+      });
+
       const { data: uploadData, error: uploadUrlError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
@@ -455,15 +471,19 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Got signed upload URL, starting optimized upload...');
+      console.log('[AdminScreen] Upload URL (first 100 chars):', uploadData.signedUrl.substring(0, 100));
       setUploadProgress(10);
 
       const startTime = Date.now();
       let lastProgressUpdate = startTime;
       let lastBytesUploaded = 0;
+      let progressCallbackCount = 0;
 
-      console.log('[AdminScreen] Creating upload task with callback...');
+      console.log('[AdminScreen] Creating upload task with createUploadTask...');
+      console.log('[AdminScreen] File size to upload:', formatFileSize(videoMetadata.size));
 
-      const uploadResult = await FileSystem.uploadAsync(
+      // Use createUploadTask for better reliability and progress tracking
+      const uploadTask = FileSystem.createUploadTask(
         uploadData.signedUrl,
         selectedVideo,
         {
@@ -476,17 +496,23 @@ export default function AdminScreen() {
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         },
         (data) => {
-          console.log('[AdminScreen] Upload progress callback triggered');
-          console.log('[AdminScreen] Progress data:', JSON.stringify(data));
+          progressCallbackCount++;
+          
+          if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
+            console.log('[AdminScreen] Upload progress callback #', progressCallbackCount);
+            console.log('[AdminScreen] Progress data:', JSON.stringify(data));
+          }
           
           const totalBytesWritten = data.totalBytesSent || 0;
           const totalBytesExpected = data.totalBytesExpectedToSend || 0;
           
-          console.log('[AdminScreen] Progress values:', {
-            totalBytesWritten,
-            totalBytesExpected,
-            percentage: totalBytesExpected > 0 ? (totalBytesWritten / totalBytesExpected * 100).toFixed(2) : 'N/A'
-          });
+          if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
+            console.log('[AdminScreen] Progress values:', {
+              totalBytesWritten,
+              totalBytesExpected,
+              percentage: totalBytesExpected > 0 ? (totalBytesWritten / totalBytesExpected * 100).toFixed(2) : 'N/A'
+            });
+          }
           
           if (totalBytesExpected > 0 && totalBytesWritten > 0) {
             const progress = Math.min(Math.round((totalBytesWritten / totalBytesExpected) * 60) + 10, 70);
@@ -515,19 +541,38 @@ export default function AdminScreen() {
               lastBytesUploaded = totalBytesWritten;
             }
             
-            console.log('[AdminScreen] Upload progress:', {
-              progress: `${progress}%`,
-              uploaded: formatFileSize(totalBytesWritten),
-              total: formatFileSize(totalBytesExpected)
-            });
+            if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
+              console.log('[AdminScreen] Upload progress:', {
+                progress: `${progress}%`,
+                uploaded: formatFileSize(totalBytesWritten),
+                total: formatFileSize(totalBytesExpected),
+                callbackCount: progressCallbackCount
+              });
+            }
           } else {
-            console.log('[AdminScreen] Waiting for valid progress data...');
+            if (progressCallbackCount <= 5) {
+              console.log('[AdminScreen] Waiting for valid progress data... (callback #', progressCallbackCount, ')');
+            }
           }
         }
       );
 
-      console.log('[AdminScreen] Upload completed');
-      console.log('[AdminScreen] Upload result:', uploadResult);
+      console.log('[AdminScreen] Starting upload task...');
+      
+      let uploadResult;
+      try {
+        uploadResult = await uploadTask.uploadAsync();
+        console.log('[AdminScreen] Upload completed successfully');
+        console.log('[AdminScreen] Upload result:', uploadResult);
+      } catch (uploadError: any) {
+        console.error('[AdminScreen] Upload task failed:', uploadError);
+        console.error('[AdminScreen] Upload error details:', {
+          message: uploadError.message,
+          code: uploadError.code,
+          stack: uploadError.stack
+        });
+        throw new Error(`Upload failed: ${uploadError.message || 'Unknown error during upload'}`);
+      }
 
       if (uploadResult.status !== 200) {
         console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
