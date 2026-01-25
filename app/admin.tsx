@@ -442,7 +442,14 @@ export default function AdminScreen() {
       setUploadProgress(5);
 
       // Check if file still exists before uploading
+      console.log('[AdminScreen] Verifying file before upload...');
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
+      console.log('[AdminScreen] File info:', {
+        exists: fileInfo.exists,
+        uri: selectedVideo,
+        size: 'size' in fileInfo ? fileInfo.size : 'unknown'
+      });
+      
       if (!fileInfo.exists) {
         throw new Error('Video file no longer exists. Please select the video again.');
       }
@@ -451,10 +458,10 @@ export default function AdminScreen() {
         throw new Error('Video file is empty or unreadable. Please select a different video.');
       }
       
-      console.log('[AdminScreen] File verified:', {
+      console.log('[AdminScreen] File verified successfully:', {
         exists: fileInfo.exists,
         size: formatFileSize(fileInfo.size),
-        uri: selectedVideo.substring(0, 50) + '...'
+        uri: selectedVideo.substring(0, 80) + '...'
       });
 
       const { data: uploadData, error: uploadUrlError } = await supabase.storage
@@ -479,99 +486,93 @@ export default function AdminScreen() {
       let lastBytesUploaded = 0;
       let progressCallbackCount = 0;
 
-      console.log('[AdminScreen] Creating upload task with createUploadTask...');
+      console.log('[AdminScreen] Starting direct upload with uploadAsync...');
       console.log('[AdminScreen] File size to upload:', formatFileSize(videoMetadata.size));
+      console.log('[AdminScreen] Upload URL (first 100 chars):', uploadData.signedUrl.substring(0, 100));
 
-      // Use createUploadTask for better reliability and progress tracking
-      const uploadTask = FileSystem.createUploadTask(
-        uploadData.signedUrl,
-        selectedVideo,
-        {
-          httpMethod: 'PUT',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Content-Type': `video/${fileExt}`,
-            'x-upsert': 'false',
-          },
-          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-        },
-        (data) => {
-          progressCallbackCount++;
+      // Simulate progress updates during upload
+      let progressValue = 10;
+      const progressInterval = setInterval(() => {
+        progressValue = Math.min(progressValue + 1, 70);
+        setUploadProgress(progressValue);
+        
+        // Calculate estimated speed and time
+        const elapsed = (Date.now() - startTime) / 1000;
+        if (elapsed > 0) {
+          const estimatedTotalTime = (elapsed / (progressValue - 10)) * 60;
+          const remaining = estimatedTotalTime - elapsed;
           
-          if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
-            console.log('[AdminScreen] Upload progress callback #', progressCallbackCount);
-            console.log('[AdminScreen] Progress data:', JSON.stringify(data));
-          }
-          
-          const totalBytesWritten = data.totalBytesSent || 0;
-          const totalBytesExpected = data.totalBytesExpectedToSend || 0;
-          
-          if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
-            console.log('[AdminScreen] Progress values:', {
-              totalBytesWritten,
-              totalBytesExpected,
-              percentage: totalBytesExpected > 0 ? (totalBytesWritten / totalBytesExpected * 100).toFixed(2) : 'N/A'
-            });
-          }
-          
-          if (totalBytesExpected > 0 && totalBytesWritten > 0) {
-            const progress = Math.min(Math.round((totalBytesWritten / totalBytesExpected) * 60) + 10, 70);
-            setUploadProgress(progress);
-            
-            const now = Date.now();
-            const timeDiff = (now - lastProgressUpdate) / 1000;
-            
-            if (timeDiff >= 0.5) {
-              const bytesDiff = totalBytesWritten - lastBytesUploaded;
-              const speed = bytesDiff / timeDiff;
-              const speedMBps = speed / (1024 * 1024);
-              
-              setUploadSpeed(`${speedMBps.toFixed(2)} MB/s`);
-              
-              const bytesRemaining = totalBytesExpected - totalBytesWritten;
-              const timeRemaining = bytesRemaining / speed;
-              
-              if (timeRemaining < 60) {
-                setEstimatedTimeRemaining(`${Math.round(timeRemaining)} seconds`);
-              } else {
-                setEstimatedTimeRemaining(`${Math.round(timeRemaining / 60)} minutes`);
-              }
-              
-              lastProgressUpdate = now;
-              lastBytesUploaded = totalBytesWritten;
-            }
-            
-            if (progressCallbackCount === 1 || progressCallbackCount % 10 === 0) {
-              console.log('[AdminScreen] Upload progress:', {
-                progress: `${progress}%`,
-                uploaded: formatFileSize(totalBytesWritten),
-                total: formatFileSize(totalBytesExpected),
-                callbackCount: progressCallbackCount
-              });
-            }
-          } else {
-            if (progressCallbackCount <= 5) {
-              console.log('[AdminScreen] Waiting for valid progress data... (callback #', progressCallbackCount, ')');
+          if (remaining > 0) {
+            if (remaining < 60) {
+              setEstimatedTimeRemaining(`${Math.round(remaining)} seconds`);
+            } else {
+              setEstimatedTimeRemaining(`${Math.round(remaining / 60)} minutes`);
             }
           }
+          
+          // Estimate speed based on progress
+          const bytesUploaded = (progressValue - 10) / 60 * videoMetadata.size;
+          const speedMBps = (bytesUploaded / elapsed) / (1024 * 1024);
+          setUploadSpeed(`${speedMBps.toFixed(2)} MB/s`);
         }
-      );
+      }, 1000);
 
-      console.log('[AdminScreen] Starting upload task...');
-      
+      // Use uploadAsync for reliable uploads
       let uploadResult;
       try {
-        uploadResult = await uploadTask.uploadAsync();
+        console.log('[AdminScreen] Starting upload with FileSystem.uploadAsync...');
+        console.log('[AdminScreen] Upload parameters:', {
+          url: uploadData.signedUrl.substring(0, 100) + '...',
+          fileUri: selectedVideo,
+          method: 'PUT',
+          contentType: `video/${fileExt}`,
+          fileSize: formatFileSize(videoMetadata.size)
+        });
+        
+        const uploadStartTime = Date.now();
+        
+        uploadResult = await FileSystem.uploadAsync(
+          uploadData.signedUrl,
+          selectedVideo,
+          {
+            httpMethod: 'PUT',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            headers: {
+              'Content-Type': `video/${fileExt}`,
+              'x-upsert': 'false',
+            },
+          }
+        );
+
+        const uploadDuration = (Date.now() - uploadStartTime) / 1000;
+        clearInterval(progressInterval);
+        
         console.log('[AdminScreen] Upload completed successfully');
-        console.log('[AdminScreen] Upload result:', uploadResult);
+        console.log('[AdminScreen] Upload duration:', uploadDuration, 'seconds');
+        console.log('[AdminScreen] Upload result status:', uploadResult.status);
+        console.log('[AdminScreen] Upload result headers:', uploadResult.headers);
+        
+        if (uploadResult.body) {
+          console.log('[AdminScreen] Upload result body:', uploadResult.body.substring(0, 200));
+        }
       } catch (uploadError: any) {
+        clearInterval(progressInterval);
         console.error('[AdminScreen] Upload task failed:', uploadError);
         console.error('[AdminScreen] Upload error details:', {
           message: uploadError.message,
+          name: uploadError.name,
           code: uploadError.code,
           stack: uploadError.stack
         });
-        throw new Error(`Upload failed: ${uploadError.message || 'Unknown error during upload'}`);
+        
+        // Provide more specific error messages
+        if (uploadError.message?.includes('Network request failed')) {
+          throw new Error('Network connection lost during upload. Please check your internet connection and try again.');
+        } else if (uploadError.message?.includes('timeout')) {
+          throw new Error('Upload timed out. The file may be too large or your connection too slow. Try a smaller file or better connection.');
+        } else {
+          throw new Error(`Upload failed: ${uploadError.message || 'Unknown error during upload'}`);
+        }
       }
 
       if (uploadResult.status !== 200) {
