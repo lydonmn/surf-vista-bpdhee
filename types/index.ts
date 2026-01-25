@@ -3,6 +3,7 @@ export interface SurfReport {
   id: string;
   date: string;
   wave_height: string;
+  surf_height?: string;
   wave_period?: string;
   swell_direction?: string;
   wind_speed: string;

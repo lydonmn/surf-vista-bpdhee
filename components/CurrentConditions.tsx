@@ -15,14 +15,15 @@ interface CurrentConditionsProps {
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
-  // Format surf height - prioritize surf_height over wave_height
-  // surf_height is the rideable surf height calculated from wave data
-  const rawSurfHeight = surfReport?.surf_height || surfReport?.wave_height;
-  const surfHeightFeet = rawSurfHeight;
+  // CRITICAL FIX: Always prioritize surf_height (rideable face size) over wave_height (actual wave height)
+  // surf_height is calculated from wave_height using a multiplier based on wave period
+  // This is what surfers actually care about - the rideable face of the wave
+  const surfHeightDisplay = surfReport?.surf_height;
   
-  console.log('[CurrentConditions] Surf height data:', {
-    rawValue: rawSurfHeight,
-    formattedValue: surfHeightFeet,
+  console.log('[CurrentConditions] Wave data:', {
+    surf_height: surfReport?.surf_height,
+    wave_height: surfReport?.wave_height,
+    displayValue: surfHeightDisplay,
     reportId: surfReport?.id,
     reportDate: surfReport?.date,
     rating: surfReport?.rating,
@@ -85,9 +86,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const windDirectionDisplay = weather?.wind_direction || '';
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
-  // CRITICAL FIX: Always use today's report rating to match the report page
-  // The report page ALWAYS shows today's rating, even if displaying historical wave data
-  // This ensures consistency between home page and report page
+  // Use today's report rating to match the report page
   const stokeRatingDisplay = surfReport?.rating ?? null;
   
   const wavePeriodDisplay = surfReport?.wave_period;
@@ -97,7 +96,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     reportId: surfReport?.id,
     reportDate: surfReport?.date,
     rating: surfReport?.rating,
-    waveHeight: surfReport?.wave_height
+    surf_height: surfReport?.surf_height
   });
 
   return (
@@ -177,13 +176,13 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             </View>
 
             <View style={styles.surfGrid}>
-              {surfHeightFeet && (
+              {surfHeightDisplay && (
                 <View style={styles.surfItem}>
                   <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
                     Surf Height
                   </Text>
                   <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                    {surfHeightFeet}
+                    {surfHeightDisplay}
                   </Text>
                 </View>
               )}
