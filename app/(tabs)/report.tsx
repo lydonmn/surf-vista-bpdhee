@@ -398,9 +398,7 @@ export default function ReportScreen() {
     // CRITICAL FIX: Prioritize surf_height (rideable surf height) over wave_height (swell height)
     // surf_height is the calculated rideable wave face height based on period
     // wave_height is the raw swell height from the buoy
-    const surfHeightDisplay = displayData.surf_height && displayData.surf_height !== 'N/A' 
-      ? displayData.surf_height 
-      : (displayData.wave_height && displayData.wave_height !== 'N/A' ? displayData.wave_height : 'N/A');
+    const surfHeightDisplay = displayData.surf_height || displayData.wave_height;
     
     console.log('[ReportScreen] Surf height to display:', surfHeightDisplay);
     
@@ -499,75 +497,83 @@ export default function ReportScreen() {
 
         <View style={styles.conditionsGrid}>
           <View style={styles.conditionRow}>
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="water.waves"
-                android_material_icon_name="waves"
-                size={24}
-                color={colors.primary}
-              />
-              <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                  Surf Height
-                </Text>
-                <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {surfHeightDisplay}
-                </Text>
+            {surfHeightDisplay && (
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="water.waves"
+                  android_material_icon_name="waves"
+                  size={24}
+                  color={colors.primary}
+                />
+                <View style={styles.conditionTextContainer}>
+                  <Text style={[styles.conditionLabel, { color: labelColor }]}>
+                    Surf Height
+                  </Text>
+                  <Text style={[styles.conditionValue, { color: valueColor }]}>
+                    {surfHeightDisplay}
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
 
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="wind"
-                android_material_icon_name="air"
-                size={24}
-                color={colors.primary}
-              />
-              <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                  Wind Speed
-                </Text>
-                <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {displayData.wind_speed || 'N/A'}
-                </Text>
+            {displayData.wind_speed && (
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="wind"
+                  android_material_icon_name="air"
+                  size={24}
+                  color={colors.primary}
+                />
+                <View style={styles.conditionTextContainer}>
+                  <Text style={[styles.conditionLabel, { color: labelColor }]}>
+                    Wind Speed
+                  </Text>
+                  <Text style={[styles.conditionValue, { color: valueColor }]}>
+                    {displayData.wind_speed}
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           <View style={styles.conditionRow}>
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="location.north.fill"
-                android_material_icon_name="navigation"
-                size={24}
-                color={colors.primary}
-              />
-              <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                  Wind Direction
-                </Text>
-                <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {displayData.wind_direction || 'N/A'}
-                </Text>
+            {displayData.wind_direction && (
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="location.north.fill"
+                  android_material_icon_name="navigation"
+                  size={24}
+                  color={colors.primary}
+                />
+                <View style={styles.conditionTextContainer}>
+                  <Text style={[styles.conditionLabel, { color: labelColor }]}>
+                    Wind Direction
+                  </Text>
+                  <Text style={[styles.conditionValue, { color: valueColor }]}>
+                    {displayData.wind_direction}
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
 
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="thermometer"
-                android_material_icon_name="thermostat"
-                size={24}
-                color={colors.primary}
-              />
-              <View style={styles.conditionTextContainer}>
-                <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                  Water Temp
-                </Text>
-                <Text style={[styles.conditionValue, { color: valueColor }]}>
-                  {waterTempFormatted}
-                </Text>
+            {waterTempFormatted && (
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="thermometer"
+                  android_material_icon_name="thermostat"
+                  size={24}
+                  color={colors.primary}
+                />
+                <View style={styles.conditionTextContainer}>
+                  <Text style={[styles.conditionLabel, { color: labelColor }]}>
+                    Water Temp
+                  </Text>
+                  <Text style={[styles.conditionValue, { color: valueColor }]}>
+                    {waterTempFormatted}
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           {(displayData.wave_period || displayData.swell_direction) && (

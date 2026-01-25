@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
 
     if (!hasValidWaveData) {
       console.log('⚠️ No valid wave data available from latest buoy fetch');
-      console.log('Looking for most recent successful buoy data from today to retain...');
+      console.log('Looking for most recent successful buoy data to use as fallback...');
       
       // Get the existing report for today
       const existingReportResult = await supabase
@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
 
       if (existingReportResult.data) {
         const existingReport = existingReportResult.data;
-        const hasExistingValidData = existingReport.wave_height !== 'N/A';
+        const hasExistingValidData = existingReport.wave_height !== 'N/A' && existingReport.wave_height !== null;
         
         if (hasExistingValidData) {
           console.log('✅ Keeping existing report with valid buoy data from earlier today');
@@ -203,10 +203,37 @@ Deno.serve(async (req) => {
             updated_at: existingReport.updated_at
           });
           
+          // Update only the available data (wind and water temp) while keeping wave data from earlier
+          const partialUpdate: any = {
+            updated_at: new Date().toISOString(),
+          };
+          
+          // Update wind data if available
+          if (newSurfData && newSurfData.wind_speed && newSurfData.wind_speed !== 'N/A') {
+            partialUpdate.wind_speed = newSurfData.wind_speed;
+          }
+          if (newSurfData && newSurfData.wind_direction && newSurfData.wind_direction !== 'N/A') {
+            partialUpdate.wind_direction = newSurfData.wind_direction;
+          }
+          
+          // Update water temp if available
+          if (newSurfData && newSurfData.water_temp && newSurfData.water_temp !== 'N/A') {
+            partialUpdate.water_temp = newSurfData.water_temp;
+          }
+          
+          // Only update if we have new data to add
+          if (Object.keys(partialUpdate).length > 1) {
+            console.log('Updating wind/water temp while keeping wave data from earlier:', partialUpdate);
+            await supabase
+              .from('surf_reports')
+              .update(partialUpdate)
+              .eq('date', today);
+          }
+          
           return new Response(
             JSON.stringify({
               success: true,
-              message: 'No new buoy data available, retaining most recent successful buoy data from today',
+              message: 'Wave sensors offline - using last successful wave data, updated wind/water temp',
               report: existingReport,
               fallbackMode: true,
               timestamp: new Date().toISOString(),
@@ -217,17 +244,94 @@ Deno.serve(async (req) => {
             }
           );
         } else {
-          console.log('⚠️ Existing report also has no valid wave data');
+          console.log('⚠️ Existing report also has no valid wave data, looking for most recent historical data...');
+          
+          // Look for the most recent report with valid wave data (from any previous day)
+          const historicalReportResult = await supabase
+            .from('surf_reports')
+            .select('*')
+            .neq('wave_height', 'N/A')
+            .not('wave_height', 'is', null)
+            .order('date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          if (historicalReportResult.data) {
+            const historicalReport = historicalReportResult.data;
+            console.log('✅ Found historical data from:', historicalReport.date);
+            console.log('Historical wave data:', {
+              wave_height: historicalReport.wave_height,
+              wave_period: historicalReport.wave_period,
+              swell_direction: historicalReport.swell_direction,
+              date: historicalReport.date
+            });
+            
+            // Update today's report with historical wave data + current wind/water temp
+            const fallbackUpdate: any = {
+              wave_height: historicalReport.wave_height,
+              wave_period: historicalReport.wave_period || 'N/A',
+              swell_direction: historicalReport.swell_direction || 'N/A',
+              updated_at: new Date().toISOString(),
+            };
+            
+            // Add current wind and water temp if available
+            if (newSurfData && newSurfData.wind_speed && newSurfData.wind_speed !== 'N/A') {
+              fallbackUpdate.wind_speed = newSurfData.wind_speed;
+            } else {
+              fallbackUpdate.wind_speed = historicalReport.wind_speed || 'N/A';
+            }
+            
+            if (newSurfData && newSurfData.wind_direction && newSurfData.wind_direction !== 'N/A') {
+              fallbackUpdate.wind_direction = newSurfData.wind_direction;
+            } else {
+              fallbackUpdate.wind_direction = historicalReport.wind_direction || 'N/A';
+            }
+            
+            if (newSurfData && newSurfData.water_temp && newSurfData.water_temp !== 'N/A') {
+              fallbackUpdate.water_temp = newSurfData.water_temp;
+            } else {
+              fallbackUpdate.water_temp = historicalReport.water_temp || 'N/A';
+            }
+            
+            console.log('Updating with historical wave data + current conditions:', fallbackUpdate);
+            
+            const { data: updatedData, error: updateError } = await supabase
+              .from('surf_reports')
+              .update(fallbackUpdate)
+              .eq('date', today)
+              .select();
+            
+            if (updateError) {
+              console.error('Error updating with historical data:', updateError);
+            } else {
+              console.log('✅ Successfully updated with historical wave data');
+            }
+            
+            return new Response(
+              JSON.stringify({
+                success: true,
+                message: `Wave sensors offline - using last successful wave data from ${historicalReport.date}`,
+                report: updatedData ? updatedData[0] : existingReport,
+                fallbackMode: true,
+                fallbackDate: historicalReport.date,
+                timestamp: new Date().toISOString(),
+              }),
+              {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+              }
+            );
+          }
         }
       } else {
         console.log('⚠️ No existing report found for today');
       }
 
-      console.log('❌ No valid buoy data available for today');
+      console.log('❌ No valid buoy data available and no fallback data found');
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'No valid buoy data available and no fallback data from today',
+          error: 'No valid buoy data available and no fallback data found',
           timestamp: new Date().toISOString(),
         }),
         {

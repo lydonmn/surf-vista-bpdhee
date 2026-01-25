@@ -18,7 +18,7 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   // Format surf height - prioritize surf_height over wave_height
   // surf_height is the rideable surf height calculated from wave data
   const rawSurfHeight = surfReport?.surf_height || surfReport?.wave_height;
-  const surfHeightFeet = rawSurfHeight || 'N/A';
+  const surfHeightFeet = rawSurfHeight;
   
   console.log('[CurrentConditions] Surf height data:', {
     rawValue: rawSurfHeight,
@@ -90,8 +90,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   // This ensures consistency between home page and report page
   const stokeRatingDisplay = surfReport?.rating ?? null;
   
-  const wavePeriodDisplay = surfReport?.wave_period || null;
-  const swellDirectionDisplay = surfReport?.swell_direction || null;
+  const wavePeriodDisplay = surfReport?.wave_period;
+  const swellDirectionDisplay = surfReport?.swell_direction;
 
   console.log('[CurrentConditions] Displaying stoke rating:', stokeRatingDisplay, 'from report:', {
     reportId: surfReport?.id,
@@ -177,23 +177,27 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
             </View>
 
             <View style={styles.surfGrid}>
-              <View style={styles.surfItem}>
-                <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
-                  Surf Height
-                </Text>
-                <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {surfHeightFeet}
-                </Text>
-              </View>
+              {surfHeightFeet && (
+                <View style={styles.surfItem}>
+                  <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
+                    Surf Height
+                  </Text>
+                  <Text style={[styles.surfValue, { color: theme.colors.text }]}>
+                    {surfHeightFeet}
+                  </Text>
+                </View>
+              )}
 
-              <View style={styles.surfItem}>
-                <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
-                  Water Temp
-                </Text>
-                <Text style={[styles.surfValue, { color: theme.colors.text }]}>
-                  {waterTempFormatted}
-                </Text>
-              </View>
+              {waterTempFormatted && (
+                <View style={styles.surfItem}>
+                  <Text style={[styles.surfLabel, { color: colors.textSecondary }]}>
+                    Water Temp
+                  </Text>
+                  <Text style={[styles.surfValue, { color: theme.colors.text }]}>
+                    {waterTempFormatted}
+                  </Text>
+                </View>
+              )}
 
               {stokeRatingDisplay !== null && (
                 <View style={styles.surfItem}>
