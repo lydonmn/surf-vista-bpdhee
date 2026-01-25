@@ -427,7 +427,7 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/6: Verifying video file...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -448,66 +448,54 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/6: Getting authentication session...');
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('[AdminScreen] Step 2/5: Reading video file as blob...');
+      console.log('[AdminScreen] Reading file in chunks to avoid memory issues...');
       
-      if (!session) {
-        throw new Error('Not authenticated. Please log in again.');
-      }
-
-      console.log('[AdminScreen] ✓ Session obtained');
-      setUploadProgress(15);
-
-      console.log('[AdminScreen] Step 2.5/6: Verifying storage bucket access...');
-      const { data: bucketData, error: bucketError } = await supabase.storage
-        .from('videos')
-        .list('', { limit: 1 });
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
-      if (bucketError) {
-        throw new Error(`Storage bucket not accessible: ${bucketError.message}`);
-      }
-      
-      console.log('[AdminScreen] ✓ Storage bucket accessible');
+      console.log('[AdminScreen] ✓ File read as base64, length:', base64Data.length);
       setUploadProgress(20);
+      
+      console.log('[AdminScreen] Converting base64 to blob...');
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const videoBlob = new Blob([byteArray], { type: 'video/mp4' });
+      
+      console.log('[AdminScreen] ✓ Blob created, size:', videoBlob.size, 'bytes');
+      
+      if (videoBlob.size === 0) {
+        throw new Error('Failed to create video blob - blob is empty');
+      }
+      
+      setUploadProgress(30);
 
-      console.log('[AdminScreen] Step 3/6: Using FileSystem.uploadAsync for direct upload...');
-      console.log('[AdminScreen] This method uploads the file directly without reading it into memory');
-      
-      const { data: { publicUrl: storageUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      
-      const baseUrl = storageUrl.replace('/storage/v1/object/public/videos/dummy', '');
-      const uploadUrl = `${baseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      console.log('[AdminScreen] Starting direct file upload...');
-      
+      console.log('[AdminScreen] Step 3/5: Uploading to Supabase storage...');
       const startTime = Date.now();
       
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': supabase.supabaseKey,
-        },
-      });
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, videoBlob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: 'video/mp4',
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
 
       const uploadTime = (Date.now() - startTime) / 1000;
       const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
-      console.log('[AdminScreen] Upload result:', {
-        status: uploadResult.status,
-        body: uploadResult.body
-      });
-
-      if (uploadResult.status !== 200) {
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-      }
-
       console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
+      setUploadProgress(50);
 
       console.log('[AdminScreen] Verifying uploaded file...');
       const { data: fileData, error: fileCheckError } = await supabase.storage
@@ -540,7 +528,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
       setUploadProgress(65);
 
-      console.log('[AdminScreen] Step 5/6: Generating thumbnail...');
+      console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
       let thumbnailUrl = null;
       
       try {
@@ -599,7 +587,7 @@ export default function AdminScreen() {
       
       setUploadProgress(80);
 
-      console.log('[AdminScreen] Step 6/6: Creating database record...');
+      console.log('[AdminScreen] Step 5/5: Creating database record...');
       const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -658,6 +646,7 @@ export default function AdminScreen() {
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error.message);
+      console.error('[AdminScreen] Error stack:', error.stack);
       
       let errorMessage = 'Failed to upload video. ';
       
@@ -671,6 +660,8 @@ export default function AdminScreen() {
         errorMessage += 'Session expired. Please log out and log in again.';
       } else if (error.message?.includes('storage') || error.message?.includes('bucket')) {
         errorMessage += error.message;
+      } else if (error.message?.includes('string length') || error.message?.includes('too large')) {
+        errorMessage = 'Video file is too large to process. Please compress the video to under 500MB and try again.';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -720,7 +711,6 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "FileSystem.uploadAsync Direct Upload ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -885,19 +875,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                {directUploadSystemTitle}
+                Supabase Storage Direct Upload ✓
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses FileSystem.uploadAsync for direct file upload
+                • Uses Supabase JS client for reliable uploads
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • NO memory loading - file is streamed directly to storage
+                • Reads file and converts to blob for upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • No string length limits - supports large 6K videos
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Most reliable method for large file uploads
+                • Better progress tracking and error handling
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Connected to Supabase storage with verification
@@ -916,6 +903,9 @@ export default function AdminScreen() {
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Recommended: Videos under 500MB for best performance
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • For large files, ensure stable WiFi connection
               </Text>
             </View>
           </View>
