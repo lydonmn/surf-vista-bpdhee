@@ -445,39 +445,45 @@ export default function AdminScreen() {
       const startTime = Date.now();
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Reading video file as base64...');
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      console.log('[AdminScreen] Video file read successfully, converting to blob...');
+      console.log('[AdminScreen] Creating FormData for upload...');
+      const formData = new FormData();
+      
+      const videoFile = {
+        uri: selectedVideo,
+        type: `video/${fileExt}`,
+        name: fileName,
+      } as any;
+      
+      formData.append('file', videoFile);
+      
+      console.log('[AdminScreen] FormData created, uploading to Supabase...');
       setUploadProgress(20);
 
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
-
-      console.log('[AdminScreen] Blob created, size:', formatFileSize(blob.size));
-      setUploadProgress(30);
-
-      console.log('[AdminScreen] Uploading video to Supabase storage...');
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { data: { publicUrl: storageUrl } } = supabase.storage
         .from('videos')
-        .upload(fileName, blob, {
-          contentType: `video/${fileExt}`,
-          upsert: false,
-        });
+        .getPublicUrl('dummy');
+      
+      const baseUrl = storageUrl.replace('/dummy', '');
+      const uploadUrl = `${baseUrl}/${fileName}`;
 
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw uploadError;
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': `video/${fileExt}`,
+        },
+        body: await fetch(selectedVideo).then(r => r.blob()),
+      });
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('[AdminScreen] Upload failed:', uploadResponse.status, errorText);
+        throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
       }
 
-      console.log('[AdminScreen] Video uploaded successfully:', uploadData);
+      console.log('[AdminScreen] Video uploaded successfully');
       setUploadProgress(70);
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -505,29 +511,22 @@ export default function AdminScreen() {
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
-        console.log('[AdminScreen] Reading thumbnail as base64...');
-        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        const thumbnailByteCharacters = atob(thumbnailBase64);
-        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
-        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
-          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
-        }
-        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
-        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
+        const thumbnailBlob = await fetch(thumbnailUri).then(r => r.blob());
 
         console.log('[AdminScreen] Uploading thumbnail...');
-        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-          .from('videos')
-          .upload(thumbnailFileName, thumbnailBlob, {
-            contentType: 'image/jpeg',
-            upsert: false,
-          });
+        const thumbnailUploadUrl = `${baseUrl}/${thumbnailFileName}`;
+        
+        const thumbnailUploadResponse = await fetch(thumbnailUploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'image/jpeg',
+          },
+          body: thumbnailBlob,
+        });
 
-        if (thumbnailUploadError) {
-          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
+        if (!thumbnailUploadResponse.ok) {
+          console.error('[AdminScreen] Thumbnail upload failed:', thumbnailUploadResponse.status);
         } else {
           const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
             .from('videos')
