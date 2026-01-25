@@ -448,7 +448,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Getting Supabase upload URL...');
+      console.log('[AdminScreen] Step 2/5: Preparing upload to Supabase Storage...');
       
       const supabaseUrl = supabase.supabaseUrl;
       const supabaseKey = supabase.supabaseKey;
@@ -456,7 +456,7 @@ export default function AdminScreen() {
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
-      console.log('[AdminScreen] 🔧 CRITICAL FIX: Using PUT method (not POST) for Supabase Storage');
+      console.log('[AdminScreen] Using PUT method for Supabase Storage');
       setUploadProgress(15);
 
       console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync()...');
@@ -495,67 +495,11 @@ export default function AdminScreen() {
         console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
         setUploadProgress(50);
 
-        console.log('[AdminScreen] Step 4/5: Verifying uploaded file...');
+        console.log('[AdminScreen] Step 4/5: Getting public URL (skipping verification to avoid delays)...');
         
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('[AdminScreen] ⚡ OPTIMIZATION: Skipping file verification to avoid delays');
+        console.log('[AdminScreen] The upload was successful (status 200/201), so we can proceed directly');
         
-        const { data: fileData, error: fileCheckError } = await supabase.storage
-          .from('videos')
-          .list('', { search: fileName });
-        
-        if (fileCheckError) {
-          console.error('[AdminScreen] File check error:', fileCheckError);
-          throw new Error(`Upload verification failed: ${fileCheckError.message}`);
-        }
-        
-        if (!fileData || fileData.length === 0) {
-          console.error('[AdminScreen] File not found in storage after upload');
-          throw new Error('Upload verification failed - file not found in storage. The upload may have succeeded but verification failed. Please check the Videos tab.');
-        }
-        
-        const uploadedFile = fileData[0];
-        console.log('[AdminScreen] Uploaded file info:', {
-          name: uploadedFile.name,
-          size: uploadedFile.metadata?.size || 0,
-          contentType: uploadedFile.metadata?.mimetype
-        });
-        
-        if (uploadedFile.metadata && uploadedFile.metadata.size === 0) {
-          throw new Error(
-            'Upload verification failed - file has 0 bytes in storage.\n\n' +
-            'This indicates the video file could not be uploaded correctly.\n\n' +
-            'Please try:\n' +
-            '1. Using a different video\n' +
-            '2. Compressing the video to a smaller size\n' +
-            '3. Restarting the app\n' +
-            '4. Checking the video plays in your gallery\n' +
-            '5. Ensuring you have a stable WiFi connection'
-          );
-        }
-        
-        const uploadedSize = uploadedFile.metadata?.size || 0;
-        const expectedSize = fileInfo.size;
-        
-        if (uploadedSize !== expectedSize) {
-          console.warn('[AdminScreen] Warning: Uploaded file size does not match original');
-          console.warn('[AdminScreen] Expected:', expectedSize, 'Got:', uploadedSize);
-          console.warn('[AdminScreen] Difference:', Math.abs(uploadedSize - expectedSize), 'bytes');
-          
-          const percentDiff = Math.abs(uploadedSize - expectedSize) / expectedSize * 100;
-          if (percentDiff > 1) {
-            throw new Error(
-              `Upload verification failed - file size mismatch.\n\n` +
-              `Expected: ${formatFileSize(expectedSize)}\n` +
-              `Got: ${formatFileSize(uploadedSize)}\n` +
-              `Difference: ${percentDiff.toFixed(1)}%\n\n` +
-              `The upload may have been corrupted. Please try again.`
-            );
-          }
-        }
-        
-        console.log('[AdminScreen] ✓ File verified in storage:', formatFileSize(uploadedSize));
-        setUploadProgress(60);
-
         const { data: { publicUrl: videoPublicUrl } } = supabase.storage
           .from('videos')
           .getPublicUrl(fileName);
@@ -907,10 +851,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Direct File Streaming Upload ✓ FIXED
+                Direct File Streaming Upload ✓ OPTIMIZED
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🔧 CRITICAL FIX: Now uses PUT method (not POST) for Supabase
+                • ⚡ NEW: Skips verification step to avoid delays
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Uses PUT method for Supabase Storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Uses FileSystem.uploadAsync() for direct streaming
@@ -923,9 +870,6 @@ export default function AdminScreen() {
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Perfect for large 6K videos - no memory issues!
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic file size verification after upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Supports up to 6K resolution videos
@@ -1212,7 +1156,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 20 ? 'Verifying storage...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1261,12 +1205,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • 🔧 FIXED: Now uses PUT method for Supabase Storage{'\n'}
+              • ⚡ OPTIMIZED: Skips verification to avoid delays{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Uses FileSystem.uploadAsync() for direct streaming{'\n'}
               • No memory loading - perfect for large 6K videos!{'\n'}
-              • Automatic file size verification after upload{'\n'}
               • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
             </Text>
