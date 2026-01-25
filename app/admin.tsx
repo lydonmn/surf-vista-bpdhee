@@ -393,23 +393,39 @@ export default function AdminScreen() {
     }
   };
 
-  const readFileAsBlob = async (uri: string): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.onload = function () {
-        if (xhr.status === 200) {
-          resolve(xhr.response);
-        } else {
-          reject(new Error(`XHR failed with status ${xhr.status}`));
-        }
-      };
-      xhr.onerror = function () {
-        reject(new Error('XHR network error'));
-      };
-      xhr.responseType = 'blob';
-      xhr.open('GET', uri, true);
-      xhr.send(null);
-    });
+  const readFileAsBlob = async (uri: string, fileSize: number): Promise<Blob> => {
+    console.log('[AdminScreen] Reading file as blob using fetch API...');
+    console.log('[AdminScreen] File URI:', uri);
+    console.log('[AdminScreen] Expected size:', formatFileSize(fileSize));
+    
+    try {
+      const response = await fetch(uri);
+      
+      if (!response.ok) {
+        throw new Error(`Fetch failed with status ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      
+      console.log('[AdminScreen] Blob created:', {
+        size: blob.size,
+        type: blob.type,
+        expectedSize: fileSize
+      });
+      
+      if (blob.size === 0) {
+        throw new Error('Blob is empty (0 bytes)');
+      }
+      
+      if (blob.size < fileSize * 0.5) {
+        console.warn('[AdminScreen] Warning: Blob size is less than 50% of expected size');
+      }
+      
+      return blob;
+    } catch (error: any) {
+      console.error('[AdminScreen] Fetch blob error:', error.message);
+      throw error;
+    }
   };
 
   const uploadVideoChunked = async () => {
@@ -489,7 +505,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob using XMLHttpRequest...');
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
       let videoBlob: Blob | null = null;
@@ -501,10 +517,9 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Read attempt', readAttempts, 'of', maxReadAttempts);
         
         try {
-          console.log('[AdminScreen] Using XMLHttpRequest to read video as blob...');
           const readStartTime = Date.now();
           
-          videoBlob = await readFileAsBlob(selectedVideo);
+          videoBlob = await readFileAsBlob(selectedVideo, videoMetadata.size);
           
           const readDuration = Date.now() - readStartTime;
           console.log('[AdminScreen] Read completed in', readDuration, 'ms');
@@ -563,7 +578,7 @@ export default function AdminScreen() {
             console.log('[AdminScreen] Updated blob type:', videoBlob.type);
           }
           
-          console.log('[AdminScreen] ✓ Blob read successfully using XMLHttpRequest');
+          console.log('[AdminScreen] ✓ Blob read successfully');
           break;
           
         } catch (readError: any) {
@@ -676,7 +691,7 @@ export default function AdminScreen() {
           throw new Error('Thumbnail file is empty');
         }
         
-        const thumbnailBlob = await readFileAsBlob(thumbnailUri);
+        const thumbnailBlob = await readFileAsBlob(thumbnailUri, thumbnailInfo.size);
         
         if (!thumbnailBlob.type || !thumbnailBlob.type.startsWith('image/')) {
           const correctedThumbnailBlob = new Blob([thumbnailBlob], { type: 'image/jpeg' });
@@ -861,7 +876,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "XMLHttpRequest Upload System ✓";
+  const directUploadSystemTitle = "Fetch API Upload System ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -1029,7 +1044,7 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • XMLHttpRequest blob upload (most reliable for React Native)
+                • Fetch API blob upload (reliable for React Native)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • No string length limits - supports large 6K videos
