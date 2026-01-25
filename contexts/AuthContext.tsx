@@ -43,7 +43,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
       }
       
-      // Try to fetch the profile
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -65,7 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // If profile doesn't exist, create it
       if (error?.code === 'PGRST116') {
         console.log('[AuthContext] Profile not found, creating...');
         const { data: newProfile, error: createError } = await supabase
@@ -92,7 +90,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('[AuthContext] Error loading profile:', error?.message);
       }
 
-      // If we get here, something went wrong
       if (mounted) {
         setProfile(null);
         setUser({ ...authUser });
@@ -115,7 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Initialize RevenueCat (non-blocking)
         try {
           console.log('[AuthContext] Initializing RevenueCat...');
           const revenueCatInitialized = await initializeRevenueCat();
@@ -128,7 +124,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
         }
         
-        // Get initial session
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
         if (!mounted) return;
@@ -140,7 +135,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Loading initial profile...');
           await loadUserProfile(initialSession.user, mounted);
           
-          // Identify user in RevenueCat
           try {
             await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
           } catch (error) {
@@ -166,7 +160,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
@@ -177,7 +170,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_OUT') {
         console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
         
-        // Logout from RevenueCat
         try {
           await logoutUser();
         } catch (error) {
@@ -193,7 +185,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
         
-        // Identify user in RevenueCat
         try {
           await identifyUser(newSession.user.id, newSession.user.email || undefined);
         } catch (error) {
@@ -239,26 +230,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: 'https://natively.dev/email-confirmed'
-        }
       });
 
       if (error) {
         console.log('[AuthContext] Sign up error:', error);
+        
+        if (error.message.includes('already registered')) {
+          return { 
+            success: false, 
+            message: 'This email is already registered. Please sign in instead.' 
+          };
+        }
+        
         return { success: false, message: error.message };
       }
 
-      // Check if email confirmation is required
       if (data.user && !data.session) {
-        console.log('[AuthContext] Email confirmation required');
+        console.log('[AuthContext] Email confirmation required for:', email);
         return { 
           success: true, 
-          message: 'Please check your email to verify your account before signing in.' 
+          message: 'Account created! Please check your email to verify your account.' 
         };
       }
 
-      // If we have a session, the user is automatically signed in
       if (data.user && data.session) {
         console.log('[AuthContext] Sign up successful with auto sign-in');
         return { success: true, message: 'Account created successfully!' };
@@ -285,7 +279,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] Sign in error:', error);
         setIsLoading(false);
         
-        // Provide more helpful error messages
         if (error.message.includes('Email not confirmed')) {
           return { 
             success: false, 
@@ -304,8 +297,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.user && data.session) {
         console.log('[AuthContext] Sign in successful, user:', data.user.email);
         
-        // The onAuthStateChange listener will handle loading the profile
-        // Just wait a moment to ensure it's triggered
         await new Promise(resolve => setTimeout(resolve, 100));
         
         console.log('[AuthContext] Sign in complete');
@@ -327,25 +318,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[AuthContext] Current user state:', user?.email);
     
     try {
-      // Clear local state FIRST for immediate UI update
       console.log('[AuthContext] Clearing local state immediately...');
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
       
-      // Logout from RevenueCat (non-blocking, don't wait for it)
       logoutUser().catch(error => {
         console.error('[AuthContext] Error logging out from RevenueCat (non-critical):', error);
       });
       
-      // Then call Supabase signOut to clear the session from storage
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('[AuthContext] ❌ Supabase signOut error:', error);
-        // Don't throw - we've already cleared local state
       } else {
         console.log('[AuthContext] ✅ Supabase signOut successful');
       }
@@ -353,7 +340,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
     } catch (error) {
       console.error('[AuthContext] ❌ Sign out exception:', error);
-      // Ensure state is cleared even on error
       setUser(null);
       setProfile(null);
       setSession(null);
@@ -375,7 +361,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userId = user.id;
       console.log('[AuthContext] Deleting user ID:', userId);
 
-      // First, delete the profile from the profiles table
       console.log('[AuthContext] Deleting profile from database...');
       const { error: profileError } = await supabase
         .from('profiles')
@@ -389,27 +374,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('[AuthContext] ✅ Profile deleted successfully');
 
-      // Then delete the auth user account
       console.log('[AuthContext] Deleting auth account...');
       const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
       if (authError) {
         console.error('[AuthContext] Error deleting auth account:', authError);
-        // If auth deletion fails, we still want to sign out
         await signOut();
         return { success: false, message: 'Account data deleted but auth deletion failed. Please contact support.' };
       }
 
       console.log('[AuthContext] ✅ Auth account deleted successfully');
 
-      // Clear local state
       console.log('[AuthContext] Clearing local state...');
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
 
-      // Logout from RevenueCat
       try {
         await logoutUser();
       } catch (error) {
@@ -420,39 +401,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: true, message: 'Your account has been permanently deleted' };
     } catch (error: any) {
       console.error('[AuthContext] ❌ Delete account exception:', error);
-      // Try to sign out on error
       await signOut();
       return { success: false, message: error.message || 'An unexpected error occurred while deleting your account' };
     }
   };
 
-  // Memoize checkSubscription to prevent infinite loops
   const checkSubscription = useCallback((): boolean => {
-    // Don't check subscription while loading
     if (isLoading || !profile) {
       console.log('[AuthContext] Subscription check: loading or no profile');
       return false;
     }
 
-    // Admin users always have access
     if (profile.is_admin) {
       console.log('[AuthContext] Subscription check: user is admin - GRANTED');
       return true;
     }
 
-    // Check if user is subscribed
     if (!profile.is_subscribed) {
       console.log('[AuthContext] Subscription check: not subscribed');
       return false;
     }
     
-    // If subscribed and no end date, subscription is active
     if (!profile.subscription_end_date) {
       console.log('[AuthContext] Subscription check: subscribed with no end date - GRANTED');
       return true;
     }
     
-    // If there's an end date, check if it's in the future
     const endDate = new Date(profile.subscription_end_date);
     const isActive = endDate > new Date();
     console.log('[AuthContext] Subscription check: subscribed with end date -', isActive ? 'GRANTED' : 'EXPIRED');

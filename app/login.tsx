@@ -17,6 +17,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showResendEmail, setShowResendEmail] = useState(false);
   const [resendEmail, setResendEmail] = useState('');
+  const [justSignedUp, setJustSignedUp] = useState(false);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -27,28 +28,26 @@ export default function LoginScreen() {
   }, [user, authLoading]);
 
   const handleResendConfirmation = async () => {
-    if (!resendEmail) {
+    const emailToResend = resendEmail || email;
+    
+    if (!emailToResend) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(resendEmail)) {
+    if (!emailRegex.test(emailToResend)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log('[LoginScreen] Resending confirmation email to:', resendEmail);
+      console.log('[LoginScreen] Resending confirmation email to:', emailToResend);
       
-      // Use 'signup' type for resending confirmation emails
       const { data, error } = await supabase.auth.resend({
         type: 'signup',
-        email: resendEmail,
-        options: {
-          emailRedirectTo: 'https://natively.dev/email-confirmed'
-        }
+        email: emailToResend,
       });
 
       if (error) {
@@ -57,8 +56,8 @@ export default function LoginScreen() {
       } else {
         console.log('[LoginScreen] Resend successful:', data);
         Alert.alert(
-          'Email Sent!',
-          'A new confirmation email has been sent. Please check your inbox and spam folder.',
+          'Email Sent! ✅',
+          `A new confirmation email has been sent to ${emailToResend}.\n\n📧 Check your inbox and spam/junk folder.\n\n⏱️ The email should arrive within 1-2 minutes.`,
           [
             {
               text: 'OK',
@@ -80,18 +79,16 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
+      Alert.alert('Missing Information', 'Please enter both email and password');
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      Alert.alert('Invalid Email', 'Please enter a valid email address (e.g., you@example.com)');
       return;
     }
 
-    // Password length validation
     if (password.length < 6) {
       Alert.alert('Weak Password', 'Password must be at least 6 characters long');
       return;
@@ -101,52 +98,89 @@ export default function LoginScreen() {
 
     try {
       if (isSignUp) {
-        console.log('[LoginScreen] Attempting sign up...');
+        console.log('[LoginScreen] Attempting sign up for:', email);
         const result = await signUp(email, password);
         
         if (result.success) {
+          setJustSignedUp(true);
           Alert.alert(
-            'Success!',
-            result.message + '\n\n⚠️ Important: Please check your spam/junk folder if you don\'t see the email within a few minutes.',
+            '✅ Account Created!',
+            `Welcome to SurfVista!\n\n📧 We've sent a verification email to:\n${email}\n\n✔️ Click the link in the email to verify your account\n📱 Then return here to sign in\n\n⚠️ Check your spam/junk folder if you don't see it within 2 minutes.`,
             [
               {
-                text: 'OK',
+                text: 'OK, Got It!',
                 onPress: () => {
-                  // If email confirmation is required, switch to sign in mode
-                  if (result.message.includes('verify your email')) {
-                    setIsSignUp(false);
-                    setPassword('');
-                  }
+                  setIsSignUp(false);
+                  setPassword('');
                 }
               }
             ]
           );
         } else {
-          Alert.alert('Sign Up Failed', result.message);
+          if (result.message.includes('already registered')) {
+            Alert.alert(
+              'Email Already Registered',
+              'This email is already registered. Please sign in instead, or use a different email.',
+              [
+                {
+                  text: 'Sign In',
+                  onPress: () => {
+                    setIsSignUp(false);
+                    setPassword('');
+                  }
+                },
+                {
+                  text: 'Use Different Email',
+                  style: 'cancel'
+                }
+              ]
+            );
+          } else {
+            Alert.alert('Sign Up Failed', result.message);
+          }
         }
       } else {
-        console.log('[LoginScreen] Attempting sign in...');
+        console.log('[LoginScreen] Attempting sign in for:', email);
         const result = await signIn(email, password);
         
         if (result.success) {
           console.log('[LoginScreen] Sign in successful, navigating to home');
           router.replace('/(tabs)');
         } else {
-          // Check if it's an email not confirmed error
           if (result.message.includes('verify your email') || result.message.includes('Email not confirmed')) {
             Alert.alert(
-              'Email Not Verified',
-              'Please verify your email address before signing in. Check your inbox and spam folder for the confirmation email.',
+              '📧 Email Not Verified',
+              `Please verify your email address before signing in.\n\n✔️ Check your inbox for the verification email\n📱 Click the link to verify\n🔄 Then try signing in again\n\n⚠️ Don't see the email? Check your spam/junk folder.`,
               [
                 {
                   text: 'Resend Email',
                   onPress: () => {
                     setResendEmail(email);
-                    setShowResendEmail(true);
+                    handleResendConfirmation();
                   }
                 },
                 {
                   text: 'OK',
+                  style: 'cancel'
+                }
+              ]
+            );
+          } else if (result.message.includes('Invalid login credentials')) {
+            Alert.alert(
+              'Sign In Failed',
+              'Invalid email or password. Please check your credentials and try again.',
+              [
+                {
+                  text: 'Forgot Password?',
+                  onPress: () => {
+                    Alert.alert(
+                      'Password Reset',
+                      'Contact support at lydonmn@gmail.com for password reset assistance.'
+                    );
+                  }
+                },
+                {
+                  text: 'Try Again',
                   style: 'cancel'
                 }
               ]
@@ -168,6 +202,7 @@ export default function LoginScreen() {
     setIsSignUp(!isSignUp);
     setPassword('');
     setShowResendEmail(false);
+    setJustSignedUp(false);
   };
 
   if (authLoading) {
@@ -190,7 +225,6 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.content}>
-            {/* Header */}
             <View style={styles.header}>
               <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
                 <IconSymbol
@@ -201,14 +235,13 @@ export default function LoginScreen() {
                 />
               </View>
               <Text style={[styles.title, { color: theme.colors.text }]}>
-                Resend Confirmation
+                Resend Verification Email
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                Enter your email to receive a new confirmation link
+                Enter your email to receive a new verification link
               </Text>
             </View>
 
-            {/* Form */}
             <View style={styles.form}>
               <View style={styles.inputContainer}>
                 <IconSymbol
@@ -243,7 +276,7 @@ export default function LoginScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.submitButtonText}>
-                    Resend Confirmation Email
+                    Send Verification Email
                   </Text>
                 )}
               </TouchableOpacity>
@@ -262,7 +295,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Info */}
             <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
               <IconSymbol
                 ios_icon_name="info.circle.fill"
@@ -271,7 +303,7 @@ export default function LoginScreen() {
                 color={colors.primary}
               />
               <Text style={[styles.noticeText, { color: theme.colors.text }]}>
-                Make sure to check your spam/junk folder. Confirmation emails sometimes end up there.
+                💡 Tip: Verification emails sometimes end up in spam/junk folders. Make sure to check there if you don&apos;t see it in your inbox within 2 minutes.
               </Text>
             </View>
           </View>
@@ -279,6 +311,12 @@ export default function LoginScreen() {
       </KeyboardAvoidingView>
     );
   }
+
+  const formTitleText = isSignUp ? 'Create Your Account' : 'Welcome Back';
+  const submitButtonText = isSignUp ? 'Create Account' : 'Sign In';
+  const toggleText = isSignUp
+    ? 'Already have an account? Sign In'
+    : 'Don\'t have an account? Sign Up';
 
   return (
     <KeyboardAvoidingView
@@ -290,7 +328,6 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.content}>
-          {/* Logo/Header */}
           <View style={styles.header}>
             <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
               <IconSymbol
@@ -308,10 +345,9 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          {/* Form */}
           <View style={styles.form}>
             <Text style={[styles.formTitle, { color: theme.colors.text }]}>
-              {isSignUp ? 'Create Account' : 'Welcome Back'}
+              {formTitleText}
             </Text>
             
             <View style={styles.inputContainer}>
@@ -366,7 +402,7 @@ export default function LoginScreen() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.submitButtonText}>
-                  {isSignUp ? 'Sign Up' : 'Sign In'}
+                  {submitButtonText}
                 </Text>
               )}
             </TouchableOpacity>
@@ -377,27 +413,32 @@ export default function LoginScreen() {
               disabled={isLoading}
             >
               <Text style={[styles.toggleButtonText, { color: colors.primary }]}>
-                {isSignUp
-                  ? 'Already have an account? Sign In'
-                  : 'Don\'t have an account? Sign Up'}
+                {toggleText}
               </Text>
             </TouchableOpacity>
 
-            {/* Resend confirmation link */}
-            {!isSignUp && (
+            {(!isSignUp || justSignedUp) && (
               <TouchableOpacity
-                style={[styles.toggleButton, { marginTop: 8 }]}
-                onPress={() => setShowResendEmail(true)}
+                style={[styles.resendButton, { marginTop: 12 }]}
+                onPress={() => {
+                  setResendEmail(email);
+                  setShowResendEmail(true);
+                }}
                 disabled={isLoading}
               >
+                <IconSymbol
+                  ios_icon_name="envelope.arrow.triangle.branch"
+                  android_material_icon_name="forward_to_inbox"
+                  size={16}
+                  color={colors.textSecondary}
+                />
                 <Text style={[styles.resendLinkText, { color: colors.textSecondary }]}>
-                  Didn&apos;t receive confirmation email?
+                  Didn&apos;t receive verification email?
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Info */}
           <View style={styles.infoContainer}>
             <IconSymbol
               ios_icon_name="info.circle.fill"
@@ -406,12 +447,11 @@ export default function LoginScreen() {
               color={colors.textSecondary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Subscribe for $10.99/month or $100.99/year to access exclusive surf reports and drone footage
+              Subscribe for $10.99/month or $100.99/year to access exclusive surf reports and 6K drone footage
             </Text>
           </View>
 
-          {/* Email Verification Notice */}
-          {isSignUp && (
+          {isSignUp && !justSignedUp && (
             <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
               <IconSymbol
                 ios_icon_name="envelope.badge.fill"
@@ -420,11 +460,14 @@ export default function LoginScreen() {
                 color={colors.primary}
               />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.noticeText, { color: theme.colors.text, marginBottom: 8 }]}>
-                  After signing up, you&apos;ll receive a verification email. Please verify your email before signing in.
+                <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
+                  📧 Email Verification Required
                 </Text>
-                <Text style={[styles.noticeText, { color: theme.colors.text, fontSize: 12, fontStyle: 'italic' }]}>
-                  💡 Tip: Check your spam/junk folder if you don&apos;t see the email within a few minutes.
+                <Text style={[styles.noticeText, { color: theme.colors.text }]}>
+                  After creating your account, you&apos;ll receive a verification email. Click the link in the email to verify your account before signing in.
+                </Text>
+                <Text style={[styles.noticeTip, { color: colors.textSecondary }]}>
+                  💡 Check your spam/junk folder if you don&apos;t see it within 2 minutes
                 </Text>
               </View>
             </View>
@@ -515,6 +558,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  resendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
   resendLinkText: {
     fontSize: 13,
     textDecorationLine: 'underline',
@@ -542,9 +592,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(70, 130, 180, 0.3)',
   },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
   noticeText: {
-    flex: 1,
     fontSize: 13,
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  noticeTip: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
 });
