@@ -449,28 +449,34 @@ export default function AdminScreen() {
       setUploadProgress(10);
 
       console.log('[AdminScreen] Step 2/5: Reading video file as blob...');
-      console.log('[AdminScreen] Reading file in chunks to avoid memory issues...');
+      console.log('[AdminScreen] Using fetch() to read file directly as blob (avoids string length limits)...');
       
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      let videoBlob: Blob;
       
-      console.log('[AdminScreen] ✓ File read as base64, length:', base64Data.length);
-      setUploadProgress(20);
-      
-      console.log('[AdminScreen] Converting base64 to blob...');
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const videoBlob = new Blob([byteArray], { type: 'video/mp4' });
-      
-      console.log('[AdminScreen] ✓ Blob created, size:', videoBlob.size, 'bytes');
-      
-      if (videoBlob.size === 0) {
-        throw new Error('Failed to create video blob - blob is empty');
+      try {
+        console.log('[AdminScreen] Fetching file from URI:', selectedVideo);
+        const response = await fetch(selectedVideo);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+        }
+        
+        console.log('[AdminScreen] Converting response to blob...');
+        videoBlob = await response.blob();
+        
+        console.log('[AdminScreen] ✓ Blob created successfully, size:', videoBlob.size, 'bytes');
+        
+        if (videoBlob.size === 0) {
+          throw new Error('Failed to create video blob - blob is empty');
+        }
+        
+        if (videoBlob.size !== fileInfo.size) {
+          console.warn('[AdminScreen] Warning: Blob size does not match file size');
+          console.warn('[AdminScreen] File size:', fileInfo.size, 'Blob size:', videoBlob.size);
+        }
+      } catch (fetchError: any) {
+        console.error('[AdminScreen] Error reading file with fetch():', fetchError);
+        throw new Error(`Failed to read video file: ${fetchError.message}. Please try a different video or restart the app.`);
       }
       
       setUploadProgress(30);
@@ -547,14 +553,9 @@ export default function AdminScreen() {
           throw new Error('Thumbnail file is empty');
         }
         
-        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        const thumbnailBlob = new Blob(
-          [Uint8Array.from(atob(thumbnailBase64), c => c.charCodeAt(0))],
-          { type: 'image/jpeg' }
-        );
+        console.log('[AdminScreen] Reading thumbnail with fetch()...');
+        const thumbnailResponse = await fetch(thumbnailUri);
+        const thumbnailBlob = await thumbnailResponse.blob();
         
         if (thumbnailBlob.size === 0) {
           throw new Error('Thumbnail blob is empty');
@@ -662,6 +663,8 @@ export default function AdminScreen() {
         errorMessage += error.message;
       } else if (error.message?.includes('string length') || error.message?.includes('too large')) {
         errorMessage = 'Video file is too large to process. Please compress the video to under 500MB and try again.';
+      } else if (error.message?.includes('Failed to read video file')) {
+        errorMessage = error.message;
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -875,19 +878,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Supabase Storage Direct Upload ✓
+                Direct Blob Upload (No String Conversion) ✓
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses Supabase JS client for reliable uploads
+                • Uses fetch() to read file as blob directly
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Reads file and converts to blob for upload
+                • Avoids base64 conversion and string length limits
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Better progress tracking and error handling
+                • Handles large 6K videos without memory issues
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Connected to Supabase storage with verification
+                • Uploads directly to Supabase storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Supports up to 6K resolution videos
@@ -1225,7 +1228,7 @@ export default function AdminScreen() {
               Upload Tips:{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • FileSystem.uploadAsync streams the file directly{'\n'}
+              • Uses fetch() to read file as blob (no string conversion){'\n'}
               • For large 6K videos, consider compressing to under 500MB{'\n'}
               • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
