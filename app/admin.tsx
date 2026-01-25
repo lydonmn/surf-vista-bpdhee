@@ -71,7 +71,7 @@ export default function AdminScreen() {
       if (error) throw error;
       setUsers(data || []);
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('[AdminScreen] Error loading users:', error);
       Alert.alert('Error', 'Failed to load users');
     } finally {
       setLoading(false);
@@ -97,7 +97,7 @@ export default function AdminScreen() {
       Alert.alert('Success', `Subscription ${!currentStatus ? 'activated' : 'deactivated'}`);
       loadUsers();
     } catch (error) {
-      console.error('Error toggling subscription:', error);
+      console.error('[AdminScreen] Error toggling subscription:', error);
       Alert.alert('Error', 'Failed to update subscription');
     }
   };
@@ -114,7 +114,7 @@ export default function AdminScreen() {
       Alert.alert('Success', `Admin status ${!currentStatus ? 'granted' : 'revoked'}`);
       loadUsers();
     } catch (error) {
-      console.error('Error toggling admin:', error);
+      console.error('[AdminScreen] Error toggling admin:', error);
       Alert.alert('Error', 'Failed to update admin status');
     }
   };
@@ -425,76 +425,54 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Not authenticated. Please log in again.');
-      }
-
-      console.log('[AdminScreen] Session obtained');
+      console.log('[AdminScreen] Reading video file as base64...');
       setUploadProgress(5);
 
-      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      if (!fileInfo.exists || !('size' in fileInfo) || fileInfo.size === 0) {
-        throw new Error('Video file is not accessible. Please select the video again.');
-      }
-
-      const totalSize = fileInfo.size;
-      console.log('[AdminScreen] File verified. Total size:', formatFileSize(totalSize));
-
-      const startTime = Date.now();
-      setUploadProgress(10);
-
-      console.log('[AdminScreen] Creating FormData for upload...');
-      const formData = new FormData();
-      
-      const videoFile = {
-        uri: selectedVideo,
-        type: `video/${fileExt}`,
-        name: fileName,
-      } as any;
-      
-      formData.append('file', videoFile);
-      
-      console.log('[AdminScreen] FormData created, uploading to Supabase...');
-      setUploadProgress(20);
-
-      const { data: { publicUrl: storageUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      
-      const baseUrl = storageUrl.replace('/dummy', '');
-      const uploadUrl = `${baseUrl}/${fileName}`;
-
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': `video/${fileExt}`,
-        },
-        body: await fetch(selectedVideo).then(r => r.blob()),
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('[AdminScreen] Upload failed:', uploadResponse.status, errorText);
-        throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
+      console.log('[AdminScreen] Video file read successfully, size:', base64Data.length, 'characters');
+      setUploadProgress(15);
+
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
+
+      console.log('[AdminScreen] Blob created, size:', blob.size, 'bytes');
+      setUploadProgress(25);
+
+      console.log('[AdminScreen] Uploading to Supabase storage...');
+      const startTime = Date.now();
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, blob, {
+          contentType: `video/${fileExt}`,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
       }
 
-      console.log('[AdminScreen] Video uploaded successfully');
-      setUploadProgress(70);
+      console.log('[AdminScreen] Video uploaded successfully:', uploadData);
+      setUploadProgress(60);
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
+      setUploadProgress(70);
 
       console.log('[AdminScreen] Generating thumbnail from video...');
-      setUploadProgress(75);
-      
       let thumbnailUrl = null;
       
       try {
@@ -507,26 +485,34 @@ export default function AdminScreen() {
         );
         
         console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
-        setUploadProgress(80);
+        setUploadProgress(75);
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
-        const thumbnailBlob = await fetch(thumbnailUri).then(r => r.blob());
-
-        console.log('[AdminScreen] Uploading thumbnail...');
-        const thumbnailUploadUrl = `${baseUrl}/${thumbnailFileName}`;
-        
-        const thumbnailUploadResponse = await fetch(thumbnailUploadUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'image/jpeg',
-          },
-          body: thumbnailBlob,
+        console.log('[AdminScreen] Reading thumbnail as base64...');
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
         });
 
-        if (!thumbnailUploadResponse.ok) {
-          console.error('[AdminScreen] Thumbnail upload failed:', thumbnailUploadResponse.status);
+        const thumbnailByteCharacters = atob(thumbnailBase64);
+        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
+        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
+          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
+        }
+        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
+        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
+
+        console.log('[AdminScreen] Uploading thumbnail to Supabase...');
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            contentType: 'image/jpeg',
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (thumbnailUploadError) {
+          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
         } else {
           const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
             .from('videos')
@@ -540,8 +526,9 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
       }
       
-      setUploadProgress(90);
+      setUploadProgress(85);
 
+      console.log('[AdminScreen] Creating database record...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -561,7 +548,7 @@ export default function AdminScreen() {
         throw dbError;
       }
 
-      console.log('[AdminScreen] Video record created successfully with thumbnail');
+      console.log('[AdminScreen] Video record created successfully');
       setUploadProgress(100);
 
       const uploadTime = (Date.now() - startTime) / 1000;
@@ -575,7 +562,7 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success!', 
-        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\n\nYour video is now available to subscribers.`,
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\nThumbnail: ${thumbnailUrl ? 'Generated ✓' : 'Not generated'}\n\nYour video is now available to subscribers.`,
         [
           {
             text: 'OK',
@@ -1076,18 +1063,11 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                Uploading video... {uploadProgress}%
+                {uploadProgress < 25 ? 'Reading video file...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
-              {uploadSpeed && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                  Upload Speed: {uploadSpeed}
-                </Text>
-              )}
-              {estimatedTimeRemaining && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                  Estimated Time Remaining: {estimatedTimeRemaining}
-                </Text>
-              )}
+              <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
+                {uploadProgress}% complete
+              </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
