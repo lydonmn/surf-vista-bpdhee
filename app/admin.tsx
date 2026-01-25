@@ -393,6 +393,25 @@ export default function AdminScreen() {
     }
   };
 
+  const readFileAsBlob = async (uri: string): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          resolve(xhr.response);
+        } else {
+          reject(new Error(`XHR failed with status ${xhr.status}`));
+        }
+      };
+      xhr.onerror = function () {
+        reject(new Error('XHR network error'));
+      };
+      xhr.responseType = 'blob';
+      xhr.open('GET', uri, true);
+      xhr.send(null);
+    });
+  };
+
   const uploadVideoChunked = async () => {
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -470,7 +489,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob using fetch()...');
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob using XMLHttpRequest...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
       let videoBlob: Blob | null = null;
@@ -482,19 +501,13 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Read attempt', readAttempts, 'of', maxReadAttempts);
         
         try {
-          console.log('[AdminScreen] Using fetch() to read video as blob (no base64 conversion)...');
-          const fetchStartTime = Date.now();
+          console.log('[AdminScreen] Using XMLHttpRequest to read video as blob...');
+          const readStartTime = Date.now();
           
-          const response = await fetch(selectedVideo);
+          videoBlob = await readFileAsBlob(selectedVideo);
           
-          if (!response.ok) {
-            throw new Error(`Fetch failed with status: ${response.status}`);
-          }
-          
-          videoBlob = await response.blob();
-          
-          const fetchDuration = Date.now() - fetchStartTime;
-          console.log('[AdminScreen] Fetch completed in', fetchDuration, 'ms');
+          const readDuration = Date.now() - readStartTime;
+          console.log('[AdminScreen] Read completed in', readDuration, 'ms');
           console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes');
           console.log('[AdminScreen] Blob type:', videoBlob.type);
           
@@ -550,7 +563,7 @@ export default function AdminScreen() {
             console.log('[AdminScreen] Updated blob type:', videoBlob.type);
           }
           
-          console.log('[AdminScreen] ✓ Blob read successfully using fetch()');
+          console.log('[AdminScreen] ✓ Blob read successfully using XMLHttpRequest');
           break;
           
         } catch (readError: any) {
@@ -663,37 +676,61 @@ export default function AdminScreen() {
           throw new Error('Thumbnail file is empty');
         }
         
-        const thumbnailResponse = await fetch(thumbnailUri);
-        let thumbnailBlob = await thumbnailResponse.blob();
+        const thumbnailBlob = await readFileAsBlob(thumbnailUri);
         
         if (!thumbnailBlob.type || !thumbnailBlob.type.startsWith('image/')) {
-          thumbnailBlob = new Blob([thumbnailBlob], { type: 'image/jpeg' });
-        }
-        
-        if (thumbnailBlob.size === 0) {
-          throw new Error('Thumbnail blob is empty');
-        }
-        
-        const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
-        
-        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-          .from('videos')
-          .upload(thumbnailFileName, thumbnailBlob, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: 'image/jpeg',
-          });
+          const correctedThumbnailBlob = new Blob([thumbnailBlob], { type: 'image/jpeg' });
+          
+          if (correctedThumbnailBlob.size === 0) {
+            throw new Error('Thumbnail blob is empty');
+          }
+          
+          const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
+          
+          const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+            .from('videos')
+            .upload(thumbnailFileName, correctedThumbnailBlob, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: 'image/jpeg',
+            });
 
-        if (thumbnailUploadError) {
-          throw thumbnailUploadError;
-        }
+          if (thumbnailUploadError) {
+            throw thumbnailUploadError;
+          }
 
-        const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(thumbnailFileName);
-        
-        thumbnailUrl = thumbnailPublicUrl;
-        console.log('[AdminScreen] ✓ Thumbnail uploaded');
+          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
+            .from('videos')
+            .getPublicUrl(thumbnailFileName);
+          
+          thumbnailUrl = thumbnailPublicUrl;
+          console.log('[AdminScreen] ✓ Thumbnail uploaded');
+        } else {
+          if (thumbnailBlob.size === 0) {
+            throw new Error('Thumbnail blob is empty');
+          }
+          
+          const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
+          
+          const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+            .from('videos')
+            .upload(thumbnailFileName, thumbnailBlob, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: 'image/jpeg',
+            });
+
+          if (thumbnailUploadError) {
+            throw thumbnailUploadError;
+          }
+
+          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
+            .from('videos')
+            .getPublicUrl(thumbnailFileName);
+          
+          thumbnailUrl = thumbnailPublicUrl;
+          console.log('[AdminScreen] ✓ Thumbnail uploaded');
+        }
       } catch (thumbnailError) {
         console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail');
@@ -824,7 +861,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "Optimized Upload System ✓";
+  const directUploadSystemTitle = "XMLHttpRequest Upload System ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -992,7 +1029,7 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Direct fetch() blob upload (no base64 conversion)
+                • XMLHttpRequest blob upload (most reliable for React Native)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • No string length limits - supports large 6K videos
