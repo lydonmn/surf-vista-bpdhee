@@ -474,10 +474,18 @@ export default function AdminScreen() {
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         },
         (data) => {
-          const totalBytesWritten = data.totalByteSent;
-          const totalBytesExpected = data.totalBytesExpectedToSend;
+          console.log('[AdminScreen] Upload progress callback data:', data);
           
-          if (totalBytesExpected > 0) {
+          const totalBytesWritten = data.totalBytesSent || 0;
+          const totalBytesExpected = data.totalBytesExpectedToSend || 0;
+          
+          console.log('[AdminScreen] Progress values:', {
+            totalBytesWritten,
+            totalBytesExpected,
+            percentage: totalBytesExpected > 0 ? (totalBytesWritten / totalBytesExpected * 100).toFixed(2) : 'N/A'
+          });
+          
+          if (totalBytesExpected > 0 && totalBytesWritten > 0) {
             const progress = Math.min(Math.round((totalBytesWritten / totalBytesExpected) * 60) + 10, 70);
             setUploadProgress(progress);
             
@@ -509,6 +517,8 @@ export default function AdminScreen() {
               uploaded: formatFileSize(totalBytesWritten),
               total: formatFileSize(totalBytesExpected)
             });
+          } else {
+            console.log('[AdminScreen] Waiting for valid progress data...');
           }
         }
       );
