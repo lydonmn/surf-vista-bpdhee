@@ -12,6 +12,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 
 interface UserProfile {
   id: string;
@@ -460,15 +461,59 @@ export default function AdminScreen() {
       let lastProgressUpdate = startTime;
       let lastBytesUploaded = 0;
 
-      const uploadResult = await FileSystem.uploadAsync(uploadData.signedUrl, selectedVideo, {
-        httpMethod: 'PUT',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Content-Type': `video/${fileExt}`,
-          'x-upsert': 'false',
+      const uploadTask = FileSystem.createUploadTask(
+        uploadData.signedUrl,
+        selectedVideo,
+        {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            'Content-Type': `video/${fileExt}`,
+            'x-upsert': 'false',
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         },
-        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-      });
+        (data) => {
+          const totalBytesWritten = data.totalByteSent;
+          const totalBytesExpected = data.totalBytesExpectedToSend;
+          
+          if (totalBytesExpected > 0) {
+            const progress = Math.min(Math.round((totalBytesWritten / totalBytesExpected) * 60) + 10, 70);
+            setUploadProgress(progress);
+            
+            const now = Date.now();
+            const timeDiff = (now - lastProgressUpdate) / 1000;
+            
+            if (timeDiff >= 0.5) {
+              const bytesDiff = totalBytesWritten - lastBytesUploaded;
+              const speed = bytesDiff / timeDiff;
+              const speedMBps = speed / (1024 * 1024);
+              
+              setUploadSpeed(`${speedMBps.toFixed(2)} MB/s`);
+              
+              const bytesRemaining = totalBytesExpected - totalBytesWritten;
+              const timeRemaining = bytesRemaining / speed;
+              
+              if (timeRemaining < 60) {
+                setEstimatedTimeRemaining(`${Math.round(timeRemaining)} seconds`);
+              } else {
+                setEstimatedTimeRemaining(`${Math.round(timeRemaining / 60)} minutes`);
+              }
+              
+              lastProgressUpdate = now;
+              lastBytesUploaded = totalBytesWritten;
+            }
+            
+            console.log('[AdminScreen] Upload progress:', {
+              progress: `${progress}%`,
+              uploaded: formatFileSize(totalBytesWritten),
+              total: formatFileSize(totalBytesExpected)
+            });
+          }
+        }
+      );
+
+      const uploadResult = await uploadTask.uploadAsync();
 
       console.log('[AdminScreen] Upload completed');
       console.log('[AdminScreen] Upload result:', uploadResult);
@@ -495,9 +540,69 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
 
-      const thumbnailUrl = `https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=800&h=450&fit=crop`;
+      console.log('[AdminScreen] Generating thumbnail from video...');
+      setUploadProgress(75);
       
-      console.log('[AdminScreen] Using thumbnail URL:', thumbnailUrl);
+      let thumbnailUrl = null;
+      
+      try {
+        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
+          selectedVideo,
+          {
+            time: videoMetadata.duration > 0 ? (videoMetadata.duration * 1000) / 3 : 1000,
+            quality: 0.8,
+          }
+        );
+        
+        console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
+        setUploadProgress(80);
+        
+        const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('Session expired during thumbnail upload');
+        }
+
+        const { data: thumbnailUploadData, error: thumbnailUrlError } = await supabase.storage
+          .from('videos')
+          .createSignedUploadUrl(thumbnailFileName);
+
+        if (thumbnailUrlError || !thumbnailUploadData?.signedUrl) {
+          console.error('[AdminScreen] Error creating thumbnail upload URL:', thumbnailUrlError);
+          throw new Error('Failed to get thumbnail upload URL');
+        }
+
+        console.log('[AdminScreen] Uploading thumbnail...');
+        
+        const thumbnailUploadResult = await FileSystem.uploadAsync(
+          thumbnailUploadData.signedUrl,
+          thumbnailUri,
+          {
+            httpMethod: 'PUT',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'x-upsert': 'false',
+            },
+          }
+        );
+
+        if (thumbnailUploadResult.status === 200) {
+          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
+            .from('videos')
+            .getPublicUrl(thumbnailFileName);
+          
+          thumbnailUrl = thumbnailPublicUrl;
+          console.log('[AdminScreen] Thumbnail uploaded successfully:', thumbnailUrl);
+        } else {
+          console.error('[AdminScreen] Thumbnail upload failed:', thumbnailUploadResult.status);
+        }
+      } catch (thumbnailError) {
+        console.error('[AdminScreen] Error generating/uploading thumbnail:', thumbnailError);
+        console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
+      }
+      
       setUploadProgress(90);
 
       const { error: dbError } = await supabase
