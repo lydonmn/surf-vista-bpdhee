@@ -425,26 +425,15 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Reading video file as base64...');
+      console.log('[AdminScreen] Preparing video file for upload...');
       setUploadProgress(5);
 
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      console.log('[AdminScreen] Video file read successfully, size:', base64Data.length, 'characters');
-      setUploadProgress(15);
-
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
+      console.log('[AdminScreen] Reading video file as binary blob...');
+      const response = await fetch(selectedVideo);
+      const blob = await response.blob();
 
       console.log('[AdminScreen] Blob created, size:', blob.size, 'bytes');
-      setUploadProgress(25);
+      setUploadProgress(15);
 
       console.log('[AdminScreen] Uploading to Supabase storage...');
       const startTime = Date.now();
@@ -489,19 +478,11 @@ export default function AdminScreen() {
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
-        console.log('[AdminScreen] Reading thumbnail as base64...');
-        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        console.log('[AdminScreen] Reading thumbnail as binary blob...');
+        const thumbnailResponse = await fetch(thumbnailUri);
+        const thumbnailBlob = await thumbnailResponse.blob();
 
-        const thumbnailByteCharacters = atob(thumbnailBase64);
-        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
-        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
-          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
-        }
-        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
-        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
-
+        console.log('[AdminScreen] Thumbnail blob created, size:', thumbnailBlob.size, 'bytes');
         console.log('[AdminScreen] Uploading thumbnail to Supabase...');
         const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
           .from('videos')
@@ -1063,7 +1044,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 25 ? 'Reading video file...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 15 ? 'Preparing video file...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
