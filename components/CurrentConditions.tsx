@@ -5,7 +5,7 @@ import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from './IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { WeatherData, SurfReport } from '@/types';
-import { parseSurfHeightToFeet, formatWaterTemp } from '@/utils/surfDataFormatter';
+import { formatWaterTemp } from '@/utils/surfDataFormatter';
 
 interface CurrentConditionsProps {
   weather: WeatherData | null;
@@ -15,10 +15,10 @@ interface CurrentConditionsProps {
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
-  // Format surf height to feet - use wave_height from surf_reports table
-  // Note: surf_reports.wave_height is already in feet format (e.g., "2.6 ft")
-  const rawSurfHeight = surfReport?.wave_height;
-  const surfHeightFeet = parseSurfHeightToFeet(rawSurfHeight);
+  // Format surf height - prioritize surf_height over wave_height
+  // surf_height is the rideable surf height calculated from wave data
+  const rawSurfHeight = surfReport?.surf_height || surfReport?.wave_height;
+  const surfHeightFeet = rawSurfHeight || 'N/A';
   
   console.log('[CurrentConditions] Surf height data:', {
     rawValue: rawSurfHeight,
