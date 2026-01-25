@@ -425,7 +425,7 @@ export default function AdminScreen() {
       const fileName = `${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/5: Verifying video file...');
+      console.log('[AdminScreen] Step 1/6: Verifying video file...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -446,7 +446,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified successfully');
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Getting authentication session...');
+      console.log('[AdminScreen] Step 2/6: Getting authentication session...');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
@@ -456,38 +456,66 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session obtained');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Reading video file as blob...');
+      console.log('[AdminScreen] Step 2.5/6: Verifying storage bucket access...');
+      try {
+        const { data: bucketData, error: bucketError } = await supabase.storage
+          .from('videos')
+          .list('', { limit: 1 });
+        
+        if (bucketError) {
+          console.error('[AdminScreen] Bucket access error:', bucketError);
+          throw new Error(`Storage bucket not accessible: ${bucketError.message}. Please ensure the "videos" bucket exists in Supabase Storage.`);
+        }
+        
+        console.log('[AdminScreen] ✓ Storage bucket "videos" is accessible');
+      } catch (bucketCheckError: any) {
+        console.error('[AdminScreen] Failed to verify bucket:', bucketCheckError);
+        throw new Error(`Cannot access storage bucket: ${bucketCheckError.message}`);
+      }
+      
+      setUploadProgress(20);
+
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
       
       let videoBlob: Blob;
       try {
-        const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        console.log('[AdminScreen] Using fetch() to read video file directly as blob');
+        const response = await fetch(selectedVideo);
         
-        console.log('[AdminScreen] File read as base64, length:', base64Data.length);
-        
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch video file: ${response.status} ${response.statusText}`);
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        videoBlob = new Blob([byteArray], { type: `video/${fileExt}` });
         
-        console.log('[AdminScreen] Blob created, size:', videoBlob.size, 'bytes');
+        videoBlob = await response.blob();
+        
+        console.log('[AdminScreen] Blob created from fetch, size:', videoBlob.size, 'bytes');
+        console.log('[AdminScreen] Blob type:', videoBlob.type);
         
         if (videoBlob.size === 0) {
           throw new Error('Created blob is empty. File may be corrupted or inaccessible.');
+        }
+        
+        if (videoBlob.type && !videoBlob.type.startsWith('video/')) {
+          console.log('[AdminScreen] Warning: Blob type is not video, overriding to video/' + fileExt);
+          videoBlob = new Blob([videoBlob], { type: `video/${fileExt}` });
         }
       } catch (blobError: any) {
         console.error('[AdminScreen] Error creating blob:', blobError);
         throw new Error(`Failed to read video file: ${blobError.message}. Try selecting the video again.`);
       }
       
-      setUploadProgress(30);
+      setUploadProgress(35);
 
-      console.log('[AdminScreen] Step 4/5: Uploading video to Supabase storage...');
+      console.log('[AdminScreen] Step 4/6: Uploading video to Supabase storage...');
+      console.log('[AdminScreen] Upload details:', {
+        fileName,
+        blobSize: videoBlob.size,
+        blobType: videoBlob.type,
+        targetBucket: 'videos'
+      });
+      
       const startTime = Date.now();
+      let lastProgressUpdate = Date.now();
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
@@ -499,11 +527,24 @@ export default function AdminScreen() {
 
       if (uploadError) {
         console.error('[AdminScreen] Upload error:', uploadError);
+        console.error('[AdminScreen] Upload error details:', JSON.stringify(uploadError, null, 2));
+        
+        if (uploadError.message?.includes('Bucket not found')) {
+          throw new Error('Storage bucket "videos" not found. Please ensure the Supabase storage bucket is created and configured.');
+        }
+        
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
       const uploadTime = (Date.now() - startTime) / 1000;
-      console.log('[AdminScreen] Upload completed in', uploadTime, 'seconds');
+      const uploadSpeedMBps = (videoBlob.size / 1024 / 1024) / uploadTime;
+      
+      console.log('[AdminScreen] Upload completed successfully');
+      console.log('[AdminScreen] Upload stats:', {
+        duration: `${uploadTime.toFixed(2)} seconds`,
+        speed: `${uploadSpeedMBps.toFixed(2)} MB/s`,
+        fileSize: formatFileSize(videoBlob.size)
+      });
       console.log('[AdminScreen] Upload data:', uploadData);
 
       console.log('[AdminScreen] ✓ Video uploaded successfully');
@@ -539,14 +580,14 @@ export default function AdminScreen() {
         .getPublicUrl(fileName);
 
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
-      setUploadProgress(70);
+      setUploadProgress(65);
 
-      console.log('[AdminScreen] Step 5/5: Generating thumbnail...');
+      console.log('[AdminScreen] Step 5/6: Generating thumbnail...');
       let thumbnailUrl = null;
       
       try {
-        const thumbnailTime = videoMetadata.duration > 0 ? (videoMetadata.duration * 1000) / 3 : 1000;
-        console.log('[AdminScreen] Generating thumbnail at time:', thumbnailTime, 'ms');
+        const thumbnailTime = videoMetadata.duration > 0 ? Math.min((videoMetadata.duration * 1000) / 3, 5000) : 1000;
+        console.log('[AdminScreen] Generating thumbnail at time:', thumbnailTime, 'ms (video duration:', videoMetadata.duration, 'seconds)');
         
         const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
           selectedVideo,
@@ -556,8 +597,12 @@ export default function AdminScreen() {
           }
         );
         
+        if (!thumbnailUri) {
+          throw new Error('Thumbnail generation returned empty URI');
+        }
+        
         console.log('[AdminScreen] Thumbnail generated at:', thumbnailUri);
-        setUploadProgress(75);
+        setUploadProgress(70);
         
         const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
         if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
@@ -566,17 +611,19 @@ export default function AdminScreen() {
         
         console.log('[AdminScreen] Thumbnail file size:', thumbnailInfo.size, 'bytes');
         
-        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        console.log('[AdminScreen] Using fetch() to read thumbnail directly as blob');
+        const thumbnailResponse = await fetch(thumbnailUri);
         
-        const thumbnailByteCharacters = atob(thumbnailBase64);
-        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
-        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
-          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
+        if (!thumbnailResponse.ok) {
+          throw new Error(`Failed to fetch thumbnail: ${thumbnailResponse.status} ${thumbnailResponse.statusText}`);
         }
-        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
-        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
+        
+        let thumbnailBlob = await thumbnailResponse.blob();
+        
+        if (thumbnailBlob.type && !thumbnailBlob.type.startsWith('image/')) {
+          console.log('[AdminScreen] Overriding thumbnail blob type to image/jpeg');
+          thumbnailBlob = new Blob([thumbnailBlob], { type: 'image/jpeg' });
+        }
         
         console.log('[AdminScreen] Thumbnail blob size:', thumbnailBlob.size, 'bytes');
         
@@ -635,7 +682,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
       }
       
-      setUploadProgress(85);
+      setUploadProgress(80);
 
       console.log('[AdminScreen] Step 6/6: Creating database record...');
       const { data: insertedData, error: dbError } = await supabase
@@ -712,13 +759,13 @@ export default function AdminScreen() {
         errorMessage += 'Network connection lost. Please check your internet connection and try again.';
       } else if (error.message?.includes('Not authenticated') || error.message?.includes('session')) {
         errorMessage += 'Your session has expired. Please log out and log in again.';
-      } else if (error.message?.includes('storage')) {
-        errorMessage += 'Storage service error. Please try again later or contact support.';
+      } else if (error.message?.includes('storage') || error.message?.includes('bucket')) {
+        errorMessage += error.message;
       } else if (error.message?.includes('0 bytes') || error.message?.includes('empty')) {
         errorMessage = error.message + ' This may be due to a network issue or file access problem. Please try again.';
       } else if (error.message?.includes('Database error')) {
         errorMessage += error.message + ' The video was uploaded but could not be saved to the database. Please contact support.';
-      } else if (error.message?.includes('Failed to read video file')) {
+      } else if (error.message?.includes('Failed to read video file') || error.message?.includes('Failed to fetch')) {
         errorMessage = error.message;
       } else {
         errorMessage += error.message || 'An unknown error occurred. Please try again.';
@@ -769,7 +816,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "Direct Upload System ✓";
+  const directUploadSystemTitle = "Optimized Upload System ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -937,13 +984,16 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Connected to Supabase storage
+                • Optimized direct blob upload (no base64 conversion)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Connected to Supabase storage with verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Supports up to 6K resolution videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic thumbnail generation
+                • Automatic thumbnail generation at optimal time
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
@@ -1221,7 +1271,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 15 ? 'Preparing video file...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 20 ? 'Verifying storage...' : uploadProgress < 35 ? 'Reading video file...' : uploadProgress < 65 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1273,7 +1323,7 @@ export default function AdminScreen() {
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • For large 6K videos, consider compressing to under 500MB{'\n'}
-              • Thumbnail is generated automatically{'\n'}
+              • Thumbnail is generated automatically at optimal time{'\n'}
               • Video will be available immediately after upload
             </Text>
           </View>
