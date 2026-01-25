@@ -656,6 +656,35 @@ export default function AdminScreen() {
           </Text>
         </View>
 
+        {/* User Management Card */}
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin-users')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="person.3.fill"
+              android_material_icon_name="group"
+              size={32}
+              color={colors.primary}
+            />
+            <View style={styles.cardHeaderText}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                User Management
+              </Text>
+              <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+                Manage users, subscriptions, and access
+              </Text>
+            </View>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </View>
+        </TouchableOpacity>
+
         {/* Data Management Card */}
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
