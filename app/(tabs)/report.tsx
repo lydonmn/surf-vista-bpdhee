@@ -29,17 +29,27 @@ export default function ReportScreen() {
 
   const isDarkMode = theme.dark;
 
+  const isValidValue = (value: any): boolean => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed === '' || trimmed === 'N/A' || trimmed.toLowerCase() === 'n/a') return false;
+    }
+    return true;
+  };
+
   const hasValidSurfData = (data: any) => {
     if (!data) return false;
     
-    // Check surf_height first (rideable surf height), then fall back to wave_height (swell height)
     const surfHeight = data.surf_height || data.wave_height;
-    const isValidHeight = surfHeight && 
-                         surfHeight !== 'N/A' && 
-                         surfHeight !== '' && 
-                         !surfHeight.toString().toLowerCase().includes('n/a');
+    const wavePeriod = data.wave_period;
+    const swellDirection = data.swell_direction;
     
-    return isValidHeight;
+    const hasValidSurfHeight = isValidValue(surfHeight);
+    const hasValidWavePeriod = isValidValue(wavePeriod);
+    const hasValidSwellDirection = isValidValue(swellDirection);
+    
+    return hasValidSurfHeight && hasValidWavePeriod && hasValidSwellDirection;
   };
 
   const todayDate = useMemo(() => getESTDate(), []);
@@ -102,8 +112,6 @@ export default function ReportScreen() {
       return dateB - dateA;
     });
     
-    // ALWAYS prioritize today's report if it exists with any narrative
-    // This ensures we show today's report even if wave sensors are offline
     const todayReportWithNarrative = sortedReports.find(report => {
       const reportDate = report.date.split('T')[0];
       const narrative = report.report_text || report.conditions || '';
@@ -119,7 +127,6 @@ export default function ReportScreen() {
       return todayReportWithNarrative;
     }
     
-    // Only if today has NO report at all, fall back to most recent report with narrative
     const reportWithNarrative = sortedReports.find(report => {
       const narrative = report.report_text || report.conditions || '';
       return narrative.length > 50;
@@ -395,14 +402,26 @@ export default function ReportScreen() {
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
-    // CRITICAL FIX: Prioritize surf_height (rideable surf height) over wave_height (swell height)
-    // surf_height is the calculated rideable wave face height based on period
-    // wave_height is the raw swell height from the buoy
-    const surfHeightDisplay = displayData.surf_height || displayData.wave_height;
+    const surfHeightValue = displayData.surf_height || displayData.wave_height;
+    const surfHeightDisplay = isValidValue(surfHeightValue) ? surfHeightValue : null;
+    
+    const windSpeedValue = displayData.wind_speed;
+    const windSpeedDisplay = isValidValue(windSpeedValue) ? windSpeedValue : null;
+    
+    const windDirectionValue = displayData.wind_direction;
+    const windDirectionDisplay = isValidValue(windDirectionValue) ? windDirectionValue : null;
+    
+    const waterTempValue = displayData.water_temp;
+    const waterTempFormatted = isValidValue(waterTempValue) ? formatWaterTemp(waterTempValue) : null;
+    
+    const wavePeriodValue = displayData.wave_period;
+    const wavePeriodDisplay = isValidValue(wavePeriodValue) ? wavePeriodValue : null;
+    
+    const swellDirectionValue = displayData.swell_direction;
+    const swellDirectionDisplay = isValidValue(swellDirectionValue) ? swellDirectionValue : null;
     
     console.log('[ReportScreen] Surf height to display:', surfHeightDisplay);
     
-    const waterTempFormatted = formatWaterTemp(displayData.water_temp);
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
@@ -420,14 +439,12 @@ export default function ReportScreen() {
     let narrativeDate = todayDisplayDate;
     let isHistoricalNarrative = false;
     
-    // ALWAYS use today's report narrative if it exists, regardless of wave data availability
     if (isToday && hasCurrentNarrative) {
       narrativeText = currentNarrative;
       narrativeDate = todayDisplayDate;
       isHistoricalNarrative = false;
       console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized for current day)');
     } else if (!isToday && lastReportWithNarrative) {
-      // Only use historical narrative if we're NOT showing today's report
       narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
       narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
       isHistoricalNarrative = true;
@@ -516,7 +533,7 @@ export default function ReportScreen() {
               </View>
             )}
 
-            {displayData.wind_speed && (
+            {windSpeedDisplay && (
               <View style={styles.conditionItem}>
                 <IconSymbol
                   ios_icon_name="wind"
@@ -529,7 +546,7 @@ export default function ReportScreen() {
                     Wind Speed
                   </Text>
                   <Text style={[styles.conditionValue, { color: valueColor }]}>
-                    {displayData.wind_speed}
+                    {windSpeedDisplay}
                   </Text>
                 </View>
               </View>
@@ -537,7 +554,7 @@ export default function ReportScreen() {
           </View>
 
           <View style={styles.conditionRow}>
-            {displayData.wind_direction && (
+            {windDirectionDisplay && (
               <View style={styles.conditionItem}>
                 <IconSymbol
                   ios_icon_name="location.north.fill"
@@ -550,7 +567,7 @@ export default function ReportScreen() {
                     Wind Direction
                   </Text>
                   <Text style={[styles.conditionValue, { color: valueColor }]}>
-                    {displayData.wind_direction}
+                    {windDirectionDisplay}
                   </Text>
                 </View>
               </View>
@@ -576,9 +593,9 @@ export default function ReportScreen() {
             )}
           </View>
 
-          {(displayData.wave_period || displayData.swell_direction) && (
+          {(wavePeriodDisplay || swellDirectionDisplay) && (
             <View style={styles.conditionRow}>
-              {displayData.wave_period && (
+              {wavePeriodDisplay && (
                 <View style={styles.conditionItem}>
                   <IconSymbol
                     ios_icon_name="timer"
@@ -591,13 +608,13 @@ export default function ReportScreen() {
                       Wave Period
                     </Text>
                     <Text style={[styles.conditionValue, { color: valueColor }]}>
-                      {displayData.wave_period}
+                      {wavePeriodDisplay}
                     </Text>
                   </View>
                 </View>
               )}
 
-              {displayData.swell_direction && (
+              {swellDirectionDisplay && (
                 <View style={styles.conditionItem}>
                   <IconSymbol
                     ios_icon_name={swellIcon.ios}
@@ -610,7 +627,7 @@ export default function ReportScreen() {
                       Swell Direction
                     </Text>
                     <Text style={[styles.conditionValue, { color: valueColor }]}>
-                      {displayData.swell_direction}
+                      {swellDirectionDisplay}
                     </Text>
                   </View>
                 </View>
