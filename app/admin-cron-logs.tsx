@@ -157,7 +157,7 @@ export default function AdminCronLogsScreen() {
     if (profile?.is_admin) {
       loadDiagnostics();
     }
-  }, [profile]);
+  }, [profile, loadDiagnostics]);
 
   const getESTDate = (): string => {
     const now = new Date();

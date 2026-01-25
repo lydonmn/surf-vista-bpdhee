@@ -83,7 +83,7 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [surfReports, todayDate]);
+  }, [surfReports, todayDate, hasValidSurfData]);
 
   const lastValidReport = useMemo(() => {
     const sortedReports = [...surfReports].sort((a, b) => {
@@ -139,7 +139,7 @@ export default function ReportScreen() {
     });
     
     return reportWithNarrative;
-  }, [surfReports, todayDate]);
+  }, [surfReports, todayDate, hasValidSurfData]);
 
   const displayReport = useMemo(() => {
     if (todaysReport) {
