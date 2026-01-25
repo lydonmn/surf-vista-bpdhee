@@ -461,7 +461,9 @@ export default function AdminScreen() {
       let lastProgressUpdate = startTime;
       let lastBytesUploaded = 0;
 
-      const uploadTask = FileSystem.createUploadTask(
+      console.log('[AdminScreen] Creating upload task with callback...');
+
+      const uploadResult = await FileSystem.uploadAsync(
         uploadData.signedUrl,
         selectedVideo,
         {
@@ -474,7 +476,8 @@ export default function AdminScreen() {
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         },
         (data) => {
-          console.log('[AdminScreen] Upload progress callback data:', data);
+          console.log('[AdminScreen] Upload progress callback triggered');
+          console.log('[AdminScreen] Progress data:', JSON.stringify(data));
           
           const totalBytesWritten = data.totalBytesSent || 0;
           const totalBytesExpected = data.totalBytesExpectedToSend || 0;
@@ -522,8 +525,6 @@ export default function AdminScreen() {
           }
         }
       );
-
-      const uploadResult = await uploadTask.uploadAsync();
 
       console.log('[AdminScreen] Upload completed');
       console.log('[AdminScreen] Upload result:', uploadResult);
