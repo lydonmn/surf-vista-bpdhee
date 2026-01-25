@@ -473,47 +473,54 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
-      let videoBlob: Blob;
+      let videoBlob: Blob | null = null;
       let readAttempts = 0;
       const maxReadAttempts = 3;
       
-      while (readAttempts < maxReadAttempts) {
+      while (readAttempts < maxReadAttempts && !videoBlob) {
         readAttempts++;
         console.log('[AdminScreen] Read attempt', readAttempts, 'of', maxReadAttempts);
         
         try {
-          console.log('[AdminScreen] Using fetch() to read video file...');
-          const fetchStartTime = Date.now();
+          console.log('[AdminScreen] Using FileSystem.readAsStringAsync with base64 encoding...');
+          const base64StartTime = Date.now();
           
-          const response = await fetch(selectedVideo);
-          const fetchDuration = Date.now() - fetchStartTime;
+          const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
           
-          console.log('[AdminScreen] Fetch completed in', fetchDuration, 'ms');
-          console.log('[AdminScreen] Response status:', response.status, response.statusText);
+          const base64Duration = Date.now() - base64StartTime;
+          console.log('[AdminScreen] Base64 read completed in', base64Duration, 'ms');
+          console.log('[AdminScreen] Base64 string length:', base64Data.length);
           
-          if (!response.ok) {
-            throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+          if (!base64Data || base64Data.length === 0) {
+            throw new Error('Base64 data is empty');
           }
           
-          const contentLength = response.headers.get('content-length');
-          if (contentLength) {
-            console.log('[AdminScreen] Content-Length:', contentLength, 'bytes');
-          }
-          
+          console.log('[AdminScreen] Converting base64 to blob...');
           const blobStartTime = Date.now();
-          videoBlob = await response.blob();
-          const blobDuration = Date.now() - blobStartTime;
           
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          
+          videoBlob = new Blob([byteArray], { type: `video/${fileExt}` });
+          
+          const blobDuration = Date.now() - blobStartTime;
           console.log('[AdminScreen] Blob conversion completed in', blobDuration, 'ms');
           console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes');
-          console.log('[AdminScreen] Blob type:', videoBlob.type || 'not set');
+          console.log('[AdminScreen] Blob type:', videoBlob.type);
           
           if (videoBlob.size === 0) {
             console.error('[AdminScreen] ✗ Blob is empty (0 bytes)');
+            videoBlob = null;
             
             if (readAttempts < maxReadAttempts) {
-              console.log('[AdminScreen] Retrying blob read after 1 second...');
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              console.log('[AdminScreen] Retrying blob read after 2 seconds...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
               continue;
             } else {
               throw new Error(
@@ -521,15 +528,15 @@ export default function AdminScreen() {
                 'The file appears to be empty or inaccessible.\n\n' +
                 'Please try:\n' +
                 '1. Selecting a different video\n' +
-                '2. Restarting the app\n' +
-                '3. Checking the video plays in your gallery\n' +
-                '4. Ensuring the video is not corrupted'
+                '2. Compressing the video to a smaller size\n' +
+                '3. Restarting the app\n' +
+                '4. Checking the video plays in your gallery'
               );
             }
           }
           
           const sizeDifference = Math.abs(videoBlob.size - videoMetadata.size);
-          const sizeTolerancePercent = 0.15;
+          const sizeTolerancePercent = 0.20;
           
           if (sizeDifference > videoMetadata.size * sizeTolerancePercent) {
             console.warn('[AdminScreen] ⚠️ Blob size mismatch:', {
@@ -539,15 +546,16 @@ export default function AdminScreen() {
               differencePercent: ((sizeDifference / videoMetadata.size) * 100).toFixed(2) + '%'
             });
             
-            if (videoBlob.size < videoMetadata.size * 0.5) {
-              console.error('[AdminScreen] ✗ Blob is less than 50% of expected size');
+            if (videoBlob.size < videoMetadata.size * 0.3) {
+              console.error('[AdminScreen] ✗ Blob is less than 30% of expected size');
+              videoBlob = null;
               
               if (readAttempts < maxReadAttempts) {
-                console.log('[AdminScreen] Retrying blob read...');
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                console.log('[AdminScreen] Retrying blob read after 2 seconds...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 continue;
               } else {
-                throw new Error('Video file was not read completely. Please try again with a stable connection.');
+                throw new Error('Video file was not read completely. Please try again or use a smaller video.');
               }
             }
           }
@@ -555,45 +563,34 @@ export default function AdminScreen() {
           console.log('[AdminScreen] ✓ Blob read successfully');
           break;
           
-        } catch (fetchError: any) {
-          console.error('[AdminScreen] ✗ Fetch attempt', readAttempts, 'failed:', fetchError.message);
+        } catch (readError: any) {
+          console.error('[AdminScreen] ✗ Read attempt', readAttempts, 'failed:', readError.message);
+          videoBlob = null;
           
           if (readAttempts >= maxReadAttempts) {
             throw new Error(
               'Failed to read video file after ' + maxReadAttempts + ' attempts.\n\n' +
-              'Error: ' + fetchError.message + '\n\n' +
+              'Error: ' + readError.message + '\n\n' +
               'This may be due to:\n' +
+              '• File is too large (try videos under 500MB)\n' +
+              '• Insufficient memory on device\n' +
               '• File format not supported\n' +
-              '• Insufficient memory\n' +
-              '• File access permissions\n' +
               '• Corrupted video file\n\n' +
               'Please try:\n' +
-              '• Using a smaller video (< 500MB)\n' +
-              '• Compressing the video\n' +
+              '• Using a smaller/compressed video\n' +
               '• Restarting the app\n' +
-              '• Trying a different video'
+              '• Trying a different video\n' +
+              '• Ensuring the video plays in your gallery'
             );
           }
           
-          console.log('[AdminScreen] Retrying after 1 second...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log('[AdminScreen] Retrying after 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
       
       if (!videoBlob || videoBlob.size === 0) {
-        throw new Error('Failed to create valid blob from video file');
-      }
-      
-      if (!videoBlob.type || !videoBlob.type.startsWith('video/')) {
-        console.log('[AdminScreen] Correcting blob MIME type to video/' + fileExt);
-        const correctType = `video/${fileExt}`;
-        const oldSize = videoBlob.size;
-        videoBlob = new Blob([videoBlob], { type: correctType });
-        
-        if (videoBlob.size !== oldSize) {
-          console.error('[AdminScreen] ✗ Blob size changed during type conversion');
-          throw new Error('Blob size changed unexpectedly');
-        }
+        throw new Error('Failed to create valid blob from video file. Please try a different video or restart the app.');
       }
       
       console.log('[AdminScreen] ✓ Final blob ready:', {
