@@ -33,10 +33,6 @@ type UploadQuality = '2K' | '4K' | 'Original';
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
-const RECOMMENDED_FILE_SIZE = 1.5 * 1024 * 1024 * 1024;
-
-const CHUNK_SIZE = 10 * 1024 * 1024;
-const MAX_RETRIES = 3;
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -415,7 +411,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] Starting chunked video upload...');
+      console.log('[AdminScreen] Starting video upload...');
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
@@ -436,7 +432,7 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Session obtained');
-      setUploadProgress(2);
+      setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
       if (!fileInfo.exists || !('size' in fileInfo) || fileInfo.size === 0) {
@@ -445,189 +441,44 @@ export default function AdminScreen() {
 
       const totalSize = fileInfo.size;
       console.log('[AdminScreen] File verified. Total size:', formatFileSize(totalSize));
-      console.log('[AdminScreen] Will upload in chunks of:', formatFileSize(CHUNK_SIZE));
 
       const startTime = Date.now();
-      const numChunks = Math.ceil(totalSize / CHUNK_SIZE);
-      console.log('[AdminScreen] Total chunks to upload:', numChunks);
+      setUploadProgress(10);
 
-      setUploadProgress(5);
-
-      const tempDir = FileSystem.cacheDirectory + 'video_chunks/';
-      await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }).catch(() => {
-        console.log('[AdminScreen] Temp directory already exists');
+      console.log('[AdminScreen] Reading video file as base64...');
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
-      const uploadedChunks: string[] = [];
+      console.log('[AdminScreen] Video file read successfully, converting to blob...');
+      setUploadProgress(20);
 
-      for (let chunkIndex = 0; chunkIndex < numChunks; chunkIndex++) {
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, totalSize);
-        const chunkSize = end - start;
-
-        console.log(`[AdminScreen] Processing chunk ${chunkIndex + 1}/${numChunks} (${formatFileSize(start)} - ${formatFileSize(end)})`);
-
-        const chunkFileName = `chunk_${chunkIndex}.bin`;
-        const chunkPath = tempDir + chunkFileName;
-
-        console.log('[AdminScreen] Reading chunk from video file...');
-        const chunkData = await FileSystem.readAsStringAsync(selectedVideo, {
-          encoding: FileSystem.EncodingType.Base64,
-          position: start,
-          length: chunkSize,
-        });
-
-        console.log('[AdminScreen] Writing chunk to temp file...');
-        await FileSystem.writeAsStringAsync(chunkPath, chunkData, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        console.log('[AdminScreen] Getting signed upload URL for chunk...');
-        const chunkStorageName = `${fileName}.part${chunkIndex}`;
-        const { data: uploadData, error: uploadUrlError } = await supabase.storage
-          .from('videos')
-          .createSignedUploadUrl(chunkStorageName);
-
-        if (uploadUrlError || !uploadData?.signedUrl) {
-          throw new Error(`Failed to get upload URL for chunk ${chunkIndex + 1}`);
-        }
-
-        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${numChunks}...`);
-        
-        let uploadSuccess = false;
-        let retries = 0;
-
-        while (!uploadSuccess && retries < MAX_RETRIES) {
-          try {
-            const uploadResult = await FileSystem.uploadAsync(
-              uploadData.signedUrl,
-              chunkPath,
-              {
-                httpMethod: 'PUT',
-                uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-                headers: {
-                  'Content-Type': 'application/octet-stream',
-                  'x-upsert': 'false',
-                },
-              }
-            );
-
-            if (uploadResult.status === 200) {
-              uploadSuccess = true;
-              uploadedChunks.push(chunkStorageName);
-              console.log(`[AdminScreen] Chunk ${chunkIndex + 1} uploaded successfully`);
-            } else {
-              throw new Error(`Upload failed with status ${uploadResult.status}`);
-            }
-          } catch (error) {
-            retries++;
-            console.error(`[AdminScreen] Chunk ${chunkIndex + 1} upload attempt ${retries} failed:`, error);
-            if (retries >= MAX_RETRIES) {
-              throw new Error(`Failed to upload chunk ${chunkIndex + 1} after ${MAX_RETRIES} retries`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000 * retries));
-          }
-        }
-
-        await FileSystem.deleteAsync(chunkPath, { idempotent: true });
-
-        const uploadedBytes = end;
-        const progressPercent = 5 + Math.floor((uploadedBytes / totalSize) * 60);
-        setUploadProgress(progressPercent);
-
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speedBps = uploadedBytes / elapsed;
-        const speedMBps = speedBps / (1024 * 1024);
-        const remainingBytes = totalSize - uploadedBytes;
-        const remainingSeconds = remainingBytes / speedBps;
-
-        setUploadSpeed(`${speedMBps.toFixed(2)} MB/s`);
-        
-        if (remainingSeconds < 60) {
-          setEstimatedTimeRemaining(`${Math.round(remainingSeconds)} seconds`);
-        } else {
-          setEstimatedTimeRemaining(`${Math.round(remainingSeconds / 60)} minutes`);
-        }
-
-        console.log(`[AdminScreen] Progress: ${progressPercent}% (${formatFileSize(uploadedBytes)} / ${formatFileSize(totalSize)})`);
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
 
-      console.log('[AdminScreen] All chunks uploaded, reassembling file...');
-      setUploadProgress(70);
+      console.log('[AdminScreen] Blob created, size:', formatFileSize(blob.size));
+      setUploadProgress(30);
 
-      console.log('[AdminScreen] Downloading and combining chunks...');
-      const finalVideoPath = tempDir + fileName;
-      
-      for (let i = 0; i < uploadedChunks.length; i++) {
-        const chunkName = uploadedChunks[i];
-        console.log(`[AdminScreen] Downloading chunk ${i + 1}/${uploadedChunks.length}...`);
-        
-        const { data: chunkData } = await supabase.storage
-          .from('videos')
-          .download(chunkName);
-
-        if (!chunkData) {
-          throw new Error(`Failed to download chunk ${i + 1}`);
-        }
-
-        const chunkBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve(base64);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(chunkData);
-        });
-
-        if (i === 0) {
-          await FileSystem.writeAsStringAsync(finalVideoPath, chunkBase64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-        } else {
-          const existingData = await FileSystem.readAsStringAsync(finalVideoPath, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          await FileSystem.writeAsStringAsync(finalVideoPath, existingData + chunkBase64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-        }
-
-        await supabase.storage.from('videos').remove([chunkName]);
-      }
-
-      console.log('[AdminScreen] Uploading final combined video...');
-      setUploadProgress(75);
-
-      const { data: finalUploadData, error: finalUploadError } = await supabase.storage
+      console.log('[AdminScreen] Uploading video to Supabase storage...');
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
-        .createSignedUploadUrl(fileName);
+        .upload(fileName, blob, {
+          contentType: `video/${fileExt}`,
+          upsert: false,
+        });
 
-      if (finalUploadError || !finalUploadData?.signedUrl) {
-        throw new Error('Failed to get final upload URL');
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
       }
 
-      const finalUploadResult = await FileSystem.uploadAsync(
-        finalUploadData.signedUrl,
-        finalVideoPath,
-        {
-          httpMethod: 'PUT',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Content-Type': `video/${fileExt}`,
-            'x-upsert': 'false',
-          },
-        }
-      );
-
-      if (finalUploadResult.status !== 200) {
-        throw new Error(`Final upload failed with status ${finalUploadResult.status}`);
-      }
-
-      console.log('[AdminScreen] Video uploaded successfully');
-      setUploadProgress(80);
-
-      await FileSystem.deleteAsync(tempDir, { idempotent: true });
+      console.log('[AdminScreen] Video uploaded successfully:', uploadData);
+      setUploadProgress(70);
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
@@ -636,7 +487,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
 
       console.log('[AdminScreen] Generating thumbnail from video...');
-      setUploadProgress(85);
+      setUploadProgress(75);
       
       let thumbnailUrl = null;
       
@@ -650,50 +501,47 @@ export default function AdminScreen() {
         );
         
         console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
-        setUploadProgress(90);
+        setUploadProgress(80);
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
-        const { data: thumbnailUploadData, error: thumbnailUrlError } = await supabase.storage
-          .from('videos')
-          .createSignedUploadUrl(thumbnailFileName);
+        console.log('[AdminScreen] Reading thumbnail as base64...');
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
 
-        if (thumbnailUrlError || !thumbnailUploadData?.signedUrl) {
-          console.error('[AdminScreen] Error creating thumbnail upload URL:', thumbnailUrlError);
-          throw new Error('Failed to get thumbnail upload URL');
+        const thumbnailByteCharacters = atob(thumbnailBase64);
+        const thumbnailByteNumbers = new Array(thumbnailByteCharacters.length);
+        for (let i = 0; i < thumbnailByteCharacters.length; i++) {
+          thumbnailByteNumbers[i] = thumbnailByteCharacters.charCodeAt(i);
         }
+        const thumbnailByteArray = new Uint8Array(thumbnailByteNumbers);
+        const thumbnailBlob = new Blob([thumbnailByteArray], { type: 'image/jpeg' });
 
         console.log('[AdminScreen] Uploading thumbnail...');
-        
-        const thumbnailUploadResult = await FileSystem.uploadAsync(
-          thumbnailUploadData.signedUrl,
-          thumbnailUri,
-          {
-            httpMethod: 'PUT',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-            headers: {
-              'Content-Type': 'image/jpeg',
-              'x-upsert': 'false',
-            },
-          }
-        );
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
 
-        if (thumbnailUploadResult.status === 200) {
+        if (thumbnailUploadError) {
+          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
+        } else {
           const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
             .from('videos')
             .getPublicUrl(thumbnailFileName);
           
           thumbnailUrl = thumbnailPublicUrl;
           console.log('[AdminScreen] Thumbnail uploaded successfully:', thumbnailUrl);
-        } else {
-          console.error('[AdminScreen] Thumbnail upload failed:', thumbnailUploadResult.status);
         }
       } catch (thumbnailError) {
         console.error('[AdminScreen] Error generating/uploading thumbnail:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
       }
       
-      setUploadProgress(95);
+      setUploadProgress(90);
 
       const { error: dbError } = await supabase
         .from('videos')
@@ -707,7 +555,6 @@ export default function AdminScreen() {
           resolution_height: videoMetadata.height,
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           file_size_bytes: videoMetadata.size,
-          upload_quality: uploadQuality
         });
 
       if (dbError) {
@@ -754,7 +601,7 @@ export default function AdminScreen() {
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('File too large') || error.message?.includes('413')) {
-        errorMessage = error.message;
+        errorMessage = 'File is too large. The maximum file size is 3GB. Please compress your video or reduce its quality.';
       } else if (error.message?.includes('Network request failed')) {
         errorMessage += 'Network connection lost. Please check your internet connection and try again.';
       } else if (error.message?.includes('Not authenticated')) {
@@ -943,19 +790,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Chunked Upload System
+                Direct Upload System ✓
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Reliable uploads for large video files
+                • Connected to Supabase storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic retry on network errors
+                • Supports up to 6K resolution videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Real-time progress tracking
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Supports up to 6K resolution
+                • Automatic thumbnail generation
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
@@ -963,31 +807,8 @@ export default function AdminScreen() {
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
               </Text>
-            </View>
-          </View>
-
-          <View style={[styles.warningBox, { backgroundColor: '#FFF3E0', borderColor: '#FF9800' }]}>
-            <IconSymbol
-              ios_icon_name="exclamationmark.triangle.fill"
-              android_material_icon_name="warning"
-              size={20}
-              color="#F57C00"
-            />
-            <View style={styles.requirementsTextContainer}>
-              <Text style={[styles.requirementsTitle, { color: '#E65100' }]}>
-                Storage Configuration Required
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
-                If you get a &quot;Payload too large&quot; error, you need to increase your Supabase storage bucket file size limit:
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
-                1. Go to Supabase Dashboard
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
-                2. Storage → videos bucket → Settings
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#F57C00' }]}>
-                3. Set &quot;Maximum file size&quot; to 3GB (3221225472 bytes)
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Storage bucket configured for large files
               </Text>
             </View>
           </View>
@@ -1311,13 +1132,12 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Tips for faster uploads:{'\n'}
-              • Use a stable, fast WiFi connection{'\n'}
-              • Upload during off-peak hours{'\n'}
-              • Keep the app in foreground during upload{'\n'}
-              • Ensure sufficient device storage{'\n'}
-              • Close other apps to free up resources{'\n'}
-              • Large 6K files may take 5-15 minutes
+              Upload Tips:{'\n'}
+              • Use a stable WiFi connection for best results{'\n'}
+              • Keep the app open during upload{'\n'}
+              • Large 6K videos may take several minutes{'\n'}
+              • Thumbnail is generated automatically{'\n'}
+              • Video will be available immediately after upload
             </Text>
           </View>
         </View>
