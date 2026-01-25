@@ -58,7 +58,7 @@ export default function HomeScreen() {
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
   
   // Use the videos hook to get the latest video
-  const { videos, isLoading: isLoadingVideos } = useVideos();
+  const { videos, isLoading: isLoadingVideos, refreshVideos } = useVideos();
 
   // Memoize subscription status to prevent recalculation
   const hasSubscription = useMemo(() => {
@@ -75,7 +75,9 @@ export default function HomeScreen() {
         id: videos[0].id,
         title: videos[0].title,
         hasThumbnail: !!videos[0].thumbnail_url,
-        thumbnailUrl: videos[0].thumbnail_url
+        thumbnailUrl: videos[0].thumbnail_url,
+        hasVideoUrl: !!videos[0].video_url,
+        videoUrl: videos[0].video_url
       } : null
     });
     
@@ -140,9 +142,9 @@ export default function HomeScreen() {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await Promise.all([loadData(), refreshData()]);
+    await Promise.all([loadData(), refreshData(), refreshVideos()]);
     setIsRefreshing(false);
-  }, [loadData, refreshData]);
+  }, [loadData, refreshData, refreshVideos]);
 
   const formatLastUpdated = useCallback((date: Date | null) => {
     if (!date) return 'Never';
@@ -380,6 +382,10 @@ export default function HomeScreen() {
     isLoadingVideos
   });
   
+  // Check if we have a video with thumbnail
+  const hasVideoThumbnail = latestVideo && latestVideo.thumbnail_url;
+  const videoTitleText = latestVideo?.title || 'Latest Video';
+  
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -397,31 +403,62 @@ export default function HomeScreen() {
           Welcome to
         </Text>
         
-        {/* Video Thumbnail behind SurfVista */}
-        {latestVideo && latestVideo.thumbnail_url ? (
-          <TouchableOpacity 
-            onPress={handleVideoThumbnailPress}
-            activeOpacity={0.8}
-            style={styles.thumbnailContainer}
-          >
-            <ImageBackground
-              source={resolveImageSource(latestVideo.thumbnail_url)}
-              style={styles.thumbnailBackground}
-              imageStyle={styles.thumbnailImage}
+        {/* Video Thumbnail behind SurfVista - FIXED: Show even without thumbnail */}
+        {latestVideo ? (
+          hasVideoThumbnail ? (
+            <TouchableOpacity 
+              onPress={handleVideoThumbnailPress}
+              activeOpacity={0.8}
+              style={styles.thumbnailContainer}
             >
-              <View style={styles.thumbnailOverlay}>
-                <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-                <View style={styles.playIconContainer}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play-circle"
-                    size={40}
-                    color={colors.primary}
-                  />
+              <ImageBackground
+                source={resolveImageSource(latestVideo.thumbnail_url)}
+                style={styles.thumbnailBackground}
+                imageStyle={styles.thumbnailImage}
+              >
+                <View style={styles.thumbnailOverlay}>
+                  <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+                  <View style={styles.playIconContainer}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play-circle"
+                      size={40}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <Text style={[styles.videoTitle, { color: '#FFFFFF' }]}>
+                    {videoTitleText}
+                  </Text>
+                </View>
+              </ImageBackground>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              onPress={handleVideoThumbnailPress}
+              activeOpacity={0.8}
+              style={styles.thumbnailContainer}
+            >
+              <View style={[styles.thumbnailBackground, styles.thumbnailFallback, { backgroundColor: colors.cardBackground }]}>
+                <View style={styles.thumbnailOverlay}>
+                  <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+                  <View style={styles.playIconContainer}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play-circle"
+                      size={60}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <Text style={[styles.videoTitle, { color: colors.text }]}>
+                    {videoTitleText}
+                  </Text>
+                  <Text style={[styles.videoSubtitle, { color: colors.textSecondary }]}>
+                    Tap to watch latest drone footage
+                  </Text>
                 </View>
               </View>
-            </ImageBackground>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )
         ) : (
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
         )}
@@ -605,6 +642,11 @@ const styles = StyleSheet.create({
   thumbnailImage: {
     borderRadius: 16,
   },
+  thumbnailFallback: {
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
   thumbnailOverlay: {
     flex: 1,
     width: '100%',
@@ -612,9 +654,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 16,
+    padding: 16,
   },
   playIconContainer: {
     marginTop: 8,
+    marginBottom: 8,
+  },
+  videoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  videoSubtitle: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
   },
   location: {
     fontSize: 14,

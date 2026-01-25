@@ -37,6 +37,22 @@ export function useVideos() {
       }
 
       console.log('[useVideos] Loaded videos:', data?.length || 0);
+      
+      // Log detailed info about each video
+      if (data && data.length > 0) {
+        data.forEach((video, index) => {
+          console.log(`[useVideos] Video ${index + 1}:`, {
+            id: video.id,
+            title: video.title,
+            hasThumbnail: !!video.thumbnail_url,
+            thumbnailUrl: video.thumbnail_url,
+            hasVideoUrl: !!video.video_url,
+            videoUrl: video.video_url,
+            createdAt: video.created_at
+          });
+        });
+      }
+      
       setVideos(data || []);
     } catch (err: any) {
       console.error('[useVideos] Exception loading videos:', err);
