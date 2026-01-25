@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -13,6 +13,14 @@ import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
+import { useVideos } from "@/hooks/useVideos";
+
+// Helper to resolve image sources (handles both local require() and remote URLs)
+function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+  if (!source) return { uri: '' };
+  if (typeof source === 'string') return { uri: source };
+  return source as ImageSourcePropType;
+}
 
 // Get today's date in EST timezone - FIXED to use toLocaleDateString
 function getESTDate(): string {
@@ -48,12 +56,21 @@ export default function HomeScreen() {
   
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
+  
+  // Use the videos hook to get the latest video
+  const { videos, isLoading: isLoadingVideos } = useVideos();
 
   // Memoize subscription status to prevent recalculation
   const hasSubscription = useMemo(() => {
     if (!profile) return false;
     return checkSubscription();
   }, [profile, checkSubscription]);
+  
+  // Get the latest video
+  const latestVideo = useMemo(() => {
+    if (videos.length === 0) return null;
+    return videos[0];
+  }, [videos]);
 
   // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
@@ -196,6 +213,21 @@ export default function HomeScreen() {
       setIsSubscribing(false);
     }
   }, [user, refreshProfile]);
+  
+  const handleVideoThumbnailPress = useCallback(() => {
+    if (!latestVideo) return;
+    
+    console.log('[HomeScreen iOS] Video thumbnail tapped, navigating to video player');
+    router.push({
+      pathname: '/video-player',
+      params: {
+        videoId: latestVideo.id,
+        videoUrl: latestVideo.video_url,
+        videoTitle: latestVideo.title,
+        videoDescription: latestVideo.description || '',
+      }
+    });
+  }, [latestVideo]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
@@ -328,6 +360,12 @@ export default function HomeScreen() {
     date: todayReport?.date
   });
   
+  console.log('[HomeScreen iOS] Latest video:', {
+    hasVideo: !!latestVideo,
+    videoId: latestVideo?.id,
+    hasThumbnail: !!latestVideo?.thumbnail_url
+  });
+  
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -344,7 +382,36 @@ export default function HomeScreen() {
         <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
           Welcome to
         </Text>
-        <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+        
+        {/* Video Thumbnail behind SurfVista */}
+        {latestVideo && latestVideo.thumbnail_url ? (
+          <TouchableOpacity 
+            onPress={handleVideoThumbnailPress}
+            activeOpacity={0.8}
+            style={styles.thumbnailContainer}
+          >
+            <ImageBackground
+              source={resolveImageSource(latestVideo.thumbnail_url)}
+              style={styles.thumbnailBackground}
+              imageStyle={styles.thumbnailImage}
+            >
+              <View style={styles.thumbnailOverlay}>
+                <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+                <View style={styles.playIconContainer}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play-circle"
+                    size={40}
+                    color={colors.primary}
+                  />
+                </View>
+              </View>
+            </ImageBackground>
+          </TouchableOpacity>
+        ) : (
+          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
+        )}
+        
         <Text style={[styles.location, { color: colors.textSecondary }]}>The Real Folly Surf Report</Text>
         
         {/* Last Updated Info */}
@@ -510,6 +577,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
     marginBottom: 4,
+  },
+  thumbnailContainer: {
+    width: '100%',
+    marginVertical: 8,
+  },
+  thumbnailBackground: {
+    width: '100%',
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbnailImage: {
+    borderRadius: 16,
+  },
+  thumbnailOverlay: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+  },
+  playIconContainer: {
+    marginTop: 8,
   },
   location: {
     fontSize: 14,
