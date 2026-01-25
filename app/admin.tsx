@@ -393,85 +393,6 @@ export default function AdminScreen() {
     }
   };
 
-  const readFileAsBlob = async (uri: string, fileSize: number): Promise<Blob> => {
-    console.log('[AdminScreen] Reading file as blob using XMLHttpRequest...');
-    console.log('[AdminScreen] File URI:', uri);
-    console.log('[AdminScreen] Expected size:', formatFileSize(fileSize));
-    
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      
-      xhr.onload = function() {
-        console.log('[AdminScreen] XMLHttpRequest onload triggered');
-        console.log('[AdminScreen] Response type:', xhr.responseType);
-        console.log('[AdminScreen] Status:', xhr.status);
-        
-        if (xhr.status !== 200) {
-          reject(new Error(`XMLHttpRequest failed with status ${xhr.status}`));
-          return;
-        }
-        
-        const blob = xhr.response;
-        
-        if (!blob) {
-          reject(new Error('XMLHttpRequest response is null'));
-          return;
-        }
-        
-        console.log('[AdminScreen] Blob created:', {
-          size: blob.size,
-          type: blob.type,
-          expectedSize: fileSize
-        });
-        
-        if (blob.size === 0) {
-          reject(new Error('Blob is empty (0 bytes) after XMLHttpRequest'));
-          return;
-        }
-        
-        const fileExt = uri.split('.').pop()?.toLowerCase() || 'mp4';
-        const mimeType = `video/${fileExt}`;
-        
-        if (!blob.type || !blob.type.startsWith('video/')) {
-          console.log('[AdminScreen] Blob type is not video, setting correct type to:', mimeType);
-          const correctedBlob = new Blob([blob], { type: mimeType });
-          console.log('[AdminScreen] Updated blob:', {
-            size: correctedBlob.size,
-            type: correctedBlob.type
-          });
-          resolve(correctedBlob);
-        } else {
-          resolve(blob);
-        }
-      };
-      
-      xhr.onerror = function() {
-        console.error('[AdminScreen] XMLHttpRequest error');
-        reject(new Error('XMLHttpRequest failed to read file'));
-      };
-      
-      xhr.ontimeout = function() {
-        console.error('[AdminScreen] XMLHttpRequest timeout');
-        reject(new Error('XMLHttpRequest timed out'));
-      };
-      
-      xhr.onprogress = function(event) {
-        if (event.lengthComputable) {
-          const percentComplete = (event.loaded / event.total) * 100;
-          console.log('[AdminScreen] XMLHttpRequest progress:', percentComplete.toFixed(2) + '%');
-        }
-      };
-      
-      console.log('[AdminScreen] Opening XMLHttpRequest for:', uri);
-      xhr.open('GET', uri, true);
-      xhr.responseType = 'blob';
-      xhr.timeout = 120000;
-      
-      console.log('[AdminScreen] Sending XMLHttpRequest...');
-      xhr.send();
-    });
-  };
-
   const uploadVideoChunked = async () => {
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -549,134 +470,43 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob using XMLHttpRequest...');
-      console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
+      console.log('[AdminScreen] Step 3/6: Using FileSystem.uploadAsync for direct upload...');
+      console.log('[AdminScreen] This method uploads the file directly without reading it into memory');
       
-      let videoBlob: Blob | null = null;
-      let readAttempts = 0;
-      const maxReadAttempts = 3;
+      const { data: { publicUrl: storageUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl('dummy');
       
-      while (readAttempts < maxReadAttempts && !videoBlob) {
-        readAttempts++;
-        console.log('[AdminScreen] Read attempt', readAttempts, 'of', maxReadAttempts);
-        
-        try {
-          const readStartTime = Date.now();
-          
-          videoBlob = await readFileAsBlob(selectedVideo, videoMetadata.size);
-          
-          const readDuration = Date.now() - readStartTime;
-          console.log('[AdminScreen] Read completed in', readDuration, 'ms');
-          console.log('[AdminScreen] Blob size:', videoBlob.size, 'bytes');
-          console.log('[AdminScreen] Blob type:', videoBlob.type);
-          
-          if (videoBlob.size === 0) {
-            console.error('[AdminScreen] ✗ Blob is empty (0 bytes)');
-            videoBlob = null;
-            
-            if (readAttempts < maxReadAttempts) {
-              console.log('[AdminScreen] Retrying blob read after 2 seconds...');
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            } else {
-              throw new Error(
-                'Failed to read video file after ' + maxReadAttempts + ' attempts. ' +
-                'The file appears to be empty or inaccessible.\n\n' +
-                'Please try:\n' +
-                '1. Selecting a different video\n' +
-                '2. Compressing the video to a smaller size\n' +
-                '3. Restarting the app\n' +
-                '4. Checking the video plays in your gallery'
-              );
-            }
-          }
-          
-          const sizeDifference = Math.abs(videoBlob.size - videoMetadata.size);
-          const sizeTolerancePercent = 0.20;
-          
-          if (sizeDifference > videoMetadata.size * sizeTolerancePercent) {
-            console.warn('[AdminScreen] ⚠️ Blob size mismatch:', {
-              blobSize: videoBlob.size,
-              expectedSize: videoMetadata.size,
-              difference: sizeDifference,
-              differencePercent: ((sizeDifference / videoMetadata.size) * 100).toFixed(2) + '%'
-            });
-            
-            if (videoBlob.size < videoMetadata.size * 0.3) {
-              console.error('[AdminScreen] ✗ Blob is less than 30% of expected size');
-              videoBlob = null;
-              
-              if (readAttempts < maxReadAttempts) {
-                console.log('[AdminScreen] Retrying blob read after 2 seconds...');
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue;
-              } else {
-                throw new Error('Video file was not read completely. Please try again or use a smaller video.');
-              }
-            }
-          }
-          
-          console.log('[AdminScreen] ✓ Blob read successfully');
-          break;
-          
-        } catch (readError: any) {
-          console.error('[AdminScreen] ✗ Read attempt', readAttempts, 'failed:', readError.message);
-          videoBlob = null;
-          
-          if (readAttempts >= maxReadAttempts) {
-            throw new Error(
-              'Failed to read video file after ' + maxReadAttempts + ' attempts.\n\n' +
-              'Error: ' + readError.message + '\n\n' +
-              'This may be due to:\n' +
-              '• File is too large (try videos under 500MB)\n' +
-              '• Insufficient memory on device\n' +
-              '• File format not supported\n' +
-              '• Corrupted video file\n\n' +
-              'Please try:\n' +
-              '• Using a smaller/compressed video\n' +
-              '• Restarting the app\n' +
-              '• Trying a different video\n' +
-              '• Ensuring the video plays in your gallery'
-            );
-          }
-          
-          console.log('[AdminScreen] Retrying after 2 seconds...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
+      const baseUrl = storageUrl.replace('/storage/v1/object/public/videos/dummy', '');
+      const uploadUrl = `${baseUrl}/storage/v1/object/videos/${fileName}`;
       
-      if (!videoBlob || videoBlob.size === 0) {
-        throw new Error('Failed to create valid blob from video file. Please try a different video or restart the app.');
-      }
-      
-      console.log('[AdminScreen] ✓ Final blob ready:', {
-        size: formatFileSize(videoBlob.size),
-        sizeBytes: videoBlob.size,
-        type: videoBlob.type
-      });
-      
-      setUploadProgress(35);
-
-      console.log('[AdminScreen] Step 4/6: Uploading video to Supabase storage...');
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] Starting direct file upload...');
       
       const startTime = Date.now();
       
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, videoBlob, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: videoBlob.type || `video/${fileExt}`,
-        });
-
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw new Error(`Upload failed: ${uploadError.message}`);
-      }
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': supabase.supabaseKey,
+        },
+      });
 
       const uploadTime = (Date.now() - startTime) / 1000;
-      const uploadSpeedMBps = (videoBlob.size / 1024 / 1024) / uploadTime;
+      const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
+      console.log('[AdminScreen] Upload result:', {
+        status: uploadResult.status,
+        body: uploadResult.body
+      });
+
+      if (uploadResult.status !== 200) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
       console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
 
       console.log('[AdminScreen] Verifying uploaded file...');
@@ -691,7 +521,7 @@ export default function AdminScreen() {
       if (fileData[0].metadata && fileData[0].metadata.size === 0) {
         throw new Error(
           'Upload verification failed - file has 0 bytes in storage.\n\n' +
-          'This indicates the video file could not be read correctly before upload.\n\n' +
+          'This indicates the video file could not be uploaded correctly.\n\n' +
           'Please try:\n' +
           '1. Using a different video\n' +
           '2. Compressing the video to a smaller size\n' +
@@ -729,61 +559,39 @@ export default function AdminScreen() {
           throw new Error('Thumbnail file is empty');
         }
         
-        const thumbnailBlob = await readFileAsBlob(thumbnailUri, thumbnailInfo.size);
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
         
-        if (!thumbnailBlob.type || !thumbnailBlob.type.startsWith('image/')) {
-          const correctedThumbnailBlob = new Blob([thumbnailBlob], { type: 'image/jpeg' });
-          
-          if (correctedThumbnailBlob.size === 0) {
-            throw new Error('Thumbnail blob is empty');
-          }
-          
-          const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
-          
-          const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-            .from('videos')
-            .upload(thumbnailFileName, correctedThumbnailBlob, {
-              cacheControl: '3600',
-              upsert: false,
-              contentType: 'image/jpeg',
-            });
-
-          if (thumbnailUploadError) {
-            throw thumbnailUploadError;
-          }
-
-          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl(thumbnailFileName);
-          
-          thumbnailUrl = thumbnailPublicUrl;
-          console.log('[AdminScreen] ✓ Thumbnail uploaded');
-        } else {
-          if (thumbnailBlob.size === 0) {
-            throw new Error('Thumbnail blob is empty');
-          }
-          
-          const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
-          
-          const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-            .from('videos')
-            .upload(thumbnailFileName, thumbnailBlob, {
-              cacheControl: '3600',
-              upsert: false,
-              contentType: 'image/jpeg',
-            });
-
-          if (thumbnailUploadError) {
-            throw thumbnailUploadError;
-          }
-
-          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl(thumbnailFileName);
-          
-          thumbnailUrl = thumbnailPublicUrl;
-          console.log('[AdminScreen] ✓ Thumbnail uploaded');
+        const thumbnailBlob = new Blob(
+          [Uint8Array.from(atob(thumbnailBase64), c => c.charCodeAt(0))],
+          { type: 'image/jpeg' }
+        );
+        
+        if (thumbnailBlob.size === 0) {
+          throw new Error('Thumbnail blob is empty');
         }
+        
+        const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
+        
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'image/jpeg',
+          });
+
+        if (thumbnailUploadError) {
+          throw thumbnailUploadError;
+        }
+
+        const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(thumbnailFileName);
+        
+        thumbnailUrl = thumbnailPublicUrl;
+        console.log('[AdminScreen] ✓ Thumbnail uploaded');
       } catch (thumbnailError) {
         console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail');
@@ -855,8 +663,6 @@ export default function AdminScreen() {
       
       if (error.message?.includes('0 bytes')) {
         errorMessage = error.message;
-      } else if (error.message?.includes('not read completely') || error.message?.includes('after') && error.message?.includes('attempts')) {
-        errorMessage = error.message;
       } else if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
         errorMessage = 'File is too large. Maximum size is 3GB. Please compress your video.';
       } else if (error.message?.includes('Network') || error.message?.includes('network')) {
@@ -914,7 +720,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "XMLHttpRequest Blob Upload System ✓";
+  const directUploadSystemTitle = "FileSystem.uploadAsync Direct Upload ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -1082,19 +888,16 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses XMLHttpRequest for reliable blob reading
+                • Uses FileSystem.uploadAsync for direct file upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Direct blob upload - NO base64 conversion
+                • NO memory loading - file is streamed directly to storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • No string length limits - supports large 6K videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic retry on empty blob (up to 3 attempts)
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Progress tracking during file read
+                • Most reliable method for large file uploads
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Connected to Supabase storage with verification
@@ -1381,7 +1184,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 20 ? 'Verifying storage...' : uploadProgress < 35 ? 'Reading video file...' : uploadProgress < 65 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 20 ? 'Verifying storage...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1432,7 +1235,7 @@ export default function AdminScreen() {
               Upload Tips:{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • System will automatically retry if blob read fails{'\n'}
+              • FileSystem.uploadAsync streams the file directly{'\n'}
               • For large 6K videos, consider compressing to under 500MB{'\n'}
               • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
