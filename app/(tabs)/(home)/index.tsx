@@ -68,9 +68,20 @@ export default function HomeScreen() {
   
   // Get the latest video
   const latestVideo = useMemo(() => {
+    console.log('[HomeScreen] Videos data:', {
+      count: videos.length,
+      isLoading: isLoadingVideos,
+      firstVideo: videos[0] ? {
+        id: videos[0].id,
+        title: videos[0].title,
+        hasThumbnail: !!videos[0].thumbnail_url,
+        thumbnailUrl: videos[0].thumbnail_url
+      } : null
+    });
+    
     if (videos.length === 0) return null;
     return videos[0];
-  }, [videos]);
+  }, [videos, isLoadingVideos]);
 
   // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
@@ -363,7 +374,10 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Latest video:', {
     hasVideo: !!latestVideo,
     videoId: latestVideo?.id,
-    hasThumbnail: !!latestVideo?.thumbnail_url
+    hasThumbnail: !!latestVideo?.thumbnail_url,
+    thumbnailUrl: latestVideo?.thumbnail_url,
+    videosCount: videos.length,
+    isLoadingVideos
   });
   
   return (
