@@ -428,19 +428,26 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Preparing video file for upload...');
       setUploadProgress(5);
 
+      // Read video file as blob
       console.log('[AdminScreen] Reading video file as binary blob...');
-      const response = await fetch(selectedVideo);
-      const blob = await response.blob();
+      const videoResponse = await fetch(selectedVideo);
+      const videoBlob = await videoResponse.blob();
 
-      console.log('[AdminScreen] Blob created, size:', blob.size, 'bytes');
+      console.log('[AdminScreen] Video blob created, size:', videoBlob.size, 'bytes');
+      
+      // Verify blob has content
+      if (videoBlob.size === 0) {
+        throw new Error('Video file is empty. Please try selecting the video again.');
+      }
+      
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Uploading to Supabase storage...');
+      console.log('[AdminScreen] Uploading video to Supabase storage...');
       const startTime = Date.now();
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
-        .upload(fileName, blob, {
+        .upload(fileName, videoBlob, {
           contentType: `video/${fileExt}`,
           cacheControl: '3600',
           upsert: false
@@ -452,6 +459,23 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Video uploaded successfully:', uploadData);
+      
+      // Verify the uploaded file exists and has size
+      const { data: fileData, error: fileCheckError } = await supabase.storage
+        .from('videos')
+        .list('', {
+          search: fileName
+        });
+      
+      if (fileCheckError) {
+        console.error('[AdminScreen] Error checking uploaded file:', fileCheckError);
+      } else if (fileData && fileData.length > 0) {
+        console.log('[AdminScreen] Uploaded file verified:', fileData[0]);
+        if (fileData[0].metadata && fileData[0].metadata.size === 0) {
+          throw new Error('Video upload failed - file has 0 bytes. Please try again.');
+        }
+      }
+      
       setUploadProgress(60);
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -461,20 +485,32 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
       setUploadProgress(70);
 
+      // Generate thumbnail
       console.log('[AdminScreen] Generating thumbnail from video...');
       let thumbnailUrl = null;
       
       try {
+        const thumbnailTime = videoMetadata.duration > 0 ? (videoMetadata.duration * 1000) / 3 : 1000;
+        console.log('[AdminScreen] Generating thumbnail at time:', thumbnailTime, 'ms');
+        
         const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
           selectedVideo,
           {
-            time: videoMetadata.duration > 0 ? (videoMetadata.duration * 1000) / 3 : 1000,
+            time: thumbnailTime,
             quality: 0.8,
           }
         );
         
         console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
         setUploadProgress(75);
+        
+        // Verify thumbnail file exists
+        const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
+        if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
+          throw new Error('Thumbnail file is empty or does not exist');
+        }
+        
+        console.log('[AdminScreen] Thumbnail file size:', thumbnailInfo.size, 'bytes');
         
         const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
         
@@ -483,6 +519,12 @@ export default function AdminScreen() {
         const thumbnailBlob = await thumbnailResponse.blob();
 
         console.log('[AdminScreen] Thumbnail blob created, size:', thumbnailBlob.size, 'bytes');
+        
+        // Verify thumbnail blob has content
+        if (thumbnailBlob.size === 0) {
+          throw new Error('Thumbnail blob is empty');
+        }
+        
         console.log('[AdminScreen] Uploading thumbnail to Supabase...');
         const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
           .from('videos')
@@ -494,17 +536,38 @@ export default function AdminScreen() {
 
         if (thumbnailUploadError) {
           console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
-        } else {
-          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl(thumbnailFileName);
-          
-          thumbnailUrl = thumbnailPublicUrl;
-          console.log('[AdminScreen] Thumbnail uploaded successfully:', thumbnailUrl);
+          throw thumbnailUploadError;
         }
+        
+        // Verify thumbnail was uploaded
+        const { data: thumbnailFileData, error: thumbnailCheckError } = await supabase.storage
+          .from('videos')
+          .list('', {
+            search: thumbnailFileName
+          });
+        
+        if (thumbnailCheckError) {
+          console.error('[AdminScreen] Error checking uploaded thumbnail:', thumbnailCheckError);
+          throw thumbnailCheckError;
+        } else if (thumbnailFileData && thumbnailFileData.length > 0) {
+          console.log('[AdminScreen] Thumbnail file verified:', thumbnailFileData[0]);
+          if (thumbnailFileData[0].metadata && thumbnailFileData[0].metadata.size === 0) {
+            throw new Error('Thumbnail upload failed - file has 0 bytes');
+          }
+        } else {
+          throw new Error('Thumbnail file not found after upload');
+        }
+
+        const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(thumbnailFileName);
+        
+        thumbnailUrl = thumbnailPublicUrl;
+        console.log('[AdminScreen] Thumbnail uploaded successfully:', thumbnailUrl);
       } catch (thumbnailError) {
         console.error('[AdminScreen] Error generating/uploading thumbnail:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail - will use placeholder');
+        // Don't throw - continue without thumbnail
       }
       
       setUploadProgress(85);
@@ -541,9 +604,11 @@ export default function AdminScreen() {
         ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
         : '';
 
+      const thumbnailStatus = thumbnailUrl ? 'Generated ✓' : 'Not generated (will use placeholder)';
+
       Alert.alert(
         'Success!', 
-        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\nThumbnail: ${thumbnailUrl ? 'Generated ✓' : 'Not generated'}\n\nYour video is now available to subscribers.`,
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\nThumbnail: ${thumbnailStatus}\n\nYour video is now available to subscribers.`,
         [
           {
             text: 'OK',
@@ -575,6 +640,8 @@ export default function AdminScreen() {
         errorMessage += 'Your session has expired. Please log out and log in again.';
       } else if (error.message?.includes('storage')) {
         errorMessage += 'Storage service error. Please try again later or contact support.';
+      } else if (error.message?.includes('0 bytes') || error.message?.includes('empty')) {
+        errorMessage = error.message + ' This may be due to a network issue or file access problem. Please try again.';
       } else {
         errorMessage += error.message || 'An unknown error occurred. Please try again.';
       }
@@ -588,6 +655,9 @@ export default function AdminScreen() {
   };
 
   if (!profile?.is_admin) {
+    const accessDeniedText = "Admin access required";
+    const goBackText = "Go Back";
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -598,18 +668,47 @@ export default function AdminScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Admin access required
+            {accessDeniedText}
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => router.back()}
           >
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Text style={styles.buttonText}>{goBackText}</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
+
+  const adminPanelTitle = "Admin Panel";
+  const userManagementTitle = "User Management";
+  const userManagementDesc = "Manage users, subscriptions, and access";
+  const dataManagementTitle = "Data Management";
+  const dataManagementDesc = "Update weather, tides, and surf reports";
+  const debugDiagnosticsTitle = "Debug Diagnostics";
+  const debugDiagnosticsDesc = "Test data fetching and troubleshoot issues";
+  const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
+  const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
+  const uploadVideoTitle = "Upload Video";
+  const directUploadSystemTitle = "Direct Upload System ✓";
+  const videoTitlePlaceholder = "Video Title";
+  const descriptionPlaceholder = "Description (optional)";
+  const selectVideoText = "Select Video";
+  const changeVideoText = "Change Video";
+  const validatingVideoText = "Validating Video...";
+  const uploadQualityTitle = "Upload Quality";
+  const uploadQualitySubtitle = "Select the quality for this upload";
+  const uploadVideoButtonText = "Upload Video";
+  const videoManagementTitle = "Video Management";
+  const noVideosText = "No videos uploaded yet";
+  const userManagementSectionTitle = "User Management";
+  const adminBadgeText = "Admin";
+  const subscribedBadgeText = "Subscribed";
+  const revokeSubText = "Revoke Sub";
+  const grantSubText = "Grant Sub";
+  const revokeAdminText = "Revoke Admin";
+  const grantAdminText = "Grant Admin";
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -627,7 +726,7 @@ export default function AdminScreen() {
             />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Admin Panel
+            {adminPanelTitle}
           </Text>
         </View>
 
@@ -644,10 +743,10 @@ export default function AdminScreen() {
             />
             <View style={styles.cardHeaderText}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-                User Management
+                {userManagementTitle}
               </Text>
               <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-                Manage users, subscriptions, and access
+                {userManagementDesc}
               </Text>
             </View>
             <IconSymbol
@@ -672,10 +771,10 @@ export default function AdminScreen() {
             />
             <View style={styles.cardHeaderText}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-                Data Management
+                {dataManagementTitle}
               </Text>
               <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-                Update weather, tides, and surf reports
+                {dataManagementDesc}
               </Text>
             </View>
             <IconSymbol
@@ -700,10 +799,10 @@ export default function AdminScreen() {
             />
             <View style={styles.cardHeaderText}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-                Debug Diagnostics
+                {debugDiagnosticsTitle}
               </Text>
               <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-                Test data fetching and troubleshoot issues
+                {debugDiagnosticsDesc}
               </Text>
             </View>
             <IconSymbol
@@ -728,10 +827,10 @@ export default function AdminScreen() {
             />
             <View style={styles.cardHeaderText}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-                Cron Job Diagnostics
+                {cronJobDiagnosticsTitle}
               </Text>
               <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-                Check 5 AM report generation and 15-min updates
+                {cronJobDiagnosticsDesc}
               </Text>
             </View>
             <IconSymbol
@@ -745,7 +844,7 @@ export default function AdminScreen() {
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Upload Video
+            {uploadVideoTitle}
           </Text>
 
           <View style={[styles.requirementsBox, { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' }]}>
@@ -757,7 +856,7 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Direct Upload System ✓
+                {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Connected to Supabase storage
@@ -786,7 +885,7 @@ export default function AdminScreen() {
               color: theme.colors.text,
               borderColor: colors.textSecondary
             }]}
-            placeholder="Video Title"
+            placeholder={videoTitlePlaceholder}
             placeholderTextColor={colors.textSecondary}
             value={videoTitle}
             onChangeText={setVideoTitle}
@@ -798,7 +897,7 @@ export default function AdminScreen() {
               color: theme.colors.text,
               borderColor: colors.textSecondary
             }]}
-            placeholder="Description (optional)"
+            placeholder={descriptionPlaceholder}
             placeholderTextColor={colors.textSecondary}
             value={videoDescription}
             onChangeText={setVideoDescription}
@@ -814,7 +913,7 @@ export default function AdminScreen() {
             {validatingVideo ? (
               <React.Fragment>
                 <ActivityIndicator color="#FFFFFF" size="small" />
-                <Text style={styles.buttonText}>Validating Video...</Text>
+                <Text style={styles.buttonText}>{validatingVideoText}</Text>
               </React.Fragment>
             ) : (
               <React.Fragment>
@@ -825,7 +924,7 @@ export default function AdminScreen() {
                   color="#FFFFFF"
                 />
                 <Text style={styles.buttonText}>
-                  {selectedVideo ? 'Change Video' : 'Select Video'}
+                  {selectedVideo ? changeVideoText : selectVideoText}
                 </Text>
               </React.Fragment>
             )}
@@ -834,10 +933,10 @@ export default function AdminScreen() {
           {videoMetadata && validationErrors.length === 0 && (
             <View style={styles.qualitySection}>
               <Text style={[styles.qualityTitle, { color: theme.colors.text }]}>
-                Upload Quality
+                {uploadQualityTitle}
               </Text>
               <Text style={[styles.qualitySubtitle, { color: colors.textSecondary }]}>
-                Select the quality for this upload
+                {uploadQualitySubtitle}
               </Text>
               
               <View style={styles.qualityOptions}>
@@ -1079,7 +1178,7 @@ export default function AdminScreen() {
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.buttonText}>Upload Video</Text>
+                <Text style={styles.buttonText}>{uploadVideoButtonText}</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>
@@ -1104,12 +1203,12 @@ export default function AdminScreen() {
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Video Management
+            {videoManagementTitle}
           </Text>
           
           {videos.length === 0 ? (
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos uploaded yet
+              {noVideosText}
             </Text>
           ) : (
             <React.Fragment>
@@ -1162,7 +1261,7 @@ export default function AdminScreen() {
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            User Management
+            {userManagementSectionTitle}
           </Text>
 
           {loading ? (
@@ -1179,12 +1278,12 @@ export default function AdminScreen() {
                       <View style={styles.badges}>
                         {user.is_admin && (
                           <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-                            <Text style={styles.badgeText}>Admin</Text>
+                            <Text style={styles.badgeText}>{adminBadgeText}</Text>
                           </View>
                         )}
                         {user.is_subscribed && (
                           <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.badgeText}>Subscribed</Text>
+                            <Text style={styles.badgeText}>{subscribedBadgeText}</Text>
                           </View>
                         )}
                       </View>
@@ -1198,7 +1297,7 @@ export default function AdminScreen() {
                         onPress={() => toggleSubscription(user.id, user.is_subscribed)}
                       >
                         <Text style={styles.actionButtonText}>
-                          {user.is_subscribed ? 'Revoke Sub' : 'Grant Sub'}
+                          {user.is_subscribed ? revokeSubText : grantSubText}
                         </Text>
                       </TouchableOpacity>
 
@@ -1209,7 +1308,7 @@ export default function AdminScreen() {
                         onPress={() => toggleAdmin(user.id, user.is_admin)}
                       >
                         <Text style={styles.actionButtonText}>
-                          {user.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+                          {user.is_admin ? revokeAdminText : grantAdminText}
                         </Text>
                       </TouchableOpacity>
                     </View>
