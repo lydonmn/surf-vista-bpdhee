@@ -394,43 +394,82 @@ export default function AdminScreen() {
   };
 
   const readFileAsBlob = async (uri: string, fileSize: number): Promise<Blob> => {
-    console.log('[AdminScreen] Reading file as blob using Fetch API (NO BASE64)...');
+    console.log('[AdminScreen] Reading file as blob using XMLHttpRequest...');
     console.log('[AdminScreen] File URI:', uri);
     console.log('[AdminScreen] Expected size:', formatFileSize(fileSize));
     
-    try {
-      console.log('[AdminScreen] Using fetch() to read file directly as blob...');
-      const response = await fetch(uri);
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
       
-      if (!response.ok) {
-        throw new Error(`Fetch failed with status ${response.status}`);
-      }
-      
-      const blob = await response.blob();
-      
-      console.log('[AdminScreen] Blob created:', {
-        size: blob.size,
-        type: blob.type,
-        expectedSize: fileSize
-      });
-      
-      if (blob.size === 0) {
-        throw new Error('Blob is empty (0 bytes) after fetch');
-      }
-      
-      if (!blob.type || !blob.type.startsWith('video/')) {
-        console.log('[AdminScreen] Blob type is not video, setting correct type...');
+      xhr.onload = function() {
+        console.log('[AdminScreen] XMLHttpRequest onload triggered');
+        console.log('[AdminScreen] Response type:', xhr.responseType);
+        console.log('[AdminScreen] Status:', xhr.status);
+        
+        if (xhr.status !== 200) {
+          reject(new Error(`XMLHttpRequest failed with status ${xhr.status}`));
+          return;
+        }
+        
+        const blob = xhr.response;
+        
+        if (!blob) {
+          reject(new Error('XMLHttpRequest response is null'));
+          return;
+        }
+        
+        console.log('[AdminScreen] Blob created:', {
+          size: blob.size,
+          type: blob.type,
+          expectedSize: fileSize
+        });
+        
+        if (blob.size === 0) {
+          reject(new Error('Blob is empty (0 bytes) after XMLHttpRequest'));
+          return;
+        }
+        
         const fileExt = uri.split('.').pop()?.toLowerCase() || 'mp4';
-        const correctedBlob = new Blob([blob], { type: `video/${fileExt}` });
-        console.log('[AdminScreen] Updated blob type:', correctedBlob.type);
-        return correctedBlob;
-      }
+        const mimeType = `video/${fileExt}`;
+        
+        if (!blob.type || !blob.type.startsWith('video/')) {
+          console.log('[AdminScreen] Blob type is not video, setting correct type to:', mimeType);
+          const correctedBlob = new Blob([blob], { type: mimeType });
+          console.log('[AdminScreen] Updated blob:', {
+            size: correctedBlob.size,
+            type: correctedBlob.type
+          });
+          resolve(correctedBlob);
+        } else {
+          resolve(blob);
+        }
+      };
       
-      return blob;
-    } catch (error: any) {
-      console.error('[AdminScreen] Fetch blob error:', error.message);
-      throw new Error(`Failed to read file: ${error.message}`);
-    }
+      xhr.onerror = function() {
+        console.error('[AdminScreen] XMLHttpRequest error');
+        reject(new Error('XMLHttpRequest failed to read file'));
+      };
+      
+      xhr.ontimeout = function() {
+        console.error('[AdminScreen] XMLHttpRequest timeout');
+        reject(new Error('XMLHttpRequest timed out'));
+      };
+      
+      xhr.onprogress = function(event) {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          console.log('[AdminScreen] XMLHttpRequest progress:', percentComplete.toFixed(2) + '%');
+        }
+      };
+      
+      console.log('[AdminScreen] Opening XMLHttpRequest for:', uri);
+      xhr.open('GET', uri, true);
+      xhr.responseType = 'blob';
+      xhr.timeout = 120000;
+      
+      console.log('[AdminScreen] Sending XMLHttpRequest...');
+      xhr.send();
+    });
   };
 
   const uploadVideoChunked = async () => {
@@ -510,7 +549,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob (NO BASE64 CONVERSION)...');
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob using XMLHttpRequest...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
       let videoBlob: Blob | null = null;
@@ -627,7 +666,7 @@ export default function AdminScreen() {
         .upload(fileName, videoBlob, {
           cacheControl: '3600',
           upsert: false,
-          contentType: `video/${fileExt}`,
+          contentType: videoBlob.type || `video/${fileExt}`,
         });
 
       if (uploadError) {
@@ -875,7 +914,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "Direct Blob Upload System ✓";
+  const directUploadSystemTitle = "XMLHttpRequest Blob Upload System ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -1043,16 +1082,19 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Uses XMLHttpRequest for reliable blob reading
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Direct blob upload - NO base64 conversion
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • No string length limits - supports large 6K videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses fetch() API for reliable file reading
+                • Automatic retry on empty blob (up to 3 attempts)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic retry on empty blob (up to 3 attempts)
+                • Progress tracking during file read
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Connected to Supabase storage with verification
