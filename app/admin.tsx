@@ -394,34 +394,19 @@ export default function AdminScreen() {
   };
 
   const readFileAsBlob = async (uri: string, fileSize: number): Promise<Blob> => {
-    console.log('[AdminScreen] Reading file as blob using FileSystem...');
+    console.log('[AdminScreen] Reading file as blob using Fetch API (NO BASE64)...');
     console.log('[AdminScreen] File URI:', uri);
     console.log('[AdminScreen] Expected size:', formatFileSize(fileSize));
     
     try {
-      // Use FileSystem to read the file as base64
-      console.log('[AdminScreen] Reading file as base64...');
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      console.log('[AdminScreen] Using fetch() to read file directly as blob...');
+      const response = await fetch(uri);
       
-      console.log('[AdminScreen] Base64 string length:', base64.length);
-      
-      if (!base64 || base64.length === 0) {
-        throw new Error('Failed to read file - base64 string is empty');
+      if (!response.ok) {
+        throw new Error(`Fetch failed with status ${response.status}`);
       }
       
-      // Convert base64 to blob
-      console.log('[AdminScreen] Converting base64 to blob...');
-      const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'video/mp4' });
+      const blob = await response.blob();
       
       console.log('[AdminScreen] Blob created:', {
         size: blob.size,
@@ -430,42 +415,21 @@ export default function AdminScreen() {
       });
       
       if (blob.size === 0) {
-        throw new Error('Blob is empty (0 bytes) after conversion');
+        throw new Error('Blob is empty (0 bytes) after fetch');
       }
       
-      if (blob.size < fileSize * 0.5) {
-        console.warn('[AdminScreen] Warning: Blob size is less than 50% of expected size');
+      if (!blob.type || !blob.type.startsWith('video/')) {
+        console.log('[AdminScreen] Blob type is not video, setting correct type...');
+        const fileExt = uri.split('.').pop()?.toLowerCase() || 'mp4';
+        const correctedBlob = new Blob([blob], { type: `video/${fileExt}` });
+        console.log('[AdminScreen] Updated blob type:', correctedBlob.type);
+        return correctedBlob;
       }
       
       return blob;
     } catch (error: any) {
-      console.error('[AdminScreen] FileSystem blob error:', error.message);
-      
-      // Fallback to fetch API
-      console.log('[AdminScreen] Trying fallback fetch method...');
-      try {
-        const response = await fetch(uri);
-        
-        if (!response.ok) {
-          throw new Error(`Fetch failed with status ${response.status}`);
-        }
-        
-        const blob = await response.blob();
-        
-        console.log('[AdminScreen] Fallback blob created:', {
-          size: blob.size,
-          type: blob.type
-        });
-        
-        if (blob.size === 0) {
-          throw new Error('Fallback blob is also empty (0 bytes)');
-        }
-        
-        return blob;
-      } catch (fetchError: any) {
-        console.error('[AdminScreen] Fallback fetch also failed:', fetchError.message);
-        throw new Error(`Failed to read file with both methods: ${error.message}`);
-      }
+      console.error('[AdminScreen] Fetch blob error:', error.message);
+      throw new Error(`Failed to read file: ${error.message}`);
     }
   };
 
@@ -546,7 +510,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Storage bucket accessible');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Reading video file as blob...');
+      console.log('[AdminScreen] Step 3/6: Reading video file as blob (NO BASE64 CONVERSION)...');
       console.log('[AdminScreen] Expected file size:', formatFileSize(videoMetadata.size));
       
       let videoBlob: Blob | null = null;
@@ -611,12 +575,6 @@ export default function AdminScreen() {
                 throw new Error('Video file was not read completely. Please try again or use a smaller video.');
               }
             }
-          }
-          
-          if (!videoBlob.type || !videoBlob.type.startsWith('video/')) {
-            console.log('[AdminScreen] Blob type is not video, setting correct type...');
-            videoBlob = new Blob([videoBlob], { type: `video/${fileExt}` });
-            console.log('[AdminScreen] Updated blob type:', videoBlob.type);
           }
           
           console.log('[AdminScreen] ✓ Blob read successfully');
@@ -917,7 +875,7 @@ export default function AdminScreen() {
   const cronJobDiagnosticsTitle = "Cron Job Diagnostics";
   const cronJobDiagnosticsDesc = "Check 5 AM report generation and 15-min updates";
   const uploadVideoTitle = "Upload Video";
-  const directUploadSystemTitle = "Fetch API Upload System ✓";
+  const directUploadSystemTitle = "Direct Blob Upload System ✓";
   const videoTitlePlaceholder = "Video Title";
   const descriptionPlaceholder = "Description (optional)";
   const selectVideoText = "Select Video";
@@ -1085,10 +1043,13 @@ export default function AdminScreen() {
                 {directUploadSystemTitle}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Fetch API blob upload (reliable for React Native)
+                • Direct blob upload - NO base64 conversion
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • No string length limits - supports large 6K videos
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • Uses fetch() API for reliable file reading
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Automatic retry on empty blob (up to 3 attempts)
