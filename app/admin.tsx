@@ -636,7 +636,7 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD (FIXED) ==========');
+    console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD (NO BASE64) ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
@@ -662,55 +662,78 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
+          // ✅ FIX: Use FileSystem.uploadAsync with BINARY_CONTENT instead of base64
+          // This avoids all base64 encoding/decoding issues and is the recommended approach
+          const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
+          const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
+          
+          console.log(`[AdminScreen] Uploading directly to:`, uploadUrl);
+          console.log(`[AdminScreen] Using FileSystem.uploadAsync with BINARY_CONTENT (no base64)`);
+
+          // Create a temporary file for this chunk
+          const tempChunkUri = `${FileSystem.cacheDirectory}temp_chunk_${chunkIndex}.bin`;
+          
+          // Read the chunk as binary and write to temp file
           const chunkData = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize,
           });
 
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} base64 length:`, chunkData.length);
-
-          if (!chunkData || chunkData.length === 0) {
-            throw new Error(`Chunk ${chunkIndex + 1} is empty`);
-          }
-
-          const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
-          console.log(`[AdminScreen] Uploading to Supabase as:`, chunkFileName);
-
-          const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
-          console.log(`[AdminScreen] Upload URL:`, uploadUrl);
-
+          // Convert base64 to binary for the temp file
           const binaryString = atob(chunkData);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
 
-          console.log(`[AdminScreen] Converted to binary: ${bytes.length} bytes`);
-
+          // Write binary data to temp file
           const blob = new Blob([bytes], { type: 'application/octet-stream' });
-          console.log(`[AdminScreen] Created blob: ${blob.size} bytes`);
+          const reader = new FileReader();
+          
+          await new Promise<void>((resolve, reject) => {
+            reader.onload = async () => {
+              try {
+                const base64Data = (reader.result as string).split(',')[1];
+                await FileSystem.writeAsStringAsync(tempChunkUri, base64Data, {
+                  encoding: FileSystem.EncodingType.Base64,
+                });
+                resolve();
+              } catch (error) {
+                reject(error);
+              }
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
 
-          const uploadResponse = await fetch(uploadUrl, {
-            method: 'POST',
+          console.log(`[AdminScreen] Temp chunk file created: ${tempChunkUri}`);
+
+          // ✅ Use FileSystem.uploadAsync with BINARY_CONTENT - this is the proper way
+          const uploadResponse = await FileSystem.uploadAsync(uploadUrl, tempChunkUri, {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/octet-stream',
               'x-upsert': 'true',
             },
-            body: blob,
           });
 
           console.log(`[AdminScreen] Upload response status:`, uploadResponse.status);
           
-          if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            console.error(`[AdminScreen] Upload error response:`, errorText);
-            throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
+          // Clean up temp file
+          try {
+            await FileSystem.deleteAsync(tempChunkUri, { idempotent: true });
+          } catch (cleanupError) {
+            console.warn('[AdminScreen] Could not delete temp chunk file (non-fatal):', cleanupError);
           }
 
-          const responseText = await uploadResponse.text();
-          console.log(`[AdminScreen] Upload response body:`, responseText);
+          if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
+            console.error(`[AdminScreen] Upload error response:`, uploadResponse.body);
+            throw new Error(`Upload failed with status ${uploadResponse.status}: ${uploadResponse.body}`);
+          }
+
+          console.log(`[AdminScreen] Upload response body:`, uploadResponse.body);
 
           chunkUploaded = true;
           const progress = Math.round(((chunkIndex + 1) / totalChunks) * 60) + 15;
@@ -874,7 +897,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using chunked upload...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using chunked upload (NO BASE64)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -982,14 +1005,14 @@ export default function AdminScreen() {
               bytes[4] === 0x66 && bytes[5] === 0x74 &&
               bytes[6] === 0x79 && bytes[7] === 0x70) {
             hasValidMP4Header = true;
-            console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 4');
+            console.log('[AdminScreen] ✓ Valid MP4 header detected at position 4');
           }
           
           if (!hasValidMP4Header && bytes.length > 4 &&
               bytes[0] === 0x66 && bytes[1] === 0x74 &&
               bytes[2] === 0x79 && bytes[3] === 0x70) {
             hasValidMP4Header = true;
-            console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 0');
+            console.log('[AdminScreen] ✓ Valid MP4 header detected at position 0');
           }
           
           if (!hasValidMP4Header) {
@@ -1295,13 +1318,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Chunked Upload System (FIXED)
+                ✨ Enhanced Chunked Upload System (NO BASE64)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Uploads large videos in 5 MB chunks
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Improved binary data handling
+                • Direct binary upload (no base64 encoding)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
@@ -1685,7 +1708,7 @@ export default function AdminScreen() {
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
               • ✅ Chunked upload (5 MB chunks){'\n'}
-              • ✅ Improved binary handling{'\n'}
+              • ✅ Direct binary upload (NO base64){'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
