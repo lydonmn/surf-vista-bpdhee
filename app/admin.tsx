@@ -34,19 +34,9 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
-const CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB chunks (reduced from 6 MB for better reliability)
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
-
-// Helper function to convert base64 to Uint8Array
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -211,7 +201,6 @@ export default function AdminScreen() {
       
       Alert.alert('Diagnosing Video', 'Checking video file...', [{ text: 'OK' }]);
       
-      // Check if video is accessible
       const headResponse = await fetch(videoUrl, { method: 'HEAD' });
       console.log('[AdminScreen] HEAD response status:', headResponse.status);
       console.log('[AdminScreen] Content-Type:', headResponse.headers.get('content-type'));
@@ -255,7 +244,6 @@ export default function AdminScreen() {
         return;
       }
       
-      // Download first 32 bytes to check MP4 header
       console.log('[AdminScreen] Downloading first 32 bytes...');
       const partialResponse = await fetch(videoUrl, {
         headers: {
@@ -268,18 +256,15 @@ export default function AdminScreen() {
         const bytes = new Uint8Array(buffer);
         console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
         
-        // Check for ftyp signature
         let hasValidMP4Header = false;
         let headerPosition = -1;
         
-        // Check at position 4
         if (bytes.length > 8 &&
             bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
           hasValidMP4Header = true;
           headerPosition = 4;
         }
         
-        // Check at position 0
         if (!hasValidMP4Header && bytes.length > 4 &&
             bytes[0] === 0x66 && bytes[1] === 0x74 && bytes[2] === 0x79 && bytes[3] === 0x70) {
           hasValidMP4Header = true;
@@ -651,18 +636,12 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD (FIXED) ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
-
-    // Create a temporary directory for chunk files
-    const tempDir = `${FileSystem.cacheDirectory}video_chunks/`;
-    await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }).catch(() => {
-      console.log('[AdminScreen] Temp directory already exists');
-    });
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (uploadAbortControllerRef.current) {
@@ -683,7 +662,6 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
-          // Read chunk as base64
           const chunkData = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
@@ -696,49 +674,43 @@ export default function AdminScreen() {
             throw new Error(`Chunk ${chunkIndex + 1} is empty`);
           }
 
-          // Write chunk to a temporary file
-          const tempChunkPath = `${tempDir}chunk_${chunkIndex}.bin`;
-          await FileSystem.writeAsStringAsync(tempChunkPath, chunkData, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} written to temp file:`, tempChunkPath);
-
-          // Verify the temp file was created
-          const tempFileInfo = await FileSystem.getInfoAsync(tempChunkPath);
-          if (!tempFileInfo.exists || !('size' in tempFileInfo) || tempFileInfo.size === 0) {
-            throw new Error(`Chunk ${chunkIndex + 1} temp file is empty or doesn't exist`);
-          }
-
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} temp file size:`, formatFileSize(tempFileInfo.size));
-
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           console.log(`[AdminScreen] Uploading to Supabase as:`, chunkFileName);
 
-          // Get the upload URL from Supabase
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           console.log(`[AdminScreen] Upload URL:`, uploadUrl);
 
-          // Use FileSystem.uploadAsync to upload the chunk file directly
-          const uploadResult = await FileSystem.uploadAsync(uploadUrl, tempChunkPath, {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          const binaryString = atob(chunkData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          console.log(`[AdminScreen] Converted to binary: ${bytes.length} bytes`);
+
+          const blob = new Blob([bytes], { type: 'application/octet-stream' });
+          console.log(`[AdminScreen] Created blob: ${blob.size} bytes`);
+
+          const uploadResponse = await fetch(uploadUrl, {
+            method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/octet-stream',
               'x-upsert': 'true',
             },
+            body: blob,
           });
 
-          console.log(`[AdminScreen] Upload result status:`, uploadResult.status);
-          console.log(`[AdminScreen] Upload result body:`, uploadResult.body);
-
-          if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-            throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+          console.log(`[AdminScreen] Upload response status:`, uploadResponse.status);
+          
+          if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error(`[AdminScreen] Upload error response:`, errorText);
+            throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
           }
 
-          // Clean up temp file
-          await FileSystem.deleteAsync(tempChunkPath, { idempotent: true });
+          const responseText = await uploadResponse.text();
+          console.log(`[AdminScreen] Upload response body:`, responseText);
 
           chunkUploaded = true;
           const progress = Math.round(((chunkIndex + 1) / totalChunks) * 60) + 15;
@@ -758,9 +730,6 @@ export default function AdminScreen() {
         }
       }
     }
-
-    // Clean up temp directory
-    await FileSystem.deleteAsync(tempDir, { idempotent: true });
 
     if (totalChunks > 1) {
       console.log('[AdminScreen] Merging chunks on server...');
@@ -908,7 +877,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 3/6: Uploading video file using chunked upload...');
       setUploadStatus('Uploading video...');
 
-      // Get Supabase URL for Edge Function calls
       const { data: { publicUrl: dummyUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl('dummy');
@@ -969,7 +937,6 @@ export default function AdminScreen() {
       setUploadStatus('Verifying video accessibility...');
       
       try {
-        // First check: HEAD request to verify file exists and is accessible
         const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
         console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
         console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
@@ -997,7 +964,6 @@ export default function AdminScreen() {
         console.log('[AdminScreen] ✓ Video is accessible and has correct content-type');
         console.log('[AdminScreen] ✓ Video file size:', formatFileSize(parseInt(contentLength)));
         
-        // Second check: Download first few bytes to verify MP4 header
         console.log('[AdminScreen] Downloading first 32 bytes to verify MP4 format...');
         const partialResponse = await fetch(videoPublicUrl, {
           headers: {
@@ -1010,25 +976,18 @@ export default function AdminScreen() {
           const bytes = new Uint8Array(buffer);
           console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
           
-          // Check for ftyp signature (MP4 format marker)
           let hasValidMP4Header = false;
           
-          // Check at position 4 (most common)
           if (bytes.length > 8 &&
-              bytes[4] === 0x66 && // 'f'
-              bytes[5] === 0x74 && // 't'
-              bytes[6] === 0x79 && // 'y'
-              bytes[7] === 0x70) { // 'p'
+              bytes[4] === 0x66 && bytes[5] === 0x74 &&
+              bytes[6] === 0x79 && bytes[7] === 0x70) {
             hasValidMP4Header = true;
             console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 4');
           }
           
-          // Check at position 0 (some encoders)
           if (!hasValidMP4Header && bytes.length > 4 &&
-              bytes[0] === 0x66 && // 'f'
-              bytes[1] === 0x74 && // 't'
-              bytes[2] === 0x79 && // 'y'
-              bytes[3] === 0x70) { // 'p'
+              bytes[0] === 0x66 && bytes[1] === 0x74 &&
+              bytes[2] === 0x79 && bytes[3] === 0x70) {
             hasValidMP4Header = true;
             console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 0');
           }
@@ -1038,7 +997,6 @@ export default function AdminScreen() {
             console.error('[AdminScreen] This video may not be playable.');
             console.error('[AdminScreen] The file was uploaded but may be corrupted or in wrong format.');
             
-            // Don't throw - let the user know but still save the record
             Alert.alert(
               'Warning: Video Format Issue',
               'The video was uploaded but may not have a valid MP4 format. It might not play correctly. This can happen if:\n\n' +
@@ -1337,10 +1295,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Chunked Upload System
+                ✨ Enhanced Chunked Upload System (FIXED)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Uploads large videos in 6 MB chunks
+                • Uploads large videos in 5 MB chunks
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Improved binary data handling
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
@@ -1723,7 +1684,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Chunked upload (6 MB chunks){'\n'}
+              • ✅ Chunked upload (5 MB chunks){'\n'}
+              • ✅ Improved binary handling{'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
