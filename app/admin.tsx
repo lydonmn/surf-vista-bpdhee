@@ -38,6 +38,18 @@ const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes for large files
 const CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks for resumable upload
 const MAX_RETRIES = 3;
 
+// Dynamic stall timeout based on file size
+const getStallTimeout = (fileSize: number): number => {
+  // For files under 100 MB: 60 seconds
+  if (fileSize < 100 * 1024 * 1024) return 60000;
+  // For files under 500 MB: 2 minutes
+  if (fileSize < 500 * 1024 * 1024) return 120000;
+  // For files under 1 GB: 3 minutes
+  if (fileSize < 1024 * 1024 * 1024) return 180000;
+  // For files over 1 GB: 5 minutes
+  return 300000;
+};
+
 export default function AdminScreen() {
   const theme = useTheme();
   const { profile, user, session } = useAuth();
@@ -732,18 +744,22 @@ export default function AdminScreen() {
         let lastProgressTime = Date.now();
         let lastProgressBytes = 0;
         
+        // Calculate dynamic stall timeout based on file size
+        const stallTimeout = getStallTimeout(fileBlob.size);
+        console.log('[AdminScreen] Stall timeout set to:', stallTimeout / 1000, 'seconds for file size:', formatFileSize(fileBlob.size));
+        
         // Set up a stall detection interval
         const stallCheckInterval = setInterval(() => {
           const now = Date.now();
           const timeSinceLastProgress = now - lastProgressTime;
           
-          // If no progress for 30 seconds, consider it stalled
-          if (timeSinceLastProgress > 30000) {
-            console.error('[AdminScreen] Upload stalled - no progress for 30 seconds');
+          // If no progress for the calculated timeout, consider it stalled
+          if (timeSinceLastProgress > stallTimeout) {
+            console.error('[AdminScreen] Upload stalled - no progress for', stallTimeout / 1000, 'seconds');
             clearInterval(stallCheckInterval);
             xhr.abort();
           }
-        }, 5000); // Check every 5 seconds
+        }, 10000); // Check every 10 seconds
         
         const uploadPromise = new Promise<void>((resolve, reject) => {
           xhr.upload.addEventListener('progress', (event) => {
@@ -755,6 +771,7 @@ export default function AdminScreen() {
               if (event.loaded > lastProgressBytes) {
                 lastProgressTime = Date.now();
                 lastProgressBytes = event.loaded;
+                console.log(`[AdminScreen] Progress update: ${percentComplete}% (${formatFileSize(event.loaded)} / ${formatFileSize(event.total)})`);
               }
 
               const elapsedSeconds = (Date.now() - uploadStartTime) / 1000;
@@ -767,7 +784,7 @@ export default function AdminScreen() {
               const seconds = Math.floor(estimatedSeconds % 60);
               setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
 
-              console.log(`[AdminScreen] Upload progress: ${percentComplete}% (${formatFileSize(event.loaded)} / ${formatFileSize(event.total)}) - Speed: ${speedMBps} MB/s`);
+              console.log(`[AdminScreen] Upload progress: ${percentComplete}% - Speed: ${speedMBps} MB/s - ETA: ${minutes}m ${seconds}s`);
             }
           });
 
@@ -816,6 +833,7 @@ export default function AdminScreen() {
           xhr.timeout = UPLOAD_TIMEOUT_MS;
           
           console.log('[AdminScreen] Starting upload with timeout:', UPLOAD_TIMEOUT_MS / 1000, 'seconds');
+          console.log('[AdminScreen] Stall detection will trigger after', stallTimeout / 1000, 'seconds of no progress');
           xhr.send(fileBlob);
         });
 
@@ -1190,13 +1208,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Upload with Progress Tracking
+                ✨ Enhanced Upload with Intelligent Stall Detection
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Real-time upload progress and speed monitoring
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Automatic stall detection (cancels if no progress for 30s)
+                • Smart stall detection (adapts to file size)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
@@ -1571,7 +1589,7 @@ export default function AdminScreen() {
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
               • ✅ Real-time progress tracking with speed monitoring{'\n'}
-              • ✅ Automatic stall detection (cancels if stuck){'\n'}
+              • ✅ Smart stall detection (adapts to file size){'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open and screen on during upload{'\n'}
