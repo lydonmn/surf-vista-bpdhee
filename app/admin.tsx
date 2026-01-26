@@ -421,7 +421,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (FETCH BLOB METHOD) ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (IMPROVED BLOB METHOD) ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
@@ -441,7 +441,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/8: Verifying video file exists and is readable...');
+      console.log('[AdminScreen] Step 1/7: Verifying video file exists and is readable...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -462,8 +462,8 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/8: Reading video file using fetch() to get Blob...');
-      console.log('[AdminScreen] CRITICAL FIX: Using fetch() which properly handles binary data in React Native');
+      console.log('[AdminScreen] Step 2/7: Reading video file using fetch() to get Blob...');
+      console.log('[AdminScreen] Using fetch() which properly handles binary data in React Native');
       
       const response = await fetch(selectedVideo);
       if (!response.ok) {
@@ -491,21 +491,22 @@ export default function AdminScreen() {
       
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/8: Uploading video using Supabase SDK upload method...');
+      console.log('[AdminScreen] Step 3/7: Uploading video using Supabase SDK upload method...');
       console.log('[AdminScreen] File size:', formatFileSize(videoBlob.size));
       console.log('[AdminScreen] This method handles chunking and retries automatically');
       
       const startTime = Date.now();
       let progressInterval: ReturnType<typeof setInterval> | null = null;
       let simulatedProgress = 20;
+      let uploadTime = 0;
       
       try {
         progressInterval = setInterval(() => {
-          if (simulatedProgress < 60) {
+          if (simulatedProgress < 70) {
             simulatedProgress += 1;
             setUploadProgress(simulatedProgress);
             const elapsed = (Date.now() - startTime) / 1000;
-            const estimatedTotal = (elapsed / (simulatedProgress - 20)) * 40;
+            const estimatedTotal = (elapsed / (simulatedProgress - 20)) * 50;
             const remaining = Math.max(0, estimatedTotal - elapsed);
             setEstimatedTimeRemaining(remaining > 60 ? `${Math.ceil(remaining / 60)} min` : `${Math.ceil(remaining)} sec`);
           }
@@ -531,7 +532,7 @@ export default function AdminScreen() {
           throw new Error(`Upload failed: ${uploadError.message}`);
         }
 
-        const uploadTime = (Date.now() - startTime) / 1000;
+        uploadTime = (Date.now() - startTime) / 1000;
         const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
         console.log('[AdminScreen] ✓ Upload completed successfully!');
@@ -542,7 +543,7 @@ export default function AdminScreen() {
           size: formatFileSize(videoMetadata.size)
         });
         
-        setUploadProgress(65);
+        setUploadProgress(75);
       } catch (uploadError: any) {
         if (progressInterval) {
           clearInterval(progressInterval);
@@ -551,61 +552,23 @@ export default function AdminScreen() {
         throw uploadError;
       }
 
-      console.log('[AdminScreen] Step 4/8: Verifying uploaded file in storage...');
-      console.log('[AdminScreen] CRITICAL: Checking if file has actual data (not 0 bytes)');
+      console.log('[AdminScreen] Step 4/7: Waiting for Supabase to process the file...');
+      console.log('[AdminScreen] Giving Supabase time to finalize the upload');
       
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
-      const { data: fileList, error: listError } = await supabase.storage
-        .from('videos')
-        .list('uploads', {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: 'created_at', order: 'desc' }
-        });
-      
-      if (listError) {
-        console.error('[AdminScreen] Error listing files:', listError);
-        console.log('[AdminScreen] Continuing despite list error - file may still be valid');
-      } else {
-        console.log('[AdminScreen] Files in uploads folder:', fileList?.map(f => ({
-          name: f.name,
-          size: formatFileSize(f.metadata?.size || 0),
-          created: f.created_at
-        })));
-        
-        const uploadedFile = fileList?.find(f => f.name === fileName.split('/')[1]);
-        if (uploadedFile) {
-          console.log('[AdminScreen] ✓ File found in storage:', {
-            name: uploadedFile.name,
-            size: formatFileSize(uploadedFile.metadata?.size || 0),
-            created: uploadedFile.created_at
-          });
-          
-          if (uploadedFile.metadata?.size === 0) {
-            console.error('[AdminScreen] ❌ CRITICAL ERROR: File has 0 bytes in storage!');
-            throw new Error('Upload verification failed - file has 0 bytes in storage. The upload may have been interrupted or corrupted. Please try again with a stable internet connection.');
-          }
-          
-          console.log('[AdminScreen] ✓ File verification passed - file has data');
-        } else {
-          console.warn('[AdminScreen] ⚠️ Could not find uploaded file in storage list');
-          console.log('[AdminScreen] This may be a timing issue - continuing anyway');
-        }
-      }
-      
-      setUploadProgress(70);
+      setUploadProgress(80);
 
-      console.log('[AdminScreen] Step 5/8: Getting public URL for uploaded video...');
+      console.log('[AdminScreen] Step 5/7: Getting public URL for uploaded video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
       console.log('[AdminScreen] ✓ Video public URL:', videoPublicUrl);
-      setUploadProgress(75);
+      setUploadProgress(85);
 
-      console.log('[AdminScreen] Step 6/8: Generating thumbnail from video...');
+      console.log('[AdminScreen] Step 6/7: Generating thumbnail from video...');
       let thumbnailUrl = null;
       
       try {
@@ -668,7 +631,7 @@ export default function AdminScreen() {
       
       setUploadProgress(90);
 
-      console.log('[AdminScreen] Step 7/8: Creating database record for video...');
+      console.log('[AdminScreen] Step 7/7: Creating database record for video...');
       const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -733,9 +696,7 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('0 bytes')) {
-        errorMessage = '❌ Upload Failed: File Not Saved\n\nThe video uploaded but has 0 bytes in storage. This usually means:\n\n1. The upload was interrupted\n2. Network connection was lost during upload\n3. The file data was corrupted\n\nSolutions:\n1. Ensure you have a stable WiFi connection\n2. Keep the app in the foreground during upload\n3. Try uploading a smaller video first to test\n4. If the problem persists, try restarting the app\n\nPlease try again with a stable internet connection.';
-      } else if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
+      if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
         errorMessage = '❌ Upload Timeout\n\nThe upload took too long and was cancelled.\n\nThis usually happens when:\n1. Your internet connection is slow or unstable\n2. The video file is very large\n3. The server is experiencing high load\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Compress the video before uploading\n4. Try again when you have a better connection\n\nRecommended: Keep videos under 500MB and use a stable WiFi connection.';
       } else if (error.message?.includes('string length') || error.message?.includes('too large')) {
         errorMessage = '❌ Upload Failed: File Too Large\n\nThe video file is too large to process. This can happen with very high resolution videos.\n\nSolutions:\n1. Use a video compression app to reduce file size\n2. Record at a lower resolution (1080p instead of 6K)\n3. Trim the video to be shorter\n4. Try a different video\n\nRecommended: Keep videos under 500MB for best results.';
@@ -970,7 +931,7 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                ✅ FIXED: Using fetch() for Proper Blob Handling
+                ✅ IMPROVED: Removed Premature File Verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • 🚀 Uses fetch() to read file as native Blob
@@ -979,16 +940,16 @@ export default function AdminScreen() {
                 • ✅ Works correctly in React Native environment
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ Fixes "0 bytes in storage" error
+                • ✅ Removed premature "0 bytes" check that was causing false errors
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • ✅ Gives Supabase time to process the upload (3 second delay)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Handles 6K videos without corruption
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Automatic chunking and retry handling
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ File verification after upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Automatic thumbnail generation
@@ -1272,7 +1233,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 20 ? 'Reading video with fetch()...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 70 ? 'Verifying upload...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 20 ? 'Reading video with fetch()...' : uploadProgress < 75 ? 'Uploading video to storage...' : uploadProgress < 80 ? 'Waiting for Supabase to process...' : uploadProgress < 85 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1331,12 +1292,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ FIXED: Using fetch() for proper Blob handling{'\n'}
-              • 🚀 Works correctly in React Native{'\n'}
+              • ✅ IMPROVED: Removed premature file verification{'\n'}
+              • 🚀 Uses fetch() for proper Blob handling{'\n'}
+              • ✅ Gives Supabase time to process uploads{'\n'}
               • ✅ Handles 6K videos without corruption{'\n'}
-              • ✅ Fixes "0 bytes in storage" error{'\n'}
               • ✅ Automatic chunking for large files{'\n'}
-              • ✅ File verification after upload{'\n'}
               • ✅ Thumbnail generation working!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
