@@ -633,7 +633,7 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING OPTIMIZED STREAMING UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING BINARY UPLOAD (NO BASE64) ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     
     const LARGE_FILE_THRESHOLD = 200 * 1024 * 1024;
@@ -646,36 +646,25 @@ export default function AdminScreen() {
       setUploadProgress(10);
       
       try {
-        console.log('[AdminScreen] Reading entire file...');
-        const fileDataBase64 = await FileSystem.readAsStringAsync(videoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        console.log('[AdminScreen] Reading entire file as URI...');
         
-        setUploadProgress(30);
-        setUploadStatus('Converting file data...');
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
         
-        console.log('[AdminScreen] Converting to binary...');
-        const binaryString = atob(fileDataBase64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const fileData = bytes.buffer;
+        console.log('[AdminScreen] Uploading entire file using fetch with file URI...');
+        const response = await fetch(videoUri);
+        const blob = await response.blob();
         
         setUploadProgress(50);
         setUploadStatus('Uploading video (this may take several minutes)...');
-        
-        console.log('[AdminScreen] Uploading entire file...');
-        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
         
         const uploadResponse = await expoFetch(uploadUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': 'video/mp4',
             'x-upsert': 'true',
           },
-          body: fileData,
+          body: blob,
         });
 
         if (!uploadResponse.ok) {
@@ -723,29 +712,21 @@ export default function AdminScreen() {
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
-          const chunkDataBase64 = await FileSystem.readAsStringAsync(videoUri, {
-            encoding: FileSystem.EncodingType.Base64,
-            position: start,
-            length: chunkSize
-          });
+          console.log(`[AdminScreen] Reading chunk as URI and creating blob slice...`);
+          const response = await fetch(videoUri);
+          const blob = await response.blob();
+          const chunkBlob = blob.slice(start, end, 'video/mp4');
           
-          const binaryString = atob(chunkDataBase64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const chunkData = bytes.buffer;
-          
-          console.log(`[AdminScreen] Read chunk ${chunkIndex + 1} directly from file (${chunkData.byteLength} bytes)`);
+          console.log(`[AdminScreen] Chunk blob created: ${chunkBlob.size} bytes`);
 
           const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/octet-stream',
+              'Content-Type': 'video/mp4',
               'x-upsert': 'true',
             },
-            body: chunkData,
+            body: chunkBlob,
           });
 
           console.log(`[AdminScreen] Upload response status:`, uploadResponse.status);
@@ -933,7 +914,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using DIRECT STREAMING (NO Blob creation)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using BLOB SLICING (NO BASE64)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -1357,7 +1338,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ⚡ Ultra-Optimized Upload (FIXED)
+                ⚡ FIXED: Binary Upload (No Base64)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • NEW: Direct blob slicing (no string conversion)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • NEW: No base64 encoding (avoids string limit)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Files under 200 MB: Fast chunked upload
@@ -1366,10 +1353,10 @@ export default function AdminScreen() {
                 • Files over 200 MB: Single upload (no merge)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Streaming merge (one chunk at a time)
+                • Streaming merge (one chunk at a time)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: 5-minute timeout for large files
+                • 5-minute timeout for large files
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
@@ -1754,10 +1741,12 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
+              • ⚡ NEW: Direct binary upload (no base64){'\n'}
+              • ⚡ NEW: Blob slicing (no string limit){'\n'}
               • ⚡ Files under 200 MB: Fast chunked upload{'\n'}
               • ⚡ Files over 200 MB: Single upload (no merge){'\n'}
-              • ✅ NEW: Streaming merge (no memory issues){'\n'}
-              • ✅ NEW: 5-minute timeout for large files{'\n'}
+              • ✅ Streaming merge (no memory issues){'\n'}
+              • ✅ 5-minute timeout for large files{'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
