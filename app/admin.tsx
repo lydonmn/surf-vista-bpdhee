@@ -507,8 +507,8 @@ export default function AdminScreen() {
     fileName: string,
     accessToken: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== USING RESUMABLE UPLOAD ==========');
-    console.log('[AdminScreen] This method handles large files by uploading in chunks');
+    console.log('[AdminScreen] ========== USING DIRECT FILE UPLOAD ==========');
+    console.log('[AdminScreen] Using FileSystem.uploadAsync to avoid string length limits');
     
     try {
       const fileInfo = await FileSystem.getInfoAsync(videoUri);
@@ -518,71 +518,61 @@ export default function AdminScreen() {
 
       const fileSize = fileInfo.size;
       console.log('[AdminScreen] Total file size:', formatFileSize(fileSize));
-      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
-      
-      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
-      console.log('[AdminScreen] Total chunks:', totalChunks);
 
       const startTime = Date.now();
-      let uploadedBytes = 0;
 
-      console.log('[AdminScreen] Starting chunked upload (reading chunks on-demand)...');
+      console.log('[AdminScreen] Starting direct file upload...');
+      setUploadStatus('Uploading video file...');
 
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, fileSize);
-        const chunkLength = end - start;
-
-        console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(chunkLength)})`);
-        setUploadStatus(`Reading chunk ${chunkIndex + 1} of ${totalChunks}...`);
-
-        // Read ONLY this chunk from the file (not the entire file)
-        const chunkBase64 = await FileSystem.readAsStringAsync(videoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-          position: start,
-          length: chunkLength,
-        });
-
-        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
-        setUploadStatus(`Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`);
-
-        // Convert base64 to blob
-        const chunkBlob = await fetch(`data:video/mp4;base64,${chunkBase64}`).then(r => r.blob());
-
-        // Upload this chunk
-        const { error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(fileName, chunkBlob, {
-            contentType: 'video/mp4',
-            upsert: chunkIndex > 0, // Overwrite for subsequent chunks
-          });
-
-        if (uploadError) {
-          console.error('[AdminScreen] Chunk upload error:', uploadError);
-          throw uploadError;
-        }
-
-        uploadedBytes += chunkLength;
-        const progress = Math.round((uploadedBytes / fileSize) * 100);
-        setUploadProgress(progress);
-
-        const elapsedSeconds = (Date.now() - startTime) / 1000;
-        const speedMBps = (uploadedBytes / elapsedSeconds / (1024 * 1024)).toFixed(2);
-        setUploadSpeed(speedMBps);
-
-        const remainingBytes = fileSize - uploadedBytes;
-        const estimatedSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
-        const minutes = Math.floor(estimatedSeconds / 60);
-        const seconds = Math.floor(estimatedSeconds % 60);
-        setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
-
-        console.log(`[AdminScreen] Chunk ${chunkIndex + 1} uploaded successfully (${progress}% complete)`);
+      // Get the Supabase storage URL for upload
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No active session');
       }
 
-      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
+      const supabaseUrl = supabase.storage.from('videos').getPublicUrl('').data.publicUrl.split('/object/public/videos')[0];
+      const uploadUrl = `${supabaseUrl}/object/videos/${fileName}`;
+
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+
+      // Use FileSystem.uploadAsync to upload the file directly
+      // This avoids loading the entire file into memory as a string
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoUri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'x-upsert': 'true',
+        },
+        uploadProgressCallback: (progress) => {
+          const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
+          setUploadProgress(percentComplete);
+
+          const elapsedSeconds = (Date.now() - startTime) / 1000;
+          const speedMBps = (progress.totalBytesSent / elapsedSeconds / (1024 * 1024)).toFixed(2);
+          setUploadSpeed(speedMBps);
+
+          const remainingBytes = progress.totalBytesExpectedToSend - progress.totalBytesSent;
+          const estimatedSeconds = remainingBytes / (progress.totalBytesSent / elapsedSeconds);
+          const minutes = Math.floor(estimatedSeconds / 60);
+          const seconds = Math.floor(estimatedSeconds % 60);
+          setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
+
+          console.log(`[AdminScreen] Upload progress: ${percentComplete}% (${formatFileSize(progress.totalBytesSent)} / ${formatFileSize(progress.totalBytesExpectedToSend)})`);
+        },
+      });
+
+      console.log('[AdminScreen] Upload result:', uploadResult);
+
+      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
+      console.log('[AdminScreen] ✓ File uploaded successfully');
       console.log('[AdminScreen] Total upload time:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
     } catch (error) {
-      console.error('[AdminScreen] Resumable upload error:', error);
+      console.error('[AdminScreen] Direct upload error:', error);
       throw error;
     }
   };
@@ -669,49 +659,79 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video using resumable upload...');
+      console.log('[AdminScreen] Step 3/5: Uploading video using direct file upload...');
       setUploadStatus('Uploading video...');
 
-      await uploadVideoWithResumable(
-        videoToUpload,
-        fileName,
-        currentSession.access_token
-      );
+      try {
+        await uploadVideoWithResumable(
+          videoToUpload,
+          fileName,
+          currentSession.access_token
+        );
 
-      console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
-      setUploadProgress(70);
-      setUploadStatus('Verifying upload...');
+        console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
+        setUploadProgress(70);
+        setUploadStatus('Verifying upload...');
 
-      console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const { data: fileList, error: listError } = await supabase.storage
-        .from('videos')
-        .list('uploads', {
-          search: fileName.split('/').pop()
-        });
-
-      if (listError) {
-        console.error('[AdminScreen] Error checking uploaded file:', listError);
-      } else if (fileList && fileList.length > 0) {
-        const uploadedFile = fileList[0];
-        console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
+        console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        if (uploadedFile.metadata && uploadedFile.metadata.size) {
-          const uploadedSize = parseInt(uploadedFile.metadata.size);
-          console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
+        const { data: fileList, error: listError } = await supabase.storage
+          .from('videos')
+          .list('uploads', {
+            search: fileName.split('/').pop()
+          });
+
+        if (listError) {
+          console.error('[AdminScreen] Error checking uploaded file:', listError);
+        } else if (fileList && fileList.length > 0) {
+          const uploadedFile = fileList[0];
+          console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
           
-          if (uploadedSize === 0) {
-            throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
+          if (uploadedFile.metadata && uploadedFile.metadata.size) {
+            const uploadedSize = parseInt(uploadedFile.metadata.size);
+            console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
+            
+            if (uploadedSize === 0) {
+              throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
+            }
+            
+            if (uploadedSize < fileInfo.size * 0.5) {
+              console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
+            }
           }
+        } else {
+          console.warn('[AdminScreen] Warning: Could not verify uploaded file in storage');
+        }
+
+        console.log('[AdminScreen] ✓ File verification complete');
+      } catch (uploadError: any) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        
+        // If direct upload fails, fall back to standard Supabase upload
+        if (uploadError.message?.includes('uploadAsync') || uploadError.message?.includes('MULTIPART')) {
+          console.log('[AdminScreen] Direct upload failed, falling back to standard upload...');
+          setUploadStatus('Retrying with alternative upload method...');
           
-          if (uploadedSize < fileInfo.size * 0.5) {
-            console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
+          // Read the file and upload using standard method
+          const fileBlob = await fetch(videoToUpload).then(r => r.blob());
+          
+          const { error: standardUploadError } = await supabase.storage
+            .from('videos')
+            .upload(fileName, fileBlob, {
+              contentType: 'video/mp4',
+              upsert: true,
+            });
+
+          if (standardUploadError) {
+            throw standardUploadError;
           }
+
+          console.log('[AdminScreen] ✓ Standard upload successful');
+        } else {
+          throw uploadError;
         }
       }
-
-      console.log('[AdminScreen] ✓ File verification complete');
 
       console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
       setUploadStatus('Generating thumbnail...');
@@ -1037,13 +1057,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Upload with Chunked Transfer
+                ✨ Enhanced Upload with Direct File Transfer
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Handles large files by uploading in small chunks
+                • Handles large files without loading into memory
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • No more "Payload too large" errors
+                • No more "String length exceeds limit" errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
@@ -1417,8 +1437,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Chunked upload handles large files{'\n'}
-              • ✅ No more "Payload too large" errors{'\n'}
+              • ✅ Direct file upload handles large files{'\n'}
+              • ✅ No more "String length exceeds limit" errors{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload
