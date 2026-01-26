@@ -36,7 +36,7 @@ const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 
 export default function AdminScreen() {
   const theme = useTheme();
-  const { profile, user } = useAuth();
+  const { profile, user, session } = useAuth();
   const { videos, refreshVideos } = useVideos();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -399,6 +399,11 @@ export default function AdminScreen() {
       return;
     }
 
+    if (!session?.access_token) {
+      Alert.alert('Error', 'You are not logged in. Please log out and log back in.');
+      return;
+    }
+
     const errors = checkVideoRequirements(videoMetadata);
     if (errors.length > 0) {
       Alert.alert('Cannot Upload', errors.join('\n\n'));
@@ -415,6 +420,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
+      console.log('[AdminScreen] Session access token (first 20 chars):', session.access_token.substring(0, 20) + '...');
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
@@ -454,13 +460,12 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 2/5: Preparing upload to Supabase Storage...');
       
       const supabaseUrl = supabase.supabaseUrl;
-      const supabaseKey = supabase.supabaseKey;
       
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
       console.log('[AdminScreen] Using PUT method for Supabase Storage');
-      console.log('[AdminScreen] Auth token (first 20 chars):', supabaseKey.substring(0, 20) + '...');
+      console.log('[AdminScreen] 🔐 CRITICAL FIX: Using user JWT token instead of anon key for RLS authentication');
       setUploadProgress(15);
 
       console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync()...');
@@ -474,7 +479,7 @@ export default function AdminScreen() {
           httpMethod: 'PUT',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
           headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
+            'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'video/mp4',
             'x-upsert': 'false',
           },
@@ -545,7 +550,7 @@ export default function AdminScreen() {
             httpMethod: 'PUT',
             uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
             headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
+              'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'image/jpeg',
               'x-upsert': 'false',
             },
@@ -864,10 +869,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Direct File Streaming Upload ✓ OPTIMIZED
+                Direct File Streaming Upload ✓ FIXED
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ⚡ NEW: Skips verification step to avoid delays
+                • 🔐 CRITICAL FIX: Uses user JWT token for RLS authentication
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • ⚡ Skips verification step to avoid delays
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Uses PUT method for Supabase Storage
@@ -1218,7 +1226,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ NEW: Skips verification to avoid delays{'\n'}
+              • 🔐 FIXED: Now uses your JWT token for authentication{'\n'}
+              • ⚡ Skips verification to avoid delays{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Uses FileSystem.uploadAsync() for direct streaming{'\n'}
