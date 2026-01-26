@@ -8,7 +8,8 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, Paths } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
@@ -374,12 +375,9 @@ export default function AdminScreen() {
         duration: assetDuration
       });
       
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      if (!fileInfo.exists || !('size' in fileInfo)) {
-        throw new Error('Could not read file information');
-      }
-
-      const fileSize = fileInfo.size;
+      // Create File instance from URI
+      const file = new File(uri);
+      const fileSize = file.size;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       let width = assetWidth || 0;
@@ -465,18 +463,14 @@ export default function AdminScreen() {
     setCompressionProgress(0);
 
     try {
-      const fileInfo = await FileSystem.getInfoAsync(videoUri);
-      if (!fileInfo.exists || !('size' in fileInfo)) {
-        throw new Error('Video file not found');
-      }
-
-      const originalSize = fileInfo.size;
+      const file = new File(videoUri);
+      const originalSize = file.size;
       console.log('[AdminScreen] Original file size:', formatFileSize(originalSize));
 
-      const outputUri = `${FileSystem.cacheDirectory}compressed_${Date.now()}.mp4`;
+      const outputFile = new File(Paths.cache, `compressed_${Date.now()}.mp4`);
       
       console.log('[AdminScreen] Starting compression with FFmpeg-like quality settings...');
-      console.log('[AdminScreen] Output URI:', outputUri);
+      console.log('[AdminScreen] Output URI:', outputFile.uri);
 
       const qualityMap = {
         '2K': 'medium',
@@ -495,19 +489,11 @@ export default function AdminScreen() {
 
       setCompressionProgress(30);
       
-      await FileSystem.copyAsync({
-        from: videoUri,
-        to: outputUri
-      });
+      file.copy(outputFile);
 
       setCompressionProgress(70);
 
-      const compressedInfo = await FileSystem.getInfoAsync(outputUri);
-      if (!compressedInfo.exists || !('size' in compressedInfo)) {
-        throw new Error('Compression failed - output file not found');
-      }
-
-      const compressedSize = compressedInfo.size;
+      const compressedSize = outputFile.size;
       console.log('[AdminScreen] Compressed file size:', formatFileSize(compressedSize));
       
       const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
@@ -516,9 +502,9 @@ export default function AdminScreen() {
       setCompressionProgress(100);
       
       console.log('[AdminScreen] ✓ Video compression completed successfully');
-      console.log('[AdminScreen] Compressed video URI:', outputUri);
+      console.log('[AdminScreen] Compressed video URI:', outputFile.uri);
 
-      return outputUri;
+      return outputFile.uri;
     } catch (error) {
       console.error('[AdminScreen] Error compressing video:', error);
       throw new Error(`Video compression failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -636,12 +622,16 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING DIRECT FETCH CHUNKED UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING PURE BINARY CHUNKED UPLOAD (Expo 54 FileSystem) ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
+
+    // Create File instance for the video
+    const videoFile = new File(videoUri);
+    console.log('[AdminScreen] Created File instance, size:', videoFile.size);
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (uploadAbortControllerRef.current) {
@@ -662,40 +652,26 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
-          // ✅ NEW APPROACH: Use fetch with Blob directly - NO base64, NO uploadAsync
-          // This is the most reliable method for binary uploads
+          // ✅ TRULY PURE BINARY UPLOAD - NO base64, NO conversion, NO intermediate steps
+          // Use Expo 54's new FileSystem API with slice() to get chunk as Blob
+          const chunkBlob = videoFile.slice(start, end);
+          console.log(`[AdminScreen] Created chunk Blob directly from File, size: ${chunkBlob.size} bytes`);
+
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
           console.log(`[AdminScreen] Uploading directly to:`, uploadUrl);
-          console.log(`[AdminScreen] Using fetch with Blob (pure binary, no base64, no uploadAsync)`);
+          console.log(`[AdminScreen] Using expo/fetch with File.slice() Blob (PURE BINARY - no base64, no conversion)`);
 
-          // Read chunk as base64 (only way to read partial file in React Native)
-          const base64Chunk = await FileSystem.readAsStringAsync(videoUri, {
-            encoding: FileSystem.EncodingType.Base64,
-            position: start,
-            length: chunkSize,
-          });
-
-          // Convert base64 to binary Blob for upload
-          const binaryString = atob(base64Chunk);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const blob = new Blob([bytes], { type: 'application/octet-stream' });
-
-          console.log(`[AdminScreen] Chunk blob created, size: ${blob.size} bytes`);
-
-          // ✅ Use fetch with Blob - this is the most reliable method
-          const uploadResponse = await fetch(uploadUrl, {
+          // ✅ Use expo/fetch with the Blob directly - this is the most reliable method
+          const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/octet-stream',
               'x-upsert': 'true',
             },
-            body: blob,
+            body: chunkBlob,
           });
 
           console.log(`[AdminScreen] Upload response status:`, uploadResponse.status);
@@ -853,12 +829,12 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
-      const fileInfo = await FileSystem.getInfoAsync(videoToUpload);
-      if (!fileInfo.exists || !('size' in fileInfo) || fileInfo.size === 0) {
+      const videoFile = new File(videoToUpload);
+      if (!videoFile.exists || videoFile.size === 0) {
         throw new Error('Video file not found or is empty');
       }
       
-      console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
+      console.log('[AdminScreen] ✓ File verified:', formatFileSize(videoFile.size));
       setUploadProgress(10);
 
       console.log('[AdminScreen] Step 2/6: Getting auth session...');
@@ -871,7 +847,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using direct fetch (NO uploadAsync, NO base64)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using PURE BINARY (Expo 54 File.slice() + expo/fetch)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -879,7 +855,7 @@ export default function AdminScreen() {
         .getPublicUrl('dummy');
       const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
 
-      await uploadChunkedVideo(videoToUpload, fileName, fileInfo.size, currentSession.access_token, supabaseUrl);
+      await uploadChunkedVideo(videoToUpload, fileName, videoFile.size, currentSession.access_token, supabaseUrl);
 
       console.log('[AdminScreen] ✓ Video uploaded successfully');
       setUploadProgress(75);
@@ -1027,7 +1003,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: fileInfo.size,
+          file_size_bytes: videoFile.size,
           uploaded_by: user?.id
         });
 
@@ -1292,16 +1268,22 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Direct Binary Upload (NO uploadAsync, NO base64)
+                ✨ Pure Binary Upload (Expo 54 FileSystem + expo/fetch)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Pure binary upload using fetch + Blob
+                • Uses File.slice() for direct binary chunks
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • No base64 encoding/decoding issues
+                • NO base64 encoding at any step
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • No uploadAsync reliability problems
+                • NO uploadAsync reliability issues
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • NO intermediate conversions or memory overhead
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Direct Blob upload with expo/fetch
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Uploads large videos in 5 MB chunks
@@ -1687,8 +1669,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Direct binary upload (NO uploadAsync){'\n'}
-              • ✅ No base64 encoding issues{'\n'}
+              • ✅ Pure binary upload (File.slice() + expo/fetch){'\n'}
+              • ✅ NO base64 encoding{'\n'}
+              • ✅ NO uploadAsync issues{'\n'}
               • ✅ Chunked upload (5 MB chunks){'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
