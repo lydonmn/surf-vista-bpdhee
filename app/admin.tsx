@@ -36,17 +36,18 @@ const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
 const UPLOAD_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes for large files
 const MAX_RETRIES = 3;
+const CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks for better reliability
 
 // Dynamic stall timeout based on file size - more generous for large files
 const getStallTimeout = (fileSize: number): number => {
-  // For files under 100 MB: 2 minutes
-  if (fileSize < 100 * 1024 * 1024) return 120000;
-  // For files under 500 MB: 5 minutes
-  if (fileSize < 500 * 1024 * 1024) return 300000;
-  // For files under 1 GB: 10 minutes
-  if (fileSize < 1024 * 1024 * 1024) return 600000;
-  // For files over 1 GB: 20 minutes
-  return 1200000;
+  // For files under 100 MB: 3 minutes
+  if (fileSize < 100 * 1024 * 1024) return 180000;
+  // For files under 500 MB: 8 minutes
+  if (fileSize < 500 * 1024 * 1024) return 480000;
+  // For files under 1 GB: 15 minutes
+  if (fileSize < 1024 * 1024 * 1024) return 900000;
+  // For files over 1 GB: 30 minutes
+  return 1800000;
 };
 
 export default function AdminScreen() {
@@ -75,7 +76,6 @@ export default function AdminScreen() {
 
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
 
   useEffect(() => {
     return () => {
@@ -87,10 +87,6 @@ export default function AdminScreen() {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
         progressIntervalRef.current = null;
-      }
-      if (xhrRef.current) {
-        xhrRef.current.abort();
-        xhrRef.current = null;
       }
     };
   }, []);
@@ -600,136 +596,68 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video file...');
+      console.log('[AdminScreen] Step 3/5: Uploading video file using chunked upload...');
       setUploadStatus('Uploading video...');
 
       try {
-        console.log('[AdminScreen] Reading file as blob using fetch...');
-        const response = await fetch(videoToUpload);
-        const fileBlob = await response.blob();
-        
-        console.log('[AdminScreen] File blob created, size:', formatFileSize(fileBlob.size));
-        
-        if (fileBlob.size === 0) {
-          throw new Error('File is empty or could not be read');
-        }
-
-        console.log('[AdminScreen] Starting upload to Supabase Storage...');
+        console.log('[AdminScreen] Using FileSystem.uploadAsync for reliable chunked upload');
         const uploadStartTime = Date.now();
-        
-        const xhr = new XMLHttpRequest();
-        xhrRef.current = xhr;
-        
         let lastProgressTime = Date.now();
         let lastProgressBytes = 0;
-        let stallCheckInterval: NodeJS.Timeout | null = null;
         
-        const stallTimeout = getStallTimeout(fileBlob.size);
-        console.log('[AdminScreen] Stall timeout set to:', stallTimeout / 1000, 'seconds for file size:', formatFileSize(fileBlob.size));
+        const stallTimeout = getStallTimeout(fileInfo.size);
+        console.log('[AdminScreen] Stall timeout set to:', stallTimeout / 1000, 'seconds for file size:', formatFileSize(fileInfo.size));
         
-        const uploadPromise = new Promise<void>((resolve, reject) => {
-          xhr.upload.addEventListener('progress', (event) => {
-            if (event.lengthComputable) {
-              const percentComplete = Math.round((event.loaded / event.total) * 100);
-              setUploadProgress(percentComplete);
-
-              if (event.loaded > lastProgressBytes) {
-                lastProgressTime = Date.now();
-                lastProgressBytes = event.loaded;
-                console.log(`[AdminScreen] Progress update: ${percentComplete}% (${formatFileSize(event.loaded)} / ${formatFileSize(event.total)})`);
-              }
-
-              const elapsedSeconds = (Date.now() - uploadStartTime) / 1000;
-              if (elapsedSeconds > 0) {
-                const speedMBps = (event.loaded / elapsedSeconds / (1024 * 1024)).toFixed(2);
-                setUploadSpeed(speedMBps);
-
-                const remainingBytes = event.total - event.loaded;
-                const estimatedSeconds = remainingBytes / (event.loaded / elapsedSeconds);
-                const minutes = Math.floor(estimatedSeconds / 60);
-                const seconds = Math.floor(estimatedSeconds % 60);
-                setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
-
-                console.log(`[AdminScreen] Upload progress: ${percentComplete}% - Speed: ${speedMBps} MB/s - ETA: ${minutes}m ${seconds}s`);
-              }
-            }
-          });
-
-          xhr.addEventListener('load', () => {
-            if (stallCheckInterval) {
-              clearInterval(stallCheckInterval);
-              stallCheckInterval = null;
-            }
-            
-            if (xhr.status >= 200 && xhr.status < 300) {
-              console.log('[AdminScreen] ✓ Upload completed successfully');
-              resolve();
-            } else {
-              console.error('[AdminScreen] Upload failed with status:', xhr.status);
-              console.error('[AdminScreen] Response:', xhr.responseText);
-              reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
-            }
-          });
-
-          xhr.addEventListener('error', () => {
-            if (stallCheckInterval) {
-              clearInterval(stallCheckInterval);
-              stallCheckInterval = null;
-            }
-            console.error('[AdminScreen] Upload network error');
-            reject(new Error('Network error during upload. Please check your internet connection and try again.'));
-          });
-
-          xhr.addEventListener('abort', () => {
-            if (stallCheckInterval) {
-              clearInterval(stallCheckInterval);
-              stallCheckInterval = null;
-            }
-            console.log('[AdminScreen] Upload aborted');
-            reject(new Error('Upload was cancelled.'));
-          });
-
-          xhr.addEventListener('timeout', () => {
-            if (stallCheckInterval) {
-              clearInterval(stallCheckInterval);
-              stallCheckInterval = null;
-            }
-            console.error('[AdminScreen] Upload timeout');
-            reject(new Error('Upload timed out. Please try again with a stable internet connection.'));
-          });
-
-          const supabaseUrl = supabase.storage.from('videos').getPublicUrl('').data.publicUrl.split('/object/public/videos')[0];
-          const uploadUrl = `${supabaseUrl}/object/videos/${fileName}`;
-
-          console.log('[AdminScreen] Upload URL:', uploadUrl);
-
-          xhr.open('POST', uploadUrl);
-          xhr.setRequestHeader('Authorization', `Bearer ${currentSession.access_token}`);
-          xhr.setRequestHeader('Content-Type', 'video/mp4');
-          xhr.setRequestHeader('x-upsert', 'true');
+        // Create abort controller for this upload
+        uploadAbortControllerRef.current = new AbortController();
+        
+        // Set up stall detection
+        const stallCheckInterval = setInterval(() => {
+          const now = Date.now();
+          const timeSinceLastProgress = now - lastProgressTime;
           
-          xhr.timeout = UPLOAD_TIMEOUT_MS;
-          
-          stallCheckInterval = setInterval(() => {
-            const now = Date.now();
-            const timeSinceLastProgress = now - lastProgressTime;
-            
-            if (timeSinceLastProgress > stallTimeout) {
-              console.error('[AdminScreen] Upload stalled - no progress for', stallTimeout / 1000, 'seconds');
-              if (stallCheckInterval) {
-                clearInterval(stallCheckInterval);
-                stallCheckInterval = null;
-              }
-              xhr.abort();
+          if (timeSinceLastProgress > stallTimeout) {
+            console.error('[AdminScreen] Upload stalled - no progress for', stallTimeout / 1000, 'seconds');
+            clearInterval(stallCheckInterval);
+            if (uploadAbortControllerRef.current) {
+              uploadAbortControllerRef.current.abort();
             }
-          }, 15000);
-          
-          console.log('[AdminScreen] Starting upload with timeout:', UPLOAD_TIMEOUT_MS / 1000, 'seconds');
-          console.log('[AdminScreen] Stall detection will trigger after', stallTimeout / 1000, 'seconds of no progress');
-          xhr.send(fileBlob);
+          }
+        }, 30000); // Check every 30 seconds
+        
+        progressIntervalRef.current = stallCheckInterval;
+
+        const supabaseUrl = supabase.storage.from('videos').getPublicUrl('').data.publicUrl.split('/object/public/videos')[0];
+        const uploadUrl = `${supabaseUrl}/object/videos/${fileName}`;
+
+        console.log('[AdminScreen] Upload URL:', uploadUrl);
+        console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
+
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoToUpload, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: {
+            'Authorization': `Bearer ${currentSession.access_token}`,
+            'x-upsert': 'true',
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         });
 
-        await uploadPromise;
+        // Clear stall detection
+        if (stallCheckInterval) {
+          clearInterval(stallCheckInterval);
+        }
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+
+        console.log('[AdminScreen] Upload result:', uploadResult);
+
+        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+        }
 
         console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
         setUploadProgress(70);
@@ -853,10 +781,6 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error stack:', error.stack);
       
-      if (xhrRef.current) {
-        xhrRef.current = null;
-      }
-      
       if (uploadAbortControllerRef.current) {
         uploadAbortControllerRef.current = null;
       }
@@ -870,7 +794,7 @@ export default function AdminScreen() {
       
       if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
         errorMessage = '❌ File Too Large for Upload\n\nThe video file exceeds the maximum size that can be uploaded in a single request.\n\nSolutions:\n1. Enable compression before uploading (videos over 500 MB are auto-compressed)\n2. Ensure you have a stable WiFi connection\n3. Try uploading when you have better internet\n4. Contact support if the issue persists';
-      } else if (error.message?.includes('stalled') || error.message?.includes('cancelled')) {
+      } else if (error.message?.includes('stalled') || error.message?.includes('cancelled') || error.message?.includes('aborted')) {
         errorMessage = '❌ Upload Stalled\n\nThe upload stopped making progress and was cancelled.\n\nThis usually happens due to:\n• Unstable internet connection\n• Network switching (WiFi to cellular)\n• Poor signal strength\n\nSolutions:\n1. Connect to a stable WiFi network\n2. Stay in one location during upload\n3. Ensure your device doesn\'t go to sleep\n4. Try again when you have better connectivity';
       } else if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
         errorMessage = '❌ Upload Timeout\n\nThe upload took too long and was cancelled.\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Enable compression (videos over 500 MB are auto-compressed)\n4. Try again when you have a better connection';
@@ -886,10 +810,6 @@ export default function AdminScreen() {
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
-      if (xhrRef.current) {
-        xhrRef.current = null;
-      }
-      
       if (uploadAbortControllerRef.current) {
         uploadAbortControllerRef.current = null;
       }
@@ -1109,13 +1029,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Upload System
+                ✨ Enhanced Upload System (FileSystem.uploadAsync)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Real-time upload progress and speed monitoring
+                • Background upload support for reliability
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Intelligent stall detection (adapts to file size)
+                • Intelligent stall detection (30+ min for large files)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
@@ -1489,11 +1409,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Real-time progress tracking with speed monitoring{'\n'}
-              • ✅ Smart stall detection (adapts to file size){'\n'}
+              • ✅ Background upload support (more reliable){'\n'}
+              • ✅ Extended stall detection (30+ min for large files){'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
-              • Keep the app open and screen on during upload{'\n'}
+              • Keep the app open during upload{'\n'}
               • Stay in one location (avoid network switching)
             </Text>
           </View>
