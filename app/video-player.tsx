@@ -91,9 +91,35 @@ export default function VideoPlayerScreen() {
 
       if (publicUrlData?.publicUrl) {
         console.log('[VideoPlayer] Public URL obtained:', publicUrlData.publicUrl);
-        setVideoUrl(publicUrlData.publicUrl);
-        setDebugInfo('Using public URL');
-        return; // Success!
+        
+        // Verify the video is accessible before setting it
+        try {
+          console.log('[VideoPlayer] Verifying video accessibility...');
+          const headResponse = await fetch(publicUrlData.publicUrl, { method: 'HEAD' });
+          console.log('[VideoPlayer] Video HEAD response status:', headResponse.status);
+          console.log('[VideoPlayer] Video content-type:', headResponse.headers.get('content-type'));
+          console.log('[VideoPlayer] Video content-length:', headResponse.headers.get('content-length'));
+          
+          if (headResponse.ok) {
+            const contentType = headResponse.headers.get('content-type');
+            const contentLength = headResponse.headers.get('content-length');
+            
+            if (contentType && contentType.includes('video')) {
+              console.log('[VideoPlayer] ✓ Video is accessible and has valid content-type');
+              setVideoUrl(publicUrlData.publicUrl);
+              setDebugInfo(`Using public URL (${contentType}, ${contentLength ? (parseInt(contentLength) / 1024 / 1024).toFixed(2) + ' MB' : 'unknown size'})`);
+              return; // Success!
+            } else {
+              console.warn('[VideoPlayer] ⚠️ Video has unexpected content-type:', contentType);
+              setDebugInfo(`Warning: Unexpected content-type: ${contentType}`);
+            }
+          } else {
+            console.warn('[VideoPlayer] ⚠️ Video not accessible (status:', headResponse.status + ')');
+          }
+        } catch (verifyError) {
+          console.error('[VideoPlayer] Error verifying video:', verifyError);
+          // Continue to try signed URL
+        }
       }
 
       // If public URL doesn't work, try signed URL

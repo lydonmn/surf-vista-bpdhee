@@ -578,6 +578,7 @@ export default function AdminScreen() {
           throw new Error('No active session for merging');
         }
 
+        console.log('[AdminScreen] Calling merge-video-chunks Edge Function...');
         const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-video-chunks`, {
           method: 'POST',
           headers: {
@@ -590,14 +591,33 @@ export default function AdminScreen() {
           }),
         });
 
+        console.log('[AdminScreen] Merge response status:', mergeResponse.status);
+        
         if (!mergeResponse.ok) {
-          const errorData = await mergeResponse.json();
-          throw new Error(`Merge failed: ${errorData.error || mergeResponse.statusText}`);
+          const errorText = await mergeResponse.text();
+          console.error('[AdminScreen] Merge error response:', errorText);
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: errorText };
+          }
+          throw new Error(`Merge failed (${mergeResponse.status}): ${errorData.error || mergeResponse.statusText}`);
         }
 
         const mergeResult = await mergeResponse.json();
         console.log('[AdminScreen] ✓ Chunks merged successfully:', mergeResult);
+        
+        if (mergeResult.hasValidMP4Header === false) {
+          console.warn('[AdminScreen] ⚠️ Warning: Merged video may not have valid MP4 header');
+        }
+        
+        if (mergeResult.publicUrl) {
+          console.log('[AdminScreen] Merged video public URL:', mergeResult.publicUrl);
+        }
+        
         setUploadStatus('Video merged successfully');
+        setUploadProgress(90);
       } catch (mergeError) {
         console.error('[AdminScreen] Error merging chunks:', mergeError);
         throw new Error(`Failed to merge video chunks: ${mergeError instanceof Error ? mergeError.message : 'Unknown error'}`);
@@ -768,12 +788,37 @@ export default function AdminScreen() {
         throw dbError;
       }
 
+      setUploadProgress(95);
+      setUploadStatus('Verifying video...');
+      console.log('[AdminScreen] ✓ Database record created successfully');
+      
+      // Verify the video is accessible
+      console.log('[AdminScreen] Verifying video accessibility...');
+      try {
+        const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
+        console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
+        console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
+        console.log('[AdminScreen] Video content-length:', headResponse.headers.get('content-length'));
+        
+        if (headResponse.ok) {
+          console.log('[AdminScreen] ✓ Video is accessible');
+        } else {
+          console.warn('[AdminScreen] ⚠️ Video may not be accessible (status:', headResponse.status + ')');
+        }
+      } catch (verifyError) {
+        console.error('[AdminScreen] Error verifying video:', verifyError);
+        // Don't fail the upload, just log the warning
+      }
+      
       setUploadProgress(100);
       setUploadStatus('Upload complete!');
-      console.log('[AdminScreen] ✓ Database record created successfully');
       console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
 
-      Alert.alert('Success', 'Video uploaded successfully!');
+      Alert.alert(
+        'Success', 
+        'Video uploaded successfully!\n\nThe video has been processed and should be playable now. If you experience any issues, please try refreshing the video list.',
+        [{ text: 'OK' }]
+      );
       
       setVideoTitle('');
       setVideoDescription('');
@@ -1019,7 +1064,7 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Chunked Upload System
+                ✨ Enhanced Chunked Upload System
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Uploads large videos in 6 MB chunks
@@ -1028,7 +1073,10 @@ export default function AdminScreen() {
                 • Automatic retry on chunk failure
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • More reliable for large files
+                • Server-side chunk merging with MP4 validation
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Automatic video verification after upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
