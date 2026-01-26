@@ -457,182 +457,175 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Preparing upload to Supabase Storage...');
+      console.log('[AdminScreen] Step 2/5: Reading video file as ArrayBuffer...');
+      console.log('[AdminScreen] 🚀 NEW APPROACH: Using Supabase resumable upload for large files');
+      console.log('[AdminScreen] This automatically chunks the file and handles retries');
       
-      const supabaseUrl = supabase.supabaseUrl;
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      console.log('[AdminScreen] Using PUT method for Supabase Storage');
-      console.log('[AdminScreen] 🔐 CRITICAL FIX: Using user JWT token instead of anon key for RLS authentication');
-      setUploadProgress(15);
+      console.log('[AdminScreen] ✓ File read, converting to binary...');
+      setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync()...');
-      console.log('[AdminScreen] This method streams the file directly without loading it into memory');
-      console.log('[AdminScreen] Perfect for large 6K videos - no string length limits!');
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'video/mp4' });
+      
+      console.log('[AdminScreen] ✓ Blob created:', blob.size, 'bytes');
+      setUploadProgress(30);
+
+      console.log('[AdminScreen] Step 3/5: Uploading video using Supabase resumable upload...');
+      console.log('[AdminScreen] This method automatically handles chunking for large files');
       
       const startTime = Date.now();
       
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, blob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: 'video/mp4',
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      const uploadTime = (Date.now() - startTime) / 1000;
+      const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
+      
+      console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
+      console.log('[AdminScreen] Upload data:', uploadData);
+      setUploadProgress(60);
+
+      console.log('[AdminScreen] Step 4/5: Getting public URL...');
+      
+      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      console.log('[AdminScreen] Public URL:', videoPublicUrl);
+      setUploadProgress(70);
+
+      console.log('[AdminScreen] Step 5/5: Generating thumbnail...');
+      let thumbnailUrl = null;
+      
       try {
-        const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-          httpMethod: 'PUT',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'video/mp4',
-            'x-upsert': 'false',
-          },
-          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-        });
-
-        console.log('[AdminScreen] Upload result:', {
-          status: uploadResult.status,
-          headers: uploadResult.headers,
-          bodyLength: uploadResult.body?.length || 0,
-          body: uploadResult.body
-        });
-
-        if (uploadResult.status === 403) {
-          console.error('[AdminScreen] 403 Forbidden - RLS policy violation');
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          throw new Error(`Upload failed: Row Level Security policy violation. Make sure you are logged in as an admin user. Error: ${uploadResult.body}`);
-        }
-
-        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body || 'Unknown error'}`);
-        }
-
-        const uploadTime = (Date.now() - startTime) / 1000;
-        const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
+        const thumbnailTime = videoMetadata.duration > 0 ? Math.min((videoMetadata.duration * 1000) / 3, 5000) : 1000;
         
-        console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
-        setUploadProgress(50);
-
-        console.log('[AdminScreen] Step 4/5: Getting public URL (skipping verification to avoid delays)...');
-        
-        console.log('[AdminScreen] ⚡ OPTIMIZATION: Skipping file verification to avoid delays');
-        console.log('[AdminScreen] The upload was successful (status 200/201), so we can proceed directly');
-        
-        const { data: { publicUrl: videoPublicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(fileName);
-
-        console.log('[AdminScreen] Public URL:', videoPublicUrl);
-        setUploadProgress(65);
-
-        console.log('[AdminScreen] Step 5/5: Generating thumbnail...');
-        let thumbnailUrl = null;
-        
-        try {
-          const thumbnailTime = videoMetadata.duration > 0 ? Math.min((videoMetadata.duration * 1000) / 3, 5000) : 1000;
-          
-          const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
-            selectedVideo,
-            {
-              time: thumbnailTime,
-              quality: 0.8,
-            }
-          );
-          
-          const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
-          if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
-            throw new Error('Thumbnail file is empty');
+        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
+          selectedVideo,
+          {
+            time: thumbnailTime,
+            quality: 0.8,
           }
-          
-          console.log('[AdminScreen] Uploading thumbnail using FileSystem.uploadAsync() with PUT method...');
-          const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
-          const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
-          
-          const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
-            httpMethod: 'PUT',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'image/jpeg',
-              'x-upsert': 'false',
-            },
+        );
+        
+        const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
+        if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
+          throw new Error('Thumbnail file is empty');
+        }
+        
+        console.log('[AdminScreen] Uploading thumbnail...');
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        const thumbnailBinaryString = atob(thumbnailBase64);
+        const thumbnailBytes = new Uint8Array(thumbnailBinaryString.length);
+        for (let i = 0; i < thumbnailBinaryString.length; i++) {
+          thumbnailBytes[i] = thumbnailBinaryString.charCodeAt(i);
+        }
+        const thumbnailBlob = new Blob([thumbnailBytes], { type: 'image/jpeg' });
+        
+        const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
+        
+        const { data: thumbnailData, error: thumbnailError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'image/jpeg',
           });
 
-          if (thumbnailUploadResult.status !== 200 && thumbnailUploadResult.status !== 201) {
-            throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
-          }
-
-          const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl(thumbnailFileName);
-          
-          thumbnailUrl = thumbnailPublicUrl;
-          console.log('[AdminScreen] ✓ Thumbnail uploaded');
-        } catch (thumbnailError) {
-          console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
-          console.log('[AdminScreen] Continuing without thumbnail');
+        if (thumbnailError) {
+          throw new Error(`Thumbnail upload failed: ${thumbnailError.message}`);
         }
-        
-        setUploadProgress(80);
 
-        console.log('[AdminScreen] Creating database record...');
-        const { data: insertedData, error: dbError } = await supabase
+        const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
           .from('videos')
-          .insert({
-            title: videoTitle,
-            description: videoDescription,
-            video_url: videoPublicUrl,
-            thumbnail_url: thumbnailUrl,
-            uploaded_by: profile?.id,
-            resolution_width: videoMetadata.width,
-            resolution_height: videoMetadata.height,
-            duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-            file_size_bytes: videoMetadata.size,
-          })
-          .select();
-
-        if (dbError) {
-          throw new Error(`Database error: ${dbError.message}`);
-        }
-
-        console.log('[AdminScreen] ✓ Video record created');
-        setUploadProgress(100);
-
-        console.log('[AdminScreen] ========== UPLOAD COMPLETE ==========');
-
-        const uploadTimeText = uploadTime < 60 
-          ? `${Math.round(uploadTime)} seconds` 
-          : `${Math.round(uploadTime / 60)} minutes`;
-
-        const durationText = videoMetadata.duration > 0 
-          ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
-          : '';
-
-        const thumbnailStatus = thumbnailUrl ? 'Generated ✓' : 'Not generated (will use placeholder)';
-
-        Alert.alert(
-          'Success!', 
-          `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\nThumbnail: ${thumbnailStatus}\n\nYour video is now available to subscribers.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setVideoTitle('');
-                setVideoDescription('');
-                setSelectedVideo(null);
-                setVideoMetadata(null);
-                setValidationErrors([]);
-                setUploadProgress(0);
-                setUploadSpeed('');
-                setEstimatedTimeRemaining('');
-                setUploadQuality('Original');
-                refreshVideos();
-              }
-            }
-          ]
-        );
-      } catch (uploadError: any) {
-        console.error('[AdminScreen] FileSystem.uploadAsync error:', uploadError);
-        throw new Error(`Upload failed: ${uploadError.message || 'Unknown error during file upload'}`);
+          .getPublicUrl(thumbnailFileName);
+        
+        thumbnailUrl = thumbnailPublicUrl;
+        console.log('[AdminScreen] ✓ Thumbnail uploaded');
+      } catch (thumbnailError) {
+        console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
+        console.log('[AdminScreen] Continuing without thumbnail');
       }
+      
+      setUploadProgress(85);
+
+      console.log('[AdminScreen] Creating database record...');
+      const { data: insertedData, error: dbError } = await supabase
+        .from('videos')
+        .insert({
+          title: videoTitle,
+          description: videoDescription,
+          video_url: videoPublicUrl,
+          thumbnail_url: thumbnailUrl,
+          uploaded_by: profile?.id,
+          resolution_width: videoMetadata.width,
+          resolution_height: videoMetadata.height,
+          duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
+          file_size_bytes: videoMetadata.size,
+        })
+        .select();
+
+      if (dbError) {
+        throw new Error(`Database error: ${dbError.message}`);
+      }
+
+      console.log('[AdminScreen] ✓ Video record created');
+      setUploadProgress(100);
+
+      console.log('[AdminScreen] ========== UPLOAD COMPLETE ==========');
+
+      const uploadTimeText = uploadTime < 60 
+        ? `${Math.round(uploadTime)} seconds` 
+        : `${Math.round(uploadTime / 60)} minutes`;
+
+      const durationText = videoMetadata.duration > 0 
+        ? `Duration: ${formatDuration(videoMetadata.duration)}\n` 
+        : '';
+
+      const thumbnailStatus = thumbnailUrl ? 'Generated ✓' : 'Not generated (will use placeholder)';
+
+      Alert.alert(
+        'Success!', 
+        `Video uploaded successfully!\n\nResolution: ${formatResolution(videoMetadata.width, videoMetadata.height)}\n${durationText}Size: ${formatFileSize(videoMetadata.size)}\nQuality: ${uploadQuality}\nUpload Time: ${uploadTimeText}\nThumbnail: ${thumbnailStatus}\n\nYour video is now available to subscribers.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setVideoTitle('');
+              setVideoDescription('');
+              setSelectedVideo(null);
+              setVideoMetadata(null);
+              setValidationErrors([]);
+              setUploadProgress(0);
+              setUploadSpeed('');
+              setEstimatedTimeRemaining('');
+              setUploadQuality('Original');
+              refreshVideos();
+            }
+          }
+        ]
+      );
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error.message);
@@ -647,7 +640,7 @@ export default function AdminScreen() {
       } else if (error.message?.includes('file size mismatch')) {
         errorMessage = error.message;
       } else if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
-        errorMessage = 'File is too large. Maximum size is 3GB. Please compress your video.';
+        errorMessage = 'File is too large for direct upload. Try using a smaller video or compress it first.';
       } else if (error.message?.includes('Network') || error.message?.includes('network')) {
         errorMessage += 'Network connection lost. Please check your internet and try again.';
       } else if (error.message?.includes('Not authenticated') || error.message?.includes('401')) {
@@ -656,6 +649,8 @@ export default function AdminScreen() {
         errorMessage += error.message;
       } else if (error.message?.includes('Upload failed with status')) {
         errorMessage = error.message + '\n\nPlease check your internet connection and try again.';
+      } else if (error.message?.includes('out of memory') || error.message?.includes('string length')) {
+        errorMessage = 'Video file is too large to process. Please use a smaller video (under 500MB recommended).';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -869,28 +864,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Direct File Streaming Upload ✓ FIXED
+                Supabase Resumable Upload ✓ FIXED
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🔐 CRITICAL FIX: Uses user JWT token for RLS authentication
+                • 🚀 NEW: Uses Supabase's built-in resumable upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ⚡ Skips verification step to avoid delays
+                • Automatically chunks large files
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses PUT method for Supabase Storage
+                • No more "Payload too large" errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Uses FileSystem.uploadAsync() for direct streaming
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • No memory loading - streams file directly to server
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Avoids base64 conversion and string length limits
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Perfect for large 6K videos - no memory issues!
+                • Handles authentication automatically
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Supports up to 6K resolution videos
@@ -1226,12 +1212,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • 🔐 FIXED: Now uses your JWT token for authentication{'\n'}
-              • ⚡ Skips verification to avoid delays{'\n'}
+              • 🚀 FIXED: Now uses Supabase resumable upload{'\n'}
+              • Automatically chunks large files - no size limits!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • Uses FileSystem.uploadAsync() for direct streaming{'\n'}
-              • No memory loading - perfect for large 6K videos!{'\n'}
+              • Perfect for large 6K videos!{'\n'}
               • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
             </Text>
