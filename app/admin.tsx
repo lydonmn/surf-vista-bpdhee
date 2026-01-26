@@ -36,7 +36,7 @@ const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 
 export default function AdminScreen() {
   const theme = useTheme();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { videos, refreshVideos } = useVideos();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -412,6 +412,9 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       
       console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD ==========');
+      console.log('[AdminScreen] Current user ID:', user?.id);
+      console.log('[AdminScreen] Current user email:', user?.email);
+      console.log('[AdminScreen] Is admin:', profile?.is_admin);
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
       console.log('[AdminScreen] Video metadata:', {
@@ -424,7 +427,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Platform:', Platform.OS);
 
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
-      const fileName = `${Date.now()}.${fileExt}`;
+      const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
       console.log('[AdminScreen] Step 1/5: Verifying video file...');
@@ -457,6 +460,7 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
       console.log('[AdminScreen] Using PUT method for Supabase Storage');
+      console.log('[AdminScreen] Auth token (first 20 chars):', supabaseKey.substring(0, 20) + '...');
       setUploadProgress(15);
 
       console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync()...');
@@ -480,8 +484,15 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Upload result:', {
           status: uploadResult.status,
           headers: uploadResult.headers,
-          bodyLength: uploadResult.body?.length || 0
+          bodyLength: uploadResult.body?.length || 0,
+          body: uploadResult.body
         });
+
+        if (uploadResult.status === 403) {
+          console.error('[AdminScreen] 403 Forbidden - RLS policy violation');
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          throw new Error(`Upload failed: Row Level Security policy violation. Make sure you are logged in as an admin user. Error: ${uploadResult.body}`);
+        }
 
         if (uploadResult.status !== 200 && uploadResult.status !== 201) {
           console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
@@ -527,7 +538,7 @@ export default function AdminScreen() {
           }
           
           console.log('[AdminScreen] Uploading thumbnail using FileSystem.uploadAsync() with PUT method...');
-          const thumbnailFileName = `thumbnail_${Date.now()}.jpg`;
+          const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
           const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
           
           const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
@@ -624,7 +635,9 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('0 bytes')) {
+      if (error.message?.includes('Row Level Security') || error.message?.includes('403')) {
+        errorMessage = 'Upload failed: Permission denied. This could be due to:\n\n1. You are not logged in as an admin\n2. Row Level Security policies need to be updated\n3. Your session has expired\n\nPlease log out and log back in, then try again.';
+      } else if (error.message?.includes('0 bytes')) {
         errorMessage = error.message;
       } else if (error.message?.includes('file size mismatch')) {
         errorMessage = error.message;
@@ -1205,7 +1218,7 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ OPTIMIZED: Skips verification to avoid delays{'\n'}
+              • ⚡ NEW: Skips verification to avoid delays{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Uses FileSystem.uploadAsync() for direct streaming{'\n'}
