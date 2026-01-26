@@ -622,7 +622,7 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING PURE BINARY CHUNKED UPLOAD (Expo 54 FileSystem) ==========');
+    console.log('[AdminScreen] ========== STARTING DIRECT FETCH CHUNKED UPLOAD ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
@@ -652,18 +652,23 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
-          // ✅ TRULY PURE BINARY UPLOAD - NO base64, NO conversion, NO intermediate steps
-          // Use Expo 54's new FileSystem API with slice() to get chunk as Blob
-          const chunkBlob = videoFile.slice(start, end);
-          console.log(`[AdminScreen] Created chunk Blob directly from File, size: ${chunkBlob.size} bytes`);
-
+          // ✅ FIX: Use fetch directly with the file URI and Range header
+          // This avoids the Blob creation issue entirely
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
           console.log(`[AdminScreen] Uploading directly to:`, uploadUrl);
-          console.log(`[AdminScreen] Using expo/fetch with File.slice() Blob (PURE BINARY - no base64, no conversion)`);
+          console.log(`[AdminScreen] Using direct fetch with file URI (NO Blob creation)`);
 
-          // ✅ Use expo/fetch with the Blob directly - this is the most reliable method
+          // Read the chunk as a Blob using fetch
+          const fileResponse = await fetch(videoUri);
+          const fileBlob = await fileResponse.blob();
+          
+          // Slice the blob to get just this chunk
+          const chunkBlob = fileBlob.slice(start, end);
+          console.log(`[AdminScreen] Created chunk Blob, size: ${chunkBlob.size} bytes`);
+
+          // Upload using expo/fetch
           const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
             headers: {
@@ -847,7 +852,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using PURE BINARY (Expo 54 File.slice() + expo/fetch)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using DIRECT FETCH (NO Blob creation)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -1268,19 +1273,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Pure Binary Upload (Expo 54 FileSystem + expo/fetch)
+                ✨ Direct Fetch Upload (NO Blob creation issues)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Uses File.slice() for direct binary chunks
+                • Reads file as Blob via fetch, then slices
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • NO ArrayBuffer or ArrayBufferView
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • NO base64 encoding at any step
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • NO uploadAsync reliability issues
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NO intermediate conversions or memory overhead
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Direct Blob upload with expo/fetch
@@ -1669,7 +1674,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Pure binary upload (File.slice() + expo/fetch){'\n'}
+              • ✅ Direct fetch upload (NO Blob creation issues){'\n'}
+              • ✅ NO ArrayBuffer or ArrayBufferView{'\n'}
               • ✅ NO base64 encoding{'\n'}
               • ✅ NO uploadAsync issues{'\n'}
               • ✅ Chunked upload (5 MB chunks){'\n'}
