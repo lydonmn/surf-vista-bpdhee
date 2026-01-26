@@ -35,7 +35,7 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024;
-const CHUNK_SIZE = 5 * 1024 * 1024;
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 
@@ -633,74 +633,14 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== ULTRA-ROBUST UPLOAD: FileSystem.read() ==========');
+    console.log('[AdminScreen] ========== FIXED: TRUE CHUNKED STREAMING UPLOAD ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
-    console.log('[AdminScreen] Using FileSystem.read() with position/length for TRUE streaming');
-    
-    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
-    
-    if (fileSize > LARGE_FILE_THRESHOLD) {
-      console.log('[AdminScreen] ⚡ LARGE FILE DETECTED - Using single upload (no chunking)');
-      console.log('[AdminScreen] This avoids merge complexity and is more reliable for large files');
-      
-      setUploadStatus('Uploading large video file (this may take 5-10 minutes)...');
-      setUploadProgress(10);
-      
-      try {
-        console.log('[AdminScreen] Reading entire file using FileSystem.read()...');
-        
-        const base64Data = await FileSystem.readAsStringAsync(videoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        console.log('[AdminScreen] File read complete, converting to blob...');
-        setUploadProgress(30);
-        
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'video/mp4' });
-        
-        console.log('[AdminScreen] Blob created:', blob.size, 'bytes');
-        setUploadProgress(50);
-        setUploadStatus('Uploading video (this may take several minutes)...');
-        
-        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
-        
-        const uploadResponse = await expoFetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'video/mp4',
-            'x-upsert': 'true',
-          },
-          body: blob,
-        });
-
-        if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text();
-          console.error('[AdminScreen] Upload error:', errorText);
-          throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
-        }
-
-        setUploadProgress(90);
-        console.log('[AdminScreen] ✓ Large file uploaded successfully');
-        return;
-        
-      } catch (error) {
-        console.error('[AdminScreen] Large file upload failed:', error);
-        throw new Error(`Large file upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-    
-    console.log('[AdminScreen] Using chunked upload with FileSystem.read() (position/length)');
-    console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
+    console.log('[AdminScreen] NEVER loading entire file into memory');
+    console.log('[AdminScreen] Reading and uploading one chunk at a time');
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
+    console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
 
     const uploadChunk = async (chunkIndex: number) => {
       if (uploadAbortControllerRef.current) {
@@ -712,29 +652,49 @@ export default function AdminScreen() {
       const chunkSize = end - start;
 
       console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
+      console.log(`[AdminScreen] Reading bytes ${start} to ${end}`);
 
       let retries = 0;
       let chunkUploaded = false;
 
       while (retries < MAX_RETRIES && !chunkUploaded) {
         try {
-          console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} using FileSystem.read() at position ${start}, length ${chunkSize}`);
+          console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} using position=${start}, length=${chunkSize}`);
           
+          // CRITICAL FIX: Read ONLY this chunk, not the entire file
           const base64Chunk = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize,
           });
           
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} read complete, converting to blob...`);
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} read complete (base64 length: ${base64Chunk.length})`);
+          console.log(`[AdminScreen] Converting chunk to binary blob...`);
           
-          const byteCharacters = atob(base64Chunk);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          // Convert base64 to binary in smaller batches to avoid string length issues
+          const batchSize = 1024 * 1024; // 1MB batches
+          const byteArrays: Uint8Array[] = [];
+          
+          for (let i = 0; i < base64Chunk.length; i += batchSize) {
+            const batch = base64Chunk.substring(i, Math.min(i + batchSize, base64Chunk.length));
+            const byteCharacters = atob(batch);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let j = 0; j < byteCharacters.length; j++) {
+              byteNumbers[j] = byteCharacters.charCodeAt(j);
+            }
+            byteArrays.push(new Uint8Array(byteNumbers));
           }
-          const byteArray = new Uint8Array(byteNumbers);
-          const chunkBlob = new Blob([byteArray], { type: 'video/mp4' });
+          
+          // Combine all byte arrays
+          const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
+          const combinedArray = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const arr of byteArrays) {
+            combinedArray.set(arr, offset);
+            offset += arr.length;
+          }
+          
+          const chunkBlob = new Blob([combinedArray], { type: 'video/mp4' });
           
           console.log(`[AdminScreen] Chunk blob created: ${chunkBlob.size} bytes (expected: ${chunkSize})`);
 
@@ -744,6 +704,8 @@ export default function AdminScreen() {
 
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
+
+          console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1} to ${uploadUrl}`);
 
           const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
@@ -785,11 +747,13 @@ export default function AdminScreen() {
       }
     };
 
+    // Upload chunks sequentially
     for (let i = 0; i < totalChunks; i++) {
       setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks}...`);
       await uploadChunk(i);
     }
 
+    // Merge chunks if needed
     if (totalChunks > 1) {
       console.log('[AdminScreen] Merging chunks on server (this may take 2-5 minutes for large files)...');
       setUploadStatus('Merging video chunks on server (please wait, this may take a few minutes)...');
@@ -935,7 +899,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using FileSystem.read() with position/length...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using TRUE chunked streaming...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -1359,22 +1323,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ⚡ ULTRA-ROBUST: FileSystem.read() with position/length
+                ✅ FIXED: TRUE Chunked Streaming Upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Uses FileSystem.read() with position/length
+                • FIXED: Reads one chunk at a time (5MB)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: TRUE streaming (reads only needed chunk)
+                • FIXED: Never loads entire file into memory
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Never loads full file into memory
+                • FIXED: Converts base64 in small batches
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Files under 100 MB: Fast chunked upload
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Files over 100 MB: Single upload (no merge)
+                • FIXED: No more "String length exceeds limit"
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Streaming merge (one chunk at a time)
@@ -1765,11 +1726,10 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ NEW: FileSystem.read() with position/length{'\n'}
-              • ⚡ NEW: TRUE streaming (never loads full file){'\n'}
-              • ⚡ NEW: Reads only the chunk needed at a time{'\n'}
-              • ⚡ Files under 100 MB: Fast chunked upload{'\n'}
-              • ⚡ Files over 100 MB: Single upload (no merge){'\n'}
+              • ✅ FIXED: TRUE chunked streaming{'\n'}
+              • ✅ FIXED: Reads one 5MB chunk at a time{'\n'}
+              • ✅ FIXED: Never loads entire file{'\n'}
+              • ✅ FIXED: No more string length errors{'\n'}
               • ✅ Streaming merge (no memory issues){'\n'}
               • ✅ 5-minute timeout for large files{'\n'}
               • ✅ Automatic retry on failure{'\n'}
