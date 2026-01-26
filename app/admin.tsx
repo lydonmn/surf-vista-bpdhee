@@ -505,41 +505,81 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Using PUT method (required for Supabase storage)');
       
       const startTime = Date.now();
+      let progressInterval: ReturnType<typeof setInterval> | null = null;
       
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'video/mp4',
-          'x-upsert': 'false',
-        },
-        body: videoBlob,
-      });
+      try {
+        // Set up progress simulation (since fetch doesn't support upload progress tracking)
+        let simulatedProgress = 20;
+        progressInterval = setInterval(() => {
+          if (simulatedProgress < 60) {
+            simulatedProgress += 2;
+            setUploadProgress(simulatedProgress);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const estimatedTotal = (elapsed / (simulatedProgress - 20)) * 40;
+            const remaining = Math.max(0, estimatedTotal - elapsed);
+            setEstimatedTimeRemaining(remaining > 60 ? `${Math.ceil(remaining / 60)} min` : `${Math.ceil(remaining)} sec`);
+          }
+        }, 1000);
 
-      const uploadTime = (Date.now() - startTime) / 1000;
-      const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
+        console.log('[AdminScreen] Starting upload with 60 second timeout...');
+        
+        // Create upload promise with timeout
+        const uploadPromise = fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'video/mp4',
+            'x-upsert': 'false',
+          },
+          body: videoBlob,
+        });
+
+        // Create timeout promise
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Upload timeout - request took longer than 60 seconds. Please check your internet connection and try again.')), 60000);
+        });
+
+        // Race between upload and timeout
+        const uploadResponse = await Promise.race([uploadPromise, timeoutPromise]);
+
+        // Clear progress interval
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+
+        const uploadTime = (Date.now() - startTime) / 1000;
+        const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
-      console.log('[AdminScreen] Upload response status:', uploadResponse.status);
-      console.log('[AdminScreen] Upload response headers:', Object.fromEntries(uploadResponse.headers.entries()));
-      
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('[AdminScreen] Upload failed with status:', uploadResponse.status);
-        console.error('[AdminScreen] Response body:', errorText);
-        throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
+        console.log('[AdminScreen] Upload response status:', uploadResponse.status);
+        console.log('[AdminScreen] Upload response headers:', Object.fromEntries(uploadResponse.headers.entries()));
+        
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.error('[AdminScreen] Upload failed with status:', uploadResponse.status);
+          console.error('[AdminScreen] Response body:', errorText);
+          throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
+        }
+        
+        const uploadResult = await uploadResponse.json();
+        console.log('[AdminScreen] Upload result:', uploadResult);
+        
+        console.log('[AdminScreen] ✓ Upload completed successfully!');
+        console.log('[AdminScreen] Upload stats:', {
+          time: uploadTime.toFixed(2) + ' seconds',
+          speed: uploadSpeedMBps.toFixed(2) + ' MB/s',
+          size: formatFileSize(videoMetadata.size)
+        });
+        
+        setUploadProgress(65);
+      } catch (uploadError: any) {
+        // Clear progress interval on error
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
+        throw uploadError;
       }
-      
-      const uploadResult = await uploadResponse.json();
-      console.log('[AdminScreen] Upload result:', uploadResult);
-      
-      console.log('[AdminScreen] ✓ Upload completed successfully!');
-      console.log('[AdminScreen] Upload stats:', {
-        time: uploadTime.toFixed(2) + ' seconds',
-        speed: uploadSpeedMBps.toFixed(2) + ' MB/s',
-        size: formatFileSize(videoMetadata.size)
-      });
-      
-      setUploadProgress(65);
 
       console.log('[AdminScreen] Step 5/7: Verifying uploaded file in storage...');
       
@@ -716,7 +756,9 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('string length') || error.message?.includes('too large')) {
+      if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
+        errorMessage = '❌ Upload Timeout\n\nThe upload took longer than 60 seconds and was cancelled.\n\nThis usually happens when:\n1. Your internet connection is slow or unstable\n2. The video file is very large\n3. The server is experiencing high load\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Compress the video before uploading\n4. Try again when you have a better connection\n\nRecommended: Keep videos under 500MB and use a stable WiFi connection.';
+      } else if (error.message?.includes('string length') || error.message?.includes('too large')) {
         errorMessage = '❌ Upload Failed: File Too Large\n\nThe video file is too large to process. This can happen with very high resolution videos.\n\nSolutions:\n1. Use a video compression app to reduce file size\n2. Record at a lower resolution (1080p instead of 6K)\n3. Trim the video to be shorter\n4. Try a different video\n\nRecommended: Keep videos under 500MB for best results.';
       } else if (error.message?.includes('Row Level Security') || error.message?.includes('403')) {
         errorMessage = 'Upload failed: Permission denied. This could be due to:\n\n1. You are not logged in as an admin\n2. Row Level Security policies need to be updated\n3. Your session has expired\n\nPlease log out and log back in, then try again.';
@@ -726,8 +768,8 @@ export default function AdminScreen() {
         errorMessage = error.message;
       } else if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
         errorMessage = 'File is too large for direct upload. Try using a smaller video or compress it first.';
-      } else if (error.message?.includes('Network') || error.message?.includes('network')) {
-        errorMessage += 'Network connection lost. Please check your internet and try again.';
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
+        errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nThis could be:\n1. Lost internet connection\n2. Unstable WiFi/cellular signal\n3. Server temporarily unavailable\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. If the problem persists, try again later';
       } else if (error.message?.includes('Not authenticated') || error.message?.includes('401')) {
         errorMessage += 'Session expired. Please log out and log in again.';
       } else if (error.message?.includes('storage') || error.message?.includes('bucket')) {
