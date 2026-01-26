@@ -415,6 +415,8 @@ export default function AdminScreen() {
       return;
     }
 
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+
     try {
       setUploading(true);
       setUploadProgress(0);
@@ -483,7 +485,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] This method avoids base64 string length errors');
       
       const startTime = Date.now();
-      let progressInterval: ReturnType<typeof setInterval> | null = null;
       let simulatedProgress = 20;
       let uploadTime = 0;
       
@@ -511,6 +512,7 @@ export default function AdminScreen() {
         const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
         
         console.log('[AdminScreen] Upload URL:', uploadUrl);
+        console.log('[AdminScreen] Starting fetch upload...');
         
         const uploadResponse = await fetch(uploadUrl, {
           method: 'POST',
@@ -520,9 +522,12 @@ export default function AdminScreen() {
           body: formData
         });
 
+        console.log('[AdminScreen] Upload response received, status:', uploadResponse.status);
+
         if (progressInterval) {
           clearInterval(progressInterval);
           progressInterval = null;
+          console.log('[AdminScreen] Progress interval cleared');
         }
 
         if (!uploadResponse.ok) {
@@ -546,9 +551,11 @@ export default function AdminScreen() {
         
         setUploadProgress(75);
       } catch (uploadError: any) {
+        console.error('[AdminScreen] Upload error caught:', uploadError);
         if (progressInterval) {
           clearInterval(progressInterval);
           progressInterval = null;
+          console.log('[AdminScreen] Progress interval cleared after error');
         }
         throw uploadError;
       }
@@ -701,6 +708,12 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error message:', error.message);
       console.error('[AdminScreen] Error stack:', error.stack);
       
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+        console.log('[AdminScreen] Progress interval cleared in catch block');
+      }
+      
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
@@ -731,6 +744,11 @@ export default function AdminScreen() {
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+        console.log('[AdminScreen] Progress interval cleared in finally block');
+      }
       setUploading(false);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
