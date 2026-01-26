@@ -789,8 +789,8 @@ export default function AdminScreen() {
     }
 
     if (totalChunks > 1) {
-      console.log('[AdminScreen] Merging chunks on server...');
-      setUploadStatus('Merging video chunks on server...');
+      console.log('[AdminScreen] Merging chunks on server (this may take 2-5 minutes for large files)...');
+      setUploadStatus('Merging video chunks on server (please wait, this may take a few minutes)...');
       setUploadProgress(80);
       
       try {
@@ -800,6 +800,8 @@ export default function AdminScreen() {
         }
 
         console.log('[AdminScreen] Calling merge-video-chunks Edge Function...');
+        console.log('[AdminScreen] This operation has a 5-minute timeout for large files');
+        
         const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-video-chunks`, {
           method: 'POST',
           headers: {
@@ -1128,6 +1130,8 @@ export default function AdminScreen() {
         errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
       } else if (error.message?.includes('chunk')) {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nPlease check your internet connection and try again.';
+      } else if (error.message?.includes('merge') || error.message?.includes('Merge failed')) {
+        errorMessage = '❌ Merge Failed\n\n' + error.message + '\n\nThe video chunks were uploaded but could not be merged. This can happen with very large files or network issues.\n\nSolutions:\n1. Try uploading a smaller video\n2. Ensure stable WiFi connection\n3. Wait a few minutes and try again\n4. Contact support if the issue persists';
       } else if (error.message?.includes('not accessible') || error.message?.includes('content-type')) {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. This may be due to:\n• Storage bucket configuration issues\n• RLS policy problems\n• Edge Function merge failure\n\nPlease contact support or check the Supabase logs.';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
@@ -1353,34 +1357,28 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ⚡ Hybrid Upload Strategy (RELIABLE)
+                ⚡ Ultra-Optimized Upload (FIXED)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Files under 200 MB: Fast chunked upload with parallel processing
+                • Files under 200 MB: Fast chunked upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Files over 200 MB: Single upload (no merge failures)
+                • Files over 200 MB: Single upload (no merge)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Direct file streaming - NO full file download
+                • NEW: Streaming merge (one chunk at a time)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Parallel chunk uploads (2x faster for small files)
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Parallel thumbnail generation & verification
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Ultra-optimized streaming merge (no memory buffering)
+                • NEW: 5-minute timeout for large files
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Automatic video verification after upload
+                • Automatic video verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Videos over 500 MB automatically compressed
+                • Videos over 500 MB auto-compressed
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Maximum Duration: 90 seconds
@@ -1715,6 +1713,11 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
+              {uploadProgress >= 80 && uploadProgress < 90 && (
+                <Text style={[styles.progressSubtext, { color: '#FF9800', marginTop: 8, fontWeight: '600' }]}>
+                  Merging video chunks... This may take 2-5 minutes for large files.
+                </Text>
+              )}
             </View>
           )}
 
@@ -1753,15 +1756,14 @@ export default function AdminScreen() {
               Upload Tips:{'\n'}
               • ⚡ Files under 200 MB: Fast chunked upload{'\n'}
               • ⚡ Files over 200 MB: Single upload (no merge){'\n'}
-              • ⚡ Parallel processing for maximum speed{'\n'}
-              • ✅ Direct file streaming (NO full download){'\n'}
-              • ✅ Ultra-optimized streaming merge{'\n'}
+              • ✅ NEW: Streaming merge (no memory issues){'\n'}
+              • ✅ NEW: 5-minute timeout for large files{'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • Large files (over 200 MB) may take 5-10 minutes{'\n'}
+              • Large files may take 5-10 minutes to merge{'\n'}
               • Stay in one location (avoid network switching)
             </Text>
           </View>

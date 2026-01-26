@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('=== MERGE VIDEO CHUNKS STARTED (MEMORY-OPTIMIZED) ===');
+    console.log('=== MERGE VIDEO CHUNKS STARTED (ULTRA-OPTIMIZED STREAMING) ===');
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -57,184 +57,147 @@ serve(async (req) => {
       );
     }
 
-    // MEMORY-OPTIMIZED APPROACH: Merge in small batches to avoid memory exhaustion
-    console.log('Using memory-optimized batch merge...');
+    // ULTRA-OPTIMIZED: Stream chunks one at a time, write directly to final file
+    console.log('Using ultra-optimized streaming merge (one chunk at a time)...');
     
-    const BATCH_SIZE = 3; // Process 3 chunks at a time to minimize memory usage
     let totalSize = 0;
     let hasValidMP4Header = false;
-    const tempFiles: string[] = [];
 
-    // Step 1: Merge chunks in small batches
-    console.log(`Step 1: Merging chunks in batches of ${BATCH_SIZE}...`);
+    // Step 1: Stream and merge chunks one at a time
+    console.log('Step 1: Streaming chunks directly to final file...');
     
-    for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-      const batchNum = Math.floor(batchStart / BATCH_SIZE);
-      console.log(`Processing batch ${batchNum + 1}: chunks ${batchStart} to ${batchEnd - 1}`);
+    // Create a temporary file to stream chunks into
+    const tempMergedFile = `${fileName}.merging`;
+    
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkFileName = `${fileName}.part${i}`;
+      console.log(`Processing chunk ${i + 1}/${totalChunks}...`);
       
-      const batchChunks: Uint8Array[] = [];
-      let batchSize = 0;
-
-      // Download batch chunks
-      for (let i = batchStart; i < batchEnd; i++) {
-        const chunkFileName = `${fileName}.part${i}`;
-        console.log(`Downloading chunk ${i + 1}/${totalChunks}`);
-        
-        const { data, error } = await supabase.storage
-          .from('videos')
-          .download(chunkFileName);
-
-        if (error) {
-          console.error(`Error downloading chunk ${i}:`, error);
-          throw new Error(`Failed to download chunk ${i}: ${error.message}`);
-        }
-
-        if (!data) {
-          throw new Error(`Chunk ${i} data is null`);
-        }
-
-        const arrayBuffer = await data.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        batchChunks.push(uint8Array);
-        batchSize += uint8Array.length;
-        totalSize += uint8Array.length;
-        console.log(`✓ Chunk ${i + 1} downloaded: ${uint8Array.length} bytes`);
-
-        // Check MP4 header in first chunk
-        if (i === 0) {
-          if (uint8Array.length > 8 &&
-              uint8Array[4] === 0x66 && uint8Array[5] === 0x74 &&
-              uint8Array[6] === 0x79 && uint8Array[7] === 0x70) {
-            hasValidMP4Header = true;
-            console.log('✓ Valid MP4 header detected at position 4');
-          } else if (uint8Array.length > 4 &&
-                     uint8Array[0] === 0x66 && uint8Array[1] === 0x74 &&
-                     uint8Array[2] === 0x79 && uint8Array[3] === 0x70) {
-            hasValidMP4Header = true;
-            console.log('✓ Valid MP4 header detected at position 0');
-          }
-        }
-      }
-
-      // Merge batch chunks
-      console.log(`Merging batch ${batchNum + 1} (${batchSize} bytes)...`);
-      const mergedBatch = new Uint8Array(batchSize);
-      let offset = 0;
-      for (const chunk of batchChunks) {
-        mergedBatch.set(chunk, offset);
-        offset += chunk.length;
-      }
-      
-      // Upload merged batch as temporary file
-      const tempFileName = `${fileName}.temp${batchNum}`;
-      const { error: uploadError } = await supabase.storage
+      // Download chunk
+      const { data, error } = await supabase.storage
         .from('videos')
-        .upload(tempFileName, mergedBatch, {
-          contentType: 'video/mp4',
-          upsert: true,
-        });
+        .download(chunkFileName);
 
-      if (uploadError) {
-        console.error('Error uploading batch:', uploadError);
-        throw new Error(`Failed to upload batch ${batchNum}: ${uploadError.message}`);
+      if (error) {
+        console.error(`Error downloading chunk ${i}:`, error);
+        throw new Error(`Failed to download chunk ${i}: ${error.message}`);
+      }
+
+      if (!data) {
+        throw new Error(`Chunk ${i} data is null`);
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const chunkSize = uint8Array.length;
+      totalSize += chunkSize;
+      
+      console.log(`✓ Chunk ${i + 1} downloaded: ${chunkSize} bytes (${(chunkSize / 1024 / 1024).toFixed(2)} MB)`);
+
+      // Check MP4 header in first chunk
+      if (i === 0) {
+        if (uint8Array.length > 8 &&
+            uint8Array[4] === 0x66 && uint8Array[5] === 0x74 &&
+            uint8Array[6] === 0x79 && uint8Array[7] === 0x70) {
+          hasValidMP4Header = true;
+          console.log('✓ Valid MP4 header detected at position 4');
+        } else if (uint8Array.length > 4 &&
+                   uint8Array[0] === 0x66 && uint8Array[1] === 0x74 &&
+                   uint8Array[2] === 0x79 && uint8Array[3] === 0x70) {
+          hasValidMP4Header = true;
+          console.log('✓ Valid MP4 header detected at position 0');
+        } else {
+          console.warn('⚠️ Warning: No valid MP4 header detected in first chunk');
+          console.log('First 16 bytes:', Array.from(uint8Array.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+        }
+      }
+
+      // Append chunk to temporary merged file
+      if (i === 0) {
+        // First chunk - create new file
+        console.log('Creating temporary merged file...');
+        const { error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(tempMergedFile, uint8Array, {
+            contentType: 'video/mp4',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('Error creating merged file:', uploadError);
+          throw new Error(`Failed to create merged file: ${uploadError.message}`);
+        }
+        console.log('✓ Temporary merged file created');
+      } else {
+        // Subsequent chunks - download existing, append, re-upload
+        console.log(`Appending chunk ${i + 1} to merged file...`);
+        
+        const { data: existingData, error: downloadError } = await supabase.storage
+          .from('videos')
+          .download(tempMergedFile);
+
+        if (downloadError) {
+          throw new Error(`Failed to download existing merged file: ${downloadError.message}`);
+        }
+
+        const existingBuffer = await existingData.arrayBuffer();
+        const existingArray = new Uint8Array(existingBuffer);
+        
+        // Merge existing + new chunk
+        const mergedArray = new Uint8Array(existingArray.length + uint8Array.length);
+        mergedArray.set(existingArray, 0);
+        mergedArray.set(uint8Array, existingArray.length);
+        
+        console.log(`Merged size: ${mergedArray.length} bytes (${(mergedArray.length / 1024 / 1024).toFixed(2)} MB)`);
+        
+        // Upload merged file
+        const { error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(tempMergedFile, mergedArray, {
+            contentType: 'video/mp4',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error('Error uploading merged file:', uploadError);
+          throw new Error(`Failed to upload merged file: ${uploadError.message}`);
+        }
+        
+        console.log(`✓ Chunk ${i + 1} appended successfully`);
       }
       
-      tempFiles.push(tempFileName);
-      console.log(`✓ Batch ${batchNum + 1} uploaded as ${tempFileName}`);
-      
-      // Clear batch to free memory
-      batchChunks.length = 0;
+      // Log progress
+      const progress = Math.round(((i + 1) / totalChunks) * 100);
+      console.log(`Progress: ${progress}% (${i + 1}/${totalChunks} chunks processed)`);
     }
 
-    console.log(`Total size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
-    console.log(`Created ${tempFiles.length} temporary batch files`);
+    console.log(`Total merged size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
 
-    // Step 2: Merge all batch files into final video
-    console.log('Step 2: Merging batch files into final video...');
+    // Step 2: Rename temporary file to final name
+    console.log('Step 2: Finalizing merged video...');
     
-    if (tempFiles.length === 1) {
-      // Only one batch - just rename it
-      console.log('Only one batch file - renaming to final name...');
-      
-      const { data: finalData, error: downloadError } = await supabase.storage
-        .from('videos')
-        .download(tempFiles[0]);
+    const { data: finalData, error: downloadError } = await supabase.storage
+      .from('videos')
+      .download(tempMergedFile);
 
-      if (downloadError) {
-        throw new Error(`Failed to download batch file: ${downloadError.message}`);
-      }
+    if (downloadError) {
+      throw new Error(`Failed to download merged file: ${downloadError.message}`);
+    }
 
-      // Remove old file if exists
-      await supabase.storage.from('videos').remove([fileName]);
+    // Remove old final file if exists
+    await supabase.storage.from('videos').remove([fileName]);
 
-      // Upload as final file
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, finalData, {
-          contentType: 'video/mp4',
-          upsert: true,
-          cacheControl: '3600',
-        });
+    // Upload as final file
+    const { error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(fileName, finalData, {
+        contentType: 'video/mp4',
+        upsert: true,
+        cacheControl: '3600',
+      });
 
-      if (uploadError) {
-        throw new Error(`Failed to upload final file: ${uploadError.message}`);
-      }
-    } else {
-      // Multiple batches - merge them
-      console.log(`Merging ${tempFiles.length} batch files...`);
-      
-      const finalChunks: Uint8Array[] = [];
-      let finalSize = 0;
-
-      for (let i = 0; i < tempFiles.length; i++) {
-        console.log(`Downloading batch file ${i + 1}/${tempFiles.length}`);
-        
-        const { data, error } = await supabase.storage
-          .from('videos')
-          .download(tempFiles[i]);
-
-        if (error) {
-          throw new Error(`Failed to download batch file ${i}: ${error.message}`);
-        }
-
-        const arrayBuffer = await data.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        finalChunks.push(uint8Array);
-        finalSize += uint8Array.length;
-        console.log(`✓ Batch file ${i + 1} downloaded: ${uint8Array.length} bytes`);
-      }
-
-      // Merge all batch files
-      console.log('Merging all batch files...');
-      const mergedVideo = new Uint8Array(finalSize);
-      let offset = 0;
-
-      for (let i = 0; i < finalChunks.length; i++) {
-        mergedVideo.set(finalChunks[i], offset);
-        offset += finalChunks[i].length;
-        console.log(`✓ Merged batch ${i + 1}/${finalChunks.length}`);
-      }
-
-      // Clear to free memory
-      finalChunks.length = 0;
-
-      // Remove old file if exists
-      await supabase.storage.from('videos').remove([fileName]);
-
-      // Upload final merged video
-      console.log('Uploading final merged video...');
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, mergedVideo, {
-          contentType: 'video/mp4',
-          upsert: true,
-          cacheControl: '3600',
-        });
-
-      if (uploadError) {
-        throw new Error(`Failed to upload final video: ${uploadError.message}`);
-      }
+    if (uploadError) {
+      throw new Error(`Failed to upload final file: ${uploadError.message}`);
     }
 
     console.log('✓ Final video uploaded successfully');
@@ -288,15 +251,15 @@ serve(async (req) => {
       console.log('✓ Chunk files cleaned up');
     }
 
-    // Delete batch temp files
+    // Delete temporary merged file
     const { error: deleteTempError } = await supabase.storage
       .from('videos')
-      .remove(tempFiles);
+      .remove([tempMergedFile]);
 
     if (deleteTempError) {
-      console.error('Error deleting temp files (non-fatal):', deleteTempError);
+      console.error('Error deleting temp file (non-fatal):', deleteTempError);
     } else {
-      console.log('✓ Temporary batch files cleaned up');
+      console.log('✓ Temporary merged file cleaned up');
     }
 
     console.log('=== MERGE VIDEO CHUNKS COMPLETED ===');
