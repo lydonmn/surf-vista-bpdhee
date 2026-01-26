@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform, Image } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -34,6 +34,7 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 1 * 1024 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -54,6 +55,25 @@ export default function AdminScreen() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [uploadQuality, setUploadQuality] = useState<UploadQuality>('Original');
+
+  // Use ref to track progress interval to ensure cleanup
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log('[AdminScreen] Component unmounting, cleaning up intervals...');
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
+        uploadAbortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -415,15 +435,13 @@ export default function AdminScreen() {
       return;
     }
 
-    let progressInterval: ReturnType<typeof setInterval> | null = null;
-
     try {
       setUploading(true);
       setUploadProgress(0);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (FORMDATA METHOD) ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (IMPROVED FORMDATA METHOD) ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
@@ -486,10 +504,19 @@ export default function AdminScreen() {
       
       const startTime = Date.now();
       let simulatedProgress = 20;
-      let uploadTime = 0;
       
+      // Create abort controller for timeout
+      uploadAbortControllerRef.current = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.log('[AdminScreen] Upload timeout reached, aborting...');
+        if (uploadAbortControllerRef.current) {
+          uploadAbortControllerRef.current.abort();
+        }
+      }, UPLOAD_TIMEOUT_MS);
+
       try {
-        progressInterval = setInterval(() => {
+        // Start progress simulation
+        progressIntervalRef.current = setInterval(() => {
           if (simulatedProgress < 70) {
             simulatedProgress += 1;
             setUploadProgress(simulatedProgress);
@@ -512,21 +539,26 @@ export default function AdminScreen() {
         const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
         
         console.log('[AdminScreen] Upload URL:', uploadUrl);
-        console.log('[AdminScreen] Starting fetch upload...');
+        console.log('[AdminScreen] Starting fetch upload with timeout protection...');
         
         const uploadResponse = await fetch(uploadUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${currentSession.access_token}`,
           },
-          body: formData
+          body: formData,
+          signal: uploadAbortControllerRef.current.signal
         });
+
+        // Clear timeout since upload completed
+        clearTimeout(timeoutId);
 
         console.log('[AdminScreen] Upload response received, status:', uploadResponse.status);
 
-        if (progressInterval) {
-          clearInterval(progressInterval);
-          progressInterval = null;
+        // Clean up progress interval
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
           console.log('[AdminScreen] Progress interval cleared');
         }
 
@@ -539,7 +571,7 @@ export default function AdminScreen() {
         const uploadResult = await uploadResponse.json();
         console.log('[AdminScreen] Upload response:', uploadResult);
 
-        uploadTime = (Date.now() - startTime) / 1000;
+        const uploadTime = (Date.now() - startTime) / 1000;
         const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
         console.log('[AdminScreen] ✓ Upload completed successfully!');
@@ -552,11 +584,22 @@ export default function AdminScreen() {
         setUploadProgress(75);
       } catch (uploadError: any) {
         console.error('[AdminScreen] Upload error caught:', uploadError);
-        if (progressInterval) {
-          clearInterval(progressInterval);
-          progressInterval = null;
+        
+        // Clear timeout
+        clearTimeout(timeoutId);
+        
+        // Clean up progress interval
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
           console.log('[AdminScreen] Progress interval cleared after error');
         }
+        
+        // Check if it was an abort (timeout)
+        if (uploadError.name === 'AbortError') {
+          throw new Error('Upload timeout - The upload took too long. Please check your internet connection and try again with a smaller video or better WiFi.');
+        }
+        
         throw uploadError;
       }
 
@@ -671,6 +714,7 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] ========== UPLOAD COMPLETE - SUCCESS! ==========');
 
+      const uploadTime = (Date.now() - startTime) / 1000;
       const uploadTimeText = uploadTime < 60 
         ? `${Math.round(uploadTime)} seconds` 
         : `${Math.round(uploadTime / 60)} minutes`;
@@ -706,12 +750,16 @@ export default function AdminScreen() {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error message:', error.message);
-      console.error('[AdminScreen] Error stack:', error.stack);
       
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
+      // Clean up intervals and abort controller
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
         console.log('[AdminScreen] Progress interval cleared in catch block');
+      }
+      
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current = null;
       }
       
       let errorMessage = 'Failed to upload video. ';
@@ -744,11 +792,17 @@ export default function AdminScreen() {
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
+      // Final cleanup
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
         console.log('[AdminScreen] Progress interval cleared in finally block');
       }
+      
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current = null;
+      }
+      
       setUploading(false);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
@@ -956,7 +1010,7 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                ✅ FIXED: Using FormData - No More Base64 Errors!
+                ✅ IMPROVED: Enhanced Upload with Timeout Protection
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • 🚀 Uses FormData with file URI directly
@@ -965,7 +1019,10 @@ export default function AdminScreen() {
                 • ✅ NO base64 conversion - avoids string length errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ React Native handles file upload natively
+                • ✅ 10-minute timeout protection prevents crashes
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
+                • ✅ Proper cleanup of intervals and resources
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Works with 6K videos without corruption
@@ -1314,7 +1371,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ FIXED: Using FormData - no more base64 errors!{'\n'}
+              • ✅ IMPROVED: 10-minute timeout protection{'\n'}
+              • ✅ Proper cleanup prevents crashes{'\n'}
               • 🚀 Direct file upload from URI{'\n'}
               • ✅ Works with 6K videos without corruption{'\n'}
               • ✅ Automatic thumbnail generation{'\n'}
