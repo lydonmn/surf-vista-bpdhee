@@ -500,7 +500,8 @@ export default function AdminScreen() {
     videoUri: string,
     fileName: string,
     fileSize: number,
-    accessToken: string
+    accessToken: string,
+    supabaseUrl: string
   ): Promise<void> => {
     console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
@@ -508,12 +509,6 @@ export default function AdminScreen() {
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('videos')
-      .getPublicUrl('dummy');
-    
-    const supabaseUrl = publicUrl.split('/object/public/videos/')[0];
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (uploadAbortControllerRef.current) {
@@ -573,11 +568,40 @@ export default function AdminScreen() {
     }
 
     if (totalChunks > 1) {
-      console.log('[AdminScreen] Merging chunks...');
-      setUploadStatus('Merging video chunks...');
+      console.log('[AdminScreen] Merging chunks on server...');
+      setUploadStatus('Merging video chunks on server...');
+      setUploadProgress(80);
       
-      console.log('[AdminScreen] Note: Chunk merging requires server-side implementation');
-      console.log('[AdminScreen] For production, implement a Supabase Edge Function to merge chunks');
+      try {
+        const { data: { session: mergeSession } } = await supabase.auth.getSession();
+        if (!mergeSession?.access_token) {
+          throw new Error('No active session for merging');
+        }
+
+        const mergeResponse = await fetch(`${supabaseUrl}/functions/v1/merge-video-chunks`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${mergeSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileName,
+            totalChunks,
+          }),
+        });
+
+        if (!mergeResponse.ok) {
+          const errorData = await mergeResponse.json();
+          throw new Error(`Merge failed: ${errorData.error || mergeResponse.statusText}`);
+        }
+
+        const mergeResult = await mergeResponse.json();
+        console.log('[AdminScreen] ✓ Chunks merged successfully:', mergeResult);
+        setUploadStatus('Video merged successfully');
+      } catch (mergeError) {
+        console.error('[AdminScreen] Error merging chunks:', mergeError);
+        throw new Error(`Failed to merge video chunks: ${mergeError instanceof Error ? mergeError.message : 'Unknown error'}`);
+      }
     }
 
     console.log('[AdminScreen] ✓ All chunks uploaded successfully');
@@ -669,7 +693,13 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 3/5: Uploading video file using chunked upload...');
       setUploadStatus('Uploading video...');
 
-      await uploadChunkedVideo(videoToUpload, fileName, fileInfo.size, currentSession.access_token);
+      // Get Supabase URL for Edge Function calls
+      const { data: { publicUrl: dummyUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl('dummy');
+      const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
+
+      await uploadChunkedVideo(videoToUpload, fileName, fileInfo.size, currentSession.access_token, supabaseUrl);
 
       console.log('[AdminScreen] ✓ Video uploaded successfully');
       setUploadProgress(75);
