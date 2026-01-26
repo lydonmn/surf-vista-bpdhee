@@ -645,9 +645,10 @@ export default function AdminScreen() {
             description: videoDescription || null,
             video_url: publicUrl,
             thumbnail_url: thumbnailUrl,
-            duration: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-            resolution: `${videoMetadata.width}x${videoMetadata.height}`,
-            file_size: fileInfo.size,
+            duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
+            resolution_width: videoMetadata.width,
+            resolution_height: videoMetadata.height,
+            file_size_bytes: fileInfo.size,
             uploaded_by: user?.id
           });
 
