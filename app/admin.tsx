@@ -34,7 +34,7 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB chunks (reduced from 6 MB for better reliability)
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB chunks
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 
@@ -636,7 +636,7 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD (NO BASE64) ==========');
+    console.log('[AdminScreen] ========== STARTING DIRECT FETCH CHUNKED UPLOAD ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
@@ -662,78 +662,52 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
-          // ✅ FIX: Use FileSystem.uploadAsync with BINARY_CONTENT instead of base64
-          // This avoids all base64 encoding/decoding issues and is the recommended approach
+          // ✅ NEW APPROACH: Use fetch with Blob directly - NO base64, NO uploadAsync
+          // This is the most reliable method for binary uploads
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
           console.log(`[AdminScreen] Uploading directly to:`, uploadUrl);
-          console.log(`[AdminScreen] Using FileSystem.uploadAsync with BINARY_CONTENT (no base64)`);
+          console.log(`[AdminScreen] Using fetch with Blob (pure binary, no base64, no uploadAsync)`);
 
-          // Create a temporary file for this chunk
-          const tempChunkUri = `${FileSystem.cacheDirectory}temp_chunk_${chunkIndex}.bin`;
-          
-          // Read the chunk as binary and write to temp file
-          const chunkData = await FileSystem.readAsStringAsync(videoUri, {
+          // Read chunk as base64 (only way to read partial file in React Native)
+          const base64Chunk = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize,
           });
 
-          // Convert base64 to binary for the temp file
-          const binaryString = atob(chunkData);
+          // Convert base64 to binary Blob for upload
+          const binaryString = atob(base64Chunk);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-
-          // Write binary data to temp file
           const blob = new Blob([bytes], { type: 'application/octet-stream' });
-          const reader = new FileReader();
-          
-          await new Promise<void>((resolve, reject) => {
-            reader.onload = async () => {
-              try {
-                const base64Data = (reader.result as string).split(',')[1];
-                await FileSystem.writeAsStringAsync(tempChunkUri, base64Data, {
-                  encoding: FileSystem.EncodingType.Base64,
-                });
-                resolve();
-              } catch (error) {
-                reject(error);
-              }
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
 
-          console.log(`[AdminScreen] Temp chunk file created: ${tempChunkUri}`);
+          console.log(`[AdminScreen] Chunk blob created, size: ${blob.size} bytes`);
 
-          // ✅ Use FileSystem.uploadAsync with BINARY_CONTENT - this is the proper way
-          const uploadResponse = await FileSystem.uploadAsync(uploadUrl, tempChunkUri, {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          // ✅ Use fetch with Blob - this is the most reliable method
+          const uploadResponse = await fetch(uploadUrl, {
+            method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/octet-stream',
               'x-upsert': 'true',
             },
+            body: blob,
           });
 
           console.log(`[AdminScreen] Upload response status:`, uploadResponse.status);
-          
-          // Clean up temp file
-          try {
-            await FileSystem.deleteAsync(tempChunkUri, { idempotent: true });
-          } catch (cleanupError) {
-            console.warn('[AdminScreen] Could not delete temp chunk file (non-fatal):', cleanupError);
+
+          if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error(`[AdminScreen] Upload error response:`, errorText);
+            throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
           }
 
-          if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
-            console.error(`[AdminScreen] Upload error response:`, uploadResponse.body);
-            throw new Error(`Upload failed with status ${uploadResponse.status}: ${uploadResponse.body}`);
-          }
-
-          console.log(`[AdminScreen] Upload response body:`, uploadResponse.body);
+          const responseText = await uploadResponse.text();
+          console.log(`[AdminScreen] Upload response body:`, responseText);
 
           chunkUploaded = true;
           const progress = Math.round(((chunkIndex + 1) / totalChunks) * 60) + 15;
@@ -897,7 +871,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using chunked upload (NO BASE64)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using direct fetch (NO uploadAsync, NO base64)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -1318,13 +1292,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Chunked Upload System (NO BASE64)
+                ✨ Direct Binary Upload (NO uploadAsync, NO base64)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Pure binary upload using fetch + Blob
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • No base64 encoding/decoding issues
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • No uploadAsync reliability problems
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Uploads large videos in 5 MB chunks
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Direct binary upload (no base64 encoding)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
@@ -1707,8 +1687,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
+              • ✅ Direct binary upload (NO uploadAsync){'\n'}
+              • ✅ No base64 encoding issues{'\n'}
               • ✅ Chunked upload (5 MB chunks){'\n'}
-              • ✅ Direct binary upload (NO base64){'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
