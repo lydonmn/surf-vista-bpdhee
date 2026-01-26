@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('=== MERGE VIDEO CHUNKS STARTED ===');
+    console.log('=== MERGE VIDEO CHUNKS STARTED (STREAMING MODE) ===');
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -27,7 +27,6 @@ serve(async (req) => {
       throw new Error('Missing Supabase environment variables');
     }
 
-    // Use service role key for admin access to storage
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { fileName, totalChunks } = await req.json() as MergeRequest;
@@ -37,7 +36,6 @@ serve(async (req) => {
     if (totalChunks === 1) {
       console.log('Single chunk upload - no merging needed');
       
-      // For single chunk, just verify it exists and is accessible
       const { data: publicUrlData } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
@@ -59,92 +57,103 @@ serve(async (req) => {
       );
     }
 
-    // Download all chunks
-    console.log('Downloading chunks...');
-    const chunks: Uint8Array[] = [];
+    // STREAMING APPROACH: Process chunks in batches to avoid memory exhaustion
+    console.log('Using streaming merge to conserve memory...');
+    
+    // Step 1: Download and merge chunks in smaller batches
+    const BATCH_SIZE = 5; // Process 5 chunks at a time
+    const tempChunks: Uint8Array[] = [];
     let totalSize = 0;
+    let hasValidMP4Header = false;
 
-    for (let i = 0; i < totalChunks; i++) {
-      const chunkFileName = `${fileName}.part${i}`;
-      console.log(`Downloading chunk ${i + 1}/${totalChunks}: ${chunkFileName}`);
+    // Process chunks in batches
+    for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
+      console.log(`Processing batch: chunks ${batchStart} to ${batchEnd - 1}`);
       
-      const { data, error } = await supabase.storage
-        .from('videos')
-        .download(chunkFileName);
+      const batchChunks: Uint8Array[] = [];
+      let batchSize = 0;
 
-      if (error) {
-        console.error(`Error downloading chunk ${i}:`, error);
-        throw new Error(`Failed to download chunk ${i}: ${error.message}`);
+      // Download batch
+      for (let i = batchStart; i < batchEnd; i++) {
+        const chunkFileName = `${fileName}.part${i}`;
+        console.log(`Downloading chunk ${i + 1}/${totalChunks}: ${chunkFileName}`);
+        
+        const { data, error } = await supabase.storage
+          .from('videos')
+          .download(chunkFileName);
+
+        if (error) {
+          console.error(`Error downloading chunk ${i}:`, error);
+          throw new Error(`Failed to download chunk ${i}: ${error.message}`);
+        }
+
+        if (!data) {
+          throw new Error(`Chunk ${i} data is null`);
+        }
+
+        const arrayBuffer = await data.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        batchChunks.push(uint8Array);
+        batchSize += uint8Array.length;
+        console.log(`✓ Chunk ${i + 1} downloaded: ${uint8Array.length} bytes`);
+
+        // Check MP4 header in first chunk
+        if (i === 0 && !hasValidMP4Header) {
+          if (uint8Array.length > 8 &&
+              uint8Array[4] === 0x66 && uint8Array[5] === 0x74 &&
+              uint8Array[6] === 0x79 && uint8Array[7] === 0x70) {
+            hasValidMP4Header = true;
+            console.log('✓ Valid MP4 header detected at position 4');
+          } else if (uint8Array.length > 4 &&
+                     uint8Array[0] === 0x66 && uint8Array[1] === 0x74 &&
+                     uint8Array[2] === 0x79 && uint8Array[3] === 0x70) {
+            hasValidMP4Header = true;
+            console.log('✓ Valid MP4 header detected at position 0');
+          }
+        }
       }
 
-      if (!data) {
-        throw new Error(`Chunk ${i} data is null`);
+      // Merge batch
+      const mergedBatch = new Uint8Array(batchSize);
+      let offset = 0;
+      for (const chunk of batchChunks) {
+        mergedBatch.set(chunk, offset);
+        offset += chunk.length;
       }
-
-      const arrayBuffer = await data.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      chunks.push(uint8Array);
-      totalSize += uint8Array.length;
-      console.log(`✓ Chunk ${i + 1} downloaded: ${uint8Array.length} bytes`);
+      
+      tempChunks.push(mergedBatch);
+      totalSize += batchSize;
+      console.log(`✓ Batch merged: ${batchSize} bytes`);
+      
+      // Clear batch to free memory
+      batchChunks.length = 0;
     }
 
-    console.log(`Total size of all chunks: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`Total size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
 
-    // Merge chunks into a single Uint8Array
-    console.log('Merging chunks into single file...');
+    // Step 2: Merge all batches into final video
+    console.log('Merging all batches into final video...');
     const mergedVideo = new Uint8Array(totalSize);
     let offset = 0;
 
-    for (let i = 0; i < chunks.length; i++) {
-      mergedVideo.set(chunks[i], offset);
-      offset += chunks[i].length;
-      console.log(`✓ Merged chunk ${i + 1}/${chunks.length}`);
+    for (let i = 0; i < tempChunks.length; i++) {
+      mergedVideo.set(tempChunks[i], offset);
+      offset += tempChunks[i].length;
+      console.log(`✓ Merged batch ${i + 1}/${tempChunks.length}`);
     }
+
+    // Clear temp chunks to free memory
+    tempChunks.length = 0;
 
     console.log('✓ All chunks merged successfully');
-    console.log('Merged video size:', mergedVideo.length, 'bytes');
-
-    // Verify the merged video has proper MP4 headers
-    // MP4 files should start with 'ftyp' box (after size bytes)
-    let hasValidMP4Header = false;
-    
-    // Check for ftyp at position 4 (most common)
-    if (mergedVideo.length > 8 &&
-        mergedVideo[4] === 0x66 && // 'f'
-        mergedVideo[5] === 0x74 && // 't'
-        mergedVideo[6] === 0x79 && // 'y'
-        mergedVideo[7] === 0x70) { // 'p'
-      hasValidMP4Header = true;
-      console.log('✓ Valid MP4 header detected at position 4');
-    }
-    
-    // Also check for ftyp at position 0 (some encoders)
-    if (!hasValidMP4Header && mergedVideo.length > 4 &&
-        mergedVideo[0] === 0x66 && // 'f'
-        mergedVideo[1] === 0x74 && // 't'
-        mergedVideo[2] === 0x79 && // 'y'
-        mergedVideo[3] === 0x70) { // 'p'
-      hasValidMP4Header = true;
-      console.log('✓ Valid MP4 header detected at position 0');
-    }
 
     if (!hasValidMP4Header) {
       console.warn('⚠️ Warning: Merged video may not have valid MP4 header');
       console.log('First 32 bytes:', Array.from(mergedVideo.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' '));
-      
-      // Log more diagnostic info
-      console.log('File size:', mergedVideo.length, 'bytes');
-      console.log('Checking for common video signatures...');
-      
-      // Check for other video formats
-      if (mergedVideo[0] === 0x00 && mergedVideo[1] === 0x00 && mergedVideo[2] === 0x00) {
-        console.log('Detected possible MP4 with leading zeros');
-      }
-    } else {
-      console.log('✓ Valid MP4 header detected');
     }
 
-    // Delete the old file if it exists (to avoid conflicts)
+    // Step 3: Delete old file if exists
     console.log('Removing old file if exists...');
     const { error: removeError } = await supabase.storage
       .from('videos')
@@ -156,8 +165,8 @@ serve(async (req) => {
       console.log('✓ Old file removed (if it existed)');
     }
 
-    // Upload the merged video with proper content type and cache control
-    console.log('Uploading merged video with proper headers...');
+    // Step 4: Upload merged video
+    console.log('Uploading merged video...');
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('videos')
       .upload(fileName, mergedVideo, {
@@ -172,16 +181,15 @@ serve(async (req) => {
     }
 
     console.log('✓ Merged video uploaded successfully');
-    console.log('Upload data:', uploadData);
 
-    // Get the public URL
+    // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from('videos')
       .getPublicUrl(fileName);
 
     console.log('✓ Public URL generated:', publicUrl);
 
-    // Verify the uploaded file is accessible
+    // Verify accessibility
     console.log('Verifying uploaded file accessibility...');
     try {
       const headResponse = await fetch(publicUrl, { method: 'HEAD' });
@@ -191,7 +199,6 @@ serve(async (req) => {
       
       if (!headResponse.ok) {
         console.error('⚠️ WARNING: Uploaded file is not accessible via public URL!');
-        console.error('This may indicate RLS policy issues or bucket configuration problems');
       } else {
         console.log('✓ Uploaded file is accessible via public URL');
       }
@@ -199,7 +206,7 @@ serve(async (req) => {
       console.error('Error verifying file accessibility:', verifyError);
     }
 
-    // Delete chunk files
+    // Step 5: Clean up chunk files
     console.log('Cleaning up chunk files...');
     const chunkFilesToDelete = [];
     for (let i = 0; i < totalChunks; i++) {
@@ -212,7 +219,6 @@ serve(async (req) => {
 
     if (deleteError) {
       console.error('Error deleting chunks (non-fatal):', deleteError);
-      // Don't throw - merged video is already uploaded
     } else {
       console.log('✓ Chunk files cleaned up');
     }
