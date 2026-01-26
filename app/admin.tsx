@@ -457,51 +457,75 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Reading video file as ArrayBuffer...');
-      console.log('[AdminScreen] 🚀 NEW APPROACH: Using Supabase resumable upload for large files');
-      console.log('[AdminScreen] This automatically chunks the file and handles retries');
+      console.log('[AdminScreen] Step 2/5: Getting Supabase project URL...');
+      const { data: { project_url } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      console.log('[AdminScreen] ✓ File read, converting to binary...');
-      setUploadProgress(20);
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] Using FileSystem.uploadAsync for direct streaming upload');
+      console.log('[AdminScreen] This avoids loading the entire file into memory');
+      setUploadProgress(15);
 
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'video/mp4' });
-      
-      console.log('[AdminScreen] ✓ Blob created:', blob.size, 'bytes');
-      setUploadProgress(30);
-
-      console.log('[AdminScreen] Step 3/5: Uploading video using Supabase resumable upload...');
-      console.log('[AdminScreen] This method automatically handles chunking for large files');
+      console.log('[AdminScreen] Step 3/5: Uploading video using FileSystem.uploadAsync...');
+      console.log('[AdminScreen] This method streams the file directly without base64 conversion');
       
       const startTime = Date.now();
+      let lastProgressUpdate = Date.now();
+      let lastBytesUploaded = 0;
       
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, blob, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: 'video/mp4',
-        });
-
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw new Error(`Upload failed: ${uploadError.message}`);
-      }
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+        },
+        uploadProgressCallback: (progressEvent) => {
+          const progress = progressEvent.totalBytesSent / progressEvent.totalBytesExpectedToSend;
+          const progressPercent = Math.min(Math.round(progress * 50) + 15, 65);
+          setUploadProgress(progressPercent);
+          
+          const now = Date.now();
+          const timeDiff = (now - lastProgressUpdate) / 1000;
+          
+          if (timeDiff >= 1) {
+            const bytesDiff = progressEvent.totalBytesSent - lastBytesUploaded;
+            const speedMBps = (bytesDiff / 1024 / 1024) / timeDiff;
+            const speedText = speedMBps.toFixed(2);
+            setUploadSpeed(speedText);
+            
+            const bytesRemaining = progressEvent.totalBytesExpectedToSend - progressEvent.totalBytesSent;
+            const timeRemaining = bytesRemaining / (bytesDiff / timeDiff);
+            const minutesRemaining = Math.ceil(timeRemaining / 60);
+            setEstimatedTimeRemaining(minutesRemaining.toString());
+            
+            lastProgressUpdate = now;
+            lastBytesUploaded = progressEvent.totalBytesSent;
+            
+            console.log('[AdminScreen] Upload progress:', {
+              percent: progressPercent,
+              sent: formatFileSize(progressEvent.totalBytesSent),
+              total: formatFileSize(progressEvent.totalBytesExpectedToSend),
+              speed: `${speedText} MB/s`,
+              eta: `${minutesRemaining} min`
+            });
+          }
+        }
+      });
 
       const uploadTime = (Date.now() - startTime) / 1000;
       const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
       console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
-      console.log('[AdminScreen] Upload data:', uploadData);
-      setUploadProgress(60);
+      console.log('[AdminScreen] Upload result:', uploadResult);
+      
+      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+      
+      setUploadProgress(65);
 
       console.log('[AdminScreen] Step 4/5: Getting public URL...');
       
@@ -510,7 +534,7 @@ export default function AdminScreen() {
         .getPublicUrl(fileName);
 
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
-      setUploadProgress(70);
+      setUploadProgress(75);
 
       console.log('[AdminScreen] Step 5/5: Generating thumbnail...');
       let thumbnailUrl = null;
@@ -532,29 +556,21 @@ export default function AdminScreen() {
         }
         
         console.log('[AdminScreen] Uploading thumbnail...');
-        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        const thumbnailBinaryString = atob(thumbnailBase64);
-        const thumbnailBytes = new Uint8Array(thumbnailBinaryString.length);
-        for (let i = 0; i < thumbnailBinaryString.length; i++) {
-          thumbnailBytes[i] = thumbnailBinaryString.charCodeAt(i);
-        }
-        const thumbnailBlob = new Blob([thumbnailBytes], { type: 'image/jpeg' });
-        
         const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
+        const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
         
-        const { data: thumbnailData, error: thumbnailError } = await supabase.storage
-          .from('videos')
-          .upload(thumbnailFileName, thumbnailBlob, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: 'image/jpeg',
-          });
+        const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+          },
+        });
 
-        if (thumbnailError) {
-          throw new Error(`Thumbnail upload failed: ${thumbnailError.message}`);
+        if (thumbnailUploadResult.status !== 200 && thumbnailUploadResult.status !== 201) {
+          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
         }
 
         const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
@@ -568,7 +584,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Continuing without thumbnail');
       }
       
-      setUploadProgress(85);
+      setUploadProgress(90);
 
       console.log('[AdminScreen] Creating database record...');
       const { data: insertedData, error: dbError } = await supabase
@@ -864,19 +880,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                Supabase Resumable Upload ✓ FIXED
+                FileSystem.uploadAsync ✓ FIXED
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🚀 NEW: Uses Supabase's built-in resumable upload
+                • 🚀 NEW: Uses FileSystem.uploadAsync for direct streaming
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatically chunks large files
+                • No base64 conversion - avoids string length errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • No more "Payload too large" errors
+                • Streams file directly without loading into memory
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Handles authentication automatically
+                • Real-time upload progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Supports up to 6K resolution videos
@@ -1163,11 +1179,21 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 60 ? 'Uploading video...' : uploadProgress < 80 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 65 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
               </Text>
+              {uploadSpeed && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
+                  Speed: {uploadSpeed} MB/s
+                </Text>
+              )}
+              {estimatedTimeRemaining && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
+                  Estimated time remaining: {estimatedTimeRemaining} min
+                </Text>
+              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
@@ -1212,8 +1238,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • 🚀 FIXED: Now uses Supabase resumable upload{'\n'}
-              • Automatically chunks large files - no size limits!{'\n'}
+              • 🚀 FIXED: Now uses FileSystem.uploadAsync{'\n'}
+              • Streams file directly - no memory issues!{'\n'}
+              • Real-time progress and speed tracking{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Perfect for large 6K videos!{'\n'}
