@@ -192,6 +192,144 @@ export default function AdminScreen() {
     );
   };
 
+  const handleDiagnoseVideo = async (videoId: string, videoTitle: string, videoUrl: string) => {
+    try {
+      console.log('[AdminScreen] ========== DIAGNOSING VIDEO ==========');
+      console.log('[AdminScreen] Video ID:', videoId);
+      console.log('[AdminScreen] Video Title:', videoTitle);
+      console.log('[AdminScreen] Video URL:', videoUrl);
+      
+      Alert.alert('Diagnosing Video', 'Checking video file...', [{ text: 'OK' }]);
+      
+      // Check if video is accessible
+      const headResponse = await fetch(videoUrl, { method: 'HEAD' });
+      console.log('[AdminScreen] HEAD response status:', headResponse.status);
+      console.log('[AdminScreen] Content-Type:', headResponse.headers.get('content-type'));
+      console.log('[AdminScreen] Content-Length:', headResponse.headers.get('content-length'));
+      
+      const contentType = headResponse.headers.get('content-type');
+      const contentLength = headResponse.headers.get('content-length');
+      
+      if (!headResponse.ok) {
+        Alert.alert(
+          'Video Not Accessible',
+          `The video file cannot be accessed (HTTP ${headResponse.status}).\n\n` +
+          'This usually means:\n' +
+          '• The file was not uploaded correctly\n' +
+          '• The file was deleted from storage\n' +
+          '• Storage bucket permissions are incorrect\n\n' +
+          'Try deleting this video record and re-uploading the video.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      if (!contentType || !contentType.includes('video')) {
+        Alert.alert(
+          'Invalid Content Type',
+          `The file has wrong content-type: ${contentType}\n\n` +
+          'Expected: video/mp4 or similar\n\n' +
+          'The file may be corrupted or in the wrong format.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      if (!contentLength || parseInt(contentLength) === 0) {
+        Alert.alert(
+          'Empty File',
+          'The video file is empty (0 bytes).\n\n' +
+          'The upload or merge process failed. Try re-uploading the video.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Download first 32 bytes to check MP4 header
+      console.log('[AdminScreen] Downloading first 32 bytes...');
+      const partialResponse = await fetch(videoUrl, {
+        headers: {
+          'Range': 'bytes=0-31'
+        }
+      });
+      
+      if (partialResponse.ok) {
+        const buffer = await partialResponse.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
+        
+        // Check for ftyp signature
+        let hasValidMP4Header = false;
+        let headerPosition = -1;
+        
+        // Check at position 4
+        if (bytes.length > 8 &&
+            bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+          hasValidMP4Header = true;
+          headerPosition = 4;
+        }
+        
+        // Check at position 0
+        if (!hasValidMP4Header && bytes.length > 4 &&
+            bytes[0] === 0x66 && bytes[1] === 0x74 && bytes[2] === 0x79 && bytes[3] === 0x70) {
+          hasValidMP4Header = true;
+          headerPosition = 0;
+        }
+        
+        if (hasValidMP4Header) {
+          Alert.alert(
+            'Video Diagnosis: GOOD ✓',
+            `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
+            `Content-Type: ${contentType}\n` +
+            `MP4 Header: Valid (found at position ${headerPosition})\n` +
+            `Status: Accessible\n\n` +
+            'The video file appears to be valid and should be playable.\n\n' +
+            'If the video still won\'t play:\n' +
+            '• Try refreshing the app\n' +
+            '• Check your internet connection\n' +
+            '• The video player may need time to buffer',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Video Diagnosis: FORMAT ISSUE ⚠️',
+            `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
+            `Content-Type: ${contentType}\n` +
+            `MP4 Header: NOT FOUND\n` +
+            `Status: Accessible but may not play\n\n` +
+            'The video file is accessible but does not have a valid MP4 header.\n\n' +
+            'This can happen if:\n' +
+            '• The original video was not properly encoded\n' +
+            '• The video was corrupted during recording\n' +
+            '• The chunked upload merge had issues\n\n' +
+            'Solution: Delete this video and re-upload with a properly encoded MP4 file.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        Alert.alert(
+          'Partial Download Failed',
+          'Could not download video header for verification.\n\n' +
+          `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
+          `Content-Type: ${contentType}\n` +
+          `Status: Accessible\n\n` +
+          'The file exists but partial content download is not supported.',
+          [{ text: 'OK' }]
+        );
+      }
+      
+      console.log('[AdminScreen] ========== DIAGNOSIS COMPLETE ==========');
+    } catch (error: any) {
+      console.error('[AdminScreen] Error diagnosing video:', error);
+      Alert.alert(
+        'Diagnosis Failed',
+        `Could not diagnose video:\n\n${error.message}\n\n` +
+        'This usually indicates a network error or the video file is completely inaccessible.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -770,10 +908,11 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Video public URL:', videoPublicUrl);
 
-      console.log('[AdminScreen] Step 6/6: Verifying video accessibility...');
+      console.log('[AdminScreen] Step 6/6: Verifying video accessibility and playability...');
       setUploadStatus('Verifying video accessibility...');
       
       try {
+        // First check: HEAD request to verify file exists and is accessible
         const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
         console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
         console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
@@ -786,12 +925,79 @@ export default function AdminScreen() {
         }
         
         const contentType = headResponse.headers.get('content-type');
+        const contentLength = headResponse.headers.get('content-length');
+        
         if (!contentType || !contentType.includes('video')) {
           console.error('[AdminScreen] ⚠️ WARNING: Video has wrong content-type:', contentType);
           throw new Error(`Video file has incorrect content-type: ${contentType}. Expected video/mp4.`);
         }
         
+        if (!contentLength || parseInt(contentLength) === 0) {
+          console.error('[AdminScreen] ⚠️ WARNING: Video file is empty!');
+          throw new Error('Video file is empty (0 bytes). The merge may have failed.');
+        }
+        
         console.log('[AdminScreen] ✓ Video is accessible and has correct content-type');
+        console.log('[AdminScreen] ✓ Video file size:', formatFileSize(parseInt(contentLength)));
+        
+        // Second check: Download first few bytes to verify MP4 header
+        console.log('[AdminScreen] Downloading first 32 bytes to verify MP4 format...');
+        const partialResponse = await fetch(videoPublicUrl, {
+          headers: {
+            'Range': 'bytes=0-31'
+          }
+        });
+        
+        if (partialResponse.ok) {
+          const buffer = await partialResponse.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
+          
+          // Check for ftyp signature (MP4 format marker)
+          let hasValidMP4Header = false;
+          
+          // Check at position 4 (most common)
+          if (bytes.length > 8 &&
+              bytes[4] === 0x66 && // 'f'
+              bytes[5] === 0x74 && // 't'
+              bytes[6] === 0x79 && // 'y'
+              bytes[7] === 0x70) { // 'p'
+            hasValidMP4Header = true;
+            console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 4');
+          }
+          
+          // Check at position 0 (some encoders)
+          if (!hasValidMP4Header && bytes.length > 4 &&
+              bytes[0] === 0x66 && // 'f'
+              bytes[1] === 0x74 && // 't'
+              bytes[2] === 0x79 && // 'y'
+              bytes[3] === 0x70) { // 'p'
+            hasValidMP4Header = true;
+            console.log('[AdminScreen] ✓ Valid MP4 ftyp header found at position 0');
+          }
+          
+          if (!hasValidMP4Header) {
+            console.error('[AdminScreen] ⚠️ WARNING: Video does not have valid MP4 header!');
+            console.error('[AdminScreen] This video may not be playable.');
+            console.error('[AdminScreen] The file was uploaded but may be corrupted or in wrong format.');
+            
+            // Don't throw - let the user know but still save the record
+            Alert.alert(
+              'Warning: Video Format Issue',
+              'The video was uploaded but may not have a valid MP4 format. It might not play correctly. This can happen if:\n\n' +
+              '• The original video was not properly encoded\n' +
+              '• The video was corrupted during recording\n' +
+              '• The merge process had issues\n\n' +
+              'Try re-recording the video or using a different video file.',
+              [{ text: 'OK' }]
+            );
+          } else {
+            console.log('[AdminScreen] ✓ Video has valid MP4 format and should be playable');
+          }
+        } else {
+          console.warn('[AdminScreen] Could not download partial content for verification (non-fatal)');
+        }
+        
       } catch (verifyError) {
         console.error('[AdminScreen] Video verification failed:', verifyError);
         throw verifyError;
@@ -1505,22 +1711,36 @@ export default function AdminScreen() {
                           })}
                         </Text>
                       </View>
-                      <TouchableOpacity
-                        style={[styles.deleteIconButton, { backgroundColor: '#FF6B6B' }]}
-                        onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
-                        disabled={isDeleting}
-                      >
-                        {isDeleting ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
+                      <View style={styles.videoManagementActions}>
+                        <TouchableOpacity
+                          style={[styles.diagnoseIconButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleDiagnoseVideo(video.id, video.title, video.video_url)}
+                          disabled={isDeleting}
+                        >
                           <IconSymbol
-                            ios_icon_name="trash.fill"
-                            android_material_icon_name="delete"
+                            ios_icon_name="stethoscope"
+                            android_material_icon_name="healing"
                             size={20}
                             color="#FFFFFF"
                           />
-                        )}
-                      </TouchableOpacity>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.deleteIconButton, { backgroundColor: '#FF6B6B' }]}
+                          onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <IconSymbol
+                              ios_icon_name="trash.fill"
+                              android_material_icon_name="delete"
+                              size={20}
+                              color="#FFFFFF"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </React.Fragment>
                 );
@@ -1857,6 +2077,17 @@ const styles = StyleSheet.create({
   },
   videoManagementDate: {
     fontSize: 12,
+  },
+  videoManagementActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  diagnoseIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   deleteIconButton: {
     width: 40,

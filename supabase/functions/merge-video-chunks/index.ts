@@ -106,17 +106,40 @@ serve(async (req) => {
 
     // Verify the merged video has proper MP4 headers
     // MP4 files should start with 'ftyp' box (after size bytes)
-    const hasValidMP4Header = (
-      mergedVideo.length > 8 &&
-      mergedVideo[4] === 0x66 && // 'f'
-      mergedVideo[5] === 0x74 && // 't'
-      mergedVideo[6] === 0x79 && // 'y'
-      mergedVideo[7] === 0x70    // 'p'
-    );
+    let hasValidMP4Header = false;
+    
+    // Check for ftyp at position 4 (most common)
+    if (mergedVideo.length > 8 &&
+        mergedVideo[4] === 0x66 && // 'f'
+        mergedVideo[5] === 0x74 && // 't'
+        mergedVideo[6] === 0x79 && // 'y'
+        mergedVideo[7] === 0x70) { // 'p'
+      hasValidMP4Header = true;
+      console.log('✓ Valid MP4 header detected at position 4');
+    }
+    
+    // Also check for ftyp at position 0 (some encoders)
+    if (!hasValidMP4Header && mergedVideo.length > 4 &&
+        mergedVideo[0] === 0x66 && // 'f'
+        mergedVideo[1] === 0x74 && // 't'
+        mergedVideo[2] === 0x79 && // 'y'
+        mergedVideo[3] === 0x70) { // 'p'
+      hasValidMP4Header = true;
+      console.log('✓ Valid MP4 header detected at position 0');
+    }
 
     if (!hasValidMP4Header) {
       console.warn('⚠️ Warning: Merged video may not have valid MP4 header');
-      console.log('First 16 bytes:', Array.from(mergedVideo.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      console.log('First 32 bytes:', Array.from(mergedVideo.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      
+      // Log more diagnostic info
+      console.log('File size:', mergedVideo.length, 'bytes');
+      console.log('Checking for common video signatures...');
+      
+      // Check for other video formats
+      if (mergedVideo[0] === 0x00 && mergedVideo[1] === 0x00 && mergedVideo[2] === 0x00) {
+        console.log('Detected possible MP4 with leading zeros');
+      }
     } else {
       console.log('✓ Valid MP4 header detected');
     }
