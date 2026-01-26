@@ -495,22 +495,29 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
+    console.log('[AdminScreen] ========== UPLOAD BUTTON TAPPED ==========');
+    console.log('[AdminScreen] User tapped Upload Video button');
+    
     if (!selectedVideo || !videoTitle || !videoMetadata) {
+      console.log('[AdminScreen] Upload validation failed: Missing video, title, or metadata');
       Alert.alert('Error', 'Please select a valid video and enter a title');
       return;
     }
 
     if (!session?.access_token) {
+      console.log('[AdminScreen] Upload validation failed: No session token');
       Alert.alert('Error', 'You are not logged in. Please log out and log back in.');
       return;
     }
 
     const errors = checkVideoRequirements(videoMetadata);
     if (errors.length > 0) {
+      console.log('[AdminScreen] Upload validation failed: Video requirements not met:', errors);
       Alert.alert('Cannot Upload', errors.join('\n\n'));
       return;
     }
 
+    console.log('[AdminScreen] ✓ All validations passed, starting upload process');
     let videoToUpload = selectedVideo;
 
     try {
@@ -557,21 +564,27 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Creating Blob from video file...');
-      const response = await fetch(videoToUpload);
-      const blob = await response.blob();
-      
-      console.log('[AdminScreen] ✓ Blob created, size:', formatFileSize(blob.size));
-      setUploadProgress(20);
-
-      const startTime = Date.now();
+      console.log('[AdminScreen] Step 2/5: Getting auth session...');
       const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession) {
+      if (!currentSession?.access_token) {
         throw new Error('No active session. Please log in again.');
       }
-
-      console.log('[AdminScreen] Step 3/5: Uploading video to Supabase Storage...');
       
+      console.log('[AdminScreen] ✓ Session verified');
+      setUploadProgress(20);
+
+      console.log('[AdminScreen] Step 3/5: Uploading video to Supabase Storage using FileSystem.uploadAsync...');
+      console.log('[AdminScreen] This method properly handles large files in React Native');
+      
+      const startTime = Date.now();
+      let lastProgressUpdate = Date.now();
+      let lastBytesUploaded = 0;
+
+      const storageUrl = `https://ucbilksfpnmltrkwvzft.supabase.co/storage/v1/object/videos/${fileName}`;
+      
+      console.log('[AdminScreen] Upload URL:', storageUrl);
+      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
+
       uploadAbortControllerRef.current = new AbortController();
       const timeoutId = setTimeout(() => {
         console.log('[AdminScreen] Upload timeout reached, aborting...');
@@ -581,22 +594,91 @@ export default function AdminScreen() {
       }, UPLOAD_TIMEOUT_MS);
 
       try {
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(fileName, blob, {
-            contentType: 'video/mp4',
-            upsert: false
-          });
+        const uploadResult = await FileSystem.uploadAsync(
+          storageUrl,
+          videoToUpload,
+          {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: 'file',
+            headers: {
+              'Authorization': `Bearer ${currentSession.access_token}`,
+              'Content-Type': 'video/mp4',
+            },
+            uploadProgressCallback: (progress) => {
+              const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
+              const currentProgress = 20 + (percentComplete * 0.5);
+              setUploadProgress(currentProgress);
+
+              const now = Date.now();
+              const timeDiff = (now - lastProgressUpdate) / 1000;
+              
+              if (timeDiff >= 1) {
+                const bytesDiff = progress.totalBytesSent - lastBytesUploaded;
+                const speedMBps = (bytesDiff / timeDiff / (1024 * 1024)).toFixed(2);
+                setUploadSpeed(speedMBps);
+
+                const bytesRemaining = progress.totalBytesExpectedToSend - progress.totalBytesSent;
+                const estimatedSeconds = bytesRemaining / (bytesDiff / timeDiff);
+                const minutes = Math.floor(estimatedSeconds / 60);
+                const seconds = Math.floor(estimatedSeconds % 60);
+                setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
+
+                lastProgressUpdate = now;
+                lastBytesUploaded = progress.totalBytesSent;
+              }
+
+              console.log('[AdminScreen] Upload progress:', percentComplete + '%', 
+                         'Sent:', formatFileSize(progress.totalBytesSent),
+                         'of', formatFileSize(progress.totalBytesExpectedToSend));
+            }
+          }
+        );
 
         clearTimeout(timeoutId);
 
-        if (uploadError) {
-          console.error('[AdminScreen] Upload error:', uploadError);
-          throw uploadError;
+        console.log('[AdminScreen] Upload result:', uploadResult);
+
+        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
         }
 
         console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
+        console.log('[AdminScreen] Upload took:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
         setUploadProgress(70);
+
+        console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const { data: fileList, error: listError } = await supabase.storage
+          .from('videos')
+          .list('uploads', {
+            search: fileName.split('/').pop()
+          });
+
+        if (listError) {
+          console.error('[AdminScreen] Error checking uploaded file:', listError);
+        } else if (fileList && fileList.length > 0) {
+          const uploadedFile = fileList[0];
+          console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
+          
+          if (uploadedFile.metadata && uploadedFile.metadata.size) {
+            const uploadedSize = parseInt(uploadedFile.metadata.size);
+            console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
+            
+            if (uploadedSize === 0) {
+              throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
+            }
+            
+            if (uploadedSize < fileInfo.size * 0.5) {
+              console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
+            }
+          }
+        }
+
+        console.log('[AdminScreen] ✓ File verification complete');
 
         console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
         let thumbnailUrl = null;
@@ -674,8 +756,18 @@ export default function AdminScreen() {
       } catch (uploadError: any) {
         clearTimeout(timeoutId);
         
+        console.error('[AdminScreen] Upload error details:', {
+          name: uploadError.name,
+          message: uploadError.message,
+          stack: uploadError.stack
+        });
+        
         if (uploadError.name === 'AbortError') {
           throw new Error('Upload timeout - The upload took too long. Please check your internet connection and try again.');
+        }
+        
+        if (uploadError.message?.includes('Network request failed')) {
+          throw new Error('Network error during upload. Please check your internet connection and try again.');
         }
         
         throw uploadError;
