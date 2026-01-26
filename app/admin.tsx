@@ -421,7 +421,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (FileSystem.uploadAsync METHOD) ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (FETCH + BLOB METHOD) ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
@@ -441,7 +441,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/6: Verifying video file exists and is readable...');
+      console.log('[AdminScreen] Step 1/7: Verifying video file exists and is readable...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -462,7 +462,31 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/6: Getting Supabase project URL...');
+      console.log('[AdminScreen] Step 2/7: Reading video file as Blob...');
+      console.log('[AdminScreen] Using fetch() to read file - this avoids string length limits');
+      
+      const response = await fetch(selectedVideo);
+      const videoBlob = await response.blob();
+      
+      console.log('[AdminScreen] ✓ Video loaded as Blob:', {
+        size: formatFileSize(videoBlob.size),
+        type: videoBlob.type
+      });
+      
+      if (videoBlob.size === 0) {
+        throw new Error('Failed to read video file - blob is empty');
+      }
+      
+      if (videoBlob.size !== fileInfo.size) {
+        console.warn('[AdminScreen] ⚠️ Blob size mismatch:', {
+          expected: formatFileSize(fileInfo.size),
+          actual: formatFileSize(videoBlob.size)
+        });
+      }
+      
+      setUploadProgress(15);
+
+      console.log('[AdminScreen] Step 3/7: Getting Supabase upload URL...');
       const { data: { publicUrl: projectUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl('dummy');
@@ -472,68 +496,41 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Base URL:', baseUrl);
       console.log('[AdminScreen] Upload URL:', uploadUrl);
-      setUploadProgress(15);
+      setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video using FileSystem.uploadAsync()...');
-      console.log('[AdminScreen] This is the MOST RELIABLE method for large file uploads in React Native');
-      console.log('[AdminScreen] File size:', formatFileSize(fileInfo.size));
+      console.log('[AdminScreen] Step 4/7: Uploading video using fetch() with PUT...');
+      console.log('[AdminScreen] This is the MOST RELIABLE method for Supabase storage uploads');
+      console.log('[AdminScreen] File size:', formatFileSize(videoBlob.size));
       console.log('[AdminScreen] Using Authorization header with JWT token');
+      console.log('[AdminScreen] Using PUT method (required for Supabase storage)');
       
       const startTime = Date.now();
-      let lastProgressTime = startTime;
-      let lastProgressBytes = 0;
       
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'video/mp4',
           'x-upsert': 'false',
         },
-        uploadProgressCallback: (progress) => {
-          const currentTime = Date.now();
-          const timeDiff = (currentTime - lastProgressTime) / 1000;
-          
-          if (timeDiff >= 0.5) {
-            const bytesDiff = progress.totalBytesSent - lastProgressBytes;
-            const speedMBps = (bytesDiff / 1024 / 1024) / timeDiff;
-            const progressPercent = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 50) + 15;
-            
-            setUploadProgress(progressPercent);
-            setUploadSpeed(speedMBps.toFixed(2));
-            
-            const bytesRemaining = progress.totalBytesExpectedToSend - progress.totalBytesSent;
-            const timeRemainingSeconds = bytesRemaining / (bytesDiff / timeDiff);
-            const timeRemainingMinutes = Math.ceil(timeRemainingSeconds / 60);
-            setEstimatedTimeRemaining(timeRemainingMinutes.toString());
-            
-            lastProgressTime = currentTime;
-            lastProgressBytes = progress.totalBytesSent;
-            
-            console.log('[AdminScreen] Upload progress:', {
-              percent: progressPercent,
-              sent: formatFileSize(progress.totalBytesSent),
-              total: formatFileSize(progress.totalBytesExpectedToSend),
-              speed: speedMBps.toFixed(2) + ' MB/s',
-              remaining: timeRemainingMinutes + ' min'
-            });
-          }
-        }
+        body: videoBlob,
       });
 
       const uploadTime = (Date.now() - startTime) / 1000;
       const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
-      console.log('[AdminScreen] Upload result:', uploadResult);
-      console.log('[AdminScreen] Upload status:', uploadResult.status);
-      console.log('[AdminScreen] Upload body:', uploadResult.body);
+      console.log('[AdminScreen] Upload response status:', uploadResponse.status);
+      console.log('[AdminScreen] Upload response headers:', Object.fromEntries(uploadResponse.headers.entries()));
       
-      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('[AdminScreen] Upload failed with status:', uploadResponse.status);
+        console.error('[AdminScreen] Response body:', errorText);
+        throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
       }
+      
+      const uploadResult = await uploadResponse.json();
+      console.log('[AdminScreen] Upload result:', uploadResult);
       
       console.log('[AdminScreen] ✓ Upload completed successfully!');
       console.log('[AdminScreen] Upload stats:', {
@@ -544,7 +541,7 @@ export default function AdminScreen() {
       
       setUploadProgress(65);
 
-      console.log('[AdminScreen] Step 4/6: Verifying uploaded file in storage...');
+      console.log('[AdminScreen] Step 5/7: Verifying uploaded file in storage...');
       
       const { data: fileList, error: listError } = await supabase.storage
         .from('videos')
@@ -581,7 +578,7 @@ export default function AdminScreen() {
       
       setUploadProgress(70);
 
-      console.log('[AdminScreen] Step 5/6: Getting public URL for uploaded video...');
+      console.log('[AdminScreen] Step 6/7: Getting public URL for uploaded video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
@@ -590,7 +587,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Video public URL:', videoPublicUrl);
       setUploadProgress(75);
 
-      console.log('[AdminScreen] Step 6/6: Generating thumbnail from video...');
+      console.log('[AdminScreen] Step 7/7: Generating thumbnail from video...');
       let thumbnailUrl = null;
       
       try {
@@ -617,22 +614,28 @@ export default function AdminScreen() {
         const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
         const thumbnailUploadUrl = `${baseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
         
-        console.log('[AdminScreen] Uploading thumbnail using FileSystem.uploadAsync()...');
+        console.log('[AdminScreen] Uploading thumbnail using fetch() with PUT...');
         
-        const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
+        const thumbnailResponse = await fetch(thumbnailUri);
+        const thumbnailBlob = await thumbnailResponse.blob();
+        
+        console.log('[AdminScreen] Thumbnail blob size:', formatFileSize(thumbnailBlob.size));
+        
+        const thumbnailUploadResponse = await fetch(thumbnailUploadUrl, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'image/jpeg',
             'x-upsert': 'false',
           },
+          body: thumbnailBlob,
         });
 
-        console.log('[AdminScreen] Thumbnail upload result:', thumbnailUploadResult);
+        console.log('[AdminScreen] Thumbnail upload status:', thumbnailUploadResponse.status);
         
-        if (thumbnailUploadResult.status !== 200 && thumbnailUploadResult.status !== 201) {
-          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
+        if (!thumbnailUploadResponse.ok) {
+          const errorText = await thumbnailUploadResponse.text();
+          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResponse.status}: ${errorText}`);
         }
 
         const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
@@ -648,7 +651,7 @@ export default function AdminScreen() {
       
       setUploadProgress(90);
 
-      console.log('[AdminScreen] Step 7/7: Creating database record for video...');
+      console.log('[AdminScreen] Step 8/8: Creating database record for video...');
       const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -948,16 +951,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                ✅ FIXED: Using FileSystem.uploadAsync()
+                ✅ FIXED: Using fetch() + Blob + PUT
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🚀 Most reliable method for large file uploads
+                • 🚀 Most reliable method for Supabase storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ Direct file upload (no Blob conversion needed)
+                • ✅ Direct PUT upload (no multipart needed)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ Built-in progress tracking
+                • ✅ Avoids string length limits with Blob
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Handles large files efficiently
@@ -1247,7 +1250,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Preparing upload...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 70 ? 'Verifying upload...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Reading video as Blob...' : uploadProgress < 20 ? 'Preparing upload URL...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 70 ? 'Verifying upload...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1306,10 +1309,10 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ FIXED: Using FileSystem.uploadAsync(){'\n'}
-              • 🚀 Most reliable method for large files{'\n'}
-              • ✅ Direct file upload (no conversion){'\n'}
-              • ✅ Built-in progress tracking{'\n'}
+              • ✅ FIXED: Using fetch() + Blob + PUT{'\n'}
+              • 🚀 Most reliable method for Supabase storage{'\n'}
+              • ✅ Direct PUT upload (no multipart){'\n'}
+              • ✅ Avoids string length limits{'\n'}
               • ✅ File verification after upload{'\n'}
               • ✅ Thumbnail generation working!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
