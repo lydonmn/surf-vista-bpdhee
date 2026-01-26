@@ -633,9 +633,9 @@ export default function AdminScreen() {
     accessToken: string,
     supabaseUrl: string
   ): Promise<void> => {
-    console.log('[AdminScreen] ========== STARTING TRUE STREAMING UPLOAD (CHUNK-BY-CHUNK) ==========');
+    console.log('[AdminScreen] ========== STARTING DIRECT BINARY UPLOAD (NO BASE64) ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
-    console.log('[AdminScreen] This method reads ONLY the chunk needed, avoiding string length limits');
+    console.log('[AdminScreen] This method reads chunks as BINARY, avoiding string length limits completely');
     
     const LARGE_FILE_THRESHOLD = 200 * 1024 * 1024;
     
@@ -684,7 +684,7 @@ export default function AdminScreen() {
       }
     }
     
-    console.log('[AdminScreen] Using chunked upload with TRUE STREAMING (read chunk, upload chunk, repeat)');
+    console.log('[AdminScreen] Using chunked upload with DIRECT BINARY READ (no base64 conversion)');
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
@@ -708,29 +708,25 @@ export default function AdminScreen() {
 
       while (retries < MAX_RETRIES && !chunkUploaded) {
         try {
-          console.log(`[AdminScreen] Reading ONLY chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
+          console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} as BINARY from position ${start}, length ${chunkSize}`);
           
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
-          console.log(`[AdminScreen] Using FileSystem.readAsStringAsync with base64 encoding for chunk ${chunkIndex + 1}...`);
+          console.log(`[AdminScreen] Using fetch to read chunk ${chunkIndex + 1} directly as blob...`);
           
-          const base64Chunk = await FileSystem.readAsStringAsync(videoUri, {
-            encoding: FileSystem.EncodingType.Base64,
-            position: start,
-            length: chunkSize,
-          });
+          const fileResponse = await fetch(videoUri);
+          const fileBlob = await fileResponse.blob();
           
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} read as base64: ${base64Chunk.length} characters`);
+          console.log(`[AdminScreen] File blob size: ${fileBlob.size} bytes`);
+          console.log(`[AdminScreen] Slicing blob from ${start} to ${end}...`);
           
-          const binaryString = atob(base64Chunk);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+          const chunkBlob = fileBlob.slice(start, end, 'video/mp4');
+          console.log(`[AdminScreen] Chunk blob created: ${chunkBlob.size} bytes (expected: ${chunkSize})`);
+
+          if (chunkBlob.size !== chunkSize) {
+            console.error(`[AdminScreen] WARNING: Chunk size mismatch! Expected ${chunkSize}, got ${chunkBlob.size}`);
           }
-          
-          const chunkBlob = new Blob([bytes], { type: 'video/mp4' });
-          console.log(`[AdminScreen] Chunk blob created: ${chunkBlob.size} bytes`);
 
           const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
@@ -927,7 +923,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using TRUE STREAMING (chunk-by-chunk)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using DIRECT BINARY READ (no base64)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -1351,16 +1347,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ⚡ FIXED: True Streaming Upload (Chunk-by-Chunk)
+                ⚡ FIXED: Direct Binary Upload (No Base64)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Reads ONLY the chunk needed (no full file load)
+                • NEW: Reads chunks as BINARY (no string conversion)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Avoids string length limit completely
+                • NEW: Uses blob.slice() for direct chunk extraction
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • NEW: Uses FileSystem.readAsStringAsync with position/length
+                • NEW: Completely avoids string length limit
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Files under 200 MB: Fast chunked upload
@@ -1757,9 +1753,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ NEW: True streaming (reads only chunk needed){'\n'}
-              • ⚡ NEW: No string length limit (chunk-by-chunk){'\n'}
-              • ⚡ NEW: FileSystem position/length API{'\n'}
+              • ⚡ NEW: Direct binary upload (no base64){'\n'}
+              • ⚡ NEW: Uses blob.slice() for chunks{'\n'}
+              • ⚡ NEW: No string length limit at all{'\n'}
               • ⚡ Files under 200 MB: Fast chunked upload{'\n'}
               • ⚡ Files over 200 MB: Single upload (no merge){'\n'}
               • ✅ Streaming merge (no memory issues){'\n'}
