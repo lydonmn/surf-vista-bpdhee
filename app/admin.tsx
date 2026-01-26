@@ -38,6 +38,16 @@ const CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 
+// Helper function to convert base64 to Uint8Array
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 export default function AdminScreen() {
   const theme = useTheme();
   const { profile, user, session } = useAuth();
@@ -665,15 +675,35 @@ export default function AdminScreen() {
 
       while (retries < MAX_RETRIES && !chunkUploaded) {
         try {
+          console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
+          
           const chunkData = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize,
           });
 
-          const blob = await fetch(`data:application/octet-stream;base64,${chunkData}`).then(r => r.blob());
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} base64 length:`, chunkData.length);
+          console.log(`[AdminScreen] Expected binary size: ~${Math.floor(chunkData.length * 0.75)} bytes`);
+
+          // Convert base64 to Uint8Array properly
+          const binaryData = base64ToUint8Array(chunkData);
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} actual binary size:`, binaryData.length, 'bytes');
+
+          if (binaryData.length === 0) {
+            throw new Error(`Chunk ${chunkIndex + 1} is empty after conversion`);
+          }
+
+          // Create a proper Blob from the Uint8Array
+          const blob = new Blob([binaryData], { type: 'application/octet-stream' });
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} blob size:`, blob.size, 'bytes');
+
+          if (blob.size === 0) {
+            throw new Error(`Chunk ${chunkIndex + 1} blob is empty`);
+          }
 
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
+          console.log(`[AdminScreen] Uploading to Supabase as:`, chunkFileName);
           
           const { error: uploadError } = await supabase.storage
             .from('videos')
@@ -683,6 +713,7 @@ export default function AdminScreen() {
             });
 
           if (uploadError) {
+            console.error(`[AdminScreen] Supabase upload error for chunk ${chunkIndex + 1}:`, uploadError);
             throw uploadError;
           }
 
@@ -696,7 +727,7 @@ export default function AdminScreen() {
           console.error(`[AdminScreen] Chunk ${chunkIndex + 1} upload failed (attempt ${retries}/${MAX_RETRIES}):`, error);
           
           if (retries >= MAX_RETRIES) {
-            throw new Error(`Failed to upload chunk ${chunkIndex + 1} after ${MAX_RETRIES} attempts`);
+            throw new Error(`Failed to upload chunk ${chunkIndex + 1} after ${MAX_RETRIES} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
           
           console.log(`[AdminScreen] Retrying chunk ${chunkIndex + 1} in ${RETRY_DELAY}ms...`);
