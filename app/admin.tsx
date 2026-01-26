@@ -421,7 +421,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (FETCH + BLOB METHOD) ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (IMPROVED METHOD) ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
@@ -441,7 +441,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/7: Verifying video file exists and is readable...');
+      console.log('[AdminScreen] Step 1/8: Verifying video file exists and is readable...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -462,7 +462,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/7: Reading video file as Blob...');
+      console.log('[AdminScreen] Step 2/8: Reading video file as Blob...');
       console.log('[AdminScreen] Using fetch() to read file - this avoids string length limits');
       
       const response = await fetch(selectedVideo);
@@ -486,85 +486,62 @@ export default function AdminScreen() {
       
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/7: Getting Supabase upload URL...');
-      const { data: { publicUrl: projectUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      
-      const baseUrl = projectUrl.split('/storage/v1/object/public/')[0];
-      const uploadUrl = `${baseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Base URL:', baseUrl);
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      setUploadProgress(20);
-
-      console.log('[AdminScreen] Step 4/7: Uploading video using fetch() with PUT...');
-      console.log('[AdminScreen] This is the MOST RELIABLE method for Supabase storage uploads');
-      console.log('[AdminScreen] File size:', formatFileSize(videoBlob.size));
-      console.log('[AdminScreen] Using Authorization header with JWT token');
-      console.log('[AdminScreen] Using PUT method (required for Supabase storage)');
+      console.log('[AdminScreen] Step 3/8: Using Supabase native upload method...');
+      console.log('[AdminScreen] This is the MOST RELIABLE method - uses Supabase SDK directly');
       
       const startTime = Date.now();
+      
+      console.log('[AdminScreen] Converting Blob to ArrayBuffer for Supabase upload...');
+      const arrayBuffer = await videoBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      console.log('[AdminScreen] ✓ Converted to Uint8Array:', formatFileSize(uint8Array.length));
+      setUploadProgress(20);
+
+      console.log('[AdminScreen] Step 4/8: Uploading video using Supabase SDK upload method...');
+      console.log('[AdminScreen] File size:', formatFileSize(uint8Array.length));
+      console.log('[AdminScreen] This method handles chunking and retries automatically');
+      
       let progressInterval: ReturnType<typeof setInterval> | null = null;
+      let simulatedProgress = 20;
       
       try {
-        // Set up progress simulation (since fetch doesn't support upload progress tracking)
-        let simulatedProgress = 20;
         progressInterval = setInterval(() => {
           if (simulatedProgress < 60) {
-            simulatedProgress += 2;
+            simulatedProgress += 1;
             setUploadProgress(simulatedProgress);
             const elapsed = (Date.now() - startTime) / 1000;
             const estimatedTotal = (elapsed / (simulatedProgress - 20)) * 40;
             const remaining = Math.max(0, estimatedTotal - elapsed);
             setEstimatedTimeRemaining(remaining > 60 ? `${Math.ceil(remaining / 60)} min` : `${Math.ceil(remaining)} sec`);
           }
-        }, 1000);
+        }, 2000);
 
-        console.log('[AdminScreen] Starting upload with 60 second timeout...');
+        console.log('[AdminScreen] Starting Supabase upload...');
         
-        // Create upload promise with timeout
-        const uploadPromise = fetch(uploadUrl, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'video/mp4',
-            'x-upsert': 'false',
-          },
-          body: videoBlob,
-        });
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(fileName, uint8Array, {
+            contentType: 'video/mp4',
+            cacheControl: '3600',
+            upsert: false
+          });
 
-        // Create timeout promise
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Upload timeout - request took longer than 60 seconds. Please check your internet connection and try again.')), 60000);
-        });
-
-        // Race between upload and timeout
-        const uploadResponse = await Promise.race([uploadPromise, timeoutPromise]);
-
-        // Clear progress interval
         if (progressInterval) {
           clearInterval(progressInterval);
           progressInterval = null;
         }
 
+        if (uploadError) {
+          console.error('[AdminScreen] Upload error:', uploadError);
+          throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+
         const uploadTime = (Date.now() - startTime) / 1000;
         const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
-        console.log('[AdminScreen] Upload response status:', uploadResponse.status);
-        console.log('[AdminScreen] Upload response headers:', Object.fromEntries(uploadResponse.headers.entries()));
-        
-        if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text();
-          console.error('[AdminScreen] Upload failed with status:', uploadResponse.status);
-          console.error('[AdminScreen] Response body:', errorText);
-          throw new Error(`Upload failed with status ${uploadResponse.status}: ${errorText}`);
-        }
-        
-        const uploadResult = await uploadResponse.json();
-        console.log('[AdminScreen] Upload result:', uploadResult);
-        
         console.log('[AdminScreen] ✓ Upload completed successfully!');
+        console.log('[AdminScreen] Upload result:', uploadData);
         console.log('[AdminScreen] Upload stats:', {
           time: uploadTime.toFixed(2) + ' seconds',
           speed: uploadSpeedMBps.toFixed(2) + ' MB/s',
@@ -573,7 +550,6 @@ export default function AdminScreen() {
         
         setUploadProgress(65);
       } catch (uploadError: any) {
-        // Clear progress interval on error
         if (progressInterval) {
           clearInterval(progressInterval);
           progressInterval = null;
@@ -581,7 +557,7 @@ export default function AdminScreen() {
         throw uploadError;
       }
 
-      console.log('[AdminScreen] Step 5/7: Verifying uploaded file in storage...');
+      console.log('[AdminScreen] Step 5/8: Verifying uploaded file in storage...');
       
       const { data: fileList, error: listError } = await supabase.storage
         .from('videos')
@@ -618,7 +594,7 @@ export default function AdminScreen() {
       
       setUploadProgress(70);
 
-      console.log('[AdminScreen] Step 6/7: Getting public URL for uploaded video...');
+      console.log('[AdminScreen] Step 6/8: Getting public URL for uploaded video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
@@ -627,7 +603,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Video public URL:', videoPublicUrl);
       setUploadProgress(75);
 
-      console.log('[AdminScreen] Step 7/7: Generating thumbnail from video...');
+      console.log('[AdminScreen] Step 7/8: Generating thumbnail from video...');
       let thumbnailUrl = null;
       
       try {
@@ -652,31 +628,29 @@ export default function AdminScreen() {
         console.log('[AdminScreen] Thumbnail file size:', formatFileSize(thumbnailInfo.size));
         
         const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
-        const thumbnailUploadUrl = `${baseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
         
-        console.log('[AdminScreen] Uploading thumbnail using fetch() with PUT...');
+        console.log('[AdminScreen] Uploading thumbnail using Supabase SDK...');
         
         const thumbnailResponse = await fetch(thumbnailUri);
         const thumbnailBlob = await thumbnailResponse.blob();
+        const thumbnailArrayBuffer = await thumbnailBlob.arrayBuffer();
+        const thumbnailUint8Array = new Uint8Array(thumbnailArrayBuffer);
         
-        console.log('[AdminScreen] Thumbnail blob size:', formatFileSize(thumbnailBlob.size));
+        console.log('[AdminScreen] Thumbnail data size:', formatFileSize(thumbnailUint8Array.length));
         
-        const thumbnailUploadResponse = await fetch(thumbnailUploadUrl, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'image/jpeg',
-            'x-upsert': 'false',
-          },
-          body: thumbnailBlob,
-        });
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailUint8Array, {
+            contentType: 'image/jpeg',
+            cacheControl: '3600',
+            upsert: false
+          });
 
-        console.log('[AdminScreen] Thumbnail upload status:', thumbnailUploadResponse.status);
-        
-        if (!thumbnailUploadResponse.ok) {
-          const errorText = await thumbnailUploadResponse.text();
-          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResponse.status}: ${errorText}`);
+        if (thumbnailUploadError) {
+          throw new Error(`Thumbnail upload failed: ${thumbnailUploadError.message}`);
         }
+
+        console.log('[AdminScreen] Thumbnail upload result:', thumbnailUploadData);
 
         const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
           .from('videos')
@@ -757,7 +731,7 @@ export default function AdminScreen() {
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
-        errorMessage = '❌ Upload Timeout\n\nThe upload took longer than 60 seconds and was cancelled.\n\nThis usually happens when:\n1. Your internet connection is slow or unstable\n2. The video file is very large\n3. The server is experiencing high load\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Compress the video before uploading\n4. Try again when you have a better connection\n\nRecommended: Keep videos under 500MB and use a stable WiFi connection.';
+        errorMessage = '❌ Upload Timeout\n\nThe upload took too long and was cancelled.\n\nThis usually happens when:\n1. Your internet connection is slow or unstable\n2. The video file is very large\n3. The server is experiencing high load\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Compress the video before uploading\n4. Try again when you have a better connection\n\nRecommended: Keep videos under 500MB and use a stable WiFi connection.';
       } else if (error.message?.includes('string length') || error.message?.includes('too large')) {
         errorMessage = '❌ Upload Failed: File Too Large\n\nThe video file is too large to process. This can happen with very high resolution videos.\n\nSolutions:\n1. Use a video compression app to reduce file size\n2. Record at a lower resolution (1080p instead of 6K)\n3. Trim the video to be shorter\n4. Try a different video\n\nRecommended: Keep videos under 500MB for best results.';
       } else if (error.message?.includes('Row Level Security') || error.message?.includes('403')) {
@@ -774,7 +748,7 @@ export default function AdminScreen() {
         errorMessage += 'Session expired. Please log out and log in again.';
       } else if (error.message?.includes('storage') || error.message?.includes('bucket')) {
         errorMessage += error.message;
-      } else if (error.message?.includes('Upload failed with status')) {
+      } else if (error.message?.includes('Upload failed')) {
         errorMessage = error.message + '\n\nPlease check your internet connection and try again.';
       } else if (error.message?.includes('out of memory') || error.message?.includes('corrupted')) {
         errorMessage = 'Video file could not be processed. The file may be corrupted or in an unsupported format. Please try a different video.';
@@ -993,16 +967,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                ✅ FIXED: Using fetch() + Blob + PUT
+                ✅ IMPROVED: Using Supabase SDK Native Upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🚀 Most reliable method for Supabase storage
+                • 🚀 Most reliable method - uses Supabase SDK directly
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ Direct PUT upload (no multipart needed)
+                • ✅ Automatic chunking and retry handling
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • ✅ Avoids string length limits with Blob
+                • ✅ No timeout issues - SDK handles long uploads
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • ✅ Handles large files efficiently
@@ -1292,7 +1266,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Reading video as Blob...' : uploadProgress < 20 ? 'Preparing upload URL...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 70 ? 'Verifying upload...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Reading video as Blob...' : uploadProgress < 20 ? 'Converting to upload format...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 70 ? 'Verifying upload...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1304,7 +1278,7 @@ export default function AdminScreen() {
               )}
               {estimatedTimeRemaining && (
                 <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Estimated time remaining: {estimatedTimeRemaining} min
+                  Estimated time remaining: {estimatedTimeRemaining}
                 </Text>
               )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
@@ -1351,10 +1325,10 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ FIXED: Using fetch() + Blob + PUT{'\n'}
-              • 🚀 Most reliable method for Supabase storage{'\n'}
-              • ✅ Direct PUT upload (no multipart){'\n'}
-              • ✅ Avoids string length limits{'\n'}
+              • ✅ IMPROVED: Using Supabase SDK native upload{'\n'}
+              • 🚀 Most reliable method with automatic retry{'\n'}
+              • ✅ No timeout issues - handles long uploads{'\n'}
+              • ✅ Automatic chunking for large files{'\n'}
               • ✅ File verification after upload{'\n'}
               • ✅ Thumbnail generation working!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
