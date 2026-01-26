@@ -658,6 +658,12 @@ export default function AdminScreen() {
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
 
+    // Create a temporary directory for chunk files
+    const tempDir = `${FileSystem.cacheDirectory}video_chunks/`;
+    await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }).catch(() => {
+      console.log('[AdminScreen] Temp directory already exists');
+    });
+
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (uploadAbortControllerRef.current) {
         throw new Error('Upload cancelled by user');
@@ -677,6 +683,7 @@ export default function AdminScreen() {
         try {
           console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1} from position ${start}, length ${chunkSize}`);
           
+          // Read chunk as base64
           const chunkData = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
@@ -684,38 +691,54 @@ export default function AdminScreen() {
           });
 
           console.log(`[AdminScreen] Chunk ${chunkIndex + 1} base64 length:`, chunkData.length);
-          console.log(`[AdminScreen] Expected binary size: ~${Math.floor(chunkData.length * 0.75)} bytes`);
 
-          // Convert base64 to Uint8Array properly
-          const binaryData = base64ToUint8Array(chunkData);
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} actual binary size:`, binaryData.length, 'bytes');
-
-          if (binaryData.length === 0) {
-            throw new Error(`Chunk ${chunkIndex + 1} is empty after conversion`);
+          if (!chunkData || chunkData.length === 0) {
+            throw new Error(`Chunk ${chunkIndex + 1} is empty`);
           }
 
-          // Create a proper Blob from the Uint8Array
-          const blob = new Blob([binaryData], { type: 'application/octet-stream' });
-          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} blob size:`, blob.size, 'bytes');
+          // Write chunk to a temporary file
+          const tempChunkPath = `${tempDir}chunk_${chunkIndex}.bin`;
+          await FileSystem.writeAsStringAsync(tempChunkPath, chunkData, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-          if (blob.size === 0) {
-            throw new Error(`Chunk ${chunkIndex + 1} blob is empty`);
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} written to temp file:`, tempChunkPath);
+
+          // Verify the temp file was created
+          const tempFileInfo = await FileSystem.getInfoAsync(tempChunkPath);
+          if (!tempFileInfo.exists || !('size' in tempFileInfo) || tempFileInfo.size === 0) {
+            throw new Error(`Chunk ${chunkIndex + 1} temp file is empty or doesn't exist`);
           }
+
+          console.log(`[AdminScreen] Chunk ${chunkIndex + 1} temp file size:`, formatFileSize(tempFileInfo.size));
 
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           console.log(`[AdminScreen] Uploading to Supabase as:`, chunkFileName);
-          
-          const { error: uploadError } = await supabase.storage
-            .from('videos')
-            .upload(chunkFileName, blob, {
-              contentType: 'application/octet-stream',
-              upsert: true,
-            });
 
-          if (uploadError) {
-            console.error(`[AdminScreen] Supabase upload error for chunk ${chunkIndex + 1}:`, uploadError);
-            throw uploadError;
+          // Get the upload URL from Supabase
+          const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
+          console.log(`[AdminScreen] Upload URL:`, uploadUrl);
+
+          // Use FileSystem.uploadAsync to upload the chunk file directly
+          const uploadResult = await FileSystem.uploadAsync(uploadUrl, tempChunkPath, {
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/octet-stream',
+              'x-upsert': 'true',
+            },
+          });
+
+          console.log(`[AdminScreen] Upload result status:`, uploadResult.status);
+          console.log(`[AdminScreen] Upload result body:`, uploadResult.body);
+
+          if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+            throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
           }
+
+          // Clean up temp file
+          await FileSystem.deleteAsync(tempChunkPath, { idempotent: true });
 
           chunkUploaded = true;
           const progress = Math.round(((chunkIndex + 1) / totalChunks) * 60) + 15;
@@ -735,6 +758,9 @@ export default function AdminScreen() {
         }
       }
     }
+
+    // Clean up temp directory
+    await FileSystem.deleteAsync(tempDir, { idempotent: true });
 
     if (totalChunks > 1) {
       console.log('[AdminScreen] Merging chunks on server...');
