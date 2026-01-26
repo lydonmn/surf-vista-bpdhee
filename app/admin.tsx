@@ -492,7 +492,21 @@ export default function AdminScreen() {
       const startTime = Date.now();
       
       console.log('[AdminScreen] Converting Blob to ArrayBuffer for Supabase upload...');
-      const arrayBuffer = await videoBlob.arrayBuffer();
+      console.log('[AdminScreen] Using FileReader for React Native compatibility...');
+      
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result instanceof ArrayBuffer) {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed to read Blob as ArrayBuffer'));
+          }
+        };
+        reader.onerror = () => reject(new Error('FileReader error'));
+        reader.readAsArrayBuffer(videoBlob);
+      });
+      
       const uint8Array = new Uint8Array(arrayBuffer);
       
       console.log('[AdminScreen] ✓ Converted to Uint8Array:', formatFileSize(uint8Array.length));
@@ -633,7 +647,21 @@ export default function AdminScreen() {
         
         const thumbnailResponse = await fetch(thumbnailUri);
         const thumbnailBlob = await thumbnailResponse.blob();
-        const thumbnailArrayBuffer = await thumbnailBlob.arrayBuffer();
+        
+        console.log('[AdminScreen] Converting thumbnail Blob to ArrayBuffer using FileReader...');
+        const thumbnailArrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (reader.result instanceof ArrayBuffer) {
+              resolve(reader.result);
+            } else {
+              reject(new Error('Failed to read thumbnail Blob as ArrayBuffer'));
+            }
+          };
+          reader.onerror = () => reject(new Error('FileReader error for thumbnail'));
+          reader.readAsArrayBuffer(thumbnailBlob);
+        });
+        
         const thumbnailUint8Array = new Uint8Array(thumbnailArrayBuffer);
         
         console.log('[AdminScreen] Thumbnail data size:', formatFileSize(thumbnailUint8Array.length));
