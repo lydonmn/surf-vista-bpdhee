@@ -8,7 +8,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
-import { File, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { fetch as expoFetch } from 'expo/fetch';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
@@ -375,9 +375,13 @@ export default function AdminScreen() {
         duration: assetDuration
       });
       
-      // Create File instance from URI
-      const file = new File(uri);
-      const fileSize = file.size;
+      // Get file info using legacy API
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        throw new Error('Video file not found');
+      }
+      
+      const fileSize = fileInfo.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       let width = assetWidth || 0;
@@ -463,14 +467,18 @@ export default function AdminScreen() {
     setCompressionProgress(0);
 
     try {
-      const file = new File(videoUri);
-      const originalSize = file.size;
+      const fileInfo = await FileSystem.getInfoAsync(videoUri);
+      if (!fileInfo.exists) {
+        throw new Error('Video file not found');
+      }
+      
+      const originalSize = fileInfo.size || 0;
       console.log('[AdminScreen] Original file size:', formatFileSize(originalSize));
 
-      const outputFile = new File(Paths.cache, `compressed_${Date.now()}.mp4`);
+      const outputUri = `${FileSystem.cacheDirectory}compressed_${Date.now()}.mp4`;
       
       console.log('[AdminScreen] Starting compression with FFmpeg-like quality settings...');
-      console.log('[AdminScreen] Output URI:', outputFile.uri);
+      console.log('[AdminScreen] Output URI:', outputUri);
 
       const qualityMap = {
         '2K': 'medium',
@@ -489,11 +497,15 @@ export default function AdminScreen() {
 
       setCompressionProgress(30);
       
-      file.copy(outputFile);
+      await FileSystem.copyAsync({
+        from: videoUri,
+        to: outputUri
+      });
 
       setCompressionProgress(70);
 
-      const compressedSize = outputFile.size;
+      const compressedInfo = await FileSystem.getInfoAsync(outputUri);
+      const compressedSize = compressedInfo.size || 0;
       console.log('[AdminScreen] Compressed file size:', formatFileSize(compressedSize));
       
       const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
@@ -502,9 +514,9 @@ export default function AdminScreen() {
       setCompressionProgress(100);
       
       console.log('[AdminScreen] ✓ Video compression completed successfully');
-      console.log('[AdminScreen] Compressed video URI:', outputFile.uri);
+      console.log('[AdminScreen] Compressed video URI:', outputUri);
 
-      return outputFile.uri;
+      return outputUri;
     } catch (error) {
       console.error('[AdminScreen] Error compressing video:', error);
       throw new Error(`Video compression failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -629,13 +641,8 @@ export default function AdminScreen() {
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
 
-    // Create File instance for the video
-    const videoFile = new File(videoUri);
-    console.log('[AdminScreen] Created File instance, size:', videoFile.size);
-
     // ✅ OPTIMIZATION: Upload chunks in parallel (2 at a time) for faster uploads
     const PARALLEL_UPLOADS = 2;
-    const uploadPromises: Promise<void>[] = [];
     
     const uploadChunk = async (chunkIndex: number) => {
       if (uploadAbortControllerRef.current) {
@@ -658,11 +665,20 @@ export default function AdminScreen() {
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
-          // ✅ OPTIMIZATION: Read chunk directly using File.read() - NO full file download
-          const chunkData = videoFile.read({
+          // ✅ OPTIMIZATION: Read chunk directly using FileSystem.readAsStringAsync with base64 encoding
+          const chunkDataBase64 = await FileSystem.readAsStringAsync(videoUri, {
+            encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize
           });
+          
+          // Convert base64 to ArrayBuffer
+          const binaryString = atob(chunkDataBase64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const chunkData = bytes.buffer;
           
           console.log(`[AdminScreen] Read chunk ${chunkIndex + 1} directly from file (${chunkData.byteLength} bytes)`);
 
@@ -843,12 +859,12 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
-      const videoFile = new File(videoToUpload);
-      if (!videoFile.exists || videoFile.size === 0) {
+      const fileInfo = await FileSystem.getInfoAsync(videoToUpload);
+      if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
         throw new Error('Video file not found or is empty');
       }
       
-      console.log('[AdminScreen] ✓ File verified:', formatFileSize(videoFile.size));
+      console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
       console.log('[AdminScreen] Step 2/6: Getting auth session...');
@@ -861,7 +877,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video file using DIRECT FETCH (NO Blob creation)...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using DIRECT STREAMING (NO Blob creation)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl: dummyUrl } } = supabase.storage
@@ -869,7 +885,7 @@ export default function AdminScreen() {
         .getPublicUrl('dummy');
       const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
 
-      await uploadChunkedVideo(videoToUpload, fileName, videoFile.size, currentSession.access_token, supabaseUrl);
+      await uploadChunkedVideo(videoToUpload, fileName, fileInfo.size, currentSession.access_token, supabaseUrl);
 
       console.log('[AdminScreen] ✓ Video uploaded successfully');
       setUploadProgress(75);
@@ -1023,7 +1039,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: videoFile.size,
+          file_size_bytes: fileInfo.size,
           uploaded_by: user?.id
         });
 
