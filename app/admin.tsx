@@ -493,8 +493,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Using supabase.storage.from().upload() with resumable upload');
       
       const startTime = Date.now();
-      let lastProgressTime = Date.now();
-      let lastProgressBytes = 0;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
@@ -523,7 +521,7 @@ export default function AdminScreen() {
         .from('videos')
         .getPublicUrl(fileName);
 
-      console.log('[AdminScreen] Public URL:', videoPublicUrl);
+      console.log('[AdminScreen] Video public URL:', videoPublicUrl);
       setUploadProgress(75);
 
       console.log('[AdminScreen] Step 5/6: Generating thumbnail...');
@@ -532,6 +530,7 @@ export default function AdminScreen() {
       try {
         const thumbnailTime = videoMetadata.duration > 0 ? Math.min((videoMetadata.duration * 1000) / 3, 5000) : 1000;
         
+        console.log('[AdminScreen] Generating thumbnail at time:', thumbnailTime, 'ms');
         const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(
           selectedVideo,
           {
@@ -540,38 +539,58 @@ export default function AdminScreen() {
           }
         );
         
+        console.log('[AdminScreen] Thumbnail generated at:', thumbnailUri);
+        
         const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
         if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
           throw new Error('Thumbnail file is empty');
         }
         
-        console.log('[AdminScreen] Uploading thumbnail...');
-        const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
-        const thumbnailUploadUrl = `${supabaseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
+        console.log('[AdminScreen] Thumbnail file size:', formatFileSize(thumbnailInfo.size));
         
-        const thumbnailUploadResult = await FileSystem.uploadAsync(thumbnailUploadUrl, thumbnailUri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-          },
-        });
-
-        if (thumbnailUploadResult.status !== 200 && thumbnailUploadResult.status !== 201) {
-          throw new Error(`Thumbnail upload failed with status ${thumbnailUploadResult.status}`);
+        console.log('[AdminScreen] Reading thumbnail as blob...');
+        const thumbnailResponse = await fetch(thumbnailUri);
+        if (!thumbnailResponse.ok) {
+          throw new Error(`Failed to read thumbnail: ${thumbnailResponse.status}`);
         }
+        const thumbnailBlob = await thumbnailResponse.blob();
+        
+        console.log('[AdminScreen] Thumbnail blob created:', {
+          size: thumbnailBlob.size,
+          type: thumbnailBlob.type
+        });
+        
+        if (thumbnailBlob.size === 0) {
+          throw new Error('Thumbnail blob is empty');
+        }
+        
+        console.log('[AdminScreen] Uploading thumbnail to Supabase Storage...');
+        const thumbnailFileName = `uploads/thumbnail_${Date.now()}.jpg`;
+        
+        const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'image/jpeg',
+          });
+
+        if (thumbnailUploadError) {
+          console.error('[AdminScreen] Thumbnail upload error:', thumbnailUploadError);
+          throw new Error(`Thumbnail upload failed: ${thumbnailUploadError.message}`);
+        }
+
+        console.log('[AdminScreen] Thumbnail upload data:', thumbnailUploadData);
 
         const { data: { publicUrl: thumbnailPublicUrl } } = supabase.storage
           .from('videos')
           .getPublicUrl(thumbnailFileName);
         
         thumbnailUrl = thumbnailPublicUrl;
-        console.log('[AdminScreen] ✓ Thumbnail uploaded');
-      } catch (thumbnailError) {
+        console.log('[AdminScreen] ✓ Thumbnail uploaded successfully:', thumbnailUrl);
+      } catch (thumbnailError: any) {
         console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
-        console.log('[AdminScreen] Continuing without thumbnail');
+        console.log('[AdminScreen] Continuing without thumbnail - video will use placeholder');
       }
       
       setUploadProgress(90);
@@ -593,10 +612,11 @@ export default function AdminScreen() {
         .select();
 
       if (dbError) {
+        console.error('[AdminScreen] Database error:', dbError);
         throw new Error(`Database error: ${dbError.message}`);
       }
 
-      console.log('[AdminScreen] ✓ Video record created');
+      console.log('[AdminScreen] ✓ Video record created:', insertedData);
       setUploadProgress(100);
 
       console.log('[AdminScreen] ========== UPLOAD COMPLETE ==========');
@@ -891,7 +911,7 @@ export default function AdminScreen() {
                 • Supports up to 6K resolution videos
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic thumbnail generation
+                • Automatic thumbnail generation ✓ FIXED
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
@@ -1235,10 +1255,10 @@ export default function AdminScreen() {
               • Reads file as blob - stable and reliable!{'\n'}
               • No more stalling at 15% - fixed!{'\n'}
               • Handles large files without crashes{'\n'}
+              • ✓ Thumbnail generation fixed!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Perfect for large 6K videos!{'\n'}
-              • Thumbnail is generated automatically{'\n'}
               • Video will be available immediately after upload
             </Text>
           </View>
