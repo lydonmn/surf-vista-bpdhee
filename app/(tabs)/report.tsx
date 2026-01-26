@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,7 +38,7 @@ export default function ReportScreen() {
     return true;
   };
 
-  const hasValidSurfData = (data: any) => {
+  const hasValidSurfData = useCallback((data: any) => {
     if (!data) return false;
     
     const surfHeight = data.surf_height || data.wave_height;
@@ -50,7 +50,7 @@ export default function ReportScreen() {
     const hasValidSwellDirection = isValidValue(swellDirection);
     
     return hasValidSurfHeight && hasValidWavePeriod && hasValidSwellDirection;
-  };
+  }, []);
 
   const todayDate = useMemo(() => getESTDate(), []);
 
@@ -83,7 +83,7 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [surfReports, todayDate, hasValidSurfData]);
+  }, [surfReports, todayDate]);
 
   const lastValidReport = useMemo(() => {
     const sortedReports = [...surfReports].sort((a, b) => {
@@ -103,7 +103,7 @@ export default function ReportScreen() {
     });
     
     return validReport;
-  }, [surfReports]);
+  }, [surfReports, hasValidSurfData]);
 
   const lastReportWithNarrative = useMemo(() => {
     const sortedReports = [...surfReports].sort((a, b) => {

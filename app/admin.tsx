@@ -34,8 +34,8 @@ type UploadQuality = '2K' | '4K' | 'Original';
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
-const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB chunks
+const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024;
+const CHUNK_SIZE = 5 * 1024 * 1024;
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 
@@ -375,7 +375,6 @@ export default function AdminScreen() {
         duration: assetDuration
       });
       
-      // Get file info using legacy API
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (!fileInfo.exists) {
         throw new Error('Video file not found');
@@ -636,12 +635,71 @@ export default function AdminScreen() {
   ): Promise<void> => {
     console.log('[AdminScreen] ========== STARTING OPTIMIZED STREAMING UPLOAD ==========');
     console.log('[AdminScreen] File size:', formatFileSize(fileSize));
+    
+    const LARGE_FILE_THRESHOLD = 200 * 1024 * 1024;
+    
+    if (fileSize > LARGE_FILE_THRESHOLD) {
+      console.log('[AdminScreen] Large file detected - using single upload (no chunking)');
+      console.log('[AdminScreen] This will take longer but avoids merge failures');
+      
+      setUploadStatus('Uploading large video file...');
+      setUploadProgress(10);
+      
+      try {
+        console.log('[AdminScreen] Reading entire file...');
+        const fileDataBase64 = await FileSystem.readAsStringAsync(videoUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        setUploadProgress(30);
+        setUploadStatus('Converting file data...');
+        
+        console.log('[AdminScreen] Converting to binary...');
+        const binaryString = atob(fileDataBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const fileData = bytes.buffer;
+        
+        setUploadProgress(50);
+        setUploadStatus('Uploading video (this may take several minutes)...');
+        
+        console.log('[AdminScreen] Uploading entire file...');
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+        
+        const uploadResponse = await expoFetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/octet-stream',
+            'x-upsert': 'true',
+          },
+          body: fileData,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.error('[AdminScreen] Upload error:', errorText);
+          throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
+        }
+
+        setUploadProgress(90);
+        console.log('[AdminScreen] ✓ Large file uploaded successfully');
+        return;
+        
+      } catch (error) {
+        console.error('[AdminScreen] Large file upload failed:', error);
+        throw new Error(`Large file upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    console.log('[AdminScreen] Using chunked upload with server-side merge');
     console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
     
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     console.log('[AdminScreen] Total chunks:', totalChunks);
 
-    // ✅ OPTIMIZATION: Upload chunks in parallel (2 at a time) for faster uploads
     const PARALLEL_UPLOADS = 2;
     
     const uploadChunk = async (chunkIndex: number) => {
@@ -665,14 +723,12 @@ export default function AdminScreen() {
           const chunkFileName = totalChunks === 1 ? fileName : `${fileName}.part${chunkIndex}`;
           const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
           
-          // ✅ OPTIMIZATION: Read chunk directly using FileSystem.readAsStringAsync with base64 encoding
           const chunkDataBase64 = await FileSystem.readAsStringAsync(videoUri, {
             encoding: FileSystem.EncodingType.Base64,
             position: start,
             length: chunkSize
           });
           
-          // Convert base64 to ArrayBuffer
           const binaryString = atob(chunkDataBase64);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
@@ -682,7 +738,6 @@ export default function AdminScreen() {
           
           console.log(`[AdminScreen] Read chunk ${chunkIndex + 1} directly from file (${chunkData.byteLength} bytes)`);
 
-          // Upload using expo/fetch with ArrayBuffer
           const uploadResponse = await expoFetch(uploadUrl, {
             method: 'POST',
             headers: {
@@ -723,7 +778,6 @@ export default function AdminScreen() {
       }
     };
 
-    // Upload chunks in parallel batches
     for (let i = 0; i < totalChunks; i += PARALLEL_UPLOADS) {
       const batch = [];
       for (let j = 0; j < PARALLEL_UPLOADS && i + j < totalChunks; j++) {
@@ -898,12 +952,10 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Video public URL:', videoPublicUrl);
 
-      // ✅ OPTIMIZATION: Generate thumbnail and verify video in parallel
       console.log('[AdminScreen] Step 5/6: Generating thumbnail and verifying video in parallel...');
       setUploadStatus('Generating thumbnail and verifying video...');
       
       const [thumbnailUrl, verificationResult] = await Promise.all([
-        // Thumbnail generation
         (async () => {
           try {
             const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoToUpload, {
@@ -938,7 +990,6 @@ export default function AdminScreen() {
           }
         })(),
         
-        // Video verification
         (async () => {
           try {
             const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
@@ -967,7 +1018,6 @@ export default function AdminScreen() {
             console.log('[AdminScreen] ✓ Video is accessible and has correct content-type');
             console.log('[AdminScreen] ✓ Video file size:', formatFileSize(parseInt(contentLength)));
             
-            // Quick MP4 header check
             console.log('[AdminScreen] Downloading first 32 bytes to verify MP4 format...');
             const partialResponse = await fetch(videoPublicUrl, {
               headers: {
@@ -1012,7 +1062,6 @@ export default function AdminScreen() {
 
       setUploadProgress(85);
 
-      // Check verification result
       if (verificationResult && !verificationResult.success && verificationResult.warning) {
         Alert.alert(
           'Warning: Video Format Issue',
@@ -1304,28 +1353,28 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ⚡ Optimized Streaming Upload (FAST)
+                ⚡ Hybrid Upload Strategy (RELIABLE)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Files under 200 MB: Fast chunked upload with parallel processing
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • Files over 200 MB: Single upload (no merge failures)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Direct file streaming - NO full file download
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Parallel chunk uploads (2x faster)
+                • Parallel chunk uploads (2x faster for small files)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Parallel thumbnail generation & verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Memory-optimized batch merging on server
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Uploads large videos in 5 MB chunks
+                • Ultra-optimized streaming merge (no memory buffering)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic retry on chunk failure
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Server-side chunk merging with MP4 validation
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Automatic video verification after upload
@@ -1702,16 +1751,17 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ Optimized streaming upload (2x faster){'\n'}
-              • ⚡ Parallel chunk uploads{'\n'}
-              • ⚡ Parallel thumbnail generation{'\n'}
+              • ⚡ Files under 200 MB: Fast chunked upload{'\n'}
+              • ⚡ Files over 200 MB: Single upload (no merge){'\n'}
+              • ⚡ Parallel processing for maximum speed{'\n'}
               • ✅ Direct file streaming (NO full download){'\n'}
-              • ✅ Memory-optimized server merging{'\n'}
+              • ✅ Ultra-optimized streaming merge{'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • ✅ Automatic video verification{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
+              • Large files (over 200 MB) may take 5-10 minutes{'\n'}
               • Stay in one location (avoid network switching)
             </Text>
           </View>

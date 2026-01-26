@@ -2,7 +2,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { colors } from '@/styles/commonStyles';
 import { useAuth } from '@/contexts/AuthContext';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -147,18 +147,6 @@ export default function AdminCronLogsScreen() {
   const [buoyStatus, setBuoyStatus] = useState<BuoyStatus | null>(null);
   const [testingFunction, setTestingFunction] = useState(false);
 
-  useEffect(() => {
-    if (profile && !profile.is_admin) {
-      console.log('User is not admin, redirecting to home');
-      router.replace('/');
-      return;
-    }
-    
-    if (profile?.is_admin) {
-      loadDiagnostics();
-    }
-  }, [profile, loadDiagnostics]);
-
   const getESTDate = (): string => {
     const now = new Date();
     const estDateString = now.toLocaleString('en-US', { 
@@ -172,7 +160,7 @@ export default function AdminCronLogsScreen() {
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   };
 
-  const loadDiagnostics = async () => {
+  const loadDiagnostics = useCallback(async () => {
     console.log('Admin Cron Logs: Loading diagnostics');
     setLoading(true);
     
@@ -180,7 +168,6 @@ export default function AdminCronLogsScreen() {
       const today = getESTDate();
       console.log('Admin Cron Logs: Today date (EST):', today);
 
-      // Check today's report
       const { data: reportData, error: reportError } = await supabase
         .from('surf_reports')
         .select('*')
@@ -205,7 +192,6 @@ export default function AdminCronLogsScreen() {
         hasValidWaveData: hasValidWaveData,
       });
 
-      // Check buoy data
       const { data: buoyData, error: buoyError } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -236,7 +222,19 @@ export default function AdminCronLogsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (profile && !profile.is_admin) {
+      console.log('User is not admin, redirecting to home');
+      router.replace('/');
+      return;
+    }
+    
+    if (profile?.is_admin) {
+      loadDiagnostics();
+    }
+  }, [profile, loadDiagnostics]);
 
   const testDailyReport = async () => {
     console.log('Admin Cron Logs: Testing daily report generation');
