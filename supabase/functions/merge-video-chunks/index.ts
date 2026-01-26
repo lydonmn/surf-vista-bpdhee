@@ -244,9 +244,11 @@ serve(async (req) => {
     }
 
     // Get public URL
-    const { data: { publicUrl } } = supabase.storage
+    const publicUrlData = supabase.storage
       .from('videos')
       .getPublicUrl(fileName);
+    
+    const publicUrl = publicUrlData.data.publicUrl;
 
     console.log('✓ Public URL generated:', publicUrl);
 
