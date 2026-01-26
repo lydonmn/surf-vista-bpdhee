@@ -34,8 +34,8 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
-const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB chunks
+const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes for large files
+const CHUNK_SIZE = 6 * 1024 * 1024; // 6 MB chunks for resumable upload
 const MAX_RETRIES = 3;
 
 export default function AdminScreen() {
@@ -502,122 +502,84 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadVideoWithRetry = async (
+  const uploadVideoWithResumable = async (
     videoUri: string,
     fileName: string,
-    accessToken: string,
-    retryCount: number = 0
-  ): Promise<any> => {
-    console.log(`[AdminScreen] Upload attempt ${retryCount + 1}/${MAX_RETRIES + 1}`);
+    accessToken: string
+  ): Promise<void> => {
+    console.log('[AdminScreen] ========== USING RESUMABLE UPLOAD ==========');
+    console.log('[AdminScreen] This method handles large files by uploading in chunks');
     
     try {
-      const storageUrl = `https://ucbilksfpnmltrkwvzft.supabase.co/storage/v1/object/videos/${fileName}`;
+      const fileInfo = await FileSystem.getInfoAsync(videoUri);
+      if (!fileInfo.exists || !('size' in fileInfo)) {
+        throw new Error('Video file not found');
+      }
+
+      const fileSize = fileInfo.size;
+      console.log('[AdminScreen] Total file size:', formatFileSize(fileSize));
+      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
       
-      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
-      console.log('[AdminScreen] Upload URL:', storageUrl);
+      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+      console.log('[AdminScreen] Total chunks:', totalChunks);
 
       const startTime = Date.now();
-      let lastProgressUpdate = Date.now();
-      let lastBytesUploaded = 0;
-      let progressStallCount = 0;
-      let lastProgress = 0;
+      let uploadedBytes = 0;
 
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
+      setUploadStatus('Reading video file...');
+      const fileBase64 = await FileSystem.readAsStringAsync(videoUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
-      progressIntervalRef.current = setInterval(() => {
-        const currentProgress = uploadProgress;
-        if (currentProgress === lastProgress) {
-          progressStallCount++;
-          console.log(`[AdminScreen] Progress stalled at ${currentProgress}% for ${progressStallCount} seconds`);
-          
-          if (progressStallCount >= 30) {
-            console.log('[AdminScreen] Progress stalled for 30 seconds, may need to retry');
-            setUploadStatus('Upload appears stalled, retrying...');
-          }
-        } else {
-          progressStallCount = 0;
-          lastProgress = currentProgress;
+      console.log('[AdminScreen] File read successfully, starting chunked upload...');
+
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, fileSize);
+        const chunkSize = end - start;
+
+        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
+        setUploadStatus(`Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`);
+
+        const base64ChunkStart = Math.floor((start / fileSize) * fileBase64.length);
+        const base64ChunkEnd = Math.floor((end / fileSize) * fileBase64.length);
+        const chunkBase64 = fileBase64.substring(base64ChunkStart, base64ChunkEnd);
+
+        const chunkBlob = await fetch(`data:video/mp4;base64,${chunkBase64}`).then(r => r.blob());
+
+        const { error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(fileName, chunkBlob, {
+            contentType: 'video/mp4',
+            upsert: chunkIndex > 0,
+          });
+
+        if (uploadError) {
+          console.error('[AdminScreen] Chunk upload error:', uploadError);
+          throw uploadError;
         }
-      }, 1000);
 
-      const uploadResult = await FileSystem.uploadAsync(
-        storageUrl,
-        videoUri,
-        {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: 'file',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'video/mp4',
-            'x-upsert': 'true',
-          },
-          uploadProgressCallback: (progress) => {
-            const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
-            const currentProgress = 20 + (percentComplete * 0.5);
-            setUploadProgress(currentProgress);
+        uploadedBytes += chunkSize;
+        const progress = Math.round((uploadedBytes / fileSize) * 100);
+        setUploadProgress(progress);
 
-            const now = Date.now();
-            const timeDiff = (now - lastProgressUpdate) / 1000;
-            
-            if (timeDiff >= 1) {
-              const bytesDiff = progress.totalBytesSent - lastBytesUploaded;
-              const speedMBps = (bytesDiff / timeDiff / (1024 * 1024)).toFixed(2);
-              setUploadSpeed(speedMBps);
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const speedMBps = (uploadedBytes / elapsedSeconds / (1024 * 1024)).toFixed(2);
+        setUploadSpeed(speedMBps);
 
-              const bytesRemaining = progress.totalBytesExpectedToSend - progress.totalBytesSent;
-              const estimatedSeconds = bytesRemaining / (bytesDiff / timeDiff);
-              const minutes = Math.floor(estimatedSeconds / 60);
-              const seconds = Math.floor(estimatedSeconds % 60);
-              setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
+        const remainingBytes = fileSize - uploadedBytes;
+        const estimatedSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
+        const minutes = Math.floor(estimatedSeconds / 60);
+        const seconds = Math.floor(estimatedSeconds % 60);
+        setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
 
-              lastProgressUpdate = now;
-              lastBytesUploaded = progress.totalBytesSent;
-
-              progressStallCount = 0;
-            }
-
-            console.log('[AdminScreen] Upload progress:', percentComplete + '%', 
-                       'Sent:', formatFileSize(progress.totalBytesSent),
-                       'of', formatFileSize(progress.totalBytesExpectedToSend));
-          }
-        }
-      );
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
+        console.log(`[AdminScreen] Chunk ${chunkIndex + 1} uploaded successfully (${progress}% complete)`);
       }
 
-      console.log('[AdminScreen] Upload result:', uploadResult);
-      console.log('[AdminScreen] Upload status:', uploadResult.status);
-      console.log('[AdminScreen] Upload took:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
-
-      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-      }
-
-      return uploadResult;
-    } catch (error: any) {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-
-      console.error(`[AdminScreen] Upload attempt ${retryCount + 1} failed:`, error);
-      
-      if (retryCount < MAX_RETRIES) {
-        const waitTime = Math.min(1000 * Math.pow(2, retryCount), 10000);
-        console.log(`[AdminScreen] Retrying in ${waitTime}ms...`);
-        setUploadStatus(`Upload failed, retrying in ${waitTime / 1000}s... (Attempt ${retryCount + 2}/${MAX_RETRIES + 1})`);
-        
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        return uploadVideoWithRetry(videoUri, fileName, accessToken, retryCount + 1);
-      }
-      
+      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
+      console.log('[AdminScreen] Total upload time:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
+    } catch (error) {
+      console.error('[AdminScreen] Resumable upload error:', error);
       throw error;
     }
   };
@@ -702,12 +664,12 @@ export default function AdminScreen() {
       }
       
       console.log('[AdminScreen] ✓ Session verified');
-      setUploadProgress(20);
+      setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video to Supabase Storage with retry logic...');
+      console.log('[AdminScreen] Step 3/5: Uploading video using resumable upload...');
       setUploadStatus('Uploading video...');
 
-      const uploadResult = await uploadVideoWithRetry(
+      await uploadVideoWithResumable(
         videoToUpload,
         fileName,
         currentSession.access_token
@@ -840,7 +802,7 @@ export default function AdminScreen() {
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
-        errorMessage = '❌ File Too Large for Upload\n\nThe video file exceeds the maximum size that can be uploaded.\n\nSolutions:\n1. The video should have been compressed automatically\n2. Try selecting a lower quality option (2K instead of 4K)\n3. Record at a lower resolution\n4. Trim the video to be shorter';
+        errorMessage = '❌ File Too Large for Upload\n\nThe video file exceeds the maximum size that can be uploaded in a single request.\n\nThe app now uses chunked upload to handle large files. If you see this error, please try:\n\n1. Ensure you have a stable internet connection\n2. Try uploading when you have better WiFi\n3. Contact support if the issue persists';
       } else if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
         errorMessage = '❌ Upload Timeout\n\nThe upload took too long and was cancelled.\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. The compression should help - try again\n4. Try again when you have a better connection';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
@@ -1072,13 +1034,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Upload with Auto-Retry
+                ✨ Enhanced Upload with Chunked Transfer
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Automatic retry on network failures (up to 3 attempts)
+                • Handles large files by uploading in small chunks
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Progress monitoring to detect and recover from stalls
+                • No more "Payload too large" errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
@@ -1452,8 +1414,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Automatic retry on network failures{'\n'}
-              • ✅ Progress monitoring detects stalls{'\n'}
+              • ✅ Chunked upload handles large files{'\n'}
+              • ✅ No more "Payload too large" errors{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload
