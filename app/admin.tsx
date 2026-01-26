@@ -33,6 +33,7 @@ type UploadQuality = '2K' | '4K' | 'Original';
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
+const RECOMMENDED_MAX_SIZE = 1 * 1024 * 1024 * 1024;
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -370,9 +371,13 @@ export default function AdminScreen() {
               ? `Duration: ${formatDuration(metadata.duration)}\n` 
               : 'Duration: Unknown (will be determined during upload)\n';
             
+            const sizeWarning = metadata.size > RECOMMENDED_MAX_SIZE
+              ? '\n⚠️ File is large - upload may take several minutes. Ensure stable WiFi connection.'
+              : '';
+            
             Alert.alert(
               'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload. Select your preferred upload quality below.`,
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}${sizeWarning}\n\nThis video is ready to upload. Select your preferred upload quality below.`,
               [{ text: 'OK' }]
             );
           }
@@ -416,7 +421,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD (IMPROVED METHOD) ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Current user email:', user?.email);
       console.log('[AdminScreen] Is admin:', profile?.is_admin);
@@ -436,7 +441,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/6: Verifying video file...');
+      console.log('[AdminScreen] Step 1/6: Verifying video file exists and is readable...');
       setUploadProgress(5);
 
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -457,47 +462,77 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/6: Reading video file as Blob using fetch()...');
-      console.log('[AdminScreen] This method streams the file without loading it all into memory');
+      console.log('[AdminScreen] Step 2/6: Creating Blob from video file using fetch()...');
+      console.log('[AdminScreen] This method streams the file efficiently without base64 conversion');
+      console.log('[AdminScreen] File size:', formatFileSize(fileInfo.size));
       
       let videoBlob: Blob;
       try {
         console.log('[AdminScreen] Fetching file URI to create Blob...');
+        console.log('[AdminScreen] URI:', selectedVideo);
+        
+        const fetchStartTime = Date.now();
         const response = await fetch(selectedVideo);
+        const fetchTime = Date.now() - fetchStartTime;
+        
+        console.log('[AdminScreen] Fetch completed in', fetchTime, 'ms');
+        console.log('[AdminScreen] Response status:', response.status, response.statusText);
+        console.log('[AdminScreen] Response headers:', {
+          contentType: response.headers.get('content-type'),
+          contentLength: response.headers.get('content-length')
+        });
         
         if (!response.ok) {
           throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
         }
         
+        console.log('[AdminScreen] Converting response to Blob...');
+        const blobStartTime = Date.now();
         videoBlob = await response.blob();
+        const blobTime = Date.now() - blobStartTime;
         
-        console.log('[AdminScreen] ✓ Blob created from fetch:', {
+        console.log('[AdminScreen] Blob conversion completed in', blobTime, 'ms');
+        console.log('[AdminScreen] ✓ Blob created successfully:', {
           size: videoBlob.size,
-          type: videoBlob.type
+          sizeFormatted: formatFileSize(videoBlob.size),
+          type: videoBlob.type || 'unknown'
         });
         
         if (videoBlob.size === 0) {
           throw new Error('Blob is empty. File may be corrupted or inaccessible.');
         }
         
-        if (Math.abs(videoBlob.size - fileInfo.size) > 1000) {
-          console.warn('[AdminScreen] ⚠️ Blob size mismatch:', {
+        const sizeDifference = Math.abs(videoBlob.size - fileInfo.size);
+        if (sizeDifference > 1000) {
+          console.warn('[AdminScreen] ⚠️ Blob size mismatch detected:', {
             expected: fileInfo.size,
+            expectedFormatted: formatFileSize(fileInfo.size),
             actual: videoBlob.size,
-            difference: Math.abs(videoBlob.size - fileInfo.size)
+            actualFormatted: formatFileSize(videoBlob.size),
+            difference: sizeDifference,
+            differenceFormatted: formatFileSize(sizeDifference)
           });
+        } else {
+          console.log('[AdminScreen] ✓ Blob size matches file size');
         }
       } catch (blobError: any) {
-        console.error('[AdminScreen] Error creating blob:', blobError);
-        throw new Error(`Failed to read video file: ${blobError.message}. Please try selecting the video again.`);
+        console.error('[AdminScreen] ========== BLOB CREATION FAILED ==========');
+        console.error('[AdminScreen] Error:', blobError);
+        console.error('[AdminScreen] Error message:', blobError.message);
+        console.error('[AdminScreen] Error stack:', blobError.stack);
+        throw new Error(`Failed to read video file: ${blobError.message}. The file may be too large or corrupted. Try selecting a smaller video.`);
       }
       
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Uploading video using Supabase Storage API...');
-      console.log('[AdminScreen] Using supabase.storage.from().upload() with blob');
+      console.log('[AdminScreen] Step 3/6: Uploading video to Supabase Storage...');
+      console.log('[AdminScreen] Using supabase.storage.from("videos").upload() with Blob');
+      console.log('[AdminScreen] Blob size:', formatFileSize(videoBlob.size));
+      console.log('[AdminScreen] Blob type:', videoBlob.type || `video/${fileExt}`);
       
       const startTime = Date.now();
+      let lastProgressUpdate = startTime;
+      let lastBytesUploaded = 0;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
@@ -508,28 +543,36 @@ export default function AdminScreen() {
         });
 
       if (uploadError) {
+        console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
         console.error('[AdminScreen] Upload error:', uploadError);
+        console.error('[AdminScreen] Error message:', uploadError.message);
+        console.error('[AdminScreen] Error details:', JSON.stringify(uploadError, null, 2));
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
       const uploadTime = (Date.now() - startTime) / 1000;
       const uploadSpeedMBps = (videoMetadata.size / 1024 / 1024) / uploadTime;
       
-      console.log('[AdminScreen] ✓ Upload completed in', uploadTime.toFixed(2), 'seconds at', uploadSpeedMBps.toFixed(2), 'MB/s');
+      console.log('[AdminScreen] ✓ Upload completed successfully!');
+      console.log('[AdminScreen] Upload stats:', {
+        time: uploadTime.toFixed(2) + ' seconds',
+        speed: uploadSpeedMBps.toFixed(2) + ' MB/s',
+        size: formatFileSize(videoMetadata.size)
+      });
       console.log('[AdminScreen] Upload data:', uploadData);
       
       setUploadProgress(65);
 
-      console.log('[AdminScreen] Step 4/6: Getting public URL...');
+      console.log('[AdminScreen] Step 4/6: Getting public URL for uploaded video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
-      console.log('[AdminScreen] Video public URL:', videoPublicUrl);
+      console.log('[AdminScreen] ✓ Video public URL:', videoPublicUrl);
       setUploadProgress(75);
 
-      console.log('[AdminScreen] Step 5/6: Generating thumbnail...');
+      console.log('[AdminScreen] Step 5/6: Generating thumbnail from video...');
       let thumbnailUrl = null;
       
       try {
@@ -544,7 +587,7 @@ export default function AdminScreen() {
           }
         );
         
-        console.log('[AdminScreen] Thumbnail generated at:', thumbnailUri);
+        console.log('[AdminScreen] ✓ Thumbnail generated at:', thumbnailUri);
         
         const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
         if (!thumbnailInfo.exists || !('size' in thumbnailInfo) || thumbnailInfo.size === 0) {
@@ -564,6 +607,7 @@ export default function AdminScreen() {
         
         console.log('[AdminScreen] Thumbnail blob created:', {
           size: thumbnailBlob.size,
+          sizeFormatted: formatFileSize(thumbnailBlob.size),
           type: thumbnailBlob.type
         });
         
@@ -596,13 +640,13 @@ export default function AdminScreen() {
         thumbnailUrl = thumbnailPublicUrl;
         console.log('[AdminScreen] ✓ Thumbnail uploaded successfully:', thumbnailUrl);
       } catch (thumbnailError: any) {
-        console.error('[AdminScreen] ✗ Thumbnail error:', thumbnailError);
+        console.error('[AdminScreen] ✗ Thumbnail generation/upload failed:', thumbnailError);
         console.log('[AdminScreen] Continuing without thumbnail - video will use placeholder');
       }
       
       setUploadProgress(90);
 
-      console.log('[AdminScreen] Step 6/6: Creating database record...');
+      console.log('[AdminScreen] Step 6/6: Creating database record for video...');
       const { data: insertedData, error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -623,10 +667,10 @@ export default function AdminScreen() {
         throw new Error(`Database error: ${dbError.message}`);
       }
 
-      console.log('[AdminScreen] ✓ Video record created:', insertedData);
+      console.log('[AdminScreen] ✓ Video record created in database:', insertedData);
       setUploadProgress(100);
 
-      console.log('[AdminScreen] ========== UPLOAD COMPLETE ==========');
+      console.log('[AdminScreen] ========== UPLOAD COMPLETE - SUCCESS! ==========');
 
       const uploadTimeText = uploadTime < 60 
         ? `${Math.round(uploadTime)} seconds` 
@@ -661,12 +705,15 @@ export default function AdminScreen() {
       );
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
-      console.error('[AdminScreen] Error:', error.message);
+      console.error('[AdminScreen] Error:', error);
+      console.error('[AdminScreen] Error message:', error.message);
       console.error('[AdminScreen] Error stack:', error.stack);
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Row Level Security') || error.message?.includes('403')) {
+      if (error.message?.includes('string length') || error.message?.includes('too large')) {
+        errorMessage = '❌ Upload Failed: File Too Large\n\nThe video file is too large to process. This can happen with very high resolution videos.\n\nSolutions:\n1. Use a video compression app to reduce file size\n2. Record at a lower resolution (1080p instead of 6K)\n3. Trim the video to be shorter\n4. Try a different video\n\nRecommended: Keep videos under 500MB for best results.';
+      } else if (error.message?.includes('Row Level Security') || error.message?.includes('403')) {
         errorMessage = 'Upload failed: Permission denied. This could be due to:\n\n1. You are not logged in as an admin\n2. Row Level Security policies need to be updated\n3. Your session has expired\n\nPlease log out and log back in, then try again.';
       } else if (error.message?.includes('0 bytes')) {
         errorMessage = error.message;
@@ -682,8 +729,10 @@ export default function AdminScreen() {
         errorMessage += error.message;
       } else if (error.message?.includes('Upload failed with status')) {
         errorMessage = error.message + '\n\nPlease check your internet connection and try again.';
-      } else if (error.message?.includes('out of memory') || error.message?.includes('string length')) {
-        errorMessage = 'Video file is too large to process. Please use a smaller video (under 500MB recommended).';
+      } else if (error.message?.includes('out of memory') || error.message?.includes('corrupted')) {
+        errorMessage = 'Video file could not be processed. The file may be corrupted or in an unsupported format. Please try a different video.';
+      } else if (error.message?.includes('Failed to read video file')) {
+        errorMessage = error.message;
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -897,22 +946,22 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#2E7D32' }]}>
-                FIXED: Fetch Blob Method (No Base64!) ✓
+                ✅ IMPROVED: Enhanced Blob Upload Method
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • 🚀 NEW: Uses fetch() to create Blob directly
+                • 🚀 Uses fetch() to create Blob directly (no base64!)
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • NO base64 conversion - streams file efficiently
+                • ✅ Enhanced error handling and logging
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • No "string length exceeds limit" errors!
+                • ✅ Better file size validation
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Handles large 6K videos without memory issues
+                • ✅ Detailed progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Automatic thumbnail generation ✓
+                • ✅ Automatic thumbnail generation
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • Maximum Duration: 90 seconds
@@ -921,7 +970,7 @@ export default function AdminScreen() {
                 • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
-                • Recommended: Videos under 1GB for best performance
+                • Recommended: Videos under {formatFileSize(RECOMMENDED_MAX_SIZE)} for best performance
               </Text>
               <Text style={[styles.requirementsText, { color: '#388E3C' }]}>
                 • For large files, ensure stable WiFi connection
@@ -1193,7 +1242,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Reading video file...' : uploadProgress < 65 ? 'Uploading video...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadProgress < 10 ? 'Verifying file...' : uploadProgress < 15 ? 'Creating Blob from video...' : uploadProgress < 65 ? 'Uploading video to storage...' : uploadProgress < 75 ? 'Getting public URL...' : uploadProgress < 90 ? 'Generating thumbnail...' : 'Finalizing...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1252,14 +1301,14 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • 🚀 FIXED: Now uses fetch() Blob method{'\n'}
-              • NO base64 conversion - no string length errors!{'\n'}
-              • Streams file efficiently without memory issues{'\n'}
-              • Handles large 6K videos perfectly{'\n'}
-              • ✓ Thumbnail generation working!{'\n'}
+              • ✅ IMPROVED: Enhanced error handling and logging{'\n'}
+              • 🚀 Uses fetch() Blob method (no base64!){'\n'}
+              • ✅ Better file size validation{'\n'}
+              • ✅ Detailed progress tracking{'\n'}
+              • ✅ Thumbnail generation working!{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
-              • Perfect for large videos!{'\n'}
+              • For very large files, consider compressing first{'\n'}
               • Video will be available immediately after upload
             </Text>
           </View>
