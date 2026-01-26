@@ -496,63 +496,16 @@ export default function AdminScreen() {
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  const uploadChunkWithRetry = async (
-    chunk: string,
-    chunkIndex: number,
-    totalChunks: number,
-    fileName: string,
-    accessToken: string
-  ): Promise<boolean> => {
-    console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks}`);
+  // Helper function to get stall timeout based on file size
+  const getStallTimeout = (fileSize: number): number => {
+    // Base timeout: 30 seconds
+    // Add 10 seconds per 100MB
+    const baseSizeTimeout = 30000;
+    const additionalTimeout = Math.floor(fileSize / (100 * 1024 * 1024)) * 10000;
+    const totalTimeout = baseSizeTimeout + additionalTimeout;
     
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      if (uploadAbortControllerRef.current) {
-        console.log('[AdminScreen] Upload cancelled by user');
-        return false;
-      }
-
-      try {
-        const supabaseUrl = supabase.storage.from('videos').getPublicUrl('').data.publicUrl.split('/object/public/videos')[0];
-        const uploadUrl = `${supabaseUrl}/object/videos/${fileName}`;
-
-        const response = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/octet-stream',
-            'x-upsert': 'true',
-            'Content-Range': `bytes ${chunkIndex * CHUNK_SIZE}-${Math.min((chunkIndex + 1) * CHUNK_SIZE - 1, chunk.length - 1)}/${chunk.length}`,
-          },
-          body: chunk,
-        });
-
-        if (response.ok) {
-          console.log(`[AdminScreen] ✓ Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`);
-          return true;
-        } else {
-          const errorText = await response.text();
-          console.error(`[AdminScreen] Chunk ${chunkIndex + 1} upload failed (attempt ${attempt}/${MAX_RETRIES}):`, response.status, errorText);
-          
-          if (attempt < MAX_RETRIES) {
-            console.log(`[AdminScreen] Retrying chunk ${chunkIndex + 1} in ${RETRY_DELAY}ms...`);
-            await sleep(RETRY_DELAY);
-          } else {
-            throw new Error(`Failed to upload chunk ${chunkIndex + 1} after ${MAX_RETRIES} attempts`);
-          }
-        }
-      } catch (error) {
-        console.error(`[AdminScreen] Error uploading chunk ${chunkIndex + 1} (attempt ${attempt}/${MAX_RETRIES}):`, error);
-        
-        if (attempt < MAX_RETRIES) {
-          console.log(`[AdminScreen] Retrying chunk ${chunkIndex + 1} in ${RETRY_DELAY}ms...`);
-          await sleep(RETRY_DELAY);
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    return false;
+    // Cap at 5 minutes
+    return Math.min(totalTimeout, 300000);
   };
 
   const uploadVideo = async () => {
@@ -601,7 +554,7 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING CHUNKED VIDEO UPLOAD ==========');
+      console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD WITH FileSystem.uploadAsync ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', videoToUpload);
       console.log('[AdminScreen] Upload quality:', uploadQuality);
@@ -616,9 +569,9 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/5: Reading video file...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
-      setUploadStatus('Reading video file...');
+      setUploadStatus('Verifying video file...');
 
       const fileInfo = await FileSystem.getInfoAsync(videoToUpload);
       if (!fileInfo.exists || !('size' in fileInfo) || fileInfo.size === 0) {
@@ -638,91 +591,115 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video file using chunked upload with retry logic...');
-      setUploadStatus('Uploading video in chunks...');
+      console.log('[AdminScreen] Step 3/5: Uploading video file using FileSystem.uploadAsync...');
+      setUploadStatus('Uploading video...');
 
-      const fileContent = await FileSystem.readAsStringAsync(videoToUpload, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Get the Supabase storage URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl('dummy');
+      
+      const supabaseUrl = publicUrl.split('/object/public/videos/')[0];
+      const uploadUrl = `${supabaseUrl}/object/videos/${fileName}`;
 
-      const totalChunks = Math.ceil(fileContent.length / CHUNK_SIZE);
-      console.log('[AdminScreen] Total chunks to upload:', totalChunks);
-      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] File size:', formatFileSize(fileInfo.size));
 
       const uploadStartTime = Date.now();
+      let lastProgressUpdate = Date.now();
+      let lastBytesUploaded = 0;
+      let stallCheckInterval: NodeJS.Timeout | null = null;
+      let uploadCompleted = false;
 
-      for (let i = 0; i < totalChunks; i++) {
-        if (uploadAbortControllerRef.current) {
-          throw new Error('Upload cancelled by user');
+      // Calculate stall timeout based on file size
+      const stallTimeout = getStallTimeout(fileInfo.size);
+      console.log('[AdminScreen] Stall timeout set to:', stallTimeout, 'ms');
+
+      // Set up stall detection
+      stallCheckInterval = setInterval(() => {
+        if (uploadCompleted) {
+          if (stallCheckInterval) clearInterval(stallCheckInterval);
+          return;
         }
 
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, fileContent.length);
-        const chunk = fileContent.substring(start, end);
-
-        const success = await uploadChunkWithRetry(
-          chunk,
-          i,
-          totalChunks,
-          fileName,
-          currentSession.access_token
-        );
-
-        if (!success) {
-          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}`);
+        const now = Date.now();
+        const timeSinceLastProgress = now - lastProgressUpdate;
+        
+        if (timeSinceLastProgress > stallTimeout) {
+          console.error('[AdminScreen] Upload stalled - no progress for', timeSinceLastProgress, 'ms');
+          uploadAbortControllerRef.current = true;
+          if (stallCheckInterval) clearInterval(stallCheckInterval);
+          throw new Error('Upload timeout - The upload has stalled. Please check your internet connection and try again.');
         }
+      }, 5000); // Check every 5 seconds
 
-        const progress = 15 + ((i + 1) / totalChunks) * 55;
-        setUploadProgress(Math.round(progress));
-        setUploadStatus(`Uploading chunk ${i + 1}/${totalChunks}...`);
-
-        const elapsedSeconds = (Date.now() - uploadStartTime) / 1000;
-        const bytesUploaded = (i + 1) * CHUNK_SIZE;
-        const speedMBps = (bytesUploaded / 1024 / 1024) / elapsedSeconds;
-        setUploadSpeed(speedMBps.toFixed(2));
-
-        const remainingBytes = fileInfo.size - bytesUploaded;
-        const remainingSeconds = remainingBytes / (bytesUploaded / elapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        setEstimatedTimeRemaining(`${remainingMinutes} min`);
-      }
-
-      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
-      setUploadProgress(70);
-      setUploadStatus('Verifying upload...');
-
-      console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
-      await sleep(2000);
-      
-      const { data: fileList, error: listError } = await supabase.storage
-        .from('videos')
-        .list('uploads', {
-          search: fileName.split('/').pop()
+      try {
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoToUpload, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            'Authorization': `Bearer ${currentSession.access_token}`,
+            'Content-Type': 'video/mp4',
+            'x-upsert': 'true',
+          },
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
         });
 
-      if (listError) {
-        console.error('[AdminScreen] Error checking uploaded file:', listError);
-      } else if (fileList && fileList.length > 0) {
-        const uploadedFile = fileList[0];
-        console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
-        
-        if (uploadedFile.metadata && uploadedFile.metadata.size) {
-          const uploadedSize = parseInt(uploadedFile.metadata.size);
-          console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
-          
-          if (uploadedSize === 0) {
-            throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
-          }
-          
-          if (uploadedSize < fileInfo.size * 0.5) {
-            console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
-          }
-        }
-      } else {
-        console.warn('[AdminScreen] Warning: Could not verify uploaded file in storage');
-      }
+        uploadCompleted = true;
+        if (stallCheckInterval) clearInterval(stallCheckInterval);
 
-      console.log('[AdminScreen] ✓ File verification complete');
+        console.log('[AdminScreen] Upload result:', uploadResult);
+
+        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          throw new Error(`Upload failed with status ${uploadResult.status}`);
+        }
+
+        console.log('[AdminScreen] ✓ Video uploaded successfully');
+        setUploadProgress(70);
+        setUploadStatus('Verifying upload...');
+
+        console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
+        await sleep(2000);
+        
+        const { data: fileList, error: listError } = await supabase.storage
+          .from('videos')
+          .list('uploads', {
+            search: fileName.split('/').pop()
+          });
+
+        if (listError) {
+          console.error('[AdminScreen] Error checking uploaded file:', listError);
+        } else if (fileList && fileList.length > 0) {
+          const uploadedFile = fileList[0];
+          console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
+          
+          if (uploadedFile.metadata && uploadedFile.metadata.size) {
+            const uploadedSize = parseInt(uploadedFile.metadata.size);
+            console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
+            
+            if (uploadedSize === 0) {
+              throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
+            }
+            
+            if (uploadedSize < fileInfo.size * 0.5) {
+              console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
+            }
+          }
+        } else {
+          console.warn('[AdminScreen] Warning: Could not verify uploaded file in storage');
+        }
+
+        console.log('[AdminScreen] ✓ File verification complete');
+
+      } catch (uploadError: any) {
+        uploadCompleted = true;
+        if (stallCheckInterval) clearInterval(stallCheckInterval);
+        
+        console.error('[AdminScreen] FileSystem.uploadAsync error:', uploadError);
+        throw uploadError;
+      }
 
       console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
       setUploadStatus('Generating thumbnail...');
@@ -746,11 +723,11 @@ export default function AdminScreen() {
           });
 
         if (!thumbnailError && thumbnailData) {
-          const { data: { publicUrl } } = supabase.storage
+          const { data: { publicUrl: thumbPublicUrl } } = supabase.storage
             .from('videos')
             .getPublicUrl(thumbnailFileName);
           
-          thumbnailUrl = publicUrl;
+          thumbnailUrl = thumbPublicUrl;
           console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbnailUrl);
         }
       } catch (thumbnailError) {
@@ -762,7 +739,7 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Step 5/5: Creating database record...');
       setUploadStatus('Saving video information...');
-      const { data: { publicUrl } } = supabase.storage
+      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
@@ -771,7 +748,7 @@ export default function AdminScreen() {
         .insert({
           title: videoTitle,
           description: videoDescription || null,
-          video_url: publicUrl,
+          video_url: videoPublicUrl,
           thumbnail_url: thumbnailUrl,
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
@@ -811,16 +788,16 @@ export default function AdminScreen() {
       
       if (error.message?.includes('cancelled')) {
         errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
-      } else if (error.message?.includes('chunk')) {
-        errorMessage = '❌ Upload Failed\n\nFailed to upload video chunks. This usually happens due to:\n• Unstable internet connection\n• Network switching (WiFi to cellular)\n• Poor signal strength\n\nSolutions:\n1. Connect to a stable WiFi network\n2. Stay in one location during upload\n3. Ensure your device doesn\'t go to sleep\n4. Try again when you have better connectivity';
-      } else if (error.message?.includes('timeout') || error.message?.includes('Upload timeout')) {
-        errorMessage = '❌ Upload Timeout\n\nThe upload took too long and was cancelled.\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Enable compression (videos over 500 MB are auto-compressed)\n4. Try again when you have a better connection';
+      } else if (error.message?.includes('timeout') || error.message?.includes('stalled') || error.message?.includes('Upload timeout')) {
+        errorMessage = '❌ Upload Timeout\n\nThe upload took too long or stalled.\n\nSolutions:\n1. Check your WiFi/cellular connection\n2. Try uploading a smaller/shorter video\n3. Enable compression (videos over 500 MB are auto-compressed)\n4. Try again when you have a better connection\n5. Stay in one location during upload';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. If the problem persists, try again later';
       } else if (error.message?.includes('compression')) {
         errorMessage = '❌ Compression Failed\n\n' + error.message + '\n\nPlease try:\n1. Selecting a different video\n2. Using a video compression app before uploading\n3. Recording at a lower resolution';
       } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
+      } else if (error.message?.includes('String') || error.message?.includes('string') || error.message?.includes('limit') || error.message?.includes('exceeds')) {
+        errorMessage = '❌ File Too Large\n\nThe video file is too large to upload.\n\nSolutions:\n1. The app will now automatically compress videos over 500 MB\n2. Try recording at a lower resolution (1080p instead of 4K/6K)\n3. Use a video compression app before uploading\n4. Reduce the video duration';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -1038,16 +1015,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Enhanced Chunked Upload System
+                ✨ Optimized Upload System
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Chunked upload with automatic retry (5 attempts per chunk)
+                • Direct binary upload (no base64 encoding)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • 5 MB chunks for better reliability
+                • Background upload support
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Real-time progress tracking per chunk
+                • Automatic stall detection and timeout
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Videos over 500 MB automatically compressed
@@ -1421,9 +1398,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Chunked upload with automatic retry (5 attempts per chunk){'\n'}
-              • ✅ 5 MB chunks for better reliability{'\n'}
-              • ✅ Real-time progress tracking{'\n'}
+              • ✅ Direct binary upload (no memory issues){'\n'}
+              • ✅ Background upload support{'\n'}
+              • ✅ Automatic stall detection{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
