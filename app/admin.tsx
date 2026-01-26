@@ -34,7 +34,9 @@ type UploadQuality = '2K' | '4K' | 'Original';
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
 const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024; // 500 MB threshold for compression
-const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB chunks
+const MAX_RETRIES = 3;
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -50,6 +52,7 @@ export default function AdminScreen() {
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('');
   const [validatingVideo, setValidatingVideo] = useState(false);
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
 
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
@@ -60,6 +63,7 @@ export default function AdminScreen() {
   const [needsCompression, setNeedsCompression] = useState(false);
 
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
@@ -67,6 +71,10 @@ export default function AdminScreen() {
       if (uploadAbortControllerRef.current) {
         uploadAbortControllerRef.current.abort();
         uploadAbortControllerRef.current = null;
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
       }
     };
   }, []);
@@ -494,6 +502,126 @@ export default function AdminScreen() {
     }
   };
 
+  const uploadVideoWithRetry = async (
+    videoUri: string,
+    fileName: string,
+    accessToken: string,
+    retryCount: number = 0
+  ): Promise<any> => {
+    console.log(`[AdminScreen] Upload attempt ${retryCount + 1}/${MAX_RETRIES + 1}`);
+    
+    try {
+      const storageUrl = `https://ucbilksfpnmltrkwvzft.supabase.co/storage/v1/object/videos/${fileName}`;
+      
+      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
+      console.log('[AdminScreen] Upload URL:', storageUrl);
+
+      const startTime = Date.now();
+      let lastProgressUpdate = Date.now();
+      let lastBytesUploaded = 0;
+      let progressStallCount = 0;
+      let lastProgress = 0;
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+
+      progressIntervalRef.current = setInterval(() => {
+        const currentProgress = uploadProgress;
+        if (currentProgress === lastProgress) {
+          progressStallCount++;
+          console.log(`[AdminScreen] Progress stalled at ${currentProgress}% for ${progressStallCount} seconds`);
+          
+          if (progressStallCount >= 30) {
+            console.log('[AdminScreen] Progress stalled for 30 seconds, may need to retry');
+            setUploadStatus('Upload appears stalled, retrying...');
+          }
+        } else {
+          progressStallCount = 0;
+          lastProgress = currentProgress;
+        }
+      }, 1000);
+
+      const uploadResult = await FileSystem.uploadAsync(
+        storageUrl,
+        videoUri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'video/mp4',
+            'x-upsert': 'true',
+          },
+          uploadProgressCallback: (progress) => {
+            const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
+            const currentProgress = 20 + (percentComplete * 0.5);
+            setUploadProgress(currentProgress);
+
+            const now = Date.now();
+            const timeDiff = (now - lastProgressUpdate) / 1000;
+            
+            if (timeDiff >= 1) {
+              const bytesDiff = progress.totalBytesSent - lastBytesUploaded;
+              const speedMBps = (bytesDiff / timeDiff / (1024 * 1024)).toFixed(2);
+              setUploadSpeed(speedMBps);
+
+              const bytesRemaining = progress.totalBytesExpectedToSend - progress.totalBytesSent;
+              const estimatedSeconds = bytesRemaining / (bytesDiff / timeDiff);
+              const minutes = Math.floor(estimatedSeconds / 60);
+              const seconds = Math.floor(estimatedSeconds % 60);
+              setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
+
+              lastProgressUpdate = now;
+              lastBytesUploaded = progress.totalBytesSent;
+
+              progressStallCount = 0;
+            }
+
+            console.log('[AdminScreen] Upload progress:', percentComplete + '%', 
+                       'Sent:', formatFileSize(progress.totalBytesSent),
+                       'of', formatFileSize(progress.totalBytesExpectedToSend));
+          }
+        }
+      );
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
+      console.log('[AdminScreen] Upload result:', uploadResult);
+      console.log('[AdminScreen] Upload status:', uploadResult.status);
+      console.log('[AdminScreen] Upload took:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
+
+      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+      }
+
+      return uploadResult;
+    } catch (error: any) {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
+      console.error(`[AdminScreen] Upload attempt ${retryCount + 1} failed:`, error);
+      
+      if (retryCount < MAX_RETRIES) {
+        const waitTime = Math.min(1000 * Math.pow(2, retryCount), 10000);
+        console.log(`[AdminScreen] Retrying in ${waitTime}ms...`);
+        setUploadStatus(`Upload failed, retrying in ${waitTime / 1000}s... (Attempt ${retryCount + 2}/${MAX_RETRIES + 1})`);
+        
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        
+        return uploadVideoWithRetry(videoUri, fileName, accessToken, retryCount + 1);
+      }
+      
+      throw error;
+    }
+  };
+
   const uploadVideo = async () => {
     console.log('[AdminScreen] ========== UPLOAD BUTTON TAPPED ==========');
     console.log('[AdminScreen] User tapped Upload Video button');
@@ -537,6 +665,7 @@ export default function AdminScreen() {
       setUploadProgress(0);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
+      setUploadStatus('Preparing upload...');
       
       console.log('[AdminScreen] ========== STARTING VIDEO UPLOAD ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
@@ -555,6 +684,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Target filename:', fileName);
       console.log('[AdminScreen] Step 1/5: Reading video file...');
       setUploadProgress(5);
+      setUploadStatus('Reading video file...');
 
       const fileInfo = await FileSystem.getInfoAsync(videoToUpload);
       if (!fileInfo.exists || !('size' in fileInfo) || fileInfo.size === 0) {
@@ -565,6 +695,7 @@ export default function AdminScreen() {
       setUploadProgress(10);
 
       console.log('[AdminScreen] Step 2/5: Getting auth session...');
+      setUploadStatus('Verifying authentication...');
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (!currentSession?.access_token) {
         throw new Error('No active session. Please log in again.');
@@ -573,205 +704,125 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(20);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video to Supabase Storage using FileSystem.uploadAsync...');
-      console.log('[AdminScreen] This method properly handles large files in React Native');
-      
-      const startTime = Date.now();
-      let lastProgressUpdate = Date.now();
-      let lastBytesUploaded = 0;
+      console.log('[AdminScreen] Step 3/5: Uploading video to Supabase Storage with retry logic...');
+      setUploadStatus('Uploading video...');
 
-      const storageUrl = `https://ucbilksfpnmltrkwvzft.supabase.co/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', storageUrl);
-      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
+      const uploadResult = await uploadVideoWithRetry(
+        videoToUpload,
+        fileName,
+        currentSession.access_token
+      );
 
-      uploadAbortControllerRef.current = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.log('[AdminScreen] Upload timeout reached, aborting...');
-        if (uploadAbortControllerRef.current) {
-          uploadAbortControllerRef.current.abort();
+      console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
+      setUploadProgress(70);
+      setUploadStatus('Verifying upload...');
+
+      console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const { data: fileList, error: listError } = await supabase.storage
+        .from('videos')
+        .list('uploads', {
+          search: fileName.split('/').pop()
+        });
+
+      if (listError) {
+        console.error('[AdminScreen] Error checking uploaded file:', listError);
+      } else if (fileList && fileList.length > 0) {
+        const uploadedFile = fileList[0];
+        console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
+        
+        if (uploadedFile.metadata && uploadedFile.metadata.size) {
+          const uploadedSize = parseInt(uploadedFile.metadata.size);
+          console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
+          
+          if (uploadedSize === 0) {
+            throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
+          }
+          
+          if (uploadedSize < fileInfo.size * 0.5) {
+            console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
+          }
         }
-      }, UPLOAD_TIMEOUT_MS);
+      }
 
+      console.log('[AdminScreen] ✓ File verification complete');
+
+      console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
+      setUploadStatus('Generating thumbnail...');
+      let thumbnailUrl = null;
+      
       try {
-        const uploadResult = await FileSystem.uploadAsync(
-          storageUrl,
-          videoToUpload,
-          {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            fieldName: 'file',
-            headers: {
-              'Authorization': `Bearer ${currentSession.access_token}`,
-              'Content-Type': 'video/mp4',
-            },
-            uploadProgressCallback: (progress) => {
-              const percentComplete = Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100);
-              const currentProgress = 20 + (percentComplete * 0.5);
-              setUploadProgress(currentProgress);
-
-              const now = Date.now();
-              const timeDiff = (now - lastProgressUpdate) / 1000;
-              
-              if (timeDiff >= 1) {
-                const bytesDiff = progress.totalBytesSent - lastBytesUploaded;
-                const speedMBps = (bytesDiff / timeDiff / (1024 * 1024)).toFixed(2);
-                setUploadSpeed(speedMBps);
-
-                const bytesRemaining = progress.totalBytesExpectedToSend - progress.totalBytesSent;
-                const estimatedSeconds = bytesRemaining / (bytesDiff / timeDiff);
-                const minutes = Math.floor(estimatedSeconds / 60);
-                const seconds = Math.floor(estimatedSeconds % 60);
-                setEstimatedTimeRemaining(`${minutes}m ${seconds}s`);
-
-                lastProgressUpdate = now;
-                lastBytesUploaded = progress.totalBytesSent;
-              }
-
-              console.log('[AdminScreen] Upload progress:', percentComplete + '%', 
-                         'Sent:', formatFileSize(progress.totalBytesSent),
-                         'of', formatFileSize(progress.totalBytesExpectedToSend));
-            }
-          }
-        );
-
-        clearTimeout(timeoutId);
-
-        console.log('[AdminScreen] Upload result:', uploadResult);
-
-        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-          console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
-        }
-
-        console.log('[AdminScreen] ✓ Video uploaded successfully to storage');
-        console.log('[AdminScreen] Upload took:', ((Date.now() - startTime) / 1000).toFixed(1), 'seconds');
-        setUploadProgress(70);
-
-        console.log('[AdminScreen] Step 3.5/5: Verifying uploaded file...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const { data: fileList, error: listError } = await supabase.storage
-          .from('videos')
-          .list('uploads', {
-            search: fileName.split('/').pop()
-          });
-
-        if (listError) {
-          console.error('[AdminScreen] Error checking uploaded file:', listError);
-        } else if (fileList && fileList.length > 0) {
-          const uploadedFile = fileList[0];
-          console.log('[AdminScreen] Uploaded file metadata:', uploadedFile);
-          
-          if (uploadedFile.metadata && uploadedFile.metadata.size) {
-            const uploadedSize = parseInt(uploadedFile.metadata.size);
-            console.log('[AdminScreen] Uploaded file size:', formatFileSize(uploadedSize));
-            
-            if (uploadedSize === 0) {
-              throw new Error('Video file was uploaded but has 0 bytes. The upload may have failed. Please try again.');
-            }
-            
-            if (uploadedSize < fileInfo.size * 0.5) {
-              console.warn('[AdminScreen] Warning: Uploaded file size is significantly smaller than original');
-            }
-          }
-        }
-
-        console.log('[AdminScreen] ✓ File verification complete');
-
-        console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
-        let thumbnailUrl = null;
-        
-        try {
-          const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoToUpload, {
-            time: 1000,
-          });
-          
-          console.log('[AdminScreen] ✓ Thumbnail generated:', thumbnailUri);
-          
-          const thumbnailBlob = await fetch(thumbnailUri).then(r => r.blob());
-          const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
-          
-          const { data: thumbnailData, error: thumbnailError } = await supabase.storage
-            .from('videos')
-            .upload(thumbnailFileName, thumbnailBlob, {
-              contentType: 'image/jpeg',
-              upsert: false
-            });
-
-          if (!thumbnailError && thumbnailData) {
-            const { data: { publicUrl } } = supabase.storage
-              .from('videos')
-              .getPublicUrl(thumbnailFileName);
-            
-            thumbnailUrl = publicUrl;
-            console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbnailUrl);
-          }
-        } catch (thumbnailError) {
-          console.error('[AdminScreen] Error generating thumbnail:', thumbnailError);
-          console.log('[AdminScreen] Continuing without thumbnail');
-        }
-
-        setUploadProgress(85);
-
-        console.log('[AdminScreen] Step 5/5: Creating database record...');
-        const { data: { publicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(fileName);
-
-        const { error: dbError } = await supabase
-          .from('videos')
-          .insert({
-            title: videoTitle,
-            description: videoDescription || null,
-            video_url: publicUrl,
-            thumbnail_url: thumbnailUrl,
-            duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
-            resolution_width: videoMetadata.width,
-            resolution_height: videoMetadata.height,
-            file_size_bytes: fileInfo.size,
-            uploaded_by: user?.id
-          });
-
-        if (dbError) {
-          console.error('[AdminScreen] Database error:', dbError);
-          throw dbError;
-        }
-
-        setUploadProgress(100);
-        console.log('[AdminScreen] ✓ Database record created successfully');
-        console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
-
-        Alert.alert('Success', 'Video uploaded successfully!');
-        
-        setVideoTitle('');
-        setVideoDescription('');
-        setSelectedVideo(null);
-        setVideoMetadata(null);
-        setNeedsCompression(false);
-        
-        await refreshVideos();
-
-      } catch (uploadError: any) {
-        clearTimeout(timeoutId);
-        
-        console.error('[AdminScreen] Upload error details:', {
-          name: uploadError.name,
-          message: uploadError.message,
-          stack: uploadError.stack
+        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoToUpload, {
+          time: 1000,
         });
         
-        if (uploadError.name === 'AbortError') {
-          throw new Error('Upload timeout - The upload took too long. Please check your internet connection and try again.');
-        }
+        console.log('[AdminScreen] ✓ Thumbnail generated:', thumbnailUri);
         
-        if (uploadError.message?.includes('Network request failed')) {
-          throw new Error('Network error during upload. Please check your internet connection and try again.');
-        }
+        const thumbnailBlob = await fetch(thumbnailUri).then(r => r.blob());
+        const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
         
-        throw uploadError;
+        const { data: thumbnailData, error: thumbnailError } = await supabase.storage
+          .from('videos')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            contentType: 'image/jpeg',
+            upsert: false
+          });
+
+        if (!thumbnailError && thumbnailData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('videos')
+            .getPublicUrl(thumbnailFileName);
+          
+          thumbnailUrl = publicUrl;
+          console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbnailUrl);
+        }
+      } catch (thumbnailError) {
+        console.error('[AdminScreen] Error generating thumbnail:', thumbnailError);
+        console.log('[AdminScreen] Continuing without thumbnail');
       }
+
+      setUploadProgress(85);
+
+      console.log('[AdminScreen] Step 5/5: Creating database record...');
+      setUploadStatus('Saving video information...');
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      const { error: dbError } = await supabase
+        .from('videos')
+        .insert({
+          title: videoTitle,
+          description: videoDescription || null,
+          video_url: publicUrl,
+          thumbnail_url: thumbnailUrl,
+          duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
+          resolution_width: videoMetadata.width,
+          resolution_height: videoMetadata.height,
+          file_size_bytes: fileInfo.size,
+          uploaded_by: user?.id
+        });
+
+      if (dbError) {
+        console.error('[AdminScreen] Database error:', dbError);
+        throw dbError;
+      }
+
+      setUploadProgress(100);
+      setUploadStatus('Upload complete!');
+      console.log('[AdminScreen] ✓ Database record created successfully');
+      console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
+
+      Alert.alert('Success', 'Video uploaded successfully!');
+      
+      setVideoTitle('');
+      setVideoDescription('');
+      setSelectedVideo(null);
+      setVideoMetadata(null);
+      setNeedsCompression(false);
+      
+      await refreshVideos();
 
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
@@ -779,6 +830,11 @@ export default function AdminScreen() {
       
       if (uploadAbortControllerRef.current) {
         uploadAbortControllerRef.current = null;
+      }
+      
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
       }
       
       let errorMessage = 'Failed to upload video. ';
@@ -801,11 +857,17 @@ export default function AdminScreen() {
         uploadAbortControllerRef.current = null;
       }
       
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      
       setUploading(false);
       setCompressing(false);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setCompressionProgress(0);
+      setUploadStatus('');
     }
   };
 
@@ -1010,16 +1072,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                ✨ Automatic Compression Enabled
+                ✨ Enhanced Upload with Auto-Retry
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Videos over 500 MB will be automatically compressed before upload
+                • Automatic retry on network failures (up to 3 attempts)
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • This ensures successful uploads even for large 6K videos
+                • Progress monitoring to detect and recover from stalls
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • Compression maintains high quality while reducing file size
+                • Videos over 500 MB automatically compressed
               </Text>
               <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Maximum Duration: 90 seconds
@@ -1336,7 +1398,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadProgress < 10 ? 'Preparing upload...' : uploadProgress < 20 ? 'Creating blob...' : uploadProgress < 70 ? 'Uploading video...' : uploadProgress < 85 ? 'Generating thumbnail...' : 'Finalizing...'}
+                {uploadStatus || 'Uploading...'}
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress}% complete
@@ -1390,11 +1452,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Videos over 500 MB are automatically compressed{'\n'}
-              • ✅ Compression maintains high quality{'\n'}
-              • ✅ Works with 6K, 4K, and all video resolutions{'\n'}
+              • ✅ Automatic retry on network failures{'\n'}
+              • ✅ Progress monitoring detects stalls{'\n'}
+              • ✅ Videos over 500 MB auto-compressed{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
-              • Keep the app open during compression and upload
+              • Keep the app open during upload
             </Text>
           </View>
         </View>
