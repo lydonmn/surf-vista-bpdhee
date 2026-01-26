@@ -688,7 +688,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/5: Verifying video file...');
+      console.log('[AdminScreen] Step 1/6: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
@@ -700,7 +700,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Getting auth session...');
+      console.log('[AdminScreen] Step 2/6: Getting auth session...');
       setUploadStatus('Verifying authentication...');
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (!currentSession?.access_token) {
@@ -710,7 +710,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video file using chunked upload...');
+      console.log('[AdminScreen] Step 3/6: Uploading video file using chunked upload...');
       setUploadStatus('Uploading video...');
 
       // Get Supabase URL for Edge Function calls
@@ -727,7 +727,7 @@ export default function AdminScreen() {
 
       await sleep(2000);
 
-      console.log('[AdminScreen] Step 4/5: Generating thumbnail...');
+      console.log('[AdminScreen] Step 4/6: Generating thumbnail...');
       setUploadStatus('Generating thumbnail...');
       let thumbnailUrl = null;
       
@@ -763,12 +763,42 @@ export default function AdminScreen() {
 
       setUploadProgress(85);
 
-      console.log('[AdminScreen] Step 5/5: Creating database record...');
-      setUploadStatus('Saving video information...');
+      console.log('[AdminScreen] Step 5/6: Getting video public URL...');
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
+      
+      console.log('[AdminScreen] Video public URL:', videoPublicUrl);
 
+      console.log('[AdminScreen] Step 6/6: Verifying video accessibility...');
+      setUploadStatus('Verifying video accessibility...');
+      
+      try {
+        const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
+        console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
+        console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
+        console.log('[AdminScreen] Video content-length:', headResponse.headers.get('content-length'));
+        
+        if (!headResponse.ok) {
+          console.error('[AdminScreen] ⚠️ WARNING: Video is not accessible!');
+          console.error('[AdminScreen] This indicates the video file was not created properly');
+          throw new Error(`Video file is not accessible (HTTP ${headResponse.status}). The upload may have failed during the merge step.`);
+        }
+        
+        const contentType = headResponse.headers.get('content-type');
+        if (!contentType || !contentType.includes('video')) {
+          console.error('[AdminScreen] ⚠️ WARNING: Video has wrong content-type:', contentType);
+          throw new Error(`Video file has incorrect content-type: ${contentType}. Expected video/mp4.`);
+        }
+        
+        console.log('[AdminScreen] ✓ Video is accessible and has correct content-type');
+      } catch (verifyError) {
+        console.error('[AdminScreen] Video verification failed:', verifyError);
+        throw verifyError;
+      }
+
+      console.log('[AdminScreen] Creating database record...');
+      setUploadStatus('Saving video information...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -787,28 +817,6 @@ export default function AdminScreen() {
         console.error('[AdminScreen] Database error:', dbError);
         throw dbError;
       }
-
-      setUploadProgress(95);
-      setUploadStatus('Verifying video...');
-      console.log('[AdminScreen] ✓ Database record created successfully');
-      
-      // Verify the video is accessible
-      console.log('[AdminScreen] Verifying video accessibility...');
-      try {
-        const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
-        console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
-        console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
-        console.log('[AdminScreen] Video content-length:', headResponse.headers.get('content-length'));
-        
-        if (headResponse.ok) {
-          console.log('[AdminScreen] ✓ Video is accessible');
-        } else {
-          console.warn('[AdminScreen] ⚠️ Video may not be accessible (status:', headResponse.status + ')');
-        }
-      } catch (verifyError) {
-        console.error('[AdminScreen] Error verifying video:', verifyError);
-        // Don't fail the upload, just log the warning
-      }
       
       setUploadProgress(100);
       setUploadStatus('Upload complete!');
@@ -816,7 +824,7 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success', 
-        'Video uploaded successfully!\n\nThe video has been processed and should be playable now. If you experience any issues, please try refreshing the video list.',
+        'Video uploaded successfully!\n\nThe video has been processed and is now playable.',
         [{ text: 'OK' }]
       );
       
@@ -841,6 +849,8 @@ export default function AdminScreen() {
         errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
       } else if (error.message?.includes('chunk')) {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nPlease check your internet connection and try again.';
+      } else if (error.message?.includes('not accessible') || error.message?.includes('content-type')) {
+        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. This may be due to:\n• Storage bucket configuration issues\n• RLS policy problems\n• Edge Function merge failure\n\nPlease contact support or check the Supabase logs.';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. If the problem persists, try again later';
       } else if (error.message?.includes('compression')) {
@@ -1453,6 +1463,7 @@ export default function AdminScreen() {
               • ✅ Chunked upload (6 MB chunks){'\n'}
               • ✅ Automatic retry on failure{'\n'}
               • ✅ Videos over 500 MB auto-compressed{'\n'}
+              • ✅ Automatic video verification{'\n'}
               • Use a stable WiFi connection for best results{'\n'}
               • Keep the app open during upload{'\n'}
               • Stay in one location (avoid network switching)
