@@ -526,32 +526,35 @@ export default function AdminScreen() {
       const startTime = Date.now();
       let uploadedBytes = 0;
 
-      setUploadStatus('Reading video file...');
-      const fileBase64 = await FileSystem.readAsStringAsync(videoUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      console.log('[AdminScreen] File read successfully, starting chunked upload...');
+      console.log('[AdminScreen] Starting chunked upload (reading chunks on-demand)...');
 
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
         const start = chunkIndex * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, fileSize);
-        const chunkSize = end - start;
+        const chunkLength = end - start;
 
-        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
+        console.log(`[AdminScreen] Reading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(chunkLength)})`);
+        setUploadStatus(`Reading chunk ${chunkIndex + 1} of ${totalChunks}...`);
+
+        // Read ONLY this chunk from the file (not the entire file)
+        const chunkBase64 = await FileSystem.readAsStringAsync(videoUri, {
+          encoding: FileSystem.EncodingType.Base64,
+          position: start,
+          length: chunkLength,
+        });
+
+        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks}...`);
         setUploadStatus(`Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`);
 
-        const base64ChunkStart = Math.floor((start / fileSize) * fileBase64.length);
-        const base64ChunkEnd = Math.floor((end / fileSize) * fileBase64.length);
-        const chunkBase64 = fileBase64.substring(base64ChunkStart, base64ChunkEnd);
-
+        // Convert base64 to blob
         const chunkBlob = await fetch(`data:video/mp4;base64,${chunkBase64}`).then(r => r.blob());
 
+        // Upload this chunk
         const { error: uploadError } = await supabase.storage
           .from('videos')
           .upload(fileName, chunkBlob, {
             contentType: 'video/mp4',
-            upsert: chunkIndex > 0,
+            upsert: chunkIndex > 0, // Overwrite for subsequent chunks
           });
 
         if (uploadError) {
@@ -559,7 +562,7 @@ export default function AdminScreen() {
           throw uploadError;
         }
 
-        uploadedBytes += chunkSize;
+        uploadedBytes += chunkLength;
         const progress = Math.round((uploadedBytes / fileSize) * 100);
         setUploadProgress(progress);
 
