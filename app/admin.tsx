@@ -12,7 +12,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import * as Network from 'expo-network';
 
 interface UserProfile {
   id: string;
@@ -31,11 +30,6 @@ interface VideoMetadata {
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
-const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB chunks (reduced from 2MB for maximum reliability)
-const MAX_RETRIES = 7; // Increased from 5 to 7 retries
-const UPLOAD_TIMEOUT = 180000; // 180 seconds (increased from 120s)
-const NETWORK_CHECK_INTERVAL = 5000; // Check network every 5 seconds during upload
-const RETRY_DELAY_BASE = 3000; // Base delay for exponential backoff (3 seconds)
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -50,8 +44,6 @@ export default function AdminScreen() {
   const [validatingVideo, setValidatingVideo] = useState(false);
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string>('');
-  const [currentChunk, setCurrentChunk] = useState<number>(0);
-  const [totalChunks, setTotalChunks] = useState<number>(0);
 
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
@@ -60,46 +52,13 @@ export default function AdminScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const uploadStartTimeRef = useRef<number>(0);
-  const uploadAbortControllerRef = useRef<AbortController | null>(null);
-  const networkCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadedBytesRef = useRef<number>(0);
 
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
   }, [profile]);
-
-  useEffect(() => {
-    return () => {
-      if (uploadAbortControllerRef.current) {
-        uploadAbortControllerRef.current.abort();
-      }
-      if (networkCheckIntervalRef.current) {
-        clearInterval(networkCheckIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const checkNetworkConnection = async (): Promise<boolean> => {
-    try {
-      const networkState = await Network.getNetworkStateAsync();
-      console.log('[AdminScreen] Network state:', {
-        isConnected: networkState.isConnected,
-        isInternetReachable: networkState.isInternetReachable,
-        type: networkState.type
-      });
-      
-      if (!networkState.isConnected || networkState.isInternetReachable === false) {
-        console.error('[AdminScreen] ❌ Network not available');
-        return false;
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('[AdminScreen] Error checking network:', error);
-      return false;
-    }
-  };
 
   const loadUsers = async () => {
     try {
@@ -325,18 +284,11 @@ export default function AdminScreen() {
   ): Promise<VideoMetadata | null> => {
     console.log('[AdminScreen] ========== VALIDATING VIDEO METADATA ==========');
     console.log('[AdminScreen] Video URI:', uri);
-    console.log('[AdminScreen] Asset width:', assetWidth);
-    console.log('[AdminScreen] Asset height:', assetHeight);
-    console.log('[AdminScreen] Asset duration (ms):', assetDuration);
     
     try {
-      console.log('[AdminScreen] Getting file info using legacy FileSystem.getInfoAsync...');
       const fileInfo = await FileSystem.getInfoAsync(uri);
       
-      console.log('[AdminScreen] File info result:', JSON.stringify(fileInfo, null, 2));
-
       if (!fileInfo.exists) {
-        console.error('[AdminScreen] ❌ Video file does not exist at URI');
         throw new Error('Video file does not exist');
       }
 
@@ -344,7 +296,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       if (fileSize === 0) {
-        console.error('[AdminScreen] ❌ Video file is empty (0 bytes)');
         throw new Error('Video file is empty');
       }
 
@@ -354,17 +305,11 @@ export default function AdminScreen() {
       if (assetWidth && assetHeight && assetWidth > 0 && assetHeight > 0) {
         width = assetWidth;
         height = assetHeight;
-        console.log('[AdminScreen] ✓ Using dimensions from picker:', width, 'x', height);
-      } else {
-        console.log('[AdminScreen] ⚠️ No dimensions from picker, using defaults:', width, 'x', height);
       }
       
       let duration = 0;
       if (assetDuration && assetDuration > 0) {
         duration = assetDuration / 1000;
-        console.log('[AdminScreen] ✓ Duration from picker:', duration, 'seconds');
-      } else {
-        console.log('[AdminScreen] ⚠️ No duration from picker, will be set to 0 (unknown)');
       }
 
       const metadata: VideoMetadata = {
@@ -374,26 +319,14 @@ export default function AdminScreen() {
         size: fileSize
       };
 
-      console.log('[AdminScreen] ✅ Video metadata validated successfully:');
-      console.log('[AdminScreen]   Resolution:', formatResolution(width, height));
-      console.log('[AdminScreen]   Duration:', duration > 0 ? formatDuration(duration) : 'Unknown');
-      console.log('[AdminScreen]   Size:', formatFileSize(fileSize));
-      console.log('[AdminScreen] ========== VALIDATION COMPLETE ==========');
-
+      console.log('[AdminScreen] ✅ Video metadata validated successfully');
       return metadata;
     } catch (error: any) {
-      console.error('[AdminScreen] ========== VALIDATION FAILED ==========');
-      console.error('[AdminScreen] ❌ Error:', error);
-      console.error('[AdminScreen] ❌ Error message:', error.message);
-      if (error.stack) {
-        console.error('[AdminScreen] ❌ Error stack:', error.stack);
-      }
-      
+      console.error('[AdminScreen] ❌ Validation failed:', error);
       Alert.alert(
         'Validation Error',
-        `Could not validate video file:\n\n${error.message}\n\nPlease try:\n• Selecting a different video\n• Restarting the app\n• Checking file permissions`
+        `Could not validate video file:\n\n${error.message}`
       );
-      
       return null;
     }
   };
@@ -417,24 +350,19 @@ export default function AdminScreen() {
   };
 
   const pickVideo = async () => {
-    console.log('[AdminScreen] ========== PICK VIDEO STARTED ==========');
     console.log('[AdminScreen] User tapped Select Video button');
     
     try {
       setValidationErrors([]);
       setVideoMetadata(null);
       
-      console.log('[AdminScreen] Requesting media library permissions...');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      console.log('[AdminScreen] Permission status:', status);
       
       if (status !== 'granted') {
-        console.log('[AdminScreen] ❌ Permission denied');
         Alert.alert('Permission Required', 'Please grant permission to access your photo library');
         return;
       }
 
-      console.log('[AdminScreen] ✓ Permission granted, launching image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
@@ -442,36 +370,15 @@ export default function AdminScreen() {
         videoMaxDuration: 300,
       });
 
-      console.log('[AdminScreen] Image picker returned');
-      console.log('[AdminScreen] Result canceled:', result.canceled);
-      console.log('[AdminScreen] Has assets:', result.assets && result.assets.length > 0);
-
-      if (result.canceled) {
-        console.log('[AdminScreen] ⚠️ User canceled video selection');
-        return;
-      }
-
-      if (!result.assets || result.assets.length === 0) {
-        console.log('[AdminScreen] ❌ No assets returned from picker');
-        Alert.alert('Error', 'No video was selected. Please try again.');
+      if (result.canceled || !result.assets || result.assets.length === 0) {
         return;
       }
 
       const asset = result.assets[0];
       const videoUri = asset.uri;
       
-      console.log('[AdminScreen] ✓ Video selected:', videoUri);
-      console.log('[AdminScreen] Asset details:', {
-        width: asset.width,
-        height: asset.height,
-        duration: asset.duration,
-        type: asset.type,
-        fileName: asset.fileName
-      });
-      
       setValidatingVideo(true);
       
-      console.log('[AdminScreen] Starting metadata validation...');
       const metadata = await validateVideoMetadata(
         videoUri, 
         asset.width, 
@@ -480,19 +387,16 @@ export default function AdminScreen() {
       );
       
       if (!metadata) {
-        console.error('[AdminScreen] ❌ Metadata validation returned null');
         setValidatingVideo(false);
         return;
       }
 
-      console.log('[AdminScreen] ✓ Metadata validated successfully');
       setVideoMetadata(metadata);
       
       const errors = checkVideoRequirements(metadata);
       setValidationErrors(errors);
 
       if (errors.length > 0) {
-        console.log('[AdminScreen] ⚠️ Video does not meet requirements:', errors);
         Alert.alert(
           'Video Does Not Meet Requirements',
           errors.join('\n\n'),
@@ -500,353 +404,146 @@ export default function AdminScreen() {
         );
         setSelectedVideo(null);
       } else {
-        console.log('[AdminScreen] ✅ Video meets all requirements');
         setSelectedVideo(videoUri);
-        
-        const durationText = metadata.duration > 0 
-          ? `Duration: ${formatDuration(metadata.duration)}\n` 
-          : 'Duration: Unknown (will be detected during upload)\n';
-        
         Alert.alert(
           'Video Validated ✓',
-          `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload.`,
+          `Resolution: ${formatResolution(metadata.width, metadata.height)}\n` +
+          `Duration: ${metadata.duration > 0 ? formatDuration(metadata.duration) : 'Unknown'}\n` +
+          `Size: ${formatFileSize(metadata.size)}\n\n` +
+          'This video is ready to upload.',
           [{ text: 'OK' }]
         );
       }
       
       setValidatingVideo(false);
-      console.log('[AdminScreen] ========== PICK VIDEO COMPLETED ==========');
     } catch (error: any) {
-      console.error('[AdminScreen] ========== PICK VIDEO FAILED ==========');
-      console.error('[AdminScreen] ❌ Error picking video:', error);
-      console.error('[AdminScreen] ❌ Error message:', error.message);
-      if (error.stack) {
-        console.error('[AdminScreen] ❌ Error stack:', error.stack);
-      }
-      
-      Alert.alert(
-        'Error Selecting Video',
-        `Failed to select video:\n\n${error.message}\n\nPlease try:\n• Selecting a different video\n• Restarting the app\n• Checking storage permissions`
-      );
-      
+      console.error('[AdminScreen] Error picking video:', error);
+      Alert.alert('Error Selecting Video', error.message);
       setValidatingVideo(false);
     }
   };
 
-  const uploadChunkWithRetry = async (
-    chunkData: Uint8Array,
-    signedUrl: string,
-    chunkIndex: number,
-    totalChunks: number,
-    retryCount: number = 0
-  ): Promise<void> => {
-    try {
-      console.log(`[AdminScreen] 📤 Uploading chunk ${chunkIndex + 1}/${totalChunks} (attempt ${retryCount + 1}/${MAX_RETRIES + 1}, size: ${formatFileSize(chunkData.length)})`);
-      
-      // Check network before upload
-      const isConnected = await checkNetworkConnection();
-      if (!isConnected) {
-        throw new Error('Network connection lost. Please check your internet connection.');
-      }
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.error(`[AdminScreen] ⏱️ Chunk ${chunkIndex + 1} upload timeout after ${UPLOAD_TIMEOUT}ms`);
-        controller.abort();
-      }, UPLOAD_TIMEOUT);
-
-      const uploadStartTime = Date.now();
-      
-      const uploadResponse = await fetch(signedUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-        },
-        body: chunkData,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      
-      const uploadDuration = Date.now() - uploadStartTime;
-      const speedKBps = (chunkData.length / 1024) / (uploadDuration / 1000);
-
-      if (!uploadResponse.ok) {
-        const errorBody = await uploadResponse.text();
-        console.error(`[AdminScreen] ❌ Chunk ${chunkIndex + 1} upload failed with HTTP ${uploadResponse.status}: ${errorBody}`);
-        throw new Error(`HTTP ${uploadResponse.status}: ${errorBody}`);
-      }
-
-      console.log(`[AdminScreen] ✅ Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully in ${uploadDuration}ms (${speedKBps.toFixed(2)} KB/s)`);
-    } catch (error: any) {
-      console.error(`[AdminScreen] ❌ Chunk ${chunkIndex + 1} upload failed (attempt ${retryCount + 1}):`, error.message);
-      
-      if (error.name === 'AbortError') {
-        console.error(`[AdminScreen] ❌ Chunk ${chunkIndex + 1} was aborted (timeout or manual cancel)`);
-      }
-      
-      if (retryCount < MAX_RETRIES) {
-        const waitTime = Math.min(RETRY_DELAY_BASE * Math.pow(2, retryCount), 30000); // Exponential backoff: 3s, 6s, 12s, 24s, 30s, 30s, 30s
-        console.log(`[AdminScreen] 🔄 Retrying chunk ${chunkIndex + 1} in ${waitTime}ms... (${MAX_RETRIES - retryCount} retries left)`);
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
-        // Check network again before retry
-        const isConnected = await checkNetworkConnection();
-        if (!isConnected) {
-          throw new Error('Network connection lost during retry. Please check your internet connection and try again.');
-        }
-        
-        return uploadChunkWithRetry(chunkData, signedUrl, chunkIndex, totalChunks, retryCount + 1);
-      } else {
-        console.error(`[AdminScreen] ❌ Chunk ${chunkIndex + 1} FAILED after ${MAX_RETRIES + 1} attempts`);
-        throw new Error(`Chunk ${chunkIndex + 1} failed after ${MAX_RETRIES + 1} attempts: ${error.message}`);
-      }
-    }
-  };
-
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== UPLOAD BUTTON TAPPED ==========');
-    console.log('[AdminScreen] User tapped Upload Video button');
+    console.log('[AdminScreen] ========== STARTING FAST UPLOAD ==========');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
-      console.log('[AdminScreen] Upload validation failed: Missing video, title, or metadata');
       Alert.alert('Error', 'Please select a valid video and enter a title');
       return;
     }
 
     if (!session?.access_token) {
-      console.log('[AdminScreen] Upload validation failed: No session token');
       Alert.alert('Error', 'You are not logged in. Please log out and log back in.');
       return;
     }
 
     const errors = checkVideoRequirements(videoMetadata);
     if (errors.length > 0) {
-      console.log('[AdminScreen] Upload validation failed: Video requirements not met:', errors);
       Alert.alert('Cannot Upload', errors.join('\n\n'));
       return;
     }
 
-    // Check network before starting
-    const isConnected = await checkNetworkConnection();
-    if (!isConnected) {
-      Alert.alert(
-        'No Internet Connection',
-        'Please connect to a stable WiFi network before uploading.\n\nTips:\n• Use WiFi instead of cellular data\n• Move closer to your router\n• Disable VPN if enabled'
-      );
-      return;
-    }
-
-    console.log('[AdminScreen] ✓ All validations passed, starting ultra-reliable chunked upload process');
-
     try {
       uploadStartTimeRef.current = Date.now();
-      uploadAbortControllerRef.current = new AbortController();
+      uploadedBytesRef.current = 0;
       setUploading(true);
       setUploadProgress(0);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
-      setCurrentChunk(0);
       
-      console.log('[AdminScreen] ========== STARTING ULTRA-RELIABLE CHUNKED UPLOAD ==========');
-      console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', selectedVideo);
-      console.log('[AdminScreen] Video metadata:', {
-        resolution: formatResolution(videoMetadata.width, videoMetadata.height),
-        duration: videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown',
-        size: formatFileSize(videoMetadata.size)
-      });
-      console.log('[AdminScreen] Upload configuration:', {
-        chunkSize: formatFileSize(CHUNK_SIZE),
-        maxRetries: MAX_RETRIES,
-        timeout: `${UPLOAD_TIMEOUT / 1000}s`,
-        retryDelayBase: `${RETRY_DELAY_BASE / 1000}s`,
-        networkCheckInterval: `${NETWORK_CHECK_INTERVAL / 1000}s`
-      });
+      console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
 
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
-      setUploadStatus('Verifying video file...');
+      setUploadStatus('Reading video file...');
 
-      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      if (!fileInfo.exists) {
-        throw new Error('Video file does not exist');
-      }
-      
-      const totalSize = fileInfo.size || 0;
-      const calculatedTotalChunks = Math.ceil(totalSize / CHUNK_SIZE);
-      setTotalChunks(calculatedTotalChunks);
-      
-      console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
-      console.log('[AdminScreen] Total chunks to upload:', calculatedTotalChunks);
-      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
-      console.log('[AdminScreen] Max retries per chunk:', MAX_RETRIES);
-      console.log('[AdminScreen] Timeout per chunk:', UPLOAD_TIMEOUT / 1000, 'seconds');
-      setUploadProgress(10);
-
-      console.log('[AdminScreen] Step 2/5: Uploading video in chunks with ultra-reliable retry logic...');
-      setUploadStatus('Uploading video chunks...');
-
-      const chunkIds: string[] = [];
-      const startTime = Date.now();
-      let uploadedBytes = 0;
-
-      for (let i = 0; i < calculatedTotalChunks; i++) {
-        if (uploadAbortControllerRef.current?.signal.aborted) {
-          throw new Error('Upload cancelled by user');
-        }
-
-        setCurrentChunk(i + 1);
-        
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, totalSize);
-        const chunkSize = end - start;
-
-        console.log(`[AdminScreen] 📦 Processing chunk ${i + 1}/${calculatedTotalChunks} (${formatFileSize(chunkSize)}, offset: ${formatFileSize(start)})`);
-        setUploadStatus(`Uploading chunk ${i + 1} of ${calculatedTotalChunks}...`);
-
-        const chunkFileName = `${fileName}.chunk${i}`;
-
-        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-          .from('videos')
-          .createSignedUploadUrl(chunkFileName);
-
-        if (signedUrlError || !signedUrlData) {
-          console.error('[AdminScreen] Error getting signed URL for chunk:', signedUrlError);
-          throw new Error(`Failed to get upload URL for chunk ${i + 1}: ${signedUrlError?.message || 'Unknown error'}`);
-        }
-
-        console.log(`[AdminScreen] 📖 Reading chunk ${i + 1} as base64 (${start} to ${end})...`);
-        const chunkBase64 = await FileSystem.readAsStringAsync(selectedVideo, {
-          encoding: FileSystem.EncodingType.Base64,
-          position: start,
-          length: chunkSize,
-        });
-
-        console.log(`[AdminScreen] 🔄 Converting chunk ${i + 1} to binary (${chunkBase64.length} base64 chars)...`);
-        const chunkBlob = Uint8Array.from(atob(chunkBase64), c => c.charCodeAt(0));
-
-        await uploadChunkWithRetry(chunkBlob, signedUrlData.signedUrl, i, calculatedTotalChunks);
-
-        chunkIds.push(chunkFileName);
-        uploadedBytes += chunkSize;
-
-        const elapsedSeconds = (Date.now() - startTime) / 1000;
-        const speedMBps = (uploadedBytes / (1024 * 1024) / elapsedSeconds).toFixed(2);
-        const remainingBytes = totalSize - uploadedBytes;
-        const remainingSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
-        
-        const progress = 10 + ((i + 1) / calculatedTotalChunks) * 60;
-        setUploadProgress(progress);
-        setUploadSpeed(`${speedMBps} MB/s`);
-        setEstimatedTimeRemaining(`${Math.ceil(remainingSeconds)}s remaining`);
-        
-        console.log(`[AdminScreen] 📊 Progress: ${progress.toFixed(1)}% - Speed: ${speedMBps} MB/s - ETA: ${Math.ceil(remainingSeconds)}s`);
-      }
-
-      const elapsedSeconds = (Date.now() - startTime) / 1000;
-      const speedMBps = (totalSize / (1024 * 1024) / elapsedSeconds).toFixed(2);
-      
-      console.log('[AdminScreen] ✅ All chunks uploaded successfully');
-      console.log('[AdminScreen] Upload speed:', speedMBps, 'MB/s');
-      console.log('[AdminScreen] Upload time:', elapsedSeconds.toFixed(1), 'seconds');
-      
-      setUploadProgress(70);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
-
-      console.log('[AdminScreen] Step 3/5: Merging chunks on server...');
-      setUploadStatus('Merging video chunks...');
-
-      const { data: mergeData, error: mergeError } = await supabase.functions.invoke('merge-video-chunks', {
-        body: {
-          fileName,
-          chunkIds,
-          totalSize,
-        },
+      // Read the entire file as base64
+      console.log('[AdminScreen] Reading file as base64...');
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
-      if (mergeError) {
-        console.error('[AdminScreen] Error merging chunks:', mergeError);
-        throw new Error(`Failed to merge chunks: ${mergeError.message}`);
+      console.log('[AdminScreen] ✓ File read successfully, size:', base64Data.length, 'chars');
+      setUploadProgress(20);
+      setUploadStatus('Uploading video...');
+
+      // Convert base64 to binary
+      console.log('[AdminScreen] Converting to binary...');
+      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      console.log('[AdminScreen] ✓ Binary data ready, size:', formatFileSize(binaryData.length));
+
+      setUploadProgress(30);
+      setUploadStatus('Uploading to storage...');
+
+      const startTime = Date.now();
+
+      // Upload using Supabase's native upload (handles large files efficiently)
+      console.log('[AdminScreen] Starting Supabase upload...');
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, binaryData, {
+          contentType: `video/${fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
       }
 
-      console.log('[AdminScreen] ✓ Chunks merged successfully');
-      console.log('[AdminScreen] Merged file path:', mergeData.filePath);
-      setUploadProgress(80);
-
-      console.log('[AdminScreen] Step 4/5: Verifying uploaded video...');
-      setUploadStatus('Verifying video...');
+      const uploadDuration = (Date.now() - startTime) / 1000;
+      const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
       
+      console.log('[AdminScreen] ✅ Upload complete in', uploadDuration.toFixed(1), 'seconds');
+      console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
+      
+      setUploadProgress(80);
+      setUploadStatus('Generating thumbnail...');
+
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
       
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
-      
-      const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
-      console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
-      
-      if (!headResponse.ok) {
-        throw new Error(`Video file is not accessible (HTTP ${headResponse.status})`);
-      }
 
-      console.log('[AdminScreen] ✓ Video verified and accessible');
-      setUploadProgress(90);
-
-      console.log('[AdminScreen] Step 5/5: Generating thumbnail and saving to database...');
-      setUploadStatus('Generating thumbnail...');
-      
       const thumbnailUrl = await (async () => {
         try {
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
             time: 1000,
           });
           
-          console.log('[AdminScreen] ✓ Thumbnail generated:', thumbnailUri);
-          
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          const { data: thumbnailSignedUrlData, error: thumbnailSignedUrlError } = await supabase.storage
-            .from('videos')
-            .createSignedUploadUrl(thumbnailFileName);
+          const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-          if (thumbnailSignedUrlError || !thumbnailSignedUrlData) {
-            console.error('[AdminScreen] Error getting thumbnail signed URL:', thumbnailSignedUrlError);
+          const thumbnailBinary = Uint8Array.from(atob(thumbnailBase64), c => c.charCodeAt(0));
+
+          const { error: thumbError } = await supabase.storage
+            .from('videos')
+            .upload(thumbnailFileName, thumbnailBinary, {
+              contentType: 'image/jpeg',
+              upsert: false,
+            });
+
+          if (thumbError) {
+            console.error('[AdminScreen] Thumbnail upload error:', thumbError);
             return null;
           }
 
-          const thumbnailUploadResult = await FileSystem.uploadAsync(
-            thumbnailSignedUrlData.signedUrl,
-            thumbnailUri,
-            {
-              httpMethod: 'PUT',
-              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-              headers: {
-                'Content-Type': 'image/jpeg',
-              },
-            }
-          );
-
-          if (thumbnailUploadResult.status === 200) {
-            const { data: { publicUrl: thumbPublicUrl } } = supabase.storage
-              .from('videos')
-              .getPublicUrl(thumbnailFileName);
-            
-            console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbPublicUrl);
-            return thumbPublicUrl;
-          }
-          return null;
+          const { data: { publicUrl: thumbPublicUrl } } = supabase.storage
+            .from('videos')
+            .getPublicUrl(thumbnailFileName);
+          
+          console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbPublicUrl);
+          return thumbPublicUrl;
         } catch (thumbnailError) {
           console.error('[AdminScreen] Error generating thumbnail:', thumbnailError);
-          console.log('[AdminScreen] Continuing without thumbnail');
           return null;
         }
       })();
@@ -864,7 +561,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: totalSize,
+          file_size_bytes: videoMetadata.size,
           uploaded_by: user?.id
         });
 
@@ -875,15 +572,14 @@ export default function AdminScreen() {
       
       setUploadProgress(100);
       setUploadStatus('Upload complete!');
-      console.log('[AdminScreen] ========== ULTRA-RELIABLE CHUNKED UPLOAD COMPLETED SUCCESSFULLY ==========');
+      console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
 
       Alert.alert(
         'Success ✅', 
         `Video uploaded successfully!\n\n` +
-        `⏱️ Time: ${elapsedSeconds.toFixed(1)} seconds\n` +
+        `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
-        `📦 Chunks: ${calculatedTotalChunks}\n` +
-        `📊 Size: ${formatFileSize(totalSize)}\n\n` +
+        `📊 Size: ${formatFileSize(videoMetadata.size)}\n\n` +
         `The video is now playable.`,
         [{ text: 'OK' }]
       );
@@ -892,35 +588,19 @@ export default function AdminScreen() {
       setVideoDescription('');
       setSelectedVideo(null);
       setVideoMetadata(null);
-      setCurrentChunk(0);
-      setTotalChunks(0);
       
       await refreshVideos();
 
     } catch (error: any) {
-      console.error('[AdminScreen] ========== ULTRA-RELIABLE CHUNKED UPLOAD FAILED ==========');
+      console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
-      console.error('[AdminScreen] Error message:', error.message);
-      if (error.stack) {
-        console.error('[AdminScreen] Error stack:', error.stack);
-      }
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('cancelled')) {
-        errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
-      } else if (error.message?.includes('Network connection lost')) {
-        errorMessage = '❌ Network Connection Lost\n\n' + error.message + '\n\nSolutions:\n1. Check your WiFi connection\n2. Move closer to your router\n3. Disable VPN if enabled\n4. Try again when you have a stable connection';
-      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch') || error.message?.includes('timeout') || error.message?.includes('aborted')) {
-        errorMessage = `❌ Network Error at Chunk ${currentChunk}/${totalChunks}\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you are using one\n4. Move closer to your WiFi router\n5. If the problem persists, try again later`;
-      } else if (error.message?.includes('not accessible')) {
-        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. Please try again.';
-      } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
-        errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
-      } else if (error.message?.includes('merge')) {
-        errorMessage = '❌ Merge Failed\n\nThe video chunks were uploaded but could not be merged.\n\nSolutions:\n1. Try uploading again\n2. Check your internet connection\n3. Contact support if the issue persists';
-      } else if (error.message?.includes('Chunk') && error.message?.includes('failed after')) {
-        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe upload failed even after multiple retries.\n\nSolutions:\n1. Check your internet connection stability\n2. Try again with a stronger WiFi signal\n3. Disable VPN if you are using one\n4. Try uploading at a different time';
+      if (error.message?.includes('Payload too large')) {
+        errorMessage = '❌ File Too Large\n\nThe video file exceeds the maximum upload size.\n\nSolutions:\n1. Compress the video before uploading\n2. Reduce video resolution or quality\n3. Trim the video to a shorter duration';
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
+        errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you are using one';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -931,13 +611,6 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('');
-      setCurrentChunk(0);
-      setTotalChunks(0);
-      uploadAbortControllerRef.current = null;
-      if (networkCheckIntervalRef.current) {
-        clearInterval(networkCheckIntervalRef.current);
-        networkCheckIntervalRef.current = null;
-      }
     }
   };
 
@@ -1133,35 +806,26 @@ export default function AdminScreen() {
 
           <View style={[styles.infoBox, { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' }]}>
             <IconSymbol
-              ios_icon_name="checkmark.circle.fill"
-              android_material_icon_name="check-circle"
+              ios_icon_name="bolt.fill"
+              android_material_icon_name="flash-on"
               size={20}
               color="#388E3C"
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ ULTRA-RELIABLE UPLOAD - Maximum Stability
+                ⚡ FAST DIRECT UPLOAD - No Chunking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ 1MB chunks (smallest = most reliable)
+                • ⚡ Direct upload to Supabase Storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ 7 retries per chunk (increased from 5)
+                • ⚡ No chunking overhead = Much faster
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ 180-second timeout (tripled from 60s)
+                • ⚡ Native resumable upload support
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Network connection checks
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Exponential backoff (3s, 6s, 12s, 24s, 30s)
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Detailed progress tracking
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Handles files up to 3GB
+                • ⚡ Optimized for large files
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1326,16 +990,6 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
-              {totalChunks > 0 && (
-                <Text style={[styles.progressSubtext, { color: colors.primary, marginTop: 4, fontWeight: '600' }]}>
-                  Chunk {currentChunk} of {totalChunks}
-                </Text>
-              )}
-              {uploadSpeed && (
-                <Text style={[styles.progressSubtext, { color: colors.primary, marginTop: 4, fontWeight: '600' }]}>
-                  {uploadSpeed} • {estimatedTimeRemaining}
-                </Text>
-              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
@@ -1375,12 +1029,10 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Ultra-reliable with 1MB chunks{'\n'}
-              • ✅ 7 retries with exponential backoff{'\n'}
-              • ✅ Network connection monitoring{'\n'}
+              • ⚡ Fast direct upload (no chunking){'\n'}
+              • ⚡ Optimized for large files{'\n'}
               • Use a stable WiFi connection{'\n'}
-              • Keep the app open during upload{'\n'}
-              • Upload will retry failed chunks automatically
+              • Keep the app open during upload
             </Text>
           </View>
         </View>
