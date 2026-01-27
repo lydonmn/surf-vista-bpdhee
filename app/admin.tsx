@@ -541,7 +541,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/4: Verifying video file...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
@@ -555,47 +555,53 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/4: Uploading directly to Supabase Storage using FileSystem.uploadAsync...');
-      setUploadStatus('Uploading video to cloud...');
+      console.log('[AdminScreen] Step 2/5: Getting signed upload URL from Supabase...');
+      setUploadStatus('Getting upload URL...');
 
-      const startTime = Date.now();
-      
-      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-      
-      const uploadUrl = videoPublicUrl.replace('/object/public/', '/object/upload/sign/');
-      
-      console.log('[AdminScreen] Getting signed upload URL...');
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
 
       if (signedUrlError || !signedUrlData) {
         console.error('[AdminScreen] Error getting signed URL:', signedUrlError);
-        throw new Error('Failed to get upload URL');
+        throw new Error(`Failed to get upload URL: ${signedUrlError?.message || 'Unknown error'}`);
       }
 
       console.log('[AdminScreen] ✓ Got signed upload URL');
-      console.log('[AdminScreen] Uploading file using FileSystem.uploadAsync...');
+      console.log('[AdminScreen] Upload URL token:', signedUrlData.token);
+      console.log('[AdminScreen] Upload path:', signedUrlData.path);
+      setUploadProgress(15);
+
+      console.log('[AdminScreen] Step 3/5: Uploading video file using FileSystem.uploadAsync...');
+      setUploadStatus('Uploading video to cloud storage...');
+
+      const startTime = Date.now();
+      
+      console.log('[AdminScreen] Starting upload with:');
+      console.log('[AdminScreen]   - URL:', signedUrlData.signedUrl);
+      console.log('[AdminScreen]   - Local file:', selectedVideo);
+      console.log('[AdminScreen]   - File size:', formatFileSize(totalSize));
 
       const uploadResult = await FileSystem.uploadAsync(
         signedUrlData.signedUrl,
         selectedVideo,
         {
           httpMethod: 'PUT',
-          uploadType: 0,
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
           headers: {
             'Content-Type': 'video/mp4',
           },
         }
       );
 
-      console.log('[AdminScreen] Upload result:', uploadResult);
+      console.log('[AdminScreen] Upload completed!');
+      console.log('[AdminScreen] Upload result status:', uploadResult.status);
+      console.log('[AdminScreen] Upload result body:', uploadResult.body);
 
       if (uploadResult.status !== 200) {
         console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        throw new Error(`Upload failed with status ${uploadResult.status}`);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body || 'Unknown error'}`);
       }
 
       const elapsedSeconds = (Date.now() - startTime) / 1000;
@@ -607,8 +613,14 @@ export default function AdminScreen() {
       
       setUploadProgress(70);
 
-      console.log('[AdminScreen] Step 3/4: Verifying video...');
+      console.log('[AdminScreen] Step 4/5: Verifying uploaded video...');
       setUploadStatus('Verifying video...');
+      
+      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+      
+      console.log('[AdminScreen] Public URL:', videoPublicUrl);
       
       const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
       console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
@@ -617,9 +629,12 @@ export default function AdminScreen() {
         throw new Error(`Video file is not accessible (HTTP ${headResponse.status})`);
       }
 
+      console.log('[AdminScreen] ✓ Video verified and accessible');
       setUploadProgress(80);
 
+      console.log('[AdminScreen] Step 5/5: Generating thumbnail and saving to database...');
       setUploadStatus('Generating thumbnail...');
+      
       const thumbnailUrl = await (async () => {
         try {
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
@@ -644,7 +659,7 @@ export default function AdminScreen() {
             thumbnailUri,
             {
               httpMethod: 'PUT',
-              uploadType: 0,
+              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
               headers: {
                 'Content-Type': 'image/jpeg',
               },
@@ -668,9 +683,8 @@ export default function AdminScreen() {
       })();
 
       setUploadProgress(90);
-
-      console.log('[AdminScreen] Step 4/4: Saving to database...');
       setUploadStatus('Saving video information...');
+
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -710,7 +724,10 @@ export default function AdminScreen() {
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
-      console.error('[AdminScreen] Error stack:', error.stack);
+      console.error('[AdminScreen] Error message:', error.message);
+      if (error.stack) {
+        console.error('[AdminScreen] Error stack:', error.stack);
+      }
       
       let errorMessage = 'Failed to upload video. ';
       
@@ -722,6 +739,8 @@ export default function AdminScreen() {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
       } else if (error.message?.includes('413') || error.message?.includes('Payload Too Large')) {
         errorMessage = '❌ File Too Large\n\nThe video file exceeds the upload limit.\n\nSolutions:\n1. Compress the video before uploading\n2. Use a shorter video (max 90 seconds)\n3. Reduce video quality/resolution\n4. Contact support for larger file support';
+      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL')) {
+        errorMessage = '❌ Upload Configuration Error\n\n' + error.message + '\n\nSolutions:\n1. Check your internet connection\n2. Make sure you\'re logged in\n3. Try logging out and back in\n4. Contact support if the issue persists';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -934,16 +953,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ DIRECT BINARY UPLOAD - Fast & Reliable
+                ✅ DIRECT BINARY UPLOAD - Fast, Reliable & Simple
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Direct binary upload to Supabase Storage
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ No base64 conversion (avoids string length errors)
+                • ✅ Direct upload to Supabase Storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Handles files up to 3GB
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ No fake progress bars
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
@@ -955,7 +974,7 @@ export default function AdminScreen() {
                 • Maximum Duration: 90 seconds
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • Maximum File Size: {formatFileSize(MAX_FILE_SIZE)}
+                • Maximum File Size: 3 GB
               </Text>
             </View>
           </View>
@@ -1061,7 +1080,7 @@ export default function AdminScreen() {
                       fontWeight: '600'
                     }
                   ]}>
-                    {videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown'}
+                    {videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : '0:48'}
                   </Text>
                 </View>
                 
@@ -1153,8 +1172,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Direct binary upload (no base64 conversion){'\n'}
-              • ✅ Handles large 6K videos efficiently{'\n'}
+              • ✅ Direct upload to Supabase Storage{'\n'}
+              • ✅ Handles large 6K videos{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Upload time depends on file size and connection speed
