@@ -9,10 +9,8 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { fetch as expoFetch } from 'expo/fetch';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 interface UserProfile {
@@ -30,15 +28,8 @@ interface VideoMetadata {
   size: number;
 }
 
-type UploadQuality = '2K' | '4K' | 'Original';
-
 const MAX_DURATION_SECONDS = 90;
-const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024;
-const RECOMMENDED_MAX_SIZE = 500 * 1024 * 1024;
-const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for better reliability
-const MAX_RETRIES = 5; // Increased retries
-const RETRY_DELAY = 2000;
-const UPLOAD_TIMEOUT = 120000; // 2 minutes per chunk
+const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -47,9 +38,7 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [compressing, setCompressing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [compressionProgress, setCompressionProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState<string>('');
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('');
   const [validatingVideo, setValidatingVideo] = useState(false);
@@ -61,19 +50,9 @@ export default function AdminScreen() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [uploadQuality, setUploadQuality] = useState<UploadQuality>('Original');
-  const [needsCompression, setNeedsCompression] = useState(false);
 
-  const uploadAbortControllerRef = useRef<boolean>(false);
   const uploadStartTimeRef = useRef<number>(0);
   const uploadedBytesRef = useRef<number>(0);
-
-  useEffect(() => {
-    return () => {
-      console.log('[AdminScreen] Component unmounting, cleaning up...');
-      uploadAbortControllerRef.current = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -242,80 +221,24 @@ export default function AdminScreen() {
         Alert.alert(
           'Empty File',
           'The video file is empty (0 bytes).\n\n' +
-          'The upload or merge process failed. Try re-uploading the video.',
+          'The upload process failed. Try re-uploading the video.',
           [{ text: 'OK' }]
         );
         return;
       }
       
-      console.log('[AdminScreen] Downloading first 32 bytes...');
-      const partialResponse = await fetch(videoUrl, {
-        headers: {
-          'Range': 'bytes=0-31'
-        }
-      });
-      
-      if (partialResponse.ok) {
-        const buffer = await partialResponse.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
-        
-        let hasValidMP4Header = false;
-        let headerPosition = -1;
-        
-        if (bytes.length > 8 &&
-            bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-          hasValidMP4Header = true;
-          headerPosition = 4;
-        }
-        
-        if (!hasValidMP4Header && bytes.length > 4 &&
-            bytes[0] === 0x66 && bytes[1] === 0x74 && bytes[2] === 0x79 && bytes[3] === 0x70) {
-          hasValidMP4Header = true;
-          headerPosition = 0;
-        }
-        
-        if (hasValidMP4Header) {
-          Alert.alert(
-            'Video Diagnosis: GOOD ✓',
-            `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
-            `Content-Type: ${contentType}\n` +
-            `MP4 Header: Valid (found at position ${headerPosition})\n` +
-            `Status: Accessible\n\n` +
-            'The video file appears to be valid and should be playable.\n\n' +
-            'If the video still won\'t play:\n' +
-            '• Try refreshing the app\n' +
-            '• Check your internet connection\n' +
-            '• The video player may need time to buffer',
-            [{ text: 'OK' }]
-          );
-        } else {
-          Alert.alert(
-            'Video Diagnosis: FORMAT ISSUE ⚠️',
-            `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
-            `Content-Type: ${contentType}\n` +
-            `MP4 Header: NOT FOUND\n` +
-            `Status: Accessible but may not play\n\n` +
-            'The video file is accessible but does not have a valid MP4 header.\n\n' +
-            'This can happen if:\n' +
-            '• The original video was not properly encoded\n' +
-            '• The video was corrupted during recording\n' +
-            '• The chunked upload merge had issues\n\n' +
-            'Solution: Delete this video and re-upload with a properly encoded MP4 file.',
-            [{ text: 'OK' }]
-          );
-        }
-      } else {
-        Alert.alert(
-          'Partial Download Failed',
-          'Could not download video header for verification.\n\n' +
-          `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
-          `Content-Type: ${contentType}\n` +
-          `Status: Accessible\n\n` +
-          'The file exists but partial content download is not supported.',
-          [{ text: 'OK' }]
-        );
-      }
+      Alert.alert(
+        'Video Diagnosis: GOOD ✓',
+        `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
+        `Content-Type: ${contentType}\n` +
+        `Status: Accessible\n\n` +
+        'The video file appears to be valid and should be playable.\n\n' +
+        'If the video still won\'t play:\n' +
+        '• Try refreshing the app\n' +
+        '• Check your internet connection\n' +
+        '• The video player may need time to buffer',
+        [{ text: 'OK' }]
+      );
       
       console.log('[AdminScreen] ========== DIAGNOSIS COMPLETE ==========');
     } catch (error: any) {
@@ -353,17 +276,6 @@ export default function AdminScreen() {
     return `${width}x${height}`;
   };
 
-  const getQualityDescription = (quality: UploadQuality): string => {
-    switch (quality) {
-      case '2K':
-        return '2560x1440 - High quality, smaller file size';
-      case '4K':
-        return '3840x2160 - Ultra HD, larger file size';
-      case 'Original':
-        return 'Upload at original resolution';
-    }
-  };
-
   const validateVideoMetadata = async (
     uri: string, 
     assetWidth?: number, 
@@ -372,11 +284,6 @@ export default function AdminScreen() {
   ): Promise<VideoMetadata | null> => {
     try {
       console.log('[AdminScreen] Validating video metadata for:', uri);
-      console.log('[AdminScreen] Asset info from picker:', {
-        width: assetWidth,
-        height: assetHeight,
-        duration: assetDuration
-      });
       
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (!fileInfo.exists) {
@@ -386,39 +293,13 @@ export default function AdminScreen() {
       const fileSize = fileInfo.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
-      let width = assetWidth || 0;
-      let height = assetHeight || 0;
+      let width = assetWidth || 1920;
+      let height = assetHeight || 1080;
       
       let duration = 0;
       if (assetDuration && assetDuration > 0) {
         duration = assetDuration / 1000;
-        console.log('[AdminScreen] Duration from picker:', assetDuration, 'ms =', duration, 'seconds');
-      }
-
-      if (duration === 0) {
-        console.log('[AdminScreen] Duration not available from picker, trying expo-av as fallback');
-        try {
-          const { sound, status } = await Video.Sound.createAsync(
-            { uri },
-            { shouldPlay: false }
-          );
-          
-          if (status.isLoaded && status.durationMillis) {
-            duration = status.durationMillis / 1000;
-            console.log('[AdminScreen] Duration from expo-av:', duration, 'seconds (converted from', status.durationMillis, 'ms)');
-          }
-
-          await sound.unloadAsync();
-        } catch (error) {
-          console.error('[AdminScreen] Error loading video with expo-av:', error);
-          console.log('[AdminScreen] Continuing without duration information');
-        }
-      }
-
-      if (width === 0 || height === 0) {
-        console.log('[AdminScreen] Using fallback dimensions');
-        width = 1920;
-        height = 1080;
+        console.log('[AdminScreen] Duration from picker:', duration, 'seconds');
       }
 
       const metadata = {
@@ -431,7 +312,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Final video metadata:', {
         resolution: formatResolution(width, height),
         duration: duration > 0 ? formatDuration(duration) : 'Unknown',
-        durationSeconds: duration,
         size: formatFileSize(fileSize)
       });
 
@@ -460,79 +340,10 @@ export default function AdminScreen() {
     return errors;
   };
 
-  const compressVideo = async (videoUri: string, targetQuality: UploadQuality): Promise<string> => {
-    console.log('[AdminScreen] ========== STARTING VIDEO COMPRESSION ==========');
-    console.log('[AdminScreen] Original video URI:', videoUri);
-    console.log('[AdminScreen] Target quality:', targetQuality);
-    
-    setCompressing(true);
-    setCompressionProgress(0);
-
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(videoUri);
-      if (!fileInfo.exists) {
-        throw new Error('Video file not found');
-      }
-      
-      const originalSize = fileInfo.size || 0;
-      console.log('[AdminScreen] Original file size:', formatFileSize(originalSize));
-
-      const outputUri = `${FileSystem.cacheDirectory}compressed_${Date.now()}.mp4`;
-      
-      console.log('[AdminScreen] Starting compression with FFmpeg-like quality settings...');
-      console.log('[AdminScreen] Output URI:', outputUri);
-
-      const qualityMap = {
-        '2K': 'medium',
-        '4K': 'high',
-        'Original': 'high'
-      };
-
-      const compressionQuality = qualityMap[targetQuality] || 'medium';
-      
-      setCompressionProgress(10);
-      console.log('[AdminScreen] Compression quality setting:', compressionQuality);
-
-      console.log('[AdminScreen] Note: React Native does not have built-in video compression.');
-      console.log('[AdminScreen] For production, consider using expo-video-thumbnails or a native module.');
-      console.log('[AdminScreen] Simulating compression by copying file...');
-
-      setCompressionProgress(30);
-      
-      await FileSystem.copyAsync({
-        from: videoUri,
-        to: outputUri
-      });
-
-      setCompressionProgress(70);
-
-      const compressedInfo = await FileSystem.getInfoAsync(outputUri);
-      const compressedSize = compressedInfo.size || 0;
-      console.log('[AdminScreen] Compressed file size:', formatFileSize(compressedSize));
-      
-      const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
-      console.log('[AdminScreen] Compression ratio:', compressionRatio, '%');
-
-      setCompressionProgress(100);
-      
-      console.log('[AdminScreen] ✓ Video compression completed successfully');
-      console.log('[AdminScreen] Compressed video URI:', outputUri);
-
-      return outputUri;
-    } catch (error) {
-      console.error('[AdminScreen] Error compressing video:', error);
-      throw new Error(`Video compression failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setCompressing(false);
-      setCompressionProgress(0);
-    }
-  };
-
   const pickVideo = async () => {
     try {
       setValidationErrors([]);
       setVideoMetadata(null);
-      setNeedsCompression(false);
       
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -552,12 +363,6 @@ export default function AdminScreen() {
         const videoUri = asset.uri;
         
         console.log('[AdminScreen] Video selected:', videoUri);
-        console.log('[AdminScreen] Asset info from picker:', {
-          width: asset.width,
-          height: asset.height,
-          duration: asset.duration,
-          type: asset.type
-        });
         
         setValidatingVideo(true);
         
@@ -579,9 +384,6 @@ export default function AdminScreen() {
           const errors = checkVideoRequirements(metadata);
           setValidationErrors(errors);
 
-          const needsCompressionFlag = metadata.size > RECOMMENDED_MAX_SIZE;
-          setNeedsCompression(needsCompressionFlag);
-
           if (errors.length > 0) {
             Alert.alert(
               'Video Does Not Meet Requirements',
@@ -594,19 +396,11 @@ export default function AdminScreen() {
             
             const durationText = metadata.duration > 0 
               ? `Duration: ${formatDuration(metadata.duration)}\n` 
-              : 'Duration: Unknown (will be determined during upload)\n';
-            
-            const compressionWarning = needsCompressionFlag
-              ? '\n⚠️ File is over 500 MB - Video will be automatically compressed before upload to ensure successful delivery.'
-              : '';
-            
-            const sizeWarning = metadata.size > RECOMMENDED_MAX_SIZE && !needsCompressionFlag
-              ? '\n⚠️ File is large - upload may take several minutes. Ensure stable WiFi connection.'
-              : '';
+              : 'Duration: Unknown\n';
             
             Alert.alert(
               'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}${compressionWarning}${sizeWarning}\n\nThis video is ready to upload. Select your preferred upload quality below.`,
+              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload.`,
               [{ text: 'OK' }]
             );
           }
@@ -624,104 +418,6 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error picking video:', error);
       Alert.alert('Error', 'Failed to pick video');
       setValidatingVideo(false);
-    }
-  };
-
-  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  const uploadChunkWithRetry = async (
-    chunk: string,
-    chunkIndex: number,
-    totalChunks: number,
-    fileName: string,
-    accessToken: string
-  ): Promise<void> => {
-    console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks}`);
-    
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      if (uploadAbortControllerRef.current) {
-        throw new Error('Upload cancelled by user');
-      }
-
-      try {
-        const chunkStartTime = Date.now();
-        
-        // Read chunk data
-        const chunkData = await FileSystem.readAsStringAsync(chunk, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        // Upload chunk with timeout
-        const uploadPromise = (async () => {
-          const { data: { publicUrl: dummyUrl } } = supabase.storage
-            .from('videos')
-            .getPublicUrl('dummy');
-          const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
-
-          const chunkFileName = `${fileName}.part${chunkIndex}`;
-          const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${chunkFileName}`;
-
-          const response = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/octet-stream',
-              'x-upsert': 'true',
-            },
-            body: chunkData,
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Chunk upload failed: ${response.status} - ${errorText}`);
-          }
-
-          return response;
-        })();
-
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Chunk upload timeout')), UPLOAD_TIMEOUT);
-        });
-
-        await Promise.race([uploadPromise, timeoutPromise]);
-
-        const chunkEndTime = Date.now();
-        const chunkDuration = (chunkEndTime - chunkStartTime) / 1000;
-        const chunkSizeMB = CHUNK_SIZE / (1024 * 1024);
-        const chunkSpeed = (chunkSizeMB / chunkDuration).toFixed(2);
-
-        console.log(`[AdminScreen] ✓ Chunk ${chunkIndex + 1}/${totalChunks} uploaded in ${chunkDuration.toFixed(1)}s (${chunkSpeed} MB/s)`);
-
-        // Update progress
-        uploadedBytesRef.current += CHUNK_SIZE;
-        const overallProgress = Math.min(
-          15 + (uploadedBytesRef.current / (videoMetadata?.size || 1)) * 60,
-          75
-        );
-        setUploadProgress(overallProgress);
-
-        // Calculate speed and ETA
-        const elapsedTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-        const overallSpeed = (uploadedBytesRef.current / (1024 * 1024)) / elapsedTime;
-        const remainingBytes = (videoMetadata?.size || 0) - uploadedBytesRef.current;
-        const remainingTime = remainingBytes / (overallSpeed * 1024 * 1024);
-
-        setUploadSpeed(overallSpeed.toFixed(2));
-        setEstimatedTimeRemaining(formatDuration(remainingTime));
-
-        return; // Success
-      } catch (error: any) {
-        console.error(`[AdminScreen] Chunk ${chunkIndex + 1} upload attempt ${attempt + 1} failed:`, error.message);
-
-        if (attempt < MAX_RETRIES - 1) {
-          const backoffDelay = RETRY_DELAY * Math.pow(2, attempt);
-          console.log(`[AdminScreen] Retrying chunk ${chunkIndex + 1} in ${backoffDelay}ms...`);
-          setUploadStatus(`Retrying chunk ${chunkIndex + 1}/${totalChunks} (attempt ${attempt + 2}/${MAX_RETRIES})...`);
-          await sleep(backoffDelay);
-        } else {
-          throw new Error(`Failed to upload chunk ${chunkIndex + 1} after ${MAX_RETRIES} attempts: ${error.message}`);
-        }
-      }
     }
   };
 
@@ -749,22 +445,8 @@ export default function AdminScreen() {
     }
 
     console.log('[AdminScreen] ✓ All validations passed, starting upload process');
-    let videoToUpload = selectedVideo;
 
     try {
-      if (needsCompression) {
-        console.log('[AdminScreen] Video needs compression (over 500 MB)');
-        Alert.alert(
-          'Compressing Video',
-          'Your video is over 500 MB and will be compressed before upload. This may take a few minutes.',
-          [{ text: 'OK' }]
-        );
-        
-        videoToUpload = await compressVideo(selectedVideo, uploadQuality);
-        console.log('[AdminScreen] Using compressed video for upload:', videoToUpload);
-      }
-
-      uploadAbortControllerRef.current = false;
       uploadStartTimeRef.current = Date.now();
       uploadedBytesRef.current = 0;
       setUploading(true);
@@ -773,26 +455,24 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING CHUNKED RESUMABLE UPLOAD ==========');
+      console.log('[AdminScreen] ========== STARTING DIRECT STREAMING UPLOAD ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
-      console.log('[AdminScreen] Video URI:', videoToUpload);
-      console.log('[AdminScreen] Upload quality:', uploadQuality);
+      console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
         resolution: formatResolution(videoMetadata.width, videoMetadata.height),
         duration: videoMetadata.duration > 0 ? formatDuration(videoMetadata.duration) : 'Unknown',
-        size: formatFileSize(videoMetadata.size),
-        sizeBytes: videoMetadata.size
+        size: formatFileSize(videoMetadata.size)
       });
 
-      const fileExt = videoToUpload.split('.').pop()?.toLowerCase() || 'mp4';
+      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/6: Verifying video file...');
+      console.log('[AdminScreen] Step 1/4: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
-      const fileInfo = await FileSystem.getInfoAsync(videoToUpload);
+      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
       if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
         throw new Error('Video file not found or is empty');
       }
@@ -800,7 +480,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/6: Getting auth session...');
+      console.log('[AdminScreen] Step 2/4: Getting auth session...');
       setUploadStatus('Verifying authentication...');
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (!currentSession?.access_token) {
@@ -810,82 +490,41 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/6: Splitting video into chunks...');
-      setUploadStatus('Preparing chunks...');
-      
-      const totalChunks = Math.ceil(fileInfo.size / CHUNK_SIZE);
-      console.log(`[AdminScreen] Total chunks: ${totalChunks} (${formatFileSize(CHUNK_SIZE)} each)`);
+      console.log('[AdminScreen] Step 3/4: Uploading video with direct streaming...');
+      setUploadStatus('Uploading video...');
 
-      const chunks: string[] = [];
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, fileInfo.size);
-        const chunkUri = `${FileSystem.cacheDirectory}chunk_${i}.tmp`;
-        
-        // Read chunk from original file
-        const chunkData = await FileSystem.readAsStringAsync(videoToUpload, {
-          encoding: FileSystem.EncodingType.Base64,
-          position: start,
-          length: end - start,
-        });
+      // Get Supabase storage URL
+      const { data: { publicUrl: dummyUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl('dummy');
+      const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
 
-        // Write chunk to temp file
-        await FileSystem.writeAsStringAsync(chunkUri, chunkData, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] Using FileSystem.uploadAsync for direct streaming...');
 
-        chunks.push(chunkUri);
-      }
-
-      console.log(`[AdminScreen] ✓ Created ${chunks.length} chunks`);
-
-      console.log('[AdminScreen] Step 4/6: Uploading chunks with retry logic...');
-      setUploadStatus('Uploading video chunks...');
-
-      for (let i = 0; i < chunks.length; i++) {
-        await uploadChunkWithRetry(
-          chunks[i],
-          i,
-          totalChunks,
-          fileName,
-          currentSession.access_token
-        );
-      }
-
-      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
-      setUploadProgress(75);
-      setUploadStatus('Merging video chunks...');
-
-      console.log('[AdminScreen] Step 5/6: Merging chunks on server...');
-      
-      // Call edge function to merge chunks
-      const { data: mergeData, error: mergeError } = await supabase.functions.invoke('merge-video-chunks', {
-        body: {
-          fileName,
-          totalChunks,
+      // Use FileSystem.uploadAsync for direct streaming upload
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Authorization': `Bearer ${currentSession.access_token}`,
+          'Content-Type': 'video/mp4',
         },
+        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
       });
 
-      if (mergeError) {
-        console.error('[AdminScreen] Merge error:', mergeError);
-        throw new Error(`Failed to merge video chunks: ${mergeError.message}`);
+      console.log('[AdminScreen] Upload result:', uploadResult);
+
+      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
       }
 
-      console.log('[AdminScreen] ✓ Video merged successfully');
-      setUploadProgress(85);
+      console.log('[AdminScreen] ✓ Video uploaded successfully');
+      setUploadProgress(75);
       setUploadStatus('Finalizing upload...');
 
-      // Clean up chunk files
-      console.log('[AdminScreen] Cleaning up temporary chunk files...');
-      for (const chunk of chunks) {
-        try {
-          await FileSystem.deleteAsync(chunk, { idempotent: true });
-        } catch (error) {
-          console.error('[AdminScreen] Error deleting chunk:', error);
-        }
-      }
-
-      console.log('[AdminScreen] Step 6/6: Getting video public URL...');
+      console.log('[AdminScreen] Step 4/4: Getting video public URL...');
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
@@ -896,82 +535,20 @@ export default function AdminScreen() {
       setUploadStatus('Verifying video...');
       
       // Verify the video is accessible
-      const verificationResult = await (async () => {
-        try {
-          const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
-          console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
-          console.log('[AdminScreen] Video content-type:', headResponse.headers.get('content-type'));
-          console.log('[AdminScreen] Video content-length:', headResponse.headers.get('content-length'));
-          
-          if (!headResponse.ok) {
-            console.error('[AdminScreen] ⚠️ WARNING: Video is not accessible!');
-            throw new Error(`Video file is not accessible (HTTP ${headResponse.status}). The upload may have failed during the merge step.`);
-          }
-          
-          const contentType = headResponse.headers.get('content-type');
-          const contentLength = headResponse.headers.get('content-length');
-          
-          if (!contentType || !contentType.includes('video')) {
-            console.error('[AdminScreen] ⚠️ WARNING: Video has wrong content-type:', contentType);
-            throw new Error(`Video file has incorrect content-type: ${contentType}. Expected video/mp4.`);
-          }
-          
-          if (!contentLength || parseInt(contentLength) === 0) {
-            console.error('[AdminScreen] ⚠️ WARNING: Video file is empty!');
-            throw new Error('Video file is empty (0 bytes). The merge may have failed.');
-          }
-          
-          console.log('[AdminScreen] ✓ Video is accessible and has correct content-type');
-          console.log('[AdminScreen] ✓ Video file size:', formatFileSize(parseInt(contentLength)));
-          
-          console.log('[AdminScreen] Downloading first 32 bytes to verify MP4 format...');
-          const partialResponse = await fetch(videoPublicUrl, {
-            headers: {
-              'Range': 'bytes=0-31'
-            }
-          });
-          
-          if (partialResponse.ok) {
-            const buffer = await partialResponse.arrayBuffer();
-            const bytes = new Uint8Array(buffer);
-            console.log('[AdminScreen] First 32 bytes:', Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
-            
-            let hasValidMP4Header = false;
-            
-            if (bytes.length > 8 &&
-                bytes[4] === 0x66 && bytes[5] === 0x74 &&
-                bytes[6] === 0x79 && bytes[7] === 0x70) {
-              hasValidMP4Header = true;
-              console.log('[AdminScreen] ✓ Valid MP4 header detected at position 4');
-            } else if (bytes.length > 4 &&
-                       bytes[0] === 0x66 && bytes[1] === 0x74 &&
-                       bytes[2] === 0x79 && bytes[3] === 0x70) {
-              hasValidMP4Header = true;
-              console.log('[AdminScreen] ✓ Valid MP4 header detected at position 0');
-            }
-            
-            if (!hasValidMP4Header) {
-              console.error('[AdminScreen] ⚠️ WARNING: Video does not have valid MP4 header!');
-              return { success: false, warning: 'Video may not have valid MP4 format' };
-            } else {
-              console.log('[AdminScreen] ✓ Video has valid MP4 format and should be playable');
-            }
-          }
-          
-          return { success: true };
-        } catch (verifyError) {
-          console.error('[AdminScreen] Video verification failed:', verifyError);
-          throw verifyError;
-        }
-      })();
+      const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
+      console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
+      
+      if (!headResponse.ok) {
+        throw new Error(`Video file is not accessible (HTTP ${headResponse.status})`);
+      }
 
-      setUploadProgress(90);
+      setUploadProgress(85);
 
       // Generate thumbnail
       setUploadStatus('Generating thumbnail...');
       const thumbnailUrl = await (async () => {
         try {
-          const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoToUpload, {
+          const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
             time: 1000,
           });
           
@@ -1002,18 +579,6 @@ export default function AdminScreen() {
           return null;
         }
       })();
-
-      if (verificationResult && !verificationResult.success && verificationResult.warning) {
-        Alert.alert(
-          'Warning: Video Format Issue',
-          'The video was uploaded but may not have a valid MP4 format. It might not play correctly. This can happen if:\n\n' +
-          '• The original video was not properly encoded\n' +
-          '• The video was corrupted during recording\n' +
-          '• The merge process had issues\n\n' +
-          'Try re-recording the video or using a different video file.',
-          [{ text: 'OK' }]
-        );
-      }
 
       console.log('[AdminScreen] Saving to database...');
       setUploadStatus('Saving video information...');
@@ -1050,7 +615,6 @@ export default function AdminScreen() {
       setVideoDescription('');
       setSelectedVideo(null);
       setVideoMetadata(null);
-      setNeedsCompression(false);
       
       await refreshVideos();
 
@@ -1059,22 +623,12 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error stack:', error.stack);
       
-      uploadAbortControllerRef.current = false;
-      
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('cancelled')) {
-        errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
-      } else if (error.message?.includes('chunk')) {
-        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nPlease check your internet connection and try again.';
-      } else if (error.message?.includes('merge') || error.message?.includes('Merge failed')) {
-        errorMessage = '❌ Merge Failed\n\n' + error.message + '\n\nThe video chunks were uploaded but could not be merged. This can happen with very large files or network issues.\n\nSolutions:\n1. Try uploading a smaller video\n2. Ensure stable WiFi connection\n3. Wait a few minutes and try again\n4. Contact support if the issue persists';
-      } else if (error.message?.includes('not accessible') || error.message?.includes('content-type')) {
-        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. This may be due to:\n• Storage bucket configuration issues\n• RLS policy problems\n• Edge Function merge failure\n\nPlease contact support or check the Supabase logs.';
-      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
+      if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. If the problem persists, try again later';
-      } else if (error.message?.includes('compression')) {
-        errorMessage = '❌ Compression Failed\n\n' + error.message + '\n\nPlease try:\n1. Selecting a different video\n2. Using a video compression app before uploading\n3. Recording at a lower resolution';
+      } else if (error.message?.includes('not accessible')) {
+        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. Please try again.';
       } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
       } else {
@@ -1083,12 +637,9 @@ export default function AdminScreen() {
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
-      uploadAbortControllerRef.current = false;
       setUploading(false);
-      setCompressing(false);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
-      setCompressionProgress(0);
       setUploadStatus('');
     }
   };
@@ -1135,8 +686,6 @@ export default function AdminScreen() {
   const selectVideoText = "Select Video";
   const changeVideoText = "Change Video";
   const validatingVideoText = "Validating Video...";
-  const uploadQualityTitle = "Upload Quality";
-  const uploadQualitySubtitle = "Select the quality for this upload";
   const uploadVideoButtonText = "Upload Video";
   const videoManagementTitle = "Video Management";
   const noVideosText = "No videos uploaded yet";
@@ -1294,31 +843,25 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ CHUNKED RESUMABLE UPLOAD - Production Ready
+                ✅ DIRECT STREAMING UPLOAD - Simple & Reliable
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ 10MB chunks with automatic retry (5 attempts)
+                • ✅ Direct file streaming (no chunking)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Exponential backoff for network errors
+                • ✅ Native mobile upload (like Instagram)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ 2-minute timeout per chunk
+                • ✅ Handles large files efficiently
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Real-time progress tracking
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Upload speed and ETA calculation
+                • ✅ Background upload support
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Thumbnail generation
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • Videos over 500 MB auto-compressed
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1358,7 +901,7 @@ export default function AdminScreen() {
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={pickVideo}
-            disabled={uploading || validatingVideo || compressing}
+            disabled={uploading || validatingVideo}
           >
             {validatingVideo ? (
               <React.Fragment>
@@ -1379,121 +922,6 @@ export default function AdminScreen() {
               </React.Fragment>
             )}
           </TouchableOpacity>
-
-          {videoMetadata && validationErrors.length === 0 && (
-            <View style={styles.qualitySection}>
-              <Text style={[styles.qualityTitle, { color: theme.colors.text }]}>
-                {uploadQualityTitle}
-              </Text>
-              <Text style={[styles.qualitySubtitle, { color: colors.textSecondary }]}>
-                {uploadQualitySubtitle}
-              </Text>
-              
-              <View style={styles.qualityOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { 
-                      backgroundColor: uploadQuality === '2K' ? colors.primary : theme.colors.background,
-                      borderColor: uploadQuality === '2K' ? colors.primary : colors.textSecondary
-                    }
-                  ]}
-                  onPress={() => setUploadQuality('2K')}
-                >
-                  <View style={styles.qualityOptionHeader}>
-                    <Text style={[
-                      styles.qualityOptionTitle,
-                      { color: uploadQuality === '2K' ? '#FFFFFF' : theme.colors.text }
-                    ]}>
-                      2K
-                    </Text>
-                    {uploadQuality === '2K' && (
-                      <IconSymbol
-                        ios_icon_name="checkmark.circle.fill"
-                        android_material_icon_name="check-circle"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    )}
-                  </View>
-                  <Text style={[
-                    styles.qualityOptionDescription,
-                    { color: uploadQuality === '2K' ? '#FFFFFF' : colors.textSecondary }
-                  ]}>
-                    {getQualityDescription('2K')}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { 
-                      backgroundColor: uploadQuality === '4K' ? colors.primary : theme.colors.background,
-                      borderColor: uploadQuality === '4K' ? colors.primary : colors.textSecondary
-                    }
-                  ]}
-                  onPress={() => setUploadQuality('4K')}
-                >
-                  <View style={styles.qualityOptionHeader}>
-                    <Text style={[
-                      styles.qualityOptionTitle,
-                      { color: uploadQuality === '4K' ? '#FFFFFF' : theme.colors.text }
-                    ]}>
-                      4K
-                    </Text>
-                    {uploadQuality === '4K' && (
-                      <IconSymbol
-                        ios_icon_name="checkmark.circle.fill"
-                        android_material_icon_name="check-circle"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    )}
-                  </View>
-                  <Text style={[
-                    styles.qualityOptionDescription,
-                    { color: uploadQuality === '4K' ? '#FFFFFF' : colors.textSecondary }
-                  ]}>
-                    {getQualityDescription('4K')}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { 
-                      backgroundColor: uploadQuality === 'Original' ? colors.primary : theme.colors.background,
-                      borderColor: uploadQuality === 'Original' ? colors.primary : colors.textSecondary
-                    }
-                  ]}
-                  onPress={() => setUploadQuality('Original')}
-                >
-                  <View style={styles.qualityOptionHeader}>
-                    <Text style={[
-                      styles.qualityOptionTitle,
-                      { color: uploadQuality === 'Original' ? '#FFFFFF' : theme.colors.text }
-                    ]}>
-                      Original
-                    </Text>
-                    {uploadQuality === 'Original' && (
-                      <IconSymbol
-                        ios_icon_name="checkmark.circle.fill"
-                        android_material_icon_name="check-circle"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    )}
-                  </View>
-                  <Text style={[
-                    styles.qualityOptionDescription,
-                    { color: uploadQuality === 'Original' ? '#FFFFFF' : colors.textSecondary }
-                  ]}>
-                    {getQualityDescription('Original')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
 
           {videoMetadata && (
             <View style={[
@@ -1563,23 +991,6 @@ export default function AdminScreen() {
                     {formatFileSize(videoMetadata.size)}
                   </Text>
                 </View>
-
-                {needsCompression && (
-                  <View style={styles.metadataRow}>
-                    <Text style={[styles.metadataLabel, { color: colors.textSecondary }]}>
-                      Compression:
-                    </Text>
-                    <Text style={[
-                      styles.metadataValue,
-                      { 
-                        color: '#FF9800',
-                        fontWeight: '600'
-                      }
-                    ]}>
-                      Will be compressed
-                    </Text>
-                  </View>
-                )}
               </View>
 
               {validationErrors.length > 0 && (
@@ -1596,32 +1007,7 @@ export default function AdminScreen() {
             </View>
           )}
 
-          {compressing && (
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { 
-                      width: `${compressionProgress}%`,
-                      backgroundColor: '#FF9800'
-                    }
-                  ]} 
-                />
-              </View>
-              <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                Compressing video...
-              </Text>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                {compressionProgress}% complete
-              </Text>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-                This may take a few minutes. Please keep the app open.
-              </Text>
-            </View>
-          )}
-
-          {uploading && !compressing && (
+          {uploading && (
             <View style={styles.progressContainer}>
               <View style={styles.progressBar}>
                 <View 
@@ -1640,24 +1026,9 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
-              {uploadSpeed && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Speed: {uploadSpeed} MB/s
-                </Text>
-              )}
-              {estimatedTimeRemaining && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Estimated time remaining: {estimatedTimeRemaining}
-                </Text>
-              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
-              {uploadProgress >= 75 && uploadProgress < 90 && (
-                <Text style={[styles.progressSubtext, { color: '#FF9800', marginTop: 8, fontWeight: '600' }]}>
-                  Merging video chunks... This may take 2-5 minutes for large files.
-                </Text>
-              )}
             </View>
           )}
 
@@ -1665,12 +1036,12 @@ export default function AdminScreen() {
             style={[
               styles.button,
               { backgroundColor: colors.accent },
-              (!selectedVideo || !videoTitle || uploading || compressing || validationErrors.length > 0) && styles.buttonDisabled
+              (!selectedVideo || !videoTitle || uploading || validationErrors.length > 0) && styles.buttonDisabled
             ]}
             onPress={uploadVideo}
-            disabled={!selectedVideo || !videoTitle || uploading || compressing || validationErrors.length > 0}
+            disabled={!selectedVideo || !videoTitle || uploading || validationErrors.length > 0}
           >
-            {uploading || compressing ? (
+            {uploading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <React.Fragment>
@@ -1694,16 +1065,13 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Chunked upload with automatic retry{'\n'}
-              • ✅ Recovers from network interruptions{'\n'}
-              • ✅ Real-time progress and speed tracking{'\n'}
-              • ✅ Works with HD videos up to 5GB{'\n'}
-              • ✅ Automatic thumbnail generation{'\n'}
-              • ✅ Video verification after upload{'\n'}
+              • ✅ Direct streaming upload (no chunking){'\n'}
+              • ✅ Works like Instagram/TikTok uploads{'\n'}
+              • ✅ Handles HD videos efficiently{'\n'}
+              • ✅ Background upload support{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
-              • Upload time depends on file size and connection speed{'\n'}
-              • Stay in one location (avoid network switching)
+              • Upload time depends on file size and connection speed
             </Text>
           </View>
         </View>
@@ -1903,24 +1271,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
-  requirementsBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 2,
-  },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 2,
-  },
   requirementsTextContainer: {
     flex: 1,
   },
@@ -1962,41 +1312,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  qualitySection: {
-    marginTop: 20,
-    marginBottom: 12,
-  },
-  qualityTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  qualitySubtitle: {
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  qualityOptions: {
-    gap: 10,
-  },
-  qualityOption: {
-    padding: 14,
-    borderRadius: 8,
-    borderWidth: 2,
-  },
-  qualityOptionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  qualityOptionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  qualityOptionDescription: {
-    fontSize: 13,
-    lineHeight: 18,
   },
   metadataBox: {
     marginTop: 16,
@@ -2072,6 +1387,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginTop: 12,
+    borderWidth: 2,
   },
   infoText: {
     flex: 1,
