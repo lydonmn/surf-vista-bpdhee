@@ -30,6 +30,7 @@ interface VideoMetadata {
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for reliable upload
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -52,7 +53,7 @@ export default function AdminScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const uploadStartTimeRef = useRef<number>(0);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -62,8 +63,8 @@ export default function AdminScreen() {
 
   useEffect(() => {
     return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
+      if (uploadAbortControllerRef.current) {
+        uploadAbortControllerRef.current.abort();
       }
     };
   }, []);
@@ -523,17 +524,18 @@ export default function AdminScreen() {
       return;
     }
 
-    console.log('[AdminScreen] ✓ All validations passed, starting upload process');
+    console.log('[AdminScreen] ✓ All validations passed, starting chunked upload process');
 
     try {
       uploadStartTimeRef.current = Date.now();
+      uploadAbortControllerRef.current = new AbortController();
       setUploading(true);
       setUploadProgress(0);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING UPLOAD WITH SIMULATED PROGRESS ==========');
+      console.log('[AdminScreen] ========== STARTING CHUNKED UPLOAD ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
@@ -546,7 +548,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/5: Verifying video file...');
+      console.log('[AdminScreen] Step 1/6: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
@@ -556,98 +558,123 @@ export default function AdminScreen() {
       }
       
       const totalSize = fileInfo.size || 0;
+      const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
       
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
+      console.log('[AdminScreen] Total chunks to upload:', totalChunks);
+      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Getting signed upload URL from Supabase...');
-      setUploadStatus('Getting upload URL...');
+      console.log('[AdminScreen] Step 2/6: Reading video file as base64...');
+      setUploadStatus('Reading video file...');
 
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('videos')
-        .createSignedUploadUrl(fileName);
+      const videoBase64 = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
-      if (signedUrlError || !signedUrlData) {
-        console.error('[AdminScreen] Error getting signed URL:', signedUrlError);
-        throw new Error(`Failed to get upload URL: ${signedUrlError?.message || 'Unknown error'}`);
-      }
-
-      console.log('[AdminScreen] ✓ Got signed upload URL');
-      console.log('[AdminScreen] Upload URL token:', signedUrlData.token);
-      console.log('[AdminScreen] Upload path:', signedUrlData.path);
+      console.log('[AdminScreen] ✓ Video file read successfully');
+      console.log('[AdminScreen] Base64 length:', videoBase64.length);
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/5: Uploading video file using FileSystem.uploadAsync...');
-      setUploadStatus('Uploading video to cloud storage...');
+      console.log('[AdminScreen] Step 3/6: Uploading video in chunks...');
+      setUploadStatus('Uploading video chunks...');
 
+      const chunkIds: string[] = [];
       const startTime = Date.now();
-      
-      const estimatedUploadTime = (totalSize / (1024 * 1024)) * 2;
-      const progressUpdateInterval = 500;
-      let currentProgress = 15;
-      
-      progressIntervalRef.current = setInterval(() => {
+      let uploadedBytes = 0;
+
+      for (let i = 0; i < totalChunks; i++) {
+        if (uploadAbortControllerRef.current?.signal.aborted) {
+          throw new Error('Upload cancelled by user');
+        }
+
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, totalSize);
+        const chunkSize = end - start;
+        
+        const startBase64Index = Math.floor((start / totalSize) * videoBase64.length);
+        const endBase64Index = Math.floor((end / totalSize) * videoBase64.length);
+        const chunkBase64 = videoBase64.substring(startBase64Index, endBase64Index);
+
+        console.log(`[AdminScreen] Uploading chunk ${i + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
+        setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks}...`);
+
+        const chunkFileName = `${fileName}.chunk${i}`;
+
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('videos')
+          .createSignedUploadUrl(chunkFileName);
+
+        if (signedUrlError || !signedUrlData) {
+          console.error('[AdminScreen] Error getting signed URL for chunk:', signedUrlError);
+          throw new Error(`Failed to get upload URL for chunk ${i + 1}: ${signedUrlError?.message || 'Unknown error'}`);
+        }
+
+        const chunkBlob = Uint8Array.from(atob(chunkBase64), c => c.charCodeAt(0));
+
+        const uploadResponse = await fetch(signedUrlData.signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+          },
+          body: chunkBlob,
+          signal: uploadAbortControllerRef.current?.signal,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorBody = await uploadResponse.text();
+          console.error('[AdminScreen] Chunk upload failed:', uploadResponse.status, errorBody);
+          throw new Error(`Chunk ${i + 1} upload failed with status ${uploadResponse.status}: ${errorBody}`);
+        }
+
+        chunkIds.push(chunkFileName);
+        uploadedBytes += chunkSize;
+
         const elapsedSeconds = (Date.now() - startTime) / 1000;
-        const estimatedProgress = 15 + (elapsedSeconds / estimatedUploadTime) * 55;
-        currentProgress = Math.min(estimatedProgress, 69);
-        
-        setUploadProgress(currentProgress);
-        
-        const uploadedBytes = ((currentProgress - 15) / 55) * totalSize;
         const speedMBps = (uploadedBytes / (1024 * 1024) / elapsedSeconds).toFixed(2);
         const remainingBytes = totalSize - uploadedBytes;
         const remainingSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
         
+        const progress = 15 + ((i + 1) / totalChunks) * 50;
+        setUploadProgress(progress);
         setUploadSpeed(`${speedMBps} MB/s`);
         setEstimatedTimeRemaining(`${Math.ceil(remainingSeconds)}s remaining`);
         
-        console.log(`[AdminScreen] Upload progress: ${currentProgress.toFixed(1)}% - Speed: ${speedMBps} MB/s`);
-      }, progressUpdateInterval);
-      
-      console.log('[AdminScreen] Starting upload with:');
-      console.log('[AdminScreen]   - URL:', signedUrlData.signedUrl);
-      console.log('[AdminScreen]   - Local file:', selectedVideo);
-      console.log('[AdminScreen]   - File size:', formatFileSize(totalSize));
-
-      const uploadResult = await FileSystem.uploadAsync(
-        signedUrlData.signedUrl,
-        selectedVideo,
-        {
-          httpMethod: 'PUT',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Content-Type': 'video/mp4',
-          },
-        }
-      );
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-
-      console.log('[AdminScreen] Upload completed!');
-      console.log('[AdminScreen] Upload result status:', uploadResult.status);
-      console.log('[AdminScreen] Upload result body:', uploadResult.body);
-
-      if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body || 'Unknown error'}`);
+        console.log(`[AdminScreen] Chunk ${i + 1}/${totalChunks} uploaded successfully - Progress: ${progress.toFixed(1)}%`);
       }
 
       const elapsedSeconds = (Date.now() - startTime) / 1000;
       const speedMBps = (totalSize / (1024 * 1024) / elapsedSeconds).toFixed(2);
       
-      console.log('[AdminScreen] ✓ Video uploaded successfully');
+      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
       console.log('[AdminScreen] Upload speed:', speedMBps, 'MB/s');
       console.log('[AdminScreen] Upload time:', elapsedSeconds.toFixed(1), 'seconds');
       
-      setUploadProgress(70);
+      setUploadProgress(65);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
 
-      console.log('[AdminScreen] Step 4/5: Verifying uploaded video...');
+      console.log('[AdminScreen] Step 4/6: Merging chunks on server...');
+      setUploadStatus('Merging video chunks...');
+
+      const { data: mergeData, error: mergeError } = await supabase.functions.invoke('merge-video-chunks', {
+        body: {
+          fileName,
+          chunkIds,
+          totalSize,
+        },
+      });
+
+      if (mergeError) {
+        console.error('[AdminScreen] Error merging chunks:', mergeError);
+        throw new Error(`Failed to merge chunks: ${mergeError.message}`);
+      }
+
+      console.log('[AdminScreen] ✓ Chunks merged successfully');
+      console.log('[AdminScreen] Merged file path:', mergeData.filePath);
+      setUploadProgress(75);
+
+      console.log('[AdminScreen] Step 5/6: Verifying uploaded video...');
       setUploadStatus('Verifying video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -664,9 +691,9 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] ✓ Video verified and accessible');
-      setUploadProgress(80);
+      setUploadProgress(85);
 
-      console.log('[AdminScreen] Step 5/5: Generating thumbnail and saving to database...');
+      console.log('[AdminScreen] Step 6/6: Generating thumbnail and saving to database...');
       setUploadStatus('Generating thumbnail...');
       
       const thumbnailUrl = await (async () => {
@@ -716,7 +743,7 @@ export default function AdminScreen() {
         }
       })();
 
-      setUploadProgress(90);
+      setUploadProgress(95);
       setUploadStatus('Saving video information...');
 
       const { error: dbError } = await supabase
@@ -740,11 +767,11 @@ export default function AdminScreen() {
       
       setUploadProgress(100);
       setUploadStatus('Upload complete!');
-      console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
+      console.log('[AdminScreen] ========== CHUNKED UPLOAD COMPLETED SUCCESSFULLY ==========');
 
       Alert.alert(
         'Success', 
-        `Video uploaded successfully in ${elapsedSeconds.toFixed(1)} seconds!\n\nAverage speed: ${speedMBps} MB/s\n\nThe video is now playable.`,
+        `Video uploaded successfully in ${elapsedSeconds.toFixed(1)} seconds!\n\nAverage speed: ${speedMBps} MB/s\nChunks uploaded: ${totalChunks}\n\nThe video is now playable.`,
         [{ text: 'OK' }]
       );
       
@@ -756,30 +783,25 @@ export default function AdminScreen() {
       await refreshVideos();
 
     } catch (error: any) {
-      console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
+      console.error('[AdminScreen] ========== CHUNKED UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error message:', error.message);
       if (error.stack) {
         console.error('[AdminScreen] Error stack:', error.stack);
       }
       
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
+      if (error.message?.includes('cancelled')) {
+        errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. If the problem persists, try again later';
       } else if (error.message?.includes('not accessible')) {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. Please try again.';
       } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
-      } else if (error.message?.includes('413') || error.message?.includes('Payload Too Large')) {
-        errorMessage = '❌ File Too Large\n\nThe video file exceeds the upload limit.\n\nSolutions:\n1. Compress the video before uploading\n2. Use a shorter video (max 90 seconds)\n3. Reduce video quality/resolution\n4. Contact support for larger file support';
-      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL')) {
-        errorMessage = '❌ Upload Configuration Error\n\n' + error.message + '\n\nSolutions:\n1. Check your internet connection\n2. Make sure you\'re logged in\n3. Try logging out and back in\n4. Contact support if the issue persists';
+      } else if (error.message?.includes('merge')) {
+        errorMessage = '❌ Merge Failed\n\nThe video chunks were uploaded but could not be merged.\n\nSolutions:\n1. Try uploading again\n2. Check your internet connection\n3. Contact support if the issue persists';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -790,10 +812,7 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('');
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
+      uploadAbortControllerRef.current = null;
     }
   };
 
@@ -996,16 +1015,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ DIRECT BINARY UPLOAD - Fast & Reliable
+                ✅ CHUNKED UPLOAD - Reliable for Large Files
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Direct upload to Supabase Storage
+                • ✅ Uploads video in 10MB chunks
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Simulated progress tracking
+                • ✅ Real progress tracking per chunk
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Handles files up to 3GB
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Automatic chunk merging
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
@@ -1220,7 +1242,7 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Direct upload to Supabase Storage{'\n'}
+              • ✅ Chunked upload for reliability{'\n'}
               • ✅ Handles large 6K videos{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
