@@ -284,23 +284,45 @@ export default function AdminScreen() {
     assetDuration?: number
   ): Promise<VideoMetadata | null> => {
     try {
-      console.log('[AdminScreen] Validating video metadata for:', uri);
+      console.log('[AdminScreen] ========== VALIDATING VIDEO METADATA ==========');
+      console.log('[AdminScreen] Video URI:', uri);
+      console.log('[AdminScreen] Asset width:', assetWidth);
+      console.log('[AdminScreen] Asset height:', assetHeight);
+      console.log('[AdminScreen] Asset duration (ms):', assetDuration);
       
       const fileInfo = await FileSystem.getInfoAsync(uri);
+      console.log('[AdminScreen] File info:', fileInfo);
+      
       if (!fileInfo.exists) {
+        console.error('[AdminScreen] Video file not found at URI');
         throw new Error('Video file not found');
       }
       
       const fileSize = fileInfo.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
-      let width = assetWidth || 1920;
-      let height = assetHeight || 1080;
+      if (fileSize === 0) {
+        console.error('[AdminScreen] Video file is empty (0 bytes)');
+        throw new Error('Video file is empty');
+      }
+
+      let width = 1920;
+      let height = 1080;
+      
+      if (assetWidth && assetHeight && assetWidth > 0 && assetHeight > 0) {
+        width = assetWidth;
+        height = assetHeight;
+        console.log('[AdminScreen] Using dimensions from picker:', width, 'x', height);
+      } else {
+        console.log('[AdminScreen] No dimensions from picker, using defaults:', width, 'x', height);
+      }
       
       let duration = 0;
       if (assetDuration && assetDuration > 0) {
         duration = assetDuration / 1000;
         console.log('[AdminScreen] Duration from picker:', duration, 'seconds');
+      } else {
+        console.log('[AdminScreen] No duration from picker, will be set to 0 (unknown)');
       }
 
       const metadata = {
@@ -310,15 +332,18 @@ export default function AdminScreen() {
         size: fileSize
       };
 
-      console.log('[AdminScreen] Final video metadata:', {
-        resolution: formatResolution(width, height),
-        duration: duration > 0 ? formatDuration(duration) : 'Unknown',
-        size: formatFileSize(fileSize)
-      });
+      console.log('[AdminScreen] ✓ Video metadata validated successfully:');
+      console.log('[AdminScreen]   Resolution:', formatResolution(width, height));
+      console.log('[AdminScreen]   Duration:', duration > 0 ? formatDuration(duration) : 'Unknown');
+      console.log('[AdminScreen]   Size:', formatFileSize(fileSize));
+      console.log('[AdminScreen] ========== VALIDATION COMPLETE ==========');
 
       return metadata;
-    } catch (error) {
-      console.error('[AdminScreen] Error validating video:', error);
+    } catch (error: any) {
+      console.error('[AdminScreen] ========== VALIDATION FAILED ==========');
+      console.error('[AdminScreen] Error:', error);
+      console.error('[AdminScreen] Error message:', error.message);
+      console.error('[AdminScreen] Error stack:', error.stack);
       return null;
     }
   };
@@ -343,15 +368,18 @@ export default function AdminScreen() {
 
   const pickVideo = async () => {
     try {
+      console.log('[AdminScreen] ========== PICK VIDEO STARTED ==========');
       setValidationErrors([]);
       setVideoMetadata(null);
       
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
+        console.log('[AdminScreen] Permission denied');
         Alert.alert('Permission Required', 'Please grant permission to access your photo library');
         return;
       }
 
+      console.log('[AdminScreen] Launching image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
@@ -359,15 +387,28 @@ export default function AdminScreen() {
         videoMaxDuration: 300,
       });
 
+      console.log('[AdminScreen] Image picker result:', {
+        canceled: result.canceled,
+        hasAssets: result.assets && result.assets.length > 0
+      });
+
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const videoUri = asset.uri;
         
         console.log('[AdminScreen] Video selected:', videoUri);
+        console.log('[AdminScreen] Asset details:', {
+          width: asset.width,
+          height: asset.height,
+          duration: asset.duration,
+          type: asset.type,
+          fileName: asset.fileName
+        });
         
         setValidatingVideo(true);
         
         try {
+          console.log('[AdminScreen] Starting metadata validation...');
           const metadata = await validateVideoMetadata(
             videoUri, 
             asset.width, 
@@ -376,16 +417,22 @@ export default function AdminScreen() {
           );
           
           if (!metadata) {
-            Alert.alert('Error', 'Could not read video information. Please try a different video.');
+            console.error('[AdminScreen] Metadata validation returned null');
+            Alert.alert(
+              'Error', 
+              'Could not read video information. The video file may be corrupted or in an unsupported format.\n\nPlease try:\n• Selecting a different video\n• Recording a new video\n• Converting the video to MP4 format'
+            );
             return;
           }
 
+          console.log('[AdminScreen] Metadata validated successfully');
           setVideoMetadata(metadata);
           
           const errors = checkVideoRequirements(metadata);
           setValidationErrors(errors);
 
           if (errors.length > 0) {
+            console.log('[AdminScreen] Video does not meet requirements:', errors);
             Alert.alert(
               'Video Does Not Meet Requirements',
               errors.join('\n\n'),
@@ -393,11 +440,12 @@ export default function AdminScreen() {
             );
             setSelectedVideo(null);
           } else {
+            console.log('[AdminScreen] Video meets all requirements');
             setSelectedVideo(videoUri);
             
             const durationText = metadata.duration > 0 
               ? `Duration: ${formatDuration(metadata.duration)}\n` 
-              : 'Duration: Unknown\n';
+              : 'Duration: Unknown (will be detected during upload)\n';
             
             Alert.alert(
               'Video Validated ✓',
@@ -405,19 +453,26 @@ export default function AdminScreen() {
               [{ text: 'OK' }]
             );
           }
-        } catch (error) {
-          console.error('[AdminScreen] Error validating video:', error);
+        } catch (error: any) {
+          console.error('[AdminScreen] Error during validation:', error);
           Alert.alert(
             'Validation Error',
-            'Could not validate video. Please ensure the video is a valid format and try again.'
+            'Could not validate video. Please ensure the video is a valid format and try again.\n\nError: ' + error.message
           );
         } finally {
           setValidatingVideo(false);
         }
+      } else {
+        console.log('[AdminScreen] Video selection canceled or no assets');
       }
-    } catch (error) {
+      
+      console.log('[AdminScreen] ========== PICK VIDEO COMPLETED ==========');
+    } catch (error: any) {
+      console.error('[AdminScreen] ========== PICK VIDEO FAILED ==========');
       console.error('[AdminScreen] Error picking video:', error);
-      Alert.alert('Error', 'Failed to pick video');
+      console.error('[AdminScreen] Error message:', error.message);
+      console.error('[AdminScreen] Error stack:', error.stack);
+      Alert.alert('Error', 'Failed to pick video: ' + error.message);
       setValidatingVideo(false);
     }
   };
@@ -496,7 +551,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Step 3/4: Uploading video with native streaming...');
       setUploadStatus('Uploading video...');
 
-      // Get Supabase project URL and construct upload URL
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl('dummy');
@@ -506,12 +560,11 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
 
-      // Upload using FileSystem.uploadAsync with progress tracking
       const startTime = Date.now();
       
       const uploadTask = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'POST',
-        uploadType: 0, // BINARY_CONTENT - using numeric value instead of enum
+        uploadType: 0,
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`,
           'Content-Type': 'video/mp4',
@@ -519,7 +572,6 @@ export default function AdminScreen() {
         },
       });
 
-      // Track progress
       uploadTask.then(
         (result) => {
           console.log('[AdminScreen] Upload task completed:', result.status);
@@ -529,19 +581,15 @@ export default function AdminScreen() {
         }
       );
 
-      // Monitor progress using a polling mechanism
       const progressInterval = setInterval(async () => {
         try {
           const now = Date.now();
           const elapsedSeconds = (now - uploadStartTimeRef.current) / 1000;
           
-          // Estimate progress based on time (this is a fallback since FileSystem.uploadAsync doesn't provide real-time progress)
-          // We'll use a logarithmic curve to simulate realistic upload progress
           const estimatedProgress = Math.min(95, 15 + (Math.log(elapsedSeconds + 1) / Math.log(100)) * 80);
           
           setUploadProgress(estimatedProgress);
           
-          // Calculate speed
           const bytesUploaded = (estimatedProgress / 100) * totalSize;
           const bytesSinceLastUpdate = bytesUploaded - lastBytesUploadedRef.current;
           const timeSinceLastUpdate = (now - lastProgressUpdateRef.current) / 1000;
@@ -594,7 +642,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Verifying video and generating thumbnail...');
       setUploadStatus('Verifying video...');
       
-      // Verify the video is accessible
       const headResponse = await fetch(videoPublicUrl, { method: 'HEAD' });
       console.log('[AdminScreen] Video HEAD request status:', headResponse.status);
       
@@ -604,7 +651,6 @@ export default function AdminScreen() {
 
       setUploadProgress(85);
 
-      // Generate thumbnail
       setUploadStatus('Generating thumbnail...');
       const thumbnailUrl = await (async () => {
         try {
@@ -629,7 +675,7 @@ export default function AdminScreen() {
             thumbnailUri,
             {
               httpMethod: 'POST',
-              uploadType: 0, // BINARY_CONTENT - using numeric value instead of enum
+              uploadType: 0,
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`,
                 'Content-Type': 'image/jpeg',
