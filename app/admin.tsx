@@ -560,7 +560,7 @@ export default function AdminScreen() {
       
       const uploadTask = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        uploadType: 0,
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`,
           'Content-Type': 'video/mp4',
@@ -671,7 +671,7 @@ export default function AdminScreen() {
             thumbnailUri,
             {
               httpMethod: 'POST',
-              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+              uploadType: 0,
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`,
                 'Content-Type': 'image/jpeg',
