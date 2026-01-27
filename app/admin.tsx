@@ -9,6 +9,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -544,7 +545,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/4: Uploading video with native streaming...');
+      console.log('[AdminScreen] Step 3/4: Uploading video with native streaming (legacy API)...');
       setUploadStatus('Uploading video...');
 
       const { data: { publicUrl } } = supabase.storage
@@ -558,9 +559,9 @@ export default function AdminScreen() {
 
       const startTime = Date.now();
       
-      const uploadTask = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+      const uploadTask = LegacyFileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'POST',
-        uploadType: 0,
+        uploadType: LegacyFileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`,
           'Content-Type': 'video/mp4',
@@ -666,12 +667,12 @@ export default function AdminScreen() {
 
           const thumbnailUploadUrl = `${baseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
           
-          const thumbnailUploadResult = await FileSystem.uploadAsync(
+          const thumbnailUploadResult = await LegacyFileSystem.uploadAsync(
             thumbnailUploadUrl,
             thumbnailUri,
             {
               httpMethod: 'POST',
-              uploadType: 0,
+              uploadType: LegacyFileSystem.FileSystemUploadType.BINARY_CONTENT,
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`,
                 'Content-Type': 'image/jpeg',
