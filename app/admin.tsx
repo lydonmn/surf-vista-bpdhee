@@ -548,7 +548,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/6: Verifying video file...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
@@ -565,18 +565,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/6: Reading video file as base64...');
-      setUploadStatus('Reading video file...');
-
-      const videoBase64 = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      console.log('[AdminScreen] ✓ Video file read successfully');
-      console.log('[AdminScreen] Base64 length:', videoBase64.length);
-      setUploadProgress(15);
-
-      console.log('[AdminScreen] Step 3/6: Uploading video in chunks...');
+      console.log('[AdminScreen] Step 2/5: Uploading video in chunks (direct binary upload)...');
       setUploadStatus('Uploading video chunks...');
 
       const chunkIds: string[] = [];
@@ -591,10 +580,6 @@ export default function AdminScreen() {
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, totalSize);
         const chunkSize = end - start;
-        
-        const startBase64Index = Math.floor((start / totalSize) * videoBase64.length);
-        const endBase64Index = Math.floor((end / totalSize) * videoBase64.length);
-        const chunkBase64 = videoBase64.substring(startBase64Index, endBase64Index);
 
         console.log(`[AdminScreen] Uploading chunk ${i + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
         setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks}...`);
@@ -610,8 +595,17 @@ export default function AdminScreen() {
           throw new Error(`Failed to get upload URL for chunk ${i + 1}: ${signedUrlError?.message || 'Unknown error'}`);
         }
 
+        console.log(`[AdminScreen] Reading chunk ${i + 1} as base64 (${start} to ${end})...`);
+        const chunkBase64 = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+          position: start,
+          length: chunkSize,
+        });
+
+        console.log(`[AdminScreen] Converting chunk ${i + 1} to binary...`);
         const chunkBlob = Uint8Array.from(atob(chunkBase64), c => c.charCodeAt(0));
 
+        console.log(`[AdminScreen] Uploading chunk ${i + 1} to storage...`);
         const uploadResponse = await fetch(signedUrlData.signedUrl, {
           method: 'PUT',
           headers: {
@@ -635,7 +629,7 @@ export default function AdminScreen() {
         const remainingBytes = totalSize - uploadedBytes;
         const remainingSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
         
-        const progress = 15 + ((i + 1) / totalChunks) * 50;
+        const progress = 10 + ((i + 1) / totalChunks) * 60;
         setUploadProgress(progress);
         setUploadSpeed(`${speedMBps} MB/s`);
         setEstimatedTimeRemaining(`${Math.ceil(remainingSeconds)}s remaining`);
@@ -650,11 +644,11 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Upload speed:', speedMBps, 'MB/s');
       console.log('[AdminScreen] Upload time:', elapsedSeconds.toFixed(1), 'seconds');
       
-      setUploadProgress(65);
+      setUploadProgress(70);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
 
-      console.log('[AdminScreen] Step 4/6: Merging chunks on server...');
+      console.log('[AdminScreen] Step 3/5: Merging chunks on server...');
       setUploadStatus('Merging video chunks...');
 
       const { data: mergeData, error: mergeError } = await supabase.functions.invoke('merge-video-chunks', {
@@ -672,9 +666,9 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] ✓ Chunks merged successfully');
       console.log('[AdminScreen] Merged file path:', mergeData.filePath);
-      setUploadProgress(75);
+      setUploadProgress(80);
 
-      console.log('[AdminScreen] Step 5/6: Verifying uploaded video...');
+      console.log('[AdminScreen] Step 4/5: Verifying uploaded video...');
       setUploadStatus('Verifying video...');
       
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -691,9 +685,9 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] ✓ Video verified and accessible');
-      setUploadProgress(85);
+      setUploadProgress(90);
 
-      console.log('[AdminScreen] Step 6/6: Generating thumbnail and saving to database...');
+      console.log('[AdminScreen] Step 5/5: Generating thumbnail and saving to database...');
       setUploadStatus('Generating thumbnail...');
       
       const thumbnailUrl = await (async () => {
@@ -1015,10 +1009,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ CHUNKED UPLOAD - Reliable for Large Files
+                ✅ OPTIMIZED CHUNKED UPLOAD - Fixed String Length Error
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Uploads video in 10MB chunks
+                • ✅ Reads file in 10MB chunks (no memory overflow)
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Direct binary upload (no full file conversion)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Real progress tracking per chunk
@@ -1242,7 +1239,7 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Chunked upload for reliability{'\n'}
+              • ✅ Optimized chunked upload (no memory errors){'\n'}
               • ✅ Handles large 6K videos{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
