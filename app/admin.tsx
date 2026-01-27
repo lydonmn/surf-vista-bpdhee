@@ -290,15 +290,10 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Asset height:', assetHeight);
       console.log('[AdminScreen] Asset duration (ms):', assetDuration);
       
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      console.log('[AdminScreen] File info:', fileInfo);
+      const file = new FileSystem.File(uri);
+      console.log('[AdminScreen] Created File object');
       
-      if (!fileInfo.exists) {
-        console.error('[AdminScreen] Video file not found at URI');
-        throw new Error('Video file not found');
-      }
-      
-      const fileSize = fileInfo.size || 0;
+      const fileSize = file.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       if (fileSize === 0) {
@@ -325,7 +320,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] No duration from picker, will be set to 0 (unknown)');
       }
 
-      const metadata = {
+      const metadata: VideoMetadata = {
         width,
         height,
         duration,
@@ -529,12 +524,13 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
-      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      if (!fileInfo.exists || fileInfo.size === 0) {
+      const file = new FileSystem.File(selectedVideo);
+      const totalSize = file.size;
+      
+      if (totalSize === 0) {
         throw new Error('Video file not found or is empty');
       }
       
-      const totalSize = fileInfo.size;
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       setUploadProgress(10);
 
@@ -564,7 +560,7 @@ export default function AdminScreen() {
       
       const uploadTask = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'POST',
-        uploadType: 0,
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`,
           'Content-Type': 'video/mp4',
@@ -662,8 +658,8 @@ export default function AdminScreen() {
           
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          const thumbnailInfo = await FileSystem.getInfoAsync(thumbnailUri);
-          if (!thumbnailInfo.exists) {
+          const thumbnailFile = new FileSystem.File(thumbnailUri);
+          if (thumbnailFile.size === 0) {
             console.log('[AdminScreen] Thumbnail file not found');
             return null;
           }
@@ -675,7 +671,7 @@ export default function AdminScreen() {
             thumbnailUri,
             {
               httpMethod: 'POST',
-              uploadType: 0,
+              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
               headers: {
                 'Authorization': `Bearer ${currentSession.access_token}`,
                 'Content-Type': 'image/jpeg',
