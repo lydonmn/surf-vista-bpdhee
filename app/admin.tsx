@@ -718,7 +718,8 @@ export default function AdminScreen() {
       const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
 
       // Use FileSystem.uploadAsync for streaming upload (no memory limits)
-      console.log('[AdminScreen] Using FileSystem.uploadAsync for streaming upload...');
+      // CRITICAL: Use BINARY_CONTENT with PUT for Supabase Storage, not MULTIPART with POST
+      console.log('[AdminScreen] Using FileSystem.uploadAsync with BINARY_CONTENT for direct streaming...');
       const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
       
       console.log('[AdminScreen] Upload URL:', uploadUrl);
@@ -727,12 +728,12 @@ export default function AdminScreen() {
       setUploadProgress(20);
       
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, videoToUpload, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: 'file',
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
           'Authorization': `Bearer ${currentSession.access_token}`,
           'x-upsert': 'true',
+          'Content-Type': 'video/mp4',
         },
       });
 
@@ -744,9 +745,6 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] ✓ Video uploaded successfully via streaming upload');
-      setUploadProgress(75);
-
-      console.log('[AdminScreen] ✓ Video uploaded successfully');
       setUploadProgress(75);
       setUploadStatus('Finalizing upload...');
 
