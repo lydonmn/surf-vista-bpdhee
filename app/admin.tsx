@@ -30,7 +30,9 @@ interface VideoMetadata {
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
-const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for reliable upload
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for better reliability
+const MAX_RETRIES = 3; // Retry failed chunks up to 3 times
+const UPLOAD_TIMEOUT = 60000; // 60 second timeout per chunk
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -501,6 +503,50 @@ export default function AdminScreen() {
     }
   };
 
+  const uploadChunkWithRetry = async (
+    chunkData: Uint8Array,
+    signedUrl: string,
+    chunkIndex: number,
+    totalChunks: number,
+    retryCount: number = 0
+  ): Promise<void> => {
+    try {
+      console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks} (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT);
+
+      const uploadResponse = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        body: chunkData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!uploadResponse.ok) {
+        const errorBody = await uploadResponse.text();
+        throw new Error(`HTTP ${uploadResponse.status}: ${errorBody}`);
+      }
+
+      console.log(`[AdminScreen] ✓ Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`);
+    } catch (error: any) {
+      console.error(`[AdminScreen] ❌ Chunk ${chunkIndex + 1} upload failed:`, error.message);
+      
+      if (retryCount < MAX_RETRIES) {
+        const waitTime = Math.min(1000 * Math.pow(2, retryCount), 5000);
+        console.log(`[AdminScreen] Retrying chunk ${chunkIndex + 1} in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return uploadChunkWithRetry(chunkData, signedUrl, chunkIndex, totalChunks, retryCount + 1);
+      } else {
+        throw new Error(`Chunk ${chunkIndex + 1} failed after ${MAX_RETRIES + 1} attempts: ${error.message}`);
+      }
+    }
+  };
+
   const uploadVideo = async () => {
     console.log('[AdminScreen] ========== UPLOAD BUTTON TAPPED ==========');
     console.log('[AdminScreen] User tapped Upload Video button');
@@ -563,9 +609,11 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       console.log('[AdminScreen] Total chunks to upload:', totalChunks);
       console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
+      console.log('[AdminScreen] Max retries per chunk:', MAX_RETRIES);
+      console.log('[AdminScreen] Timeout per chunk:', UPLOAD_TIMEOUT / 1000, 'seconds');
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/5: Uploading video in chunks (direct binary upload)...');
+      console.log('[AdminScreen] Step 2/5: Uploading video in chunks with retry logic...');
       setUploadStatus('Uploading video chunks...');
 
       const chunkIds: string[] = [];
@@ -581,7 +629,7 @@ export default function AdminScreen() {
         const end = Math.min(start + CHUNK_SIZE, totalSize);
         const chunkSize = end - start;
 
-        console.log(`[AdminScreen] Uploading chunk ${i + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
+        console.log(`[AdminScreen] Processing chunk ${i + 1}/${totalChunks} (${formatFileSize(chunkSize)})`);
         setUploadStatus(`Uploading chunk ${i + 1} of ${totalChunks}...`);
 
         const chunkFileName = `${fileName}.chunk${i}`;
@@ -605,21 +653,7 @@ export default function AdminScreen() {
         console.log(`[AdminScreen] Converting chunk ${i + 1} to binary...`);
         const chunkBlob = Uint8Array.from(atob(chunkBase64), c => c.charCodeAt(0));
 
-        console.log(`[AdminScreen] Uploading chunk ${i + 1} to storage...`);
-        const uploadResponse = await fetch(signedUrlData.signedUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-          },
-          body: chunkBlob,
-          signal: uploadAbortControllerRef.current?.signal,
-        });
-
-        if (!uploadResponse.ok) {
-          const errorBody = await uploadResponse.text();
-          console.error('[AdminScreen] Chunk upload failed:', uploadResponse.status, errorBody);
-          throw new Error(`Chunk ${i + 1} upload failed with status ${uploadResponse.status}: ${errorBody}`);
-        }
+        await uploadChunkWithRetry(chunkBlob, signedUrlData.signedUrl, i, totalChunks);
 
         chunkIds.push(chunkFileName);
         uploadedBytes += chunkSize;
@@ -634,7 +668,7 @@ export default function AdminScreen() {
         setUploadSpeed(`${speedMBps} MB/s`);
         setEstimatedTimeRemaining(`${Math.ceil(remainingSeconds)}s remaining`);
         
-        console.log(`[AdminScreen] Chunk ${i + 1}/${totalChunks} uploaded successfully - Progress: ${progress.toFixed(1)}%`);
+        console.log(`[AdminScreen] Progress: ${progress.toFixed(1)}% - Speed: ${speedMBps} MB/s`);
       }
 
       const elapsedSeconds = (Date.now() - startTime) / 1000;
@@ -788,14 +822,16 @@ export default function AdminScreen() {
       
       if (error.message?.includes('cancelled')) {
         errorMessage = '❌ Upload Cancelled\n\nThe upload was cancelled.';
-      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
-        errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. If the problem persists, try again later';
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch') || error.message?.includes('timeout') || error.message?.includes('aborted')) {
+        errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you\'re using one\n4. Move closer to your WiFi router\n5. If the problem persists, try again later';
       } else if (error.message?.includes('not accessible')) {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. Please try again.';
       } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
       } else if (error.message?.includes('merge')) {
         errorMessage = '❌ Merge Failed\n\nThe video chunks were uploaded but could not be merged.\n\nSolutions:\n1. Try uploading again\n2. Check your internet connection\n3. Contact support if the issue persists';
+      } else if (error.message?.includes('Chunk') && error.message?.includes('failed after')) {
+        errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe upload failed even after multiple retries.\n\nSolutions:\n1. Check your internet connection stability\n2. Try again with a stronger WiFi signal\n3. Disable VPN if you\'re using one\n4. Try uploading at a different time';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -1009,28 +1045,28 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ OPTIMIZED CHUNKED UPLOAD - Fixed String Length Error
+                ✅ ROBUST CHUNKED UPLOAD - Network Error Fixed
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Reads file in 10MB chunks (no memory overflow)
+                • ✅ 5MB chunks for better reliability
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Direct binary upload (no full file conversion)
+                • ✅ Auto-retry failed chunks (up to 3 times)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Real progress tracking per chunk
+                • ✅ 60-second timeout per chunk
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Exponential backoff on retries
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Handles network interruptions
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Real progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Handles files up to 3GB
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Automatic chunk merging
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Automatic video verification
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Thumbnail generation
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1239,11 +1275,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Optimized chunked upload (no memory errors){'\n'}
-              • ✅ Handles large 6K videos{'\n'}
+              • ✅ Robust upload with auto-retry{'\n'}
+              • ✅ Handles network interruptions{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
-              • Upload time depends on file size and connection speed
+              • Upload will retry failed chunks automatically
             </Text>
           </View>
         </View>
