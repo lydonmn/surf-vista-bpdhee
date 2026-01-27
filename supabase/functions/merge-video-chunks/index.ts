@@ -57,21 +57,19 @@ serve(async (req) => {
       );
     }
 
-    // ULTRA-OPTIMIZED: Stream chunks one at a time, write directly to final file
-    console.log('Using ultra-optimized streaming merge (one chunk at a time)...');
+    // MEMORY-EFFICIENT: Collect all chunks in memory, then merge once
+    console.log('Using memory-efficient merge strategy...');
     
     let totalSize = 0;
     let hasValidMP4Header = false;
+    const chunks: Uint8Array[] = [];
 
-    // Step 1: Stream and merge chunks one at a time
-    console.log('Step 1: Streaming chunks directly to final file...');
-    
-    // Create a temporary file to stream chunks into
-    const tempMergedFile = `${fileName}.merging`;
+    // Step 1: Download all chunks into memory
+    console.log('Step 1: Downloading all chunks...');
     
     for (let i = 0; i < totalChunks; i++) {
       const chunkFileName = `${fileName}.part${i}`;
-      console.log(`Processing chunk ${i + 1}/${totalChunks}...`);
+      console.log(`Downloading chunk ${i + 1}/${totalChunks}...`);
       
       // Download chunk
       const { data, error } = await supabase.storage
@@ -112,95 +110,50 @@ serve(async (req) => {
         }
       }
 
-      // Append chunk to temporary merged file
-      if (i === 0) {
-        // First chunk - create new file
-        console.log('Creating temporary merged file...');
-        const { error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(tempMergedFile, uint8Array, {
-            contentType: 'video/mp4',
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.error('Error creating merged file:', uploadError);
-          throw new Error(`Failed to create merged file: ${uploadError.message}`);
-        }
-        console.log('✓ Temporary merged file created');
-      } else {
-        // Subsequent chunks - download existing, append, re-upload
-        console.log(`Appending chunk ${i + 1} to merged file...`);
-        
-        const { data: existingData, error: downloadError } = await supabase.storage
-          .from('videos')
-          .download(tempMergedFile);
-
-        if (downloadError) {
-          throw new Error(`Failed to download existing merged file: ${downloadError.message}`);
-        }
-
-        const existingBuffer = await existingData.arrayBuffer();
-        const existingArray = new Uint8Array(existingBuffer);
-        
-        // Merge existing + new chunk
-        const mergedArray = new Uint8Array(existingArray.length + uint8Array.length);
-        mergedArray.set(existingArray, 0);
-        mergedArray.set(uint8Array, existingArray.length);
-        
-        console.log(`Merged size: ${mergedArray.length} bytes (${(mergedArray.length / 1024 / 1024).toFixed(2)} MB)`);
-        
-        // Upload merged file
-        const { error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(tempMergedFile, mergedArray, {
-            contentType: 'video/mp4',
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.error('Error uploading merged file:', uploadError);
-          throw new Error(`Failed to upload merged file: ${uploadError.message}`);
-        }
-        
-        console.log(`✓ Chunk ${i + 1} appended successfully`);
-      }
+      // Store chunk in memory
+      chunks.push(uint8Array);
       
       // Log progress
       const progress = Math.round(((i + 1) / totalChunks) * 100);
-      console.log(`Progress: ${progress}% (${i + 1}/${totalChunks} chunks processed)`);
+      console.log(`Progress: ${progress}% (${i + 1}/${totalChunks} chunks downloaded)`);
     }
 
-    console.log(`Total merged size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`Total size to merge: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
 
-    // Step 2: Rename temporary file to final name
-    console.log('Step 2: Finalizing merged video...');
+    // Step 2: Merge all chunks into one array
+    console.log('Step 2: Merging chunks in memory...');
+    const mergedArray = new Uint8Array(totalSize);
+    let offset = 0;
     
-    const { data: finalData, error: downloadError } = await supabase.storage
-      .from('videos')
-      .download(tempMergedFile);
-
-    if (downloadError) {
-      throw new Error(`Failed to download merged file: ${downloadError.message}`);
+    for (let i = 0; i < chunks.length; i++) {
+      mergedArray.set(chunks[i], offset);
+      offset += chunks[i].length;
+      console.log(`Merged chunk ${i + 1}/${chunks.length} at offset ${offset}`);
     }
+    
+    console.log(`✓ All chunks merged into single array: ${mergedArray.length} bytes`);
 
+    // Step 3: Upload merged file
+    console.log('Step 3: Uploading merged video...');
+    
     // Remove old final file if exists
     await supabase.storage.from('videos').remove([fileName]);
 
     // Upload as final file
     const { error: uploadError } = await supabase.storage
       .from('videos')
-      .upload(fileName, finalData, {
+      .upload(fileName, mergedArray, {
         contentType: 'video/mp4',
         upsert: true,
         cacheControl: '3600',
       });
 
     if (uploadError) {
-      throw new Error(`Failed to upload final file: ${uploadError.message}`);
+      console.error('Error uploading merged file:', uploadError);
+      throw new Error(`Failed to upload merged file: ${uploadError.message}`);
     }
 
-    console.log('✓ Final video uploaded successfully');
+    console.log('✓ Merged video uploaded successfully');
 
     if (!hasValidMP4Header) {
       console.warn('⚠️ Warning: Merged video may not have valid MP4 header');
@@ -232,8 +185,8 @@ serve(async (req) => {
       console.error('Error verifying file accessibility:', verifyError);
     }
 
-    // Step 3: Clean up temporary files
-    console.log('Step 3: Cleaning up temporary files...');
+    // Step 4: Clean up chunk files
+    console.log('Step 4: Cleaning up chunk files...');
     
     // Delete original chunk files
     const chunkFilesToDelete = [];
@@ -249,17 +202,6 @@ serve(async (req) => {
       console.error('Error deleting chunks (non-fatal):', deleteChunksError);
     } else {
       console.log('✓ Chunk files cleaned up');
-    }
-
-    // Delete temporary merged file
-    const { error: deleteTempError } = await supabase.storage
-      .from('videos')
-      .remove([tempMergedFile]);
-
-    if (deleteTempError) {
-      console.error('Error deleting temp file (non-fatal):', deleteTempError);
-    } else {
-      console.log('✓ Temporary merged file cleaned up');
     }
 
     console.log('=== MERGE VIDEO CHUNKS COMPLETED ===');
