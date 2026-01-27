@@ -290,15 +290,11 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Asset height:', assetHeight);
       console.log('[AdminScreen] Asset duration (ms):', assetDuration);
       
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      console.log('[AdminScreen] File info:', fileInfo);
+      // Use the new File API for Expo 54
+      console.log('[AdminScreen] Using new File API to get file info...');
+      const file = new File(uri);
+      const fileSize = file.size;
       
-      if (!fileInfo.exists) {
-        console.error('[AdminScreen] Video file does not exist');
-        throw new Error('Video file not found');
-      }
-
-      const fileSize = fileInfo.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       if (fileSize === 0) {
@@ -529,12 +525,10 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Reading video file...');
 
-      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      if (!fileInfo.exists || !fileInfo.size) {
-        throw new Error('Video file not found or is empty');
-      }
+      // Use the new File API for Expo 54
+      const file = new File(selectedVideo);
+      const totalSize = file.size;
       
-      const totalSize = fileInfo.size;
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       setUploadProgress(10);
 
