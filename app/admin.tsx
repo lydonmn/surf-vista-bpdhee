@@ -283,20 +283,20 @@ export default function AdminScreen() {
     assetHeight?: number, 
     assetDuration?: number
   ): Promise<VideoMetadata | null> => {
+    console.log('[AdminScreen] ========== VALIDATING VIDEO METADATA ==========');
+    console.log('[AdminScreen] Video URI:', uri);
+    console.log('[AdminScreen] Asset width:', assetWidth);
+    console.log('[AdminScreen] Asset height:', assetHeight);
+    console.log('[AdminScreen] Asset duration (ms):', assetDuration);
+    
     try {
-      console.log('[AdminScreen] ========== VALIDATING VIDEO METADATA ==========');
-      console.log('[AdminScreen] Video URI:', uri);
-      console.log('[AdminScreen] Asset width:', assetWidth);
-      console.log('[AdminScreen] Asset height:', assetHeight);
-      console.log('[AdminScreen] Asset duration (ms):', assetDuration);
-      
       console.log('[AdminScreen] Getting file info using FileSystem.getInfoAsync...');
       const fileInfo = await FileSystem.getInfoAsync(uri);
       
-      console.log('[AdminScreen] File info:', fileInfo);
+      console.log('[AdminScreen] File info result:', JSON.stringify(fileInfo, null, 2));
 
       if (!fileInfo.exists) {
-        console.error('[AdminScreen] Video file does not exist');
+        console.error('[AdminScreen] ❌ Video file does not exist at URI');
         throw new Error('Video file does not exist');
       }
 
@@ -304,7 +304,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       if (fileSize === 0) {
-        console.error('[AdminScreen] Video file is empty (0 bytes)');
+        console.error('[AdminScreen] ❌ Video file is empty (0 bytes)');
         throw new Error('Video file is empty');
       }
 
@@ -314,17 +314,17 @@ export default function AdminScreen() {
       if (assetWidth && assetHeight && assetWidth > 0 && assetHeight > 0) {
         width = assetWidth;
         height = assetHeight;
-        console.log('[AdminScreen] Using dimensions from picker:', width, 'x', height);
+        console.log('[AdminScreen] ✓ Using dimensions from picker:', width, 'x', height);
       } else {
-        console.log('[AdminScreen] No dimensions from picker, using defaults:', width, 'x', height);
+        console.log('[AdminScreen] ⚠️ No dimensions from picker, using defaults:', width, 'x', height);
       }
       
       let duration = 0;
       if (assetDuration && assetDuration > 0) {
         duration = assetDuration / 1000;
-        console.log('[AdminScreen] Duration from picker:', duration, 'seconds');
+        console.log('[AdminScreen] ✓ Duration from picker:', duration, 'seconds');
       } else {
-        console.log('[AdminScreen] No duration from picker, will be set to 0 (unknown)');
+        console.log('[AdminScreen] ⚠️ No duration from picker, will be set to 0 (unknown)');
       }
 
       const metadata: VideoMetadata = {
@@ -334,7 +334,7 @@ export default function AdminScreen() {
         size: fileSize
       };
 
-      console.log('[AdminScreen] ✓ Video metadata validated successfully:');
+      console.log('[AdminScreen] ✅ Video metadata validated successfully:');
       console.log('[AdminScreen]   Resolution:', formatResolution(width, height));
       console.log('[AdminScreen]   Duration:', duration > 0 ? formatDuration(duration) : 'Unknown');
       console.log('[AdminScreen]   Size:', formatFileSize(fileSize));
@@ -343,9 +343,17 @@ export default function AdminScreen() {
       return metadata;
     } catch (error: any) {
       console.error('[AdminScreen] ========== VALIDATION FAILED ==========');
-      console.error('[AdminScreen] Error:', error);
-      console.error('[AdminScreen] Error message:', error.message);
-      console.error('[AdminScreen] Error stack:', error.stack);
+      console.error('[AdminScreen] ❌ Error:', error);
+      console.error('[AdminScreen] ❌ Error message:', error.message);
+      if (error.stack) {
+        console.error('[AdminScreen] ❌ Error stack:', error.stack);
+      }
+      
+      Alert.alert(
+        'Validation Error',
+        `Could not validate video file:\n\n${error.message}\n\nPlease try:\n• Selecting a different video\n• Restarting the app\n• Checking file permissions`
+      );
+      
       return null;
     }
   };
@@ -369,19 +377,24 @@ export default function AdminScreen() {
   };
 
   const pickVideo = async () => {
+    console.log('[AdminScreen] ========== PICK VIDEO STARTED ==========');
+    console.log('[AdminScreen] User tapped Select Video button');
+    
     try {
-      console.log('[AdminScreen] ========== PICK VIDEO STARTED ==========');
       setValidationErrors([]);
       setVideoMetadata(null);
       
+      console.log('[AdminScreen] Requesting media library permissions...');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      console.log('[AdminScreen] Permission status:', status);
+      
       if (status !== 'granted') {
-        console.log('[AdminScreen] Permission denied');
+        console.log('[AdminScreen] ❌ Permission denied');
         Alert.alert('Permission Required', 'Please grant permission to access your photo library');
         return;
       }
 
-      console.log('[AdminScreen] Launching image picker...');
+      console.log('[AdminScreen] ✓ Permission granted, launching image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
         allowsEditing: false,
@@ -389,92 +402,93 @@ export default function AdminScreen() {
         videoMaxDuration: 300,
       });
 
-      console.log('[AdminScreen] Image picker result:', {
-        canceled: result.canceled,
-        hasAssets: result.assets && result.assets.length > 0
+      console.log('[AdminScreen] Image picker returned');
+      console.log('[AdminScreen] Result canceled:', result.canceled);
+      console.log('[AdminScreen] Has assets:', result.assets && result.assets.length > 0);
+
+      if (result.canceled) {
+        console.log('[AdminScreen] ⚠️ User canceled video selection');
+        return;
+      }
+
+      if (!result.assets || result.assets.length === 0) {
+        console.log('[AdminScreen] ❌ No assets returned from picker');
+        Alert.alert('Error', 'No video was selected. Please try again.');
+        return;
+      }
+
+      const asset = result.assets[0];
+      const videoUri = asset.uri;
+      
+      console.log('[AdminScreen] ✓ Video selected:', videoUri);
+      console.log('[AdminScreen] Asset details:', {
+        width: asset.width,
+        height: asset.height,
+        duration: asset.duration,
+        type: asset.type,
+        fileName: asset.fileName
       });
+      
+      setValidatingVideo(true);
+      
+      console.log('[AdminScreen] Starting metadata validation...');
+      const metadata = await validateVideoMetadata(
+        videoUri, 
+        asset.width, 
+        asset.height, 
+        asset.duration
+      );
+      
+      if (!metadata) {
+        console.error('[AdminScreen] ❌ Metadata validation returned null');
+        setValidatingVideo(false);
+        return;
+      }
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const videoUri = asset.uri;
-        
-        console.log('[AdminScreen] Video selected:', videoUri);
-        console.log('[AdminScreen] Asset details:', {
-          width: asset.width,
-          height: asset.height,
-          duration: asset.duration,
-          type: asset.type,
-          fileName: asset.fileName
-        });
-        
-        setValidatingVideo(true);
-        
-        try {
-          console.log('[AdminScreen] Starting metadata validation...');
-          const metadata = await validateVideoMetadata(
-            videoUri, 
-            asset.width, 
-            asset.height, 
-            asset.duration
-          );
-          
-          if (!metadata) {
-            console.error('[AdminScreen] Metadata validation returned null');
-            Alert.alert(
-              'Error', 
-              'Could not read video information. The video file may be corrupted or in an unsupported format.\n\nPlease try:\n• Selecting a different video\n• Recording a new video\n• Converting the video to MP4 format'
-            );
-            return;
-          }
+      console.log('[AdminScreen] ✓ Metadata validated successfully');
+      setVideoMetadata(metadata);
+      
+      const errors = checkVideoRequirements(metadata);
+      setValidationErrors(errors);
 
-          console.log('[AdminScreen] Metadata validated successfully');
-          setVideoMetadata(metadata);
-          
-          const errors = checkVideoRequirements(metadata);
-          setValidationErrors(errors);
-
-          if (errors.length > 0) {
-            console.log('[AdminScreen] Video does not meet requirements:', errors);
-            Alert.alert(
-              'Video Does Not Meet Requirements',
-              errors.join('\n\n'),
-              [{ text: 'OK' }]
-            );
-            setSelectedVideo(null);
-          } else {
-            console.log('[AdminScreen] Video meets all requirements');
-            setSelectedVideo(videoUri);
-            
-            const durationText = metadata.duration > 0 
-              ? `Duration: ${formatDuration(metadata.duration)}\n` 
-              : 'Duration: Unknown (will be detected during upload)\n';
-            
-            Alert.alert(
-              'Video Validated ✓',
-              `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload.`,
-              [{ text: 'OK' }]
-            );
-          }
-        } catch (error: any) {
-          console.error('[AdminScreen] Error during validation:', error);
-          Alert.alert(
-            'Validation Error',
-            'Could not validate video. Please ensure the video is a valid format and try again.\n\nError: ' + error.message
-          );
-        } finally {
-          setValidatingVideo(false);
-        }
+      if (errors.length > 0) {
+        console.log('[AdminScreen] ⚠️ Video does not meet requirements:', errors);
+        Alert.alert(
+          'Video Does Not Meet Requirements',
+          errors.join('\n\n'),
+          [{ text: 'OK' }]
+        );
+        setSelectedVideo(null);
       } else {
-        console.log('[AdminScreen] Video selection canceled or no assets');
+        console.log('[AdminScreen] ✅ Video meets all requirements');
+        setSelectedVideo(videoUri);
+        
+        const durationText = metadata.duration > 0 
+          ? `Duration: ${formatDuration(metadata.duration)}\n` 
+          : 'Duration: Unknown (will be detected during upload)\n';
+        
+        Alert.alert(
+          'Video Validated ✓',
+          `Resolution: ${formatResolution(metadata.width, metadata.height)}\n${durationText}Size: ${formatFileSize(metadata.size)}\n\nThis video is ready to upload.`,
+          [{ text: 'OK' }]
+        );
       }
       
+      setValidatingVideo(false);
       console.log('[AdminScreen] ========== PICK VIDEO COMPLETED ==========');
     } catch (error: any) {
       console.error('[AdminScreen] ========== PICK VIDEO FAILED ==========');
-      console.error('[AdminScreen] Error picking video:', error);
-      console.error('[AdminScreen] Error message:', error.message);
-      console.error('[AdminScreen] Error stack:', error.stack);
-      Alert.alert('Error', 'Failed to pick video: ' + error.message);
+      console.error('[AdminScreen] ❌ Error picking video:', error);
+      console.error('[AdminScreen] ❌ Error message:', error.message);
+      if (error.stack) {
+        console.error('[AdminScreen] ❌ Error stack:', error.stack);
+      }
+      
+      Alert.alert(
+        'Error Selecting Video',
+        `Failed to select video:\n\n${error.message}\n\nPlease try:\n• Selecting a different video\n• Restarting the app\n• Checking storage permissions`
+      );
+      
       setValidatingVideo(false);
     }
   };
