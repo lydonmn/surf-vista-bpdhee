@@ -115,8 +115,10 @@ const flushLogs = async () => {
         // Log fetch errors only once to avoid spam
         if (!fetchErrorLogged) {
           fetchErrorLogged = true;
-          // Silently ignore fetch errors to avoid recursion
-          // The error is already logged in the console by the browser
+          // Use a different method to avoid recursion - write directly without going through our intercept
+          if (typeof window !== 'undefined' && window.console) {
+            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat):', e.message || e);
+          }
         }
       });
     } catch (e) {
@@ -291,12 +293,8 @@ export const setupErrorLogging = () => {
 
   // Override console.log to capture and send to server
   console.log = (...args: any[]) => {
-    // Always call original first - use direct call instead of apply
-    try {
-      originalConsoleLog(...args);
-    } catch (e) {
-      // Fallback if original console.log fails
-    }
+    // Always call original first
+    originalConsoleLog.apply(console, args);
 
     // Queue log for sending to server
     const message = stringifyArgs(args);
@@ -306,12 +304,8 @@ export const setupErrorLogging = () => {
 
   // Override console.warn to capture and send to server
   console.warn = (...args: any[]) => {
-    // Always call original first - use direct call instead of apply
-    try {
-      originalConsoleWarn(...args);
-    } catch (e) {
-      // Fallback if original console.warn fails
-    }
+    // Always call original first
+    originalConsoleWarn.apply(console, args);
 
     // Queue log for sending to server (skip muted messages)
     const message = stringifyArgs(args);
@@ -327,12 +321,8 @@ export const setupErrorLogging = () => {
     const message = stringifyArgs(args);
     if (shouldMuteMessage(message)) return;
 
-    // Always call original first - use direct call instead of apply
-    try {
-      originalConsoleError(...args);
-    } catch (e) {
-      // Fallback if original console.error fails
-    }
+    // Always call original first
+    originalConsoleError.apply(console, args);
 
     const source = getCallerInfo();
     queueLog('error', message, source);

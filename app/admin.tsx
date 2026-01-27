@@ -30,6 +30,7 @@ interface VideoMetadata {
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for resumable upload
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -455,7 +456,7 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING DIRECT STREAMING UPLOAD ==========');
+      console.log('[AdminScreen] ========== STARTING CHUNKED RESUMABLE UPLOAD ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
@@ -468,7 +469,7 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/4: Verifying video file...');
+      console.log('[AdminScreen] Step 1/5: Verifying video file...');
       setUploadProgress(5);
       setUploadStatus('Verifying video file...');
 
@@ -477,10 +478,11 @@ export default function AdminScreen() {
         throw new Error('Video file not found or is empty');
       }
       
-      console.log('[AdminScreen] ✓ File verified:', formatFileSize(fileInfo.size));
+      const totalSize = fileInfo.size;
+      console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/4: Getting auth session...');
+      console.log('[AdminScreen] Step 2/5: Getting auth session...');
       setUploadStatus('Verifying authentication...');
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (!currentSession?.access_token) {
@@ -490,41 +492,96 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Session verified');
       setUploadProgress(15);
 
-      console.log('[AdminScreen] Step 3/4: Uploading video with direct streaming...');
+      console.log('[AdminScreen] Step 3/5: Uploading video in chunks...');
       setUploadStatus('Uploading video...');
 
-      // Get Supabase storage URL
-      const { data: { publicUrl: dummyUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      const supabaseUrl = dummyUrl.split('/storage/v1/')[0];
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${fileName}`;
+      // Calculate number of chunks
+      const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
+      console.log('[AdminScreen] Total chunks:', totalChunks);
+      console.log('[AdminScreen] Chunk size:', formatFileSize(CHUNK_SIZE));
 
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
-      console.log('[AdminScreen] Using FileSystem.uploadAsync for direct streaming...');
+      // Upload chunks
+      let uploadedBytes = 0;
+      const startTime = Date.now();
 
-      // Use FileSystem.uploadAsync for direct streaming upload
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Authorization': `Bearer ${currentSession.access_token}`,
-          'Content-Type': 'video/mp4',
-        },
-        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-      });
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, totalSize);
+        const chunkSize = end - start;
 
-      console.log('[AdminScreen] Upload result:', uploadResult);
+        console.log(`[AdminScreen] Uploading chunk ${chunkIndex + 1}/${totalChunks} (${formatFileSize(start)} - ${formatFileSize(end)})`);
+        setUploadStatus(`Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`);
 
-      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+        // Read chunk
+        const chunkData = await FileSystem.readAsStringAsync(selectedVideo, {
+          encoding: FileSystem.EncodingType.Base64,
+          position: start,
+          length: chunkSize,
+        });
+
+        // Convert base64 to blob
+        const byteCharacters = atob(chunkData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'video/mp4' });
+
+        // Upload chunk using Supabase Storage
+        const chunkFileName = `${fileName}.part${chunkIndex}`;
+        const { error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(chunkFileName, blob, {
+            contentType: 'application/octet-stream',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error(`Failed to upload chunk ${chunkIndex + 1}: ${uploadError.message}`);
+        }
+
+        uploadedBytes += chunkSize;
+        const progress = 15 + (uploadedBytes / totalSize) * 60; // 15% to 75%
+        setUploadProgress(progress);
+
+        // Calculate speed and ETA
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const bytesPerSecond = uploadedBytes / elapsedSeconds;
+        const remainingBytes = totalSize - uploadedBytes;
+        const remainingSeconds = remainingBytes / bytesPerSecond;
+
+        const speedMBps = (bytesPerSecond / (1024 * 1024)).toFixed(2);
+        const etaMinutes = Math.ceil(remainingSeconds / 60);
+
+        setUploadSpeed(`${speedMBps} MB/s`);
+        setEstimatedTimeRemaining(`${etaMinutes} min remaining`);
+
+        console.log(`[AdminScreen] ✓ Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${progress.toFixed(1)}%)`);
       }
 
-      console.log('[AdminScreen] ✓ Video uploaded successfully');
+      console.log('[AdminScreen] ✓ All chunks uploaded successfully');
       setUploadProgress(75);
-      setUploadStatus('Finalizing upload...');
+      setUploadStatus('Merging video chunks...');
 
-      console.log('[AdminScreen] Step 4/4: Getting video public URL...');
+      console.log('[AdminScreen] Step 4/5: Merging chunks on server...');
+      
+      // Call edge function to merge chunks
+      const { data: mergeData, error: mergeError } = await supabase.functions.invoke('merge-video-chunks', {
+        body: {
+          fileName,
+          totalChunks,
+        },
+      });
+
+      if (mergeError) {
+        throw new Error(`Failed to merge chunks: ${mergeError.message}`);
+      }
+
+      console.log('[AdminScreen] ✓ Video merged successfully');
+      setUploadProgress(85);
+
+      console.log('[AdminScreen] Step 5/5: Getting video public URL...');
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
@@ -542,7 +599,7 @@ export default function AdminScreen() {
         throw new Error(`Video file is not accessible (HTTP ${headResponse.status})`);
       }
 
-      setUploadProgress(85);
+      setUploadProgress(90);
 
       // Generate thumbnail
       setUploadStatus('Generating thumbnail...');
@@ -592,7 +649,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: fileInfo.size,
+          file_size_bytes: totalSize,
           uploaded_by: user?.id
         });
 
@@ -631,6 +688,8 @@ export default function AdminScreen() {
         errorMessage = '❌ Upload Failed\n\n' + error.message + '\n\nThe video was uploaded but could not be verified. Please try again.';
       } else if (error.message?.includes('empty') || error.message?.includes('0 bytes')) {
         errorMessage = '❌ File Read Error\n\nThe video file could not be read or is empty.\n\nSolutions:\n1. Try selecting the video again\n2. Check if the video plays in your Photos app\n3. Try a different video\n4. Restart the app and try again';
+      } else if (error.message?.includes('chunk')) {
+        errorMessage = '❌ Upload Interrupted\n\n' + error.message + '\n\nThe upload was interrupted while uploading chunks.\n\nSolutions:\n1. Ensure stable internet connection\n2. Keep the app in foreground during upload\n3. Try again with a smaller video\n4. Contact support if the issue persists';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -843,19 +902,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ DIRECT STREAMING UPLOAD - Simple & Reliable
+                ✅ CHUNKED RESUMABLE UPLOAD - Reliable for Large Files
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Direct file streaming (no chunking)
+                • ✅ Uploads in 5MB chunks (no payload limit)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Native mobile upload (like Instagram)
+                • ✅ Handles files up to 3GB
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Handles large files efficiently
+                • ✅ Progress tracking per chunk
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Background upload support
+                • ✅ Automatic chunk merging on server
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
@@ -1026,6 +1085,11 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
+              {uploadSpeed && (
+                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
+                  Speed: {uploadSpeed} • {estimatedTimeRemaining}
+                </Text>
+              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
@@ -1065,10 +1129,10 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Direct streaming upload (no chunking){'\n'}
-              • ✅ Works like Instagram/TikTok uploads{'\n'}
-              • ✅ Handles HD videos efficiently{'\n'}
-              • ✅ Background upload support{'\n'}
+              • ✅ Chunked upload (5MB per chunk){'\n'}
+              • ✅ No payload size limit{'\n'}
+              • ✅ Handles large HD videos{'\n'}
+              • ✅ Progress tracking per chunk{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Upload time depends on file size and connection speed
