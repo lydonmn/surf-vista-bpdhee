@@ -39,8 +39,6 @@ export default function AdminScreen() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadSpeed, setUploadSpeed] = useState<string>('');
-  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('');
   const [validatingVideo, setValidatingVideo] = useState(false);
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string>('');
@@ -50,9 +48,6 @@ export default function AdminScreen() {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-
-  const uploadStartTimeRef = useRef<number>(0);
-  const uploadedBytesRef = useRef<number>(0);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -424,7 +419,7 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING FAST UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING DIRECT UPLOAD ==========');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -443,12 +438,8 @@ export default function AdminScreen() {
     }
 
     try {
-      uploadStartTimeRef.current = Date.now();
-      uploadedBytesRef.current = 0;
       setUploading(true);
       setUploadProgress(0);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
       console.log('[AdminScreen] Video URI:', selectedVideo);
@@ -459,40 +450,39 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Target filename:', fileName);
       setUploadProgress(5);
-      setUploadStatus('Reading video file...');
+      setUploadStatus('Creating signed upload URL...');
 
-      // Read the entire file as base64
-      console.log('[AdminScreen] Reading file as base64...');
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Get signed upload URL from Supabase
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('videos')
+        .createSignedUploadUrl(fileName);
 
-      console.log('[AdminScreen] ✓ File read successfully, size:', base64Data.length, 'chars');
-      setUploadProgress(20);
-      setUploadStatus('Uploading video...');
+      if (signedUrlError || !signedUrlData) {
+        console.error('[AdminScreen] Signed URL error:', signedUrlError);
+        throw new Error('Failed to create upload URL');
+      }
 
-      // Convert base64 to binary
-      console.log('[AdminScreen] Converting to binary...');
-      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-      console.log('[AdminScreen] ✓ Binary data ready, size:', formatFileSize(binaryData.length));
+      const uploadUrl = signedUrlData.signedUrl;
+      console.log('[AdminScreen] ✓ Signed URL created');
 
-      setUploadProgress(30);
-      setUploadStatus('Uploading to storage...');
+      setUploadProgress(10);
+      setUploadStatus('Uploading video directly...');
 
       const startTime = Date.now();
 
-      // Upload using Supabase's native upload (handles large files efficiently)
-      console.log('[AdminScreen] Starting Supabase upload...');
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, binaryData, {
-          contentType: `video/${fileExt}`,
-          upsert: false,
-        });
+      // Direct binary upload using FileSystem.uploadAsync
+      console.log('[AdminScreen] Starting direct binary upload...');
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': `video/${fileExt}`,
+        },
+      });
 
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw uploadError;
+      if (uploadResult.status !== 200) {
+        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        throw new Error(`Upload failed with status ${uploadResult.status}`);
       }
 
       const uploadDuration = (Date.now() - startTime) / 1000;
@@ -510,6 +500,7 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
 
+      // Generate and upload thumbnail
       const thumbnailUrl = await (async () => {
         try {
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
@@ -518,21 +509,29 @@ export default function AdminScreen() {
           
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          const thumbnailBinary = Uint8Array.from(atob(thumbnailBase64), c => c.charCodeAt(0));
-
-          const { error: thumbError } = await supabase.storage
+          const { data: thumbSignedUrlData, error: thumbSignedUrlError } = await supabase.storage
             .from('videos')
-            .upload(thumbnailFileName, thumbnailBinary, {
-              contentType: 'image/jpeg',
-              upsert: false,
-            });
+            .createSignedUploadUrl(thumbnailFileName);
 
-          if (thumbError) {
-            console.error('[AdminScreen] Thumbnail upload error:', thumbError);
+          if (thumbSignedUrlError || !thumbSignedUrlData) {
+            console.error('[AdminScreen] Thumbnail signed URL error:', thumbSignedUrlError);
+            return null;
+          }
+
+          const thumbUploadResult = await FileSystem.uploadAsync(
+            thumbSignedUrlData.signedUrl,
+            thumbnailUri,
+            {
+              httpMethod: 'PUT',
+              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+              headers: {
+                'Content-Type': 'image/jpeg',
+              },
+            }
+          );
+
+          if (thumbUploadResult.status !== 200) {
+            console.error('[AdminScreen] Thumbnail upload failed');
             return null;
           }
 
@@ -608,8 +607,6 @@ export default function AdminScreen() {
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setUploading(false);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
       setUploadStatus('');
     }
   };
@@ -813,16 +810,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ⚡ FAST DIRECT UPLOAD - No Chunking
+                ⚡ DIRECT BINARY UPLOAD
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Direct upload to Supabase Storage
+                • ⚡ Direct binary upload (no base64 conversion)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ No chunking overhead = Much faster
+                • ⚡ Uses FileSystem.uploadAsync for efficiency
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Native resumable upload support
+                • ⚡ Signed URLs for secure uploads
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ⚡ Optimized for large files
@@ -1029,8 +1026,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ Fast direct upload (no chunking){'\n'}
-              • ⚡ Optimized for large files{'\n'}
+              • ⚡ Direct binary upload (fast & efficient){'\n'}
+              • ⚡ No base64 conversion overhead{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload
             </Text>
