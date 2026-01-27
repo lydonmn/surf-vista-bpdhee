@@ -49,11 +49,21 @@ export default function AdminScreen() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
   }, [profile]);
+
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   const loadUsers = async () => {
     try {
@@ -418,6 +428,30 @@ export default function AdminScreen() {
     }
   };
 
+  const simulateProgress = (startProgress: number, endProgress: number, durationMs: number) => {
+    const startTime = Date.now();
+    const progressRange = endProgress - startProgress;
+    
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    progressIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / durationMs, 1);
+      const currentProgress = startProgress + (progressRange * progress);
+      
+      setUploadProgress(Math.min(currentProgress, endProgress));
+      
+      if (progress >= 1) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+      }
+    }, 100);
+  };
+
   const uploadVideo = async () => {
     console.log('[AdminScreen] ========== STARTING DIRECT UPLOAD ==========');
     
@@ -452,7 +486,6 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Creating signed upload URL...');
 
-      // Get signed upload URL from Supabase
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
@@ -466,11 +499,13 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✓ Signed URL created');
 
       setUploadProgress(10);
-      setUploadStatus('Uploading video directly...');
+      setUploadStatus('Uploading video... This may take several minutes for large files.');
+
+      const estimatedUploadTimeMs = (videoMetadata.size / (1024 * 1024)) * 1000;
+      simulateProgress(10, 75, estimatedUploadTimeMs);
 
       const startTime = Date.now();
 
-      // Direct binary upload using FileSystem.uploadAsync
       console.log('[AdminScreen] Starting direct binary upload...');
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'PUT',
@@ -480,8 +515,14 @@ export default function AdminScreen() {
         },
       });
 
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
       if (uploadResult.status !== 200) {
         console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Upload response:', uploadResult.body);
         throw new Error(`Upload failed with status ${uploadResult.status}`);
       }
 
@@ -500,7 +541,6 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Public URL:', videoPublicUrl);
 
-      // Generate and upload thumbnail
       const thumbnailUrl = await (async () => {
         try {
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
@@ -594,6 +634,11 @@ export default function AdminScreen() {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Payload too large')) {
@@ -608,6 +653,10 @@ export default function AdminScreen() {
     } finally {
       setUploading(false);
       setUploadStatus('');
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
     }
   };
 
@@ -1029,7 +1078,8 @@ export default function AdminScreen() {
               • ⚡ Direct binary upload (fast & efficient){'\n'}
               • ⚡ No base64 conversion overhead{'\n'}
               • Use a stable WiFi connection{'\n'}
-              • Keep the app open during upload
+              • Keep the app open during upload{'\n'}
+              • Large files may take several minutes
             </Text>
           </View>
         </View>
