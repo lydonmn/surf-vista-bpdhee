@@ -8,7 +8,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -290,7 +290,7 @@ export default function AdminScreen() {
     console.log('[AdminScreen] Asset duration (ms):', assetDuration);
     
     try {
-      console.log('[AdminScreen] Getting file info using FileSystem.getInfoAsync...');
+      console.log('[AdminScreen] Getting file info using legacy FileSystem.getInfoAsync...');
       const fileInfo = await FileSystem.getInfoAsync(uri);
       
       console.log('[AdminScreen] File info result:', JSON.stringify(fileInfo, null, 2));
