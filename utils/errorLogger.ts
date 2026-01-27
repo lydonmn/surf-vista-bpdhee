@@ -291,8 +291,12 @@ export const setupErrorLogging = () => {
 
   // Override console.log to capture and send to server
   console.log = (...args: any[]) => {
-    // Always call original first
-    originalConsoleLog.apply(console, args);
+    // Always call original first - use direct call instead of apply
+    try {
+      originalConsoleLog(...args);
+    } catch (e) {
+      // Fallback if original console.log fails
+    }
 
     // Queue log for sending to server
     const message = stringifyArgs(args);
@@ -302,8 +306,12 @@ export const setupErrorLogging = () => {
 
   // Override console.warn to capture and send to server
   console.warn = (...args: any[]) => {
-    // Always call original first
-    originalConsoleWarn.apply(console, args);
+    // Always call original first - use direct call instead of apply
+    try {
+      originalConsoleWarn(...args);
+    } catch (e) {
+      // Fallback if original console.warn fails
+    }
 
     // Queue log for sending to server (skip muted messages)
     const message = stringifyArgs(args);
@@ -319,8 +327,12 @@ export const setupErrorLogging = () => {
     const message = stringifyArgs(args);
     if (shouldMuteMessage(message)) return;
 
-    // Always call original first
-    originalConsoleError.apply(console, args);
+    // Always call original first - use direct call instead of apply
+    try {
+      originalConsoleError(...args);
+    } catch (e) {
+      // Fallback if original console.error fails
+    }
 
     const source = getCallerInfo();
     queueLog('error', message, source);
