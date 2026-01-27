@@ -52,14 +52,21 @@ export default function AdminScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const uploadStartTimeRef = useRef<number>(0);
-  const lastProgressUpdateRef = useRef<number>(0);
-  const lastBytesUploadedRef = useRef<number>(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
   }, [profile]);
+
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   const loadUsers = async () => {
     try {
@@ -520,15 +527,13 @@ export default function AdminScreen() {
 
     try {
       uploadStartTimeRef.current = Date.now();
-      lastProgressUpdateRef.current = Date.now();
-      lastBytesUploadedRef.current = 0;
       setUploading(true);
       setUploadProgress(0);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING DIRECT BINARY UPLOAD TO SUPABASE ==========');
+      console.log('[AdminScreen] ========== STARTING UPLOAD WITH SIMULATED PROGRESS ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
@@ -577,6 +582,28 @@ export default function AdminScreen() {
 
       const startTime = Date.now();
       
+      const estimatedUploadTime = (totalSize / (1024 * 1024)) * 2;
+      const progressUpdateInterval = 500;
+      let currentProgress = 15;
+      
+      progressIntervalRef.current = setInterval(() => {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const estimatedProgress = 15 + (elapsedSeconds / estimatedUploadTime) * 55;
+        currentProgress = Math.min(estimatedProgress, 69);
+        
+        setUploadProgress(currentProgress);
+        
+        const uploadedBytes = ((currentProgress - 15) / 55) * totalSize;
+        const speedMBps = (uploadedBytes / (1024 * 1024) / elapsedSeconds).toFixed(2);
+        const remainingBytes = totalSize - uploadedBytes;
+        const remainingSeconds = remainingBytes / (uploadedBytes / elapsedSeconds);
+        
+        setUploadSpeed(`${speedMBps} MB/s`);
+        setEstimatedTimeRemaining(`${Math.ceil(remainingSeconds)}s remaining`);
+        
+        console.log(`[AdminScreen] Upload progress: ${currentProgress.toFixed(1)}% - Speed: ${speedMBps} MB/s`);
+      }, progressUpdateInterval);
+      
       console.log('[AdminScreen] Starting upload with:');
       console.log('[AdminScreen]   - URL:', signedUrlData.signedUrl);
       console.log('[AdminScreen]   - Local file:', selectedVideo);
@@ -593,6 +620,11 @@ export default function AdminScreen() {
           },
         }
       );
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
 
       console.log('[AdminScreen] Upload completed!');
       console.log('[AdminScreen] Upload result status:', uploadResult.status);
@@ -612,6 +644,8 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Upload time:', elapsedSeconds.toFixed(1), 'seconds');
       
       setUploadProgress(70);
+      setUploadSpeed('');
+      setEstimatedTimeRemaining('');
 
       console.log('[AdminScreen] Step 4/5: Verifying uploaded video...');
       setUploadStatus('Verifying video...');
@@ -729,6 +763,11 @@ export default function AdminScreen() {
         console.error('[AdminScreen] Error stack:', error.stack);
       }
       
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
@@ -751,6 +790,10 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       setUploadStatus('');
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
     }
   };
 
@@ -953,16 +996,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ DIRECT BINARY UPLOAD - Fast, Reliable & Simple
+                ✅ DIRECT BINARY UPLOAD - Fast & Reliable
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Direct upload to Supabase Storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Handles files up to 3GB
+                • ✅ Simulated progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ No fake progress bars
+                • ✅ Handles files up to 3GB
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
@@ -1133,6 +1176,11 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
+              {uploadSpeed && (
+                <Text style={[styles.progressSubtext, { color: colors.primary, marginTop: 4, fontWeight: '600' }]}>
+                  {uploadSpeed} • {estimatedTimeRemaining}
+                </Text>
+              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
