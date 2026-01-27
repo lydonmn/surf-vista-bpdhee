@@ -9,7 +9,6 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -291,10 +290,15 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Asset height:', assetHeight);
       console.log('[AdminScreen] Asset duration (ms):', assetDuration);
       
-      const file = new FileSystem.File(uri);
-      console.log('[AdminScreen] Created File object');
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      console.log('[AdminScreen] File info:', fileInfo);
       
-      const fileSize = file.size || 0;
+      if (!fileInfo.exists) {
+        console.error('[AdminScreen] Video file does not exist');
+        throw new Error('Video file not found');
+      }
+
+      const fileSize = fileInfo.size || 0;
       console.log('[AdminScreen] File size:', formatFileSize(fileSize));
 
       if (fileSize === 0) {
@@ -508,7 +512,7 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       setUploadStatus('Preparing upload...');
       
-      console.log('[AdminScreen] ========== STARTING NATIVE STREAMING UPLOAD ==========');
+      console.log('[AdminScreen] ========== STARTING DIRECT UPLOAD TO SUPABASE ==========');
       console.log('[AdminScreen] Current user ID:', user?.id);
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video metadata:', {
@@ -521,103 +525,57 @@ export default function AdminScreen() {
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
-      console.log('[AdminScreen] Step 1/4: Verifying video file...');
+      console.log('[AdminScreen] Step 1/5: Reading video file...');
       setUploadProgress(5);
-      setUploadStatus('Verifying video file...');
+      setUploadStatus('Reading video file...');
 
-      const file = new FileSystem.File(selectedVideo);
-      const totalSize = file.size;
-      
-      if (totalSize === 0) {
+      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
+      if (!fileInfo.exists || !fileInfo.size) {
         throw new Error('Video file not found or is empty');
       }
       
+      const totalSize = fileInfo.size;
       console.log('[AdminScreen] ✓ File verified:', formatFileSize(totalSize));
       setUploadProgress(10);
 
-      console.log('[AdminScreen] Step 2/4: Getting auth session...');
-      setUploadStatus('Verifying authentication...');
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession?.access_token) {
-        throw new Error('No active session. Please log in again.');
+      console.log('[AdminScreen] Step 2/5: Reading file as base64...');
+      setUploadStatus('Preparing video data...');
+      
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: 'base64',
+      });
+      
+      console.log('[AdminScreen] ✓ File read as base64, length:', base64Data.length);
+      setUploadProgress(20);
+
+      console.log('[AdminScreen] Step 3/5: Converting to binary...');
+      setUploadStatus('Converting video...');
+      
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
+      const blob = new Blob([bytes], { type: 'video/mp4' });
       
-      console.log('[AdminScreen] ✓ Session verified');
-      setUploadProgress(15);
+      console.log('[AdminScreen] ✓ Converted to blob, size:', formatFileSize(blob.size));
+      setUploadProgress(30);
 
-      console.log('[AdminScreen] Step 3/4: Uploading video with native streaming (legacy API)...');
-      setUploadStatus('Uploading video...');
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl('dummy');
-      
-      const baseUrl = publicUrl.replace('/storage/v1/object/public/videos/dummy', '');
-      const uploadUrl = `${baseUrl}/storage/v1/object/videos/${fileName}`;
-      
-      console.log('[AdminScreen] Upload URL:', uploadUrl);
+      console.log('[AdminScreen] Step 4/5: Uploading to Supabase Storage...');
+      setUploadStatus('Uploading video to cloud...');
 
       const startTime = Date.now();
       
-      const uploadTask = LegacyFileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'POST',
-        uploadType: LegacyFileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Authorization': `Bearer ${currentSession.access_token}`,
-          'Content-Type': 'video/mp4',
-          'x-upsert': 'false',
-        },
-      });
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, blob, {
+          contentType: 'video/mp4',
+          upsert: false,
+        });
 
-      uploadTask.then(
-        (result) => {
-          console.log('[AdminScreen] Upload task completed:', result.status);
-        },
-        (error) => {
-          console.error('[AdminScreen] Upload task error:', error);
-        }
-      );
-
-      const progressInterval = setInterval(async () => {
-        try {
-          const now = Date.now();
-          const elapsedSeconds = (now - uploadStartTimeRef.current) / 1000;
-          
-          const estimatedProgress = Math.min(95, 15 + (Math.log(elapsedSeconds + 1) / Math.log(100)) * 80);
-          
-          setUploadProgress(estimatedProgress);
-          
-          const bytesUploaded = (estimatedProgress / 100) * totalSize;
-          const bytesSinceLastUpdate = bytesUploaded - lastBytesUploadedRef.current;
-          const timeSinceLastUpdate = (now - lastProgressUpdateRef.current) / 1000;
-          
-          if (timeSinceLastUpdate > 0) {
-            const speedBps = bytesSinceLastUpdate / timeSinceLastUpdate;
-            const speedMBps = (speedBps / (1024 * 1024)).toFixed(2);
-            setUploadSpeed(`${speedMBps} MB/s`);
-            
-            const remainingBytes = totalSize - bytesUploaded;
-            const remainingSeconds = remainingBytes / speedBps;
-            const remainingMinutes = Math.ceil(remainingSeconds / 60);
-            setEstimatedTimeRemaining(`~${remainingMinutes} min remaining`);
-          }
-          
-          lastProgressUpdateRef.current = now;
-          lastBytesUploadedRef.current = bytesUploaded;
-          
-          console.log('[AdminScreen] Upload progress:', estimatedProgress.toFixed(1) + '%');
-        } catch (error) {
-          console.error('[AdminScreen] Error updating progress:', error);
-        }
-      }, 1000);
-
-      const uploadResult = await uploadTask;
-      clearInterval(progressInterval);
-
-      if (uploadResult.status !== 200) {
-        const errorText = uploadResult.body || 'Unknown error';
-        console.error('[AdminScreen] Upload failed:', uploadResult.status, errorText);
-        throw new Error(`Upload failed: ${uploadResult.status} - ${errorText}`);
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
       }
 
       const elapsedSeconds = (Date.now() - startTime) / 1000;
@@ -627,9 +585,11 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Upload speed:', speedMBps, 'MB/s');
       console.log('[AdminScreen] Upload time:', elapsedSeconds.toFixed(1), 'seconds');
       
-      setUploadProgress(75);
+      setUploadProgress(70);
 
-      console.log('[AdminScreen] Step 4/4: Getting video public URL...');
+      console.log('[AdminScreen] Step 5/5: Getting video public URL...');
+      setUploadStatus('Finalizing...');
+      
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
@@ -646,7 +606,7 @@ export default function AdminScreen() {
         throw new Error(`Video file is not accessible (HTTP ${headResponse.status})`);
       }
 
-      setUploadProgress(85);
+      setUploadProgress(80);
 
       setUploadStatus('Generating thumbnail...');
       const thumbnailUrl = await (async () => {
@@ -659,29 +619,25 @@ export default function AdminScreen() {
           
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          const thumbnailFile = new FileSystem.File(thumbnailUri);
-          if (thumbnailFile.size === 0) {
-            console.log('[AdminScreen] Thumbnail file not found');
-            return null;
-          }
-
-          const thumbnailUploadUrl = `${baseUrl}/storage/v1/object/videos/${thumbnailFileName}`;
+          const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+            encoding: 'base64',
+          });
           
-          const thumbnailUploadResult = await LegacyFileSystem.uploadAsync(
-            thumbnailUploadUrl,
-            thumbnailUri,
-            {
-              httpMethod: 'POST',
-              uploadType: LegacyFileSystem.FileSystemUploadType.BINARY_CONTENT,
-              headers: {
-                'Authorization': `Bearer ${currentSession.access_token}`,
-                'Content-Type': 'image/jpeg',
-                'x-upsert': 'false',
-              },
-            }
-          );
+          const thumbnailBinaryString = atob(thumbnailBase64);
+          const thumbnailBytes = new Uint8Array(thumbnailBinaryString.length);
+          for (let i = 0; i < thumbnailBinaryString.length; i++) {
+            thumbnailBytes[i] = thumbnailBinaryString.charCodeAt(i);
+          }
+          const thumbnailBlob = new Blob([thumbnailBytes], { type: 'image/jpeg' });
 
-          if (thumbnailUploadResult.status === 200) {
+          const { error: thumbnailUploadError } = await supabase.storage
+            .from('videos')
+            .upload(thumbnailFileName, thumbnailBlob, {
+              contentType: 'image/jpeg',
+              upsert: false,
+            });
+
+          if (!thumbnailUploadError) {
             const { data: { publicUrl: thumbPublicUrl } } = supabase.storage
               .from('videos')
               .getPublicUrl(thumbnailFileName);
@@ -964,19 +920,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ✅ NATIVE STREAMING UPLOAD - Fast & Reliable
+                ✅ DIRECT SUPABASE UPLOAD - Reliable & Simple
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Native binary streaming (optimized for mobile)
+                • ✅ Direct upload to Supabase Storage
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Handles files up to 3GB
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ No memory overhead (streams from disk)
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Real-time progress tracking
+                • ✅ No fake progress bars
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Automatic video verification
@@ -1147,11 +1100,6 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
-              {uploadSpeed && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Speed: {uploadSpeed} • {estimatedTimeRemaining}
-                </Text>
-              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
                 Please keep the app open and maintain internet connection.
               </Text>
@@ -1191,10 +1139,9 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Native streaming upload (optimized for mobile){'\n'}
-              • ✅ Real-time progress tracking{'\n'}
+              • ✅ Direct upload to Supabase Storage{'\n'}
+              • ✅ No fake progress bars{'\n'}
               • ✅ Handles large 6K videos{'\n'}
-              • ✅ No memory overhead{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Upload time depends on file size and connection speed
