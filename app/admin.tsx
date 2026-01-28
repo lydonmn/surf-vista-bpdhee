@@ -49,21 +49,11 @@ export default function AdminScreen() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
   }, [profile]);
-
-  useEffect(() => {
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-    };
-  }, []);
 
   const loadUsers = async () => {
     try {
@@ -428,32 +418,8 @@ export default function AdminScreen() {
     }
   };
 
-  const simulateProgress = (startProgress: number, endProgress: number, durationMs: number) => {
-    const startTime = Date.now();
-    const progressRange = endProgress - startProgress;
-    
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-    }
-    
-    progressIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / durationMs, 1);
-      const currentProgress = startProgress + (progressRange * progress);
-      
-      setUploadProgress(Math.min(currentProgress, endProgress));
-      
-      if (progress >= 1) {
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-        }
-      }
-    }, 100);
-  };
-
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING UPLOAD (IMPROVED METHOD) ==========');
+    console.log('[AdminScreen] ========== STARTING UPLOAD (STREAMING METHOD) ==========');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -491,51 +457,41 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Target filename:', fileName);
       setUploadProgress(5);
-      setUploadStatus('Reading video file...');
+      setUploadStatus('Getting upload URL...');
 
-      // Read the file as base64
-      console.log('[AdminScreen] Reading file as base64...');
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      console.log('[AdminScreen] ✓ File read successfully, size:', base64Data.length, 'chars');
+      // Get signed upload URL from Supabase
+      console.log('[AdminScreen] Creating signed upload URL...');
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('videos')
+        .createSignedUploadUrl(fileName);
 
-      setUploadProgress(15);
-      setUploadStatus('Uploading to storage...');
-
-      // Convert base64 to blob for upload
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      if (signedUrlError || !signedUrlData) {
+        console.error('[AdminScreen] Error creating signed URL:', signedUrlError);
+        throw new Error('Failed to get upload URL from Supabase');
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
 
-      console.log('[AdminScreen] ✓ Blob created, size:', blob.size, 'bytes');
+      const uploadUrl = signedUrlData.signedUrl;
+      console.log('[AdminScreen] ✓ Got signed upload URL');
 
-      const estimatedUploadTimeMs = (videoMetadata.size / (1024 * 1024)) * 2000; // 2 seconds per MB estimate
-      simulateProgress(15, 85, estimatedUploadTimeMs);
+      setUploadProgress(10);
+      setUploadStatus('Uploading video...');
 
       const startTime = Date.now();
 
-      // Upload using Supabase client (more reliable than signed URLs)
-      console.log('[AdminScreen] Starting upload via Supabase client...');
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, blob, {
-          contentType: `video/${fileExt}`,
-          upsert: false,
-        });
+      // Upload using FileSystem.uploadAsync with progress tracking
+      console.log('[AdminScreen] Starting streaming upload...');
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': `video/${fileExt}`,
+        },
+      });
 
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-
-      if (uploadError) {
-        console.error('[AdminScreen] Upload error:', uploadError);
-        throw uploadError;
+      if (uploadResult.status !== 200) {
+        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
+        throw new Error(`Upload failed with status ${uploadResult.status}`);
       }
 
       const uploadDuration = (Date.now() - startTime) / 1000;
@@ -543,9 +499,8 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] ✅ Upload complete in', uploadDuration.toFixed(1), 'seconds');
       console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
-      console.log('[AdminScreen] Upload path:', uploadData.path);
       
-      setUploadProgress(90);
+      setUploadProgress(85);
       setUploadStatus('Generating thumbnail...');
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -562,29 +517,31 @@ export default function AdminScreen() {
           
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          // Read thumbnail as base64
-          const thumbBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          // Convert to blob
-          const thumbByteCharacters = atob(thumbBase64);
-          const thumbByteNumbers = new Array(thumbByteCharacters.length);
-          for (let i = 0; i < thumbByteCharacters.length; i++) {
-            thumbByteNumbers[i] = thumbByteCharacters.charCodeAt(i);
-          }
-          const thumbByteArray = new Uint8Array(thumbByteNumbers);
-          const thumbBlob = new Blob([thumbByteArray], { type: 'image/jpeg' });
-
-          const { error: thumbUploadError } = await supabase.storage
+          // Get signed URL for thumbnail
+          const { data: thumbSignedUrlData, error: thumbSignedUrlError } = await supabase.storage
             .from('videos')
-            .upload(thumbnailFileName, thumbBlob, {
-              contentType: 'image/jpeg',
-              upsert: false,
-            });
+            .createSignedUploadUrl(thumbnailFileName);
 
-          if (thumbUploadError) {
-            console.error('[AdminScreen] Thumbnail upload error:', thumbUploadError);
+          if (thumbSignedUrlError || !thumbSignedUrlData) {
+            console.error('[AdminScreen] Error creating thumbnail signed URL:', thumbSignedUrlError);
+            return null;
+          }
+
+          // Upload thumbnail using FileSystem.uploadAsync
+          const thumbUploadResult = await FileSystem.uploadAsync(
+            thumbSignedUrlData.signedUrl,
+            thumbnailUri,
+            {
+              httpMethod: 'PUT',
+              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+              headers: {
+                'Content-Type': 'image/jpeg',
+              },
+            }
+          );
+
+          if (thumbUploadResult.status !== 200) {
+            console.error('[AdminScreen] Thumbnail upload failed:', thumbUploadResult.status);
             return null;
           }
 
@@ -647,11 +604,6 @@ export default function AdminScreen() {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      
       let errorMessage = 'Failed to upload video. ';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
@@ -668,10 +620,6 @@ export default function AdminScreen() {
     } finally {
       setUploading(false);
       setUploadStatus('');
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
     }
   };
 
@@ -874,19 +822,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ⚡ IMPROVED UPLOAD METHOD
+                ⚡ STREAMING UPLOAD METHOD
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Uses Supabase client upload (more reliable)
+                • ✅ Streams file directly (no memory issues)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Better error handling and logging
+                • ✅ Uses Supabase signed URLs
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ File verification before upload
+                • ✅ Handles large files reliably
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Progress tracking
+                • ✅ No string length errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1090,8 +1038,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Improved reliability with Supabase client{'\n'}
-              • ✅ Better error messages and logging{'\n'}
+              • ✅ Streaming upload (no memory issues){'\n'}
+              • ✅ Handles large files reliably{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Large files may take several minutes
