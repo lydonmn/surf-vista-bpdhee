@@ -481,35 +481,68 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File size:', fileInfo.size);
 
       setUploadProgress(5);
-      setUploadStatus('Reading file data...');
+      setUploadStatus('Creating file reader...');
 
-      // Step 2: Read file as base64 and convert to Blob
-      console.log('[AdminScreen] Step 2: Reading file data...');
-      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      console.log('[AdminScreen] ✅ File read successfully, size:', base64Data.length, 'chars');
-
-      // Convert base64 to binary
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      // Step 2: Create a custom file reader for TUS that reads chunks directly
+      console.log('[AdminScreen] Step 2: Creating custom file reader for TUS...');
       
-      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
-      const blob = new Blob([bytes], { type: `video/${fileExt}` });
-      console.log('[AdminScreen] ✅ Blob created, size:', blob.size, 'bytes');
+      // Create a custom reader that reads the file in chunks
+      class FileReader {
+        private uri: string;
+        private size: number;
+        private position: number = 0;
+
+        constructor(uri: string, size: number) {
+          this.uri = uri;
+          this.size = size;
+        }
+
+        async read(length: number): Promise<Uint8Array> {
+          const start = this.position;
+          const end = Math.min(start + length, this.size);
+          const actualLength = end - start;
+
+          console.log(`[FileReader] Reading chunk: ${start} to ${end} (${actualLength} bytes)`);
+
+          // Read chunk as base64
+          const base64Chunk = await FileSystem.readAsStringAsync(this.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+            position: start,
+            length: actualLength,
+          });
+
+          // Convert base64 to Uint8Array
+          const binaryString = atob(base64Chunk);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          this.position = end;
+          return bytes;
+        }
+
+        getSize(): number {
+          return this.size;
+        }
+
+        getPosition(): number {
+          return this.position;
+        }
+      }
+
+      const fileReader = new FileReader(selectedVideo, videoMetadata.size);
+      console.log('[AdminScreen] ✅ File reader created');
 
       setUploadProgress(10);
       setUploadStatus('Getting upload URL...');
 
       // Step 3: Generate filename and get project details
+      const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
       console.log('[AdminScreen] Step 3: Target filename:', fileName);
 
       // Get Supabase project URL
-      const { data: { project } } = await supabase.auth.getSession();
       const supabaseUrl = supabase.supabaseUrl;
       const projectRef = supabaseUrl.split('//')[1].split('.')[0];
       console.log('[AdminScreen] Project ref:', projectRef);
@@ -524,13 +557,22 @@ export default function AdminScreen() {
       const startTime = Date.now();
       let lastProgressUpdate = Date.now();
 
-      // Step 4: Create TUS upload
+      // Step 4: Create TUS upload with custom reader
       console.log('[AdminScreen] Step 4: Creating TUS upload...');
       console.log('[AdminScreen] Chunk size:', formatFileSize(TUS_CHUNK_SIZE));
-      console.log('[AdminScreen] File size:', formatFileSize(blob.size));
-      console.log('[AdminScreen] Estimated chunks:', Math.ceil(blob.size / TUS_CHUNK_SIZE));
+      console.log('[AdminScreen] File size:', formatFileSize(videoMetadata.size));
+      console.log('[AdminScreen] Estimated chunks:', Math.ceil(videoMetadata.size / TUS_CHUNK_SIZE));
 
-      const upload = new tus.Upload(blob, {
+      // Create a custom upload source that uses our FileReader
+      const uploadSource = {
+        size: videoMetadata.size,
+        read: async (chunkSize: number) => {
+          const chunk = await fileReader.read(chunkSize);
+          return chunk;
+        },
+      };
+
+      const upload = new tus.Upload(uploadSource as any, {
         endpoint: tusEndpoint,
         retryDelays: [0, 3000, 5000, 10000, 20000],
         chunkSize: TUS_CHUNK_SIZE,
@@ -575,7 +617,7 @@ export default function AdminScreen() {
         },
         onSuccess: () => {
           const uploadDuration = (Date.now() - startTime) / 1000;
-          const speedMBps = (blob.size / (1024 * 1024) / uploadDuration).toFixed(2);
+          const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
           console.log('[AdminScreen] ✅ TUS upload completed successfully!');
           console.log('[AdminScreen] Upload duration:', uploadDuration.toFixed(1), 'seconds');
           console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
@@ -747,7 +789,10 @@ export default function AdminScreen() {
       let errorMessage = 'Failed to upload video.\n\n';
       let errorTitle = 'Upload Failed';
       
-      if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
+      if (error.message?.includes('String length exceeds limit')) {
+        errorTitle = '❌ File Too Large for Memory';
+        errorMessage = 'The video file is too large to process in memory.\n\nThis is a known limitation with very large files.\n\nSolutions:\n• Compress the video to reduce file size\n• Use a computer to upload via Supabase dashboard\n• Split video into smaller segments';
+      } else if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
         errorTitle = '❌ File Too Large';
         errorMessage = 'The video exceeds the maximum upload size.\n\nSolutions:\n• Compress the video\n• Reduce resolution or quality\n• Trim to shorter duration';
       } else if (error.message?.includes('timed out') || error.message?.includes('timeout')) {
@@ -987,7 +1032,7 @@ export default function AdminScreen() {
                 • ✅ Real-time progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Optimized for large files (up to 3GB)
+                • ✅ Memory-efficient chunk reading
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Direct storage hostname for speed
@@ -1197,6 +1242,7 @@ export default function AdminScreen() {
               • Uploads are chunked into 6MB pieces{'\n'}
               • Network interruptions will auto-resume{'\n'}
               • Real-time speed and progress tracking{'\n'}
+              • Memory-efficient chunk reading{'\n'}
               • Keep app open during upload{'\n'}
               • Use stable WiFi for best results{'\n'}
               • Check console for detailed progress
