@@ -108,7 +108,7 @@ export default function VideoPlayerScreen() {
     // Stop playback using the correct method
     if (player) {
       try {
-        player.playing = false;
+        player.pause();
         console.log('[VideoPlayer] Stopped playback');
       } catch (e) {
         console.log('[VideoPlayer] Error stopping playback:', e);
@@ -339,12 +339,12 @@ export default function VideoPlayerScreen() {
     console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
-      player.playing = false;
+      player.pause();
       setIsPlaying(false);
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      player.playing = true;
+      player.play();
       setIsPlaying(true);
       resetControlsTimeout();
     }
