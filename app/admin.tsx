@@ -453,7 +453,7 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING DIRECT UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING UPLOAD (IMPROVED METHOD) ==========');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -479,51 +479,63 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
 
+      // Verify file is readable
+      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
+      if (!fileInfo.exists) {
+        throw new Error('Video file no longer exists. Please select the video again.');
+      }
+      console.log('[AdminScreen] ✓ File verified as readable');
+
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
 
       console.log('[AdminScreen] Target filename:', fileName);
       setUploadProgress(5);
-      setUploadStatus('Creating signed upload URL...');
+      setUploadStatus('Reading video file...');
 
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('videos')
-        .createSignedUploadUrl(fileName);
+      // Read the file as base64
+      console.log('[AdminScreen] Reading file as base64...');
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log('[AdminScreen] ✓ File read successfully, size:', base64Data.length, 'chars');
 
-      if (signedUrlError || !signedUrlData) {
-        console.error('[AdminScreen] Signed URL error:', signedUrlError);
-        throw new Error('Failed to create upload URL');
+      setUploadProgress(15);
+      setUploadStatus('Uploading to storage...');
+
+      // Convert base64 to blob for upload
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: `video/${fileExt}` });
 
-      const uploadUrl = signedUrlData.signedUrl;
-      console.log('[AdminScreen] ✓ Signed URL created');
+      console.log('[AdminScreen] ✓ Blob created, size:', blob.size, 'bytes');
 
-      setUploadProgress(10);
-      setUploadStatus('Uploading video... This may take several minutes for large files.');
-
-      const estimatedUploadTimeMs = (videoMetadata.size / (1024 * 1024)) * 1000;
-      simulateProgress(10, 75, estimatedUploadTimeMs);
+      const estimatedUploadTimeMs = (videoMetadata.size / (1024 * 1024)) * 2000; // 2 seconds per MB estimate
+      simulateProgress(15, 85, estimatedUploadTimeMs);
 
       const startTime = Date.now();
 
-      console.log('[AdminScreen] Starting direct binary upload...');
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'PUT',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Content-Type': `video/${fileExt}`,
-        },
-      });
+      // Upload using Supabase client (more reliable than signed URLs)
+      console.log('[AdminScreen] Starting upload via Supabase client...');
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, blob, {
+          contentType: `video/${fileExt}`,
+          upsert: false,
+        });
 
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
         progressIntervalRef.current = null;
       }
 
-      if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Upload response:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}`);
+      if (uploadError) {
+        console.error('[AdminScreen] Upload error:', uploadError);
+        throw uploadError;
       }
 
       const uploadDuration = (Date.now() - startTime) / 1000;
@@ -531,8 +543,9 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] ✅ Upload complete in', uploadDuration.toFixed(1), 'seconds');
       console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
+      console.log('[AdminScreen] Upload path:', uploadData.path);
       
-      setUploadProgress(80);
+      setUploadProgress(90);
       setUploadStatus('Generating thumbnail...');
 
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
@@ -549,29 +562,29 @@ export default function AdminScreen() {
           
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          const { data: thumbSignedUrlData, error: thumbSignedUrlError } = await supabase.storage
-            .from('videos')
-            .createSignedUploadUrl(thumbnailFileName);
+          // Read thumbnail as base64
+          const thumbBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
 
-          if (thumbSignedUrlError || !thumbSignedUrlData) {
-            console.error('[AdminScreen] Thumbnail signed URL error:', thumbSignedUrlError);
-            return null;
+          // Convert to blob
+          const thumbByteCharacters = atob(thumbBase64);
+          const thumbByteNumbers = new Array(thumbByteCharacters.length);
+          for (let i = 0; i < thumbByteCharacters.length; i++) {
+            thumbByteNumbers[i] = thumbByteCharacters.charCodeAt(i);
           }
+          const thumbByteArray = new Uint8Array(thumbByteNumbers);
+          const thumbBlob = new Blob([thumbByteArray], { type: 'image/jpeg' });
 
-          const thumbUploadResult = await FileSystem.uploadAsync(
-            thumbSignedUrlData.signedUrl,
-            thumbnailUri,
-            {
-              httpMethod: 'PUT',
-              uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-              headers: {
-                'Content-Type': 'image/jpeg',
-              },
-            }
-          );
+          const { error: thumbUploadError } = await supabase.storage
+            .from('videos')
+            .upload(thumbnailFileName, thumbBlob, {
+              contentType: 'image/jpeg',
+              upsert: false,
+            });
 
-          if (thumbUploadResult.status !== 200) {
-            console.error('[AdminScreen] Thumbnail upload failed');
+          if (thumbUploadError) {
+            console.error('[AdminScreen] Thumbnail upload error:', thumbUploadError);
             return null;
           }
 
@@ -641,10 +654,12 @@ export default function AdminScreen() {
       
       let errorMessage = 'Failed to upload video. ';
       
-      if (error.message?.includes('Payload too large')) {
+      if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
         errorMessage = '❌ File Too Large\n\nThe video file exceeds the maximum upload size.\n\nSolutions:\n1. Compress the video before uploading\n2. Reduce video resolution or quality\n3. Trim the video to a shorter duration';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you are using one';
+      } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
+        errorMessage = '❌ Upload Timeout\n\nThe upload took too long and timed out.\n\nSolutions:\n1. Try with a faster internet connection\n2. Compress the video to reduce file size\n3. Try uploading during off-peak hours';
       } else {
         errorMessage += error.message || 'Unknown error. Please try again.';
       }
@@ -859,19 +874,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ⚡ DIRECT BINARY UPLOAD
+                ⚡ IMPROVED UPLOAD METHOD
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Direct binary upload (no base64 conversion)
+                • ✅ Uses Supabase client upload (more reliable)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Uses FileSystem.uploadAsync for efficiency
+                • ✅ Better error handling and logging
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Signed URLs for secure uploads
+                • ✅ File verification before upload
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ⚡ Optimized for large files
+                • ✅ Progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1075,8 +1090,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ⚡ Direct binary upload (fast & efficient){'\n'}
-              • ⚡ No base64 conversion overhead{'\n'}
+              • ✅ Improved reliability with Supabase client{'\n'}
+              • ✅ Better error messages and logging{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Large files may take several minutes
