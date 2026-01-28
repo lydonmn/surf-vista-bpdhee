@@ -12,6 +12,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Video } from 'expo-av';
 import { useVideos } from '@/hooks/useVideos';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import * as tus from 'tus-js-client';
+import 'react-native-url-polyfill/auto';
 
 interface UserProfile {
   id: string;
@@ -30,6 +32,7 @@ interface VideoMetadata {
 
 const MAX_DURATION_SECONDS = 90;
 const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
+const TUS_CHUNK_SIZE = 6 * 1024 * 1024; // 6MB chunks for compatibility with Supabase
 
 export default function AdminScreen() {
   const theme = useTheme();
@@ -50,7 +53,7 @@ export default function AdminScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const uploadAbortRef = useRef<boolean>(false);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const tusUploadRef = useRef<tus.Upload | null>(null);
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -60,8 +63,9 @@ export default function AdminScreen() {
 
   useEffect(() => {
     return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
+      if (tusUploadRef.current) {
+        console.log('[AdminScreen] Cleaning up TUS upload on unmount');
+        tusUploadRef.current.abort();
       }
     };
   }, []);
@@ -430,7 +434,7 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING UPLOAD ==========');
+    console.log('[AdminScreen] ========== STARTING TUS RESUMABLE UPLOAD ==========');
     console.log('[AdminScreen] Upload initiated at:', new Date().toISOString());
     console.log('[AdminScreen] User tapped Upload Video button');
     
@@ -477,147 +481,133 @@ export default function AdminScreen() {
       console.log('[AdminScreen] File size:', fileInfo.size);
 
       setUploadProgress(5);
-      setUploadStatus('Creating upload path...');
+      setUploadStatus('Reading file data...');
 
-      // Step 2: Generate filename
+      // Step 2: Read file as base64 and convert to Blob
+      console.log('[AdminScreen] Step 2: Reading file data...');
+      const base64Data = await FileSystem.readAsStringAsync(selectedVideo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log('[AdminScreen] ✅ File read successfully, size:', base64Data.length, 'chars');
+
+      // Convert base64 to binary
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
-      const fileName = `uploads/${Date.now()}.${fileExt}`;
-      console.log('[AdminScreen] Step 2: Target filename:', fileName);
+      const blob = new Blob([bytes], { type: `video/${fileExt}` });
+      console.log('[AdminScreen] ✅ Blob created, size:', blob.size, 'bytes');
 
       setUploadProgress(10);
-      setUploadStatus('Getting signed upload URL...');
+      setUploadStatus('Getting upload URL...');
 
-      // Step 3: Get signed upload URL
-      console.log('[AdminScreen] Step 3: Requesting signed upload URL from Supabase...');
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('videos')
-        .createSignedUploadUrl(fileName);
+      // Step 3: Generate filename and get project details
+      const fileName = `uploads/${Date.now()}.${fileExt}`;
+      console.log('[AdminScreen] Step 3: Target filename:', fileName);
 
-      if (signedUrlError || !signedUrlData) {
-        console.error('[AdminScreen] ❌ Failed to get signed URL:', signedUrlError);
-        throw new Error(`Failed to get upload URL: ${signedUrlError?.message || 'Unknown error'}`);
-      }
+      // Get Supabase project URL
+      const { data: { project } } = await supabase.auth.getSession();
+      const supabaseUrl = supabase.supabaseUrl;
+      const projectRef = supabaseUrl.split('//')[1].split('.')[0];
+      console.log('[AdminScreen] Project ref:', projectRef);
 
-      const uploadUrl = signedUrlData.signedUrl;
-      console.log('[AdminScreen] ✅ Got signed upload URL');
-      console.log('[AdminScreen] Upload URL (first 100 chars):', uploadUrl.substring(0, 100));
-      console.log('[AdminScreen] Upload token:', signedUrlData.token);
+      // Construct TUS endpoint URL (direct storage hostname for optimal speed)
+      const tusEndpoint = `${supabaseUrl}/storage/v1/upload/resumable`;
+      console.log('[AdminScreen] TUS endpoint:', tusEndpoint);
 
       setUploadProgress(15);
-      setUploadStatus('Starting upload...');
+      setUploadStatus('Starting TUS upload...');
 
-      // Step 4: Start the actual upload
-      console.log('[AdminScreen] Step 4: Starting FileSystem.uploadAsync...');
-      console.log('[AdminScreen] Upload method: PUT');
-      console.log('[AdminScreen] Upload type: BINARY_CONTENT');
-      console.log('[AdminScreen] Content-Type: video/' + fileExt);
-      
       const startTime = Date.now();
-      let progressValue = 15;
+      let lastProgressUpdate = Date.now();
 
-      // Progress simulation with realistic increments
-      progressIntervalRef.current = setInterval(() => {
-        if (uploadAbortRef.current) {
-          if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-          }
-          return;
-        }
+      // Step 4: Create TUS upload
+      console.log('[AdminScreen] Step 4: Creating TUS upload...');
+      console.log('[AdminScreen] Chunk size:', formatFileSize(TUS_CHUNK_SIZE));
+      console.log('[AdminScreen] File size:', formatFileSize(blob.size));
+      console.log('[AdminScreen] Estimated chunks:', Math.ceil(blob.size / TUS_CHUNK_SIZE));
 
-        const elapsed = (Date.now() - startTime) / 1000;
-        
-        // Slow down progress as we approach completion
-        if (progressValue < 40) {
-          progressValue += 3;
-        } else if (progressValue < 60) {
-          progressValue += 2;
-        } else if (progressValue < 80) {
-          progressValue += 1;
-        } else if (progressValue < 90) {
-          progressValue += 0.5;
-        }
-        
-        setUploadProgress(Math.min(progressValue, 90));
-        setUploadStatus(`Uploading... ${elapsed.toFixed(0)}s elapsed`);
-      }, 2000);
-
-      // Execute the upload with timeout protection
-      console.log('[AdminScreen] 🚀 Executing upload now...');
-      console.log('[AdminScreen] Upload URL length:', uploadUrl.length);
-      console.log('[AdminScreen] File URI:', selectedVideo);
-      console.log('[AdminScreen] Content-Type:', `video/${fileExt}`);
-      
-      // Create a timeout promise (10 minutes for large files)
-      const UPLOAD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-      console.log('[AdminScreen] Upload timeout set to:', UPLOAD_TIMEOUT / 1000, 'seconds');
-      
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          console.error('[AdminScreen] ⏰ Upload timeout reached!');
-          reject(new Error(`Upload timed out after ${UPLOAD_TIMEOUT / 1000} seconds. The file may be too large or your connection is too slow.`));
-        }, UPLOAD_TIMEOUT);
-      });
-
-      // Race between upload and timeout
-      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
-      const uploadStartTime = Date.now();
-      
-      const uploadPromise = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
-        httpMethod: 'PUT',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Content-Type': `video/${fileExt}`,
+      const upload = new tus.Upload(blob, {
+        endpoint: tusEndpoint,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        chunkSize: TUS_CHUNK_SIZE,
+        metadata: {
+          bucketName: 'videos',
+          objectName: fileName,
+          contentType: `video/${fileExt}`,
+          cacheControl: '3600',
         },
-      }).then((result) => {
-        const uploadTime = (Date.now() - uploadStartTime) / 1000;
-        console.log('[AdminScreen] ✅ FileSystem.uploadAsync completed in', uploadTime.toFixed(1), 'seconds');
-        return result;
-      }).catch((err) => {
-        const uploadTime = (Date.now() - uploadStartTime) / 1000;
-        console.error('[AdminScreen] ❌ FileSystem.uploadAsync failed after', uploadTime.toFixed(1), 'seconds');
-        console.error('[AdminScreen] Upload error:', err);
-        throw err;
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        onError: (error) => {
+          console.error('[AdminScreen] ❌ TUS upload error:', error);
+          throw error;
+        },
+        onProgress: (bytesUploaded, bytesTotal) => {
+          const progress = (bytesUploaded / bytesTotal) * 100;
+          const now = Date.now();
+          
+          // Update progress (throttle to every 500ms)
+          if (now - lastProgressUpdate > 500) {
+            const elapsed = (now - startTime) / 1000;
+            const speed = bytesUploaded / elapsed;
+            const remaining = (bytesTotal - bytesUploaded) / speed;
+            
+            setUploadProgress(15 + (progress * 0.75)); // 15% to 90%
+            setUploadStatus(
+              `Uploading: ${formatFileSize(bytesUploaded)} / ${formatFileSize(bytesTotal)} ` +
+              `(${progress.toFixed(1)}%) - ${formatFileSize(speed)}/s - ` +
+              `${remaining.toFixed(0)}s remaining`
+            );
+            
+            console.log(
+              `[AdminScreen] Progress: ${progress.toFixed(1)}% ` +
+              `(${formatFileSize(bytesUploaded)} / ${formatFileSize(bytesTotal)}) - ` +
+              `Speed: ${formatFileSize(speed)}/s`
+            );
+            
+            lastProgressUpdate = now;
+          }
+        },
+        onSuccess: () => {
+          const uploadDuration = (Date.now() - startTime) / 1000;
+          const speedMBps = (blob.size / (1024 * 1024) / uploadDuration).toFixed(2);
+          console.log('[AdminScreen] ✅ TUS upload completed successfully!');
+          console.log('[AdminScreen] Upload duration:', uploadDuration.toFixed(1), 'seconds');
+          console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
+        },
       });
 
-      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as FileSystem.FileSystemUploadResult;
+      tusUploadRef.current = upload;
 
-      // Clear progress interval
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
+      // Start the upload
+      console.log('[AdminScreen] 🚀 Starting TUS upload...');
+      await new Promise<void>((resolve, reject) => {
+        upload.start();
+        
+        // Override the onSuccess and onError to use our promise
+        const originalOnSuccess = upload.options.onSuccess;
+        const originalOnError = upload.options.onError;
+        
+        upload.options.onSuccess = () => {
+          if (originalOnSuccess) originalOnSuccess();
+          resolve();
+        };
+        
+        upload.options.onError = (error) => {
+          if (originalOnError) originalOnError(error);
+          reject(error);
+        };
+      });
 
       const uploadDuration = (Date.now() - startTime) / 1000;
-      console.log('[AdminScreen] Upload completed in', uploadDuration.toFixed(1), 'seconds');
-      console.log('[AdminScreen] Upload result status:', uploadResult.status);
-      console.log('[AdminScreen] Upload result headers:', JSON.stringify(uploadResult.headers || {}));
-      console.log('[AdminScreen] Upload result body (first 500 chars):', uploadResult.body?.substring(0, 500));
-
-      // Check for various success status codes
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        console.error('[AdminScreen] ❌ Upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        console.error('[AdminScreen] Response headers:', uploadResult.headers);
-        
-        // Provide more specific error messages
-        let errorMessage = `Upload failed with status ${uploadResult.status}`;
-        if (uploadResult.status === 413) {
-          errorMessage = 'File is too large for the server to accept (413 Payload Too Large)';
-        } else if (uploadResult.status === 403) {
-          errorMessage = 'Access denied (403 Forbidden). Check storage bucket permissions.';
-        } else if (uploadResult.status === 400) {
-          errorMessage = 'Bad request (400). The upload URL may have expired or is invalid.';
-        } else if (uploadResult.status === 0) {
-          errorMessage = 'Network error (status 0). Check your internet connection.';
-        }
-        
-        throw new Error(`${errorMessage}\n\nResponse: ${uploadResult.body || 'No response body'}`);
-      }
-
-      console.log('[AdminScreen] ✅ Upload successful!');
       const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
-      console.log('[AdminScreen] Average upload speed:', speedMBps, 'MB/s');
       
-      setUploadProgress(85);
+      setUploadProgress(90);
       setUploadStatus('Verifying upload...');
 
       // Step 5: Verify the file exists in storage
@@ -637,7 +627,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] ✅ File verified in storage:', fileList[0]);
       }
 
-      setUploadProgress(88);
+      setUploadProgress(92);
       setUploadStatus('Getting public URL...');
 
       // Step 6: Get public URL
@@ -648,7 +638,7 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] ✅ Public URL:', videoPublicUrl);
 
-      setUploadProgress(90);
+      setUploadProgress(94);
       setUploadStatus('Generating thumbnail...');
 
       // Step 7: Generate and upload thumbnail
@@ -701,7 +691,7 @@ export default function AdminScreen() {
         }
       })();
 
-      setUploadProgress(95);
+      setUploadProgress(97);
       setUploadStatus('Saving to database...');
 
       // Step 8: Save to database
@@ -727,14 +717,15 @@ export default function AdminScreen() {
       
       setUploadProgress(100);
       setUploadStatus('Upload complete!');
-      console.log('[AdminScreen] ========== UPLOAD COMPLETED SUCCESSFULLY ==========');
+      console.log('[AdminScreen] ========== TUS UPLOAD COMPLETED SUCCESSFULLY ==========');
 
       Alert.alert(
         'Success ✅', 
-        `Video uploaded successfully!\n\n` +
+        `Video uploaded successfully using TUS resumable upload!\n\n` +
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
-        `📊 Size: ${formatFileSize(videoMetadata.size)}\n\n` +
+        `📊 Size: ${formatFileSize(videoMetadata.size)}\n` +
+        `🔄 Chunks: ${Math.ceil(videoMetadata.size / TUS_CHUNK_SIZE)}\n\n` +
         `The video is now available.`,
         [{ text: 'OK' }]
       );
@@ -747,15 +738,11 @@ export default function AdminScreen() {
       await refreshVideos();
 
     } catch (error: any) {
-      console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
+      console.error('[AdminScreen] ========== TUS UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error message:', error.message);
       console.error('[AdminScreen] Error name:', error.name);
       console.error('[AdminScreen] Error stack:', error.stack);
-      
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
       
       let errorMessage = 'Failed to upload video.\n\n';
       let errorTitle = 'Upload Failed';
@@ -766,12 +753,9 @@ export default function AdminScreen() {
       } else if (error.message?.includes('timed out') || error.message?.includes('timeout')) {
         errorTitle = '❌ Upload Timeout';
         errorMessage = `The upload took too long and was cancelled.\n\nFile size: ${formatFileSize(videoMetadata?.size || 0)}\n\nSolutions:\n• Use faster internet connection\n• Compress the video to reduce file size\n• Try uploading during off-peak hours\n• Ensure stable WiFi connection`;
-      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch') || error.message?.includes('status 0')) {
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
         errorTitle = '❌ Network Error';
-        errorMessage = 'The upload failed due to network issues.\n\nSolutions:\n• Check your internet connection\n• Use stable WiFi (not cellular)\n• Disable VPN if active\n• Move closer to WiFi router\n• Restart your router';
-      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL') || error.message?.includes('400')) {
-        errorTitle = '❌ Upload URL Error';
-        errorMessage = 'Failed to get upload permission from server.\n\nSolutions:\n• The upload URL may have expired\n• Try selecting the video again\n• Check your admin permissions\n• Try logging out and back in';
+        errorMessage = 'The upload failed due to network issues.\n\nTUS resumable upload will automatically retry.\n\nSolutions:\n• Check your internet connection\n• Use stable WiFi (not cellular)\n• The upload will resume from where it left off';
       } else if (error.message?.includes('403') || error.message?.includes('Forbidden')) {
         errorTitle = '❌ Access Denied';
         errorMessage = 'You do not have permission to upload to storage.\n\nSolutions:\n• Check storage bucket permissions in Supabase\n• Verify your admin status\n• Contact support';
@@ -785,6 +769,7 @@ export default function AdminScreen() {
       Alert.alert(errorTitle, errorMessage);
     } finally {
       uploadAbortRef.current = true;
+      tusUploadRef.current = null;
       setUploading(false);
       setUploadStatus('');
       setUploadProgress(0);
@@ -981,33 +966,36 @@ export default function AdminScreen() {
             {uploadVideoTitle}
           </Text>
 
-          <View style={[styles.infoBox, { backgroundColor: '#E3F2FD', borderColor: '#2196F3' }]}>
+          <View style={[styles.infoBox, { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' }]}>
             <IconSymbol
-              ios_icon_name="info.circle.fill"
-              android_material_icon_name="info"
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
               size={20}
-              color="#1976D2"
+              color="#2E7D32"
             />
             <View style={styles.requirementsTextContainer}>
-              <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
-                📹 FUNCTIONAL UPLOADER
+              <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
+                🚀 TUS RESUMABLE UPLOAD ACTIVE
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • ✅ Direct binary upload to Supabase
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Chunked uploads (6MB chunks)
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • ✅ Detailed logging at each step
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Automatic resume on network interruption
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • ✅ Better error detection and reporting
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Real-time progress tracking
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
-                • ✅ File verification before upload
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Optimized for large files (up to 3GB)
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Direct storage hostname for speed
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
               </Text>
-              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum File Size: 3 GB
               </Text>
             </View>
@@ -1168,7 +1156,7 @@ export default function AdminScreen() {
                 {uploadProgress.toFixed(1)}% complete
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8, fontStyle: 'italic' }]}>
-                Check console logs for detailed upload progress
+                TUS resumable upload - will auto-resume if interrupted
               </Text>
             </View>
           )}
@@ -1205,12 +1193,13 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Upload Tips:{'\n'}
-              • Use stable WiFi connection{'\n'}
+              TUS Upload Tips:{'\n'}
+              • Uploads are chunked into 6MB pieces{'\n'}
+              • Network interruptions will auto-resume{'\n'}
+              • Real-time speed and progress tracking{'\n'}
               • Keep app open during upload{'\n'}
-              • Check console for detailed progress{'\n'}
-              • Large files may take several minutes{'\n'}
-              • Upload will show step-by-step progress
+              • Use stable WiFi for best results{'\n'}
+              • Check console for detailed progress
             </Text>
           </View>
         </View>
