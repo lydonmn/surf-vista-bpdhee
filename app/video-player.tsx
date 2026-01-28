@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Platform, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -43,7 +43,6 @@ export default function VideoPlayerScreen() {
   
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [showMetadata, setShowMetadata] = useState(false);
   
   const isSeekingRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
@@ -299,7 +298,6 @@ export default function VideoPlayerScreen() {
   const togglePlayPause = useCallback(() => {
     if (!player) return;
     
-    // Haptic feedback for immediate response
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -413,6 +411,19 @@ export default function VideoPlayerScreen() {
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+        >
+          <IconSymbol
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow-back"
+            size={24}
+            color="#FFFFFF"
+          />
+          <Text style={styles.headerBackText}>Back</Text>
+        </TouchableOpacity>
+        
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>{loadingText}</Text>
@@ -429,6 +440,19 @@ export default function VideoPlayerScreen() {
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+        >
+          <IconSymbol
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow-back"
+            size={24}
+            color="#FFFFFF"
+          />
+          <Text style={styles.headerBackText}>Back</Text>
+        </TouchableOpacity>
+        
         <View style={styles.centerContent}>
           <IconSymbol
             ios_icon_name="exclamationmark.triangle.fill"
@@ -475,6 +499,19 @@ export default function VideoPlayerScreen() {
     const preparingText = "Preparing video...";
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+        >
+          <IconSymbol
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow-back"
+            size={24}
+            color="#FFFFFF"
+          />
+          <Text style={styles.headerBackText}>Back</Text>
+        </TouchableOpacity>
+        
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>{preparingText}</Text>
@@ -486,6 +523,7 @@ export default function VideoPlayerScreen() {
   const currentTimeText = formatTime(currentTime);
   const durationText = formatTime(duration);
   const videoTitle = video.title;
+  const videoDescription = video.description;
   const videoResolution = video.resolution_width && video.resolution_height 
     ? `${video.resolution_width}x${video.resolution_height}` 
     : '4K';
@@ -606,138 +644,141 @@ export default function VideoPlayerScreen() {
   const backButtonText = "Back";
   const optimizedText = "4K Streaming";
   const httpsText = "Secure";
-  const detailsText = showMetadata ? "Hide Details" : "Show Details";
   const resolutionLabel = "Resolution";
   const sizeLabel = "File Size";
   const durationLabel = "Duration";
   
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
-      <View style={styles.videoContainer}>
-        <VideoView
-          style={styles.video}
-          player={player}
-          allowsFullscreen={false}
-          allowsPictureInPicture
-          contentFit="contain"
-          nativeControls={false}
+      <TouchableOpacity
+        style={styles.headerBackButton}
+        onPress={() => router.back()}
+      >
+        <IconSymbol
+          ios_icon_name="chevron.left"
+          android_material_icon_name="arrow-back"
+          size={24}
+          color="#FFFFFF"
         />
-        
-        {isBuffering && (
-          <View style={styles.bufferingOverlay}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={styles.bufferingText}>{bufferingText}</Text>
+        <Text style={styles.headerBackText}>{backButtonText}</Text>
+      </TouchableOpacity>
+
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.videoContainer}>
+          <VideoView
+            style={styles.video}
+            player={player}
+            allowsFullscreen={false}
+            allowsPictureInPicture
+            contentFit="contain"
+            nativeControls={false}
+          />
+          
+          {isBuffering && (
+            <View style={styles.bufferingOverlay}>
+              <ActivityIndicator size="large" color="#FFFFFF" />
+              <Text style={styles.bufferingText}>{bufferingText}</Text>
+            </View>
+          )}
+          
+          <View style={styles.videoOverlay}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={toggleFullscreen}
+            >
+              <IconSymbol
+                ios_icon_name={fullscreenIconIOS}
+                android_material_icon_name={fullscreenIconAndroid}
+                size={24}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
           </View>
-        )}
-        
-        <View style={styles.videoOverlay}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={toggleFullscreen}
-          >
-            <IconSymbol
-              ios_icon_name={fullscreenIconIOS}
-              android_material_icon_name={fullscreenIconAndroid}
-              size={24}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.controlsContainer}>
-        <View style={styles.mainControls}>
-          <TouchableOpacity
-            style={[styles.controlButton, { backgroundColor: colors.primary }]}
-            onPress={togglePlayPause}
-          >
+        <View style={styles.controlsContainer}>
+          <View style={styles.mainControls}>
+            <TouchableOpacity
+              style={[styles.controlButton, { backgroundColor: colors.primary }]}
+              onPress={togglePlayPause}
+            >
+              <IconSymbol
+                ios_icon_name={playPauseIconIOS}
+                android_material_icon_name={playPauseIconAndroid}
+                size={32}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+
+            <View style={styles.seekInfo}>
+              <Slider
+                style={styles.normalSeekBar}
+                minimumValue={0}
+                maximumValue={duration > 0 ? duration : 100}
+                value={currentTime}
+                onSlidingStart={handleSeekStart}
+                onValueChange={handleSeekChange}
+                onSlidingComplete={handleSeekComplete}
+                minimumTrackTintColor={colors.primary}
+                maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                thumbTintColor={colors.primary}
+              />
+              <View style={styles.timeRow}>
+                <Text style={styles.timeLabel}>{currentTimeText}</Text>
+                <Text style={styles.timeLabel}>{durationText}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.volumeRow}>
             <IconSymbol
-              ios_icon_name={playPauseIconIOS}
-              android_material_icon_name={playPauseIconAndroid}
-              size={32}
+              ios_icon_name={volumeIconIOS}
+              android_material_icon_name={volumeIconAndroid}
+              size={20}
               color="#FFFFFF"
             />
-          </TouchableOpacity>
-
-          <View style={styles.seekInfo}>
             <Slider
-              style={styles.normalSeekBar}
+              style={styles.normalVolumeSlider}
               minimumValue={0}
-              maximumValue={duration > 0 ? duration : 100}
-              value={currentTime}
-              onSlidingStart={handleSeekStart}
-              onValueChange={handleSeekChange}
-              onSlidingComplete={handleSeekComplete}
+              maximumValue={1}
+              value={volume}
+              onValueChange={setVolume}
               minimumTrackTintColor={colors.primary}
               maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
               thumbTintColor={colors.primary}
             />
-            <View style={styles.timeRow}>
-              <Text style={styles.timeLabel}>{currentTimeText}</Text>
-              <Text style={styles.timeLabel}>{durationText}</Text>
+          </View>
+        </View>
+
+        <View style={styles.infoContainer}>
+          <Text style={styles.title}>{videoTitle}</Text>
+          
+          {videoDescription && (
+            <Text style={styles.description}>{videoDescription}</Text>
+          )}
+          
+          <View style={styles.badgeRow}>
+            <View style={styles.badge}>
+              <IconSymbol
+                ios_icon_name="checkmark.circle.fill"
+                android_material_icon_name="check-circle"
+                size={14}
+                color={colors.primary}
+              />
+              <Text style={styles.badgeText}>{optimizedText}</Text>
+            </View>
+            
+            <View style={styles.badge}>
+              <IconSymbol
+                ios_icon_name="lock.fill"
+                android_material_icon_name="lock"
+                size={14}
+                color="#4CAF50"
+              />
+              <Text style={styles.badgeText}>{httpsText}</Text>
             </View>
           </View>
-        </View>
-
-        <View style={styles.volumeRow}>
-          <IconSymbol
-            ios_icon_name={volumeIconIOS}
-            android_material_icon_name={volumeIconAndroid}
-            size={20}
-            color="#FFFFFF"
-          />
-          <Slider
-            style={styles.normalVolumeSlider}
-            minimumValue={0}
-            maximumValue={1}
-            value={volume}
-            onValueChange={setVolume}
-            minimumTrackTintColor={colors.primary}
-            maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-            thumbTintColor={colors.primary}
-          />
-        </View>
-      </View>
-
-      <View style={styles.infoContainer}>
-        <Text style={styles.title}>{videoTitle}</Text>
-        
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}>
-            <IconSymbol
-              ios_icon_name="checkmark.circle.fill"
-              android_material_icon_name="check-circle"
-              size={14}
-              color={colors.primary}
-            />
-            <Text style={styles.badgeText}>{optimizedText}</Text>
-          </View>
           
-          <View style={styles.badge}>
-            <IconSymbol
-              ios_icon_name="lock.fill"
-              android_material_icon_name="lock"
-              size={14}
-              color="#4CAF50"
-            />
-            <Text style={styles.badgeText}>{httpsText}</Text>
-          </View>
-        </View>
-        
-        <TouchableOpacity
-          style={styles.detailsButton}
-          onPress={() => setShowMetadata(!showMetadata)}
-        >
-          <Text style={styles.detailsButtonText}>{detailsText}</Text>
-          <IconSymbol
-            ios_icon_name={showMetadata ? "chevron.up" : "chevron.down"}
-            android_material_icon_name={showMetadata ? "keyboard-arrow-up" : "keyboard-arrow-down"}
-            size={20}
-            color="rgba(255, 255, 255, 0.7)"
-          />
-        </TouchableOpacity>
-        
-        {showMetadata && (
           <View style={styles.metadataContainer}>
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>{resolutionLabel}</Text>
@@ -753,28 +794,9 @@ export default function VideoPlayerScreen() {
               <Text style={styles.metaLabel}>{durationLabel}</Text>
               <Text style={styles.metaValue}>{durationText}</Text>
             </View>
-
-            {video.description && (
-              <View style={styles.descriptionContainer}>
-                <Text style={styles.description}>{video.description}</Text>
-              </View>
-            )}
           </View>
-        )}
-      </View>
-
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-      >
-        <IconSymbol
-          ios_icon_name="chevron.left"
-          android_material_icon_name="arrow-back"
-          size={20}
-          color="#FFFFFF"
-        />
-        <Text style={styles.backButtonText}>{backButtonText}</Text>
-      </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -782,6 +804,27 @@ export default function VideoPlayerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  headerBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 48 : 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    zIndex: 10,
+  },
+  headerBackText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   centerContent: {
     flex: 1,
@@ -991,7 +1034,6 @@ const styles = StyleSheet.create({
     height: 40,
   },
   infoContainer: {
-    flex: 1,
     padding: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
   },
@@ -1000,6 +1042,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 12,
+  },
+  description: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: 16,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -1021,23 +1069,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  detailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  detailsButtonText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    fontWeight: '500',
-  },
   metadataContainer: {
     paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   metaRow: {
     flexDirection: 'row',
@@ -1055,32 +1090,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.9)',
-  },
-  descriptionContainer: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  description: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
