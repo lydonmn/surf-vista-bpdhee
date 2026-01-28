@@ -88,6 +88,16 @@ export default function VideoPlayerScreen() {
     startControlsTimeout();
   }, [startControlsTimeout]);
 
+  const player = useVideoPlayer(videoUrl || '', (player) => {
+    if (videoUrl) {
+      console.log('[VideoPlayer] Initializing player with caching enabled');
+      player.loop = false;
+      player.muted = false;
+      player.volume = volume;
+      player.allowsExternalPlayback = true;
+    }
+  });
+
   const handleExitPlayer = useCallback(async () => {
     console.log('[VideoPlayer] User exiting video player');
     
@@ -95,20 +105,29 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     
+    // Stop playback using the correct method
     if (player) {
-      player.pause();
+      try {
+        player.playing = false;
+        console.log('[VideoPlayer] Stopped playback');
+      } catch (e) {
+        console.log('[VideoPlayer] Error stopping playback:', e);
+      }
     }
     
+    // Unlock screen orientation
     if (isFullscreen && Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
+        console.log('[VideoPlayer] Unlocked screen orientation');
       } catch (e) {
         console.log('[VideoPlayer] Error unlocking orientation:', e);
       }
     }
     
+    // Navigate back
     router.back();
-  }, [isFullscreen]);
+  }, [player, isFullscreen]);
 
   useEffect(() => {
     console.log('[VideoPlayer] Component mounted, loading video:', videoId);
@@ -196,16 +215,6 @@ export default function VideoPlayerScreen() {
 
     loadVideo();
   }, []);
-
-  const player = useVideoPlayer(videoUrl || '', (player) => {
-    if (videoUrl) {
-      console.log('[VideoPlayer] Initializing player with caching enabled');
-      player.loop = false;
-      player.muted = false;
-      player.volume = volume;
-      player.allowsExternalPlayback = true;
-    }
-  });
 
   useEffect(() => {
     if (!player || !videoUrl) return;
@@ -330,12 +339,12 @@ export default function VideoPlayerScreen() {
     console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
-      player.pause();
+      player.playing = false;
       setIsPlaying(false);
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      player.play();
+      player.playing = true;
       setIsPlaying(true);
       resetControlsTimeout();
     }
