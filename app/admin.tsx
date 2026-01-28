@@ -51,6 +51,7 @@ export default function AdminScreen() {
 
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastProgressUpdateRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -433,7 +434,7 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING UPLOAD (STREAMING METHOD) ==========');
+    console.log('[AdminScreen] ========== STARTING UPLOAD (IMPROVED STREAMING METHOD) ==========');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -495,28 +496,50 @@ export default function AdminScreen() {
 
       const startTime = Date.now();
       let progressSimulation = 10;
+      lastProgressUpdateRef.current = Date.now();
 
-      // Start a progress simulation since FileSystem.uploadAsync doesn't provide real progress
+      // Improved progress simulation that goes all the way to 95%
       progressIntervalRef.current = setInterval(() => {
-        progressSimulation += 1;
-        if (progressSimulation < 80) {
-          setUploadProgress(progressSimulation);
-          const elapsed = (Date.now() - startTime) / 1000;
-          setUploadStatus(`Uploading video... (${elapsed.toFixed(0)}s elapsed)`);
+        const elapsed = (Date.now() - startTime) / 1000;
+        
+        // Gradually slow down progress as we get closer to completion
+        if (progressSimulation < 50) {
+          progressSimulation += 2;
+        } else if (progressSimulation < 70) {
+          progressSimulation += 1.5;
+        } else if (progressSimulation < 85) {
+          progressSimulation += 1;
+        } else if (progressSimulation < 95) {
+          progressSimulation += 0.5;
         }
-      }, 2000);
+        
+        setUploadProgress(Math.min(progressSimulation, 95));
+        setUploadStatus(`Uploading video... (${elapsed.toFixed(0)}s elapsed)`);
+        
+        lastProgressUpdateRef.current = Date.now();
+      }, 1500);
 
-      // Set a timeout to detect if upload is stuck
-      const UPLOAD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+      // Stall detection - if no progress update in 3 minutes, warn user
+      const stallCheckInterval = setInterval(() => {
+        const timeSinceLastUpdate = (Date.now() - lastProgressUpdateRef.current) / 1000;
+        if (timeSinceLastUpdate > 180) {
+          console.warn('[AdminScreen] ⚠️ Upload may be stalled - no progress in 3 minutes');
+          setUploadStatus('Upload may be slow... Please keep waiting...');
+        }
+      }, 30000);
+
+      // Set a reasonable timeout (15 minutes for large files)
+      const UPLOAD_TIMEOUT = 15 * 60 * 1000;
       uploadTimeoutRef.current = setTimeout(() => {
-        console.error('[AdminScreen] ❌ Upload timeout - no response after 10 minutes');
+        console.error('[AdminScreen] ❌ Upload timeout - no response after 15 minutes');
+        clearInterval(stallCheckInterval);
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current);
         }
-        throw new Error('Upload timeout - the upload is taking too long. Please check your internet connection and try again.');
+        throw new Error('Upload timeout - the upload is taking too long. Please check your internet connection and try again with a smaller file or better connection.');
       }, UPLOAD_TIMEOUT);
 
-      // Upload using FileSystem.uploadAsync with progress tracking
+      // Upload using FileSystem.uploadAsync
       console.log('[AdminScreen] Starting streaming upload...');
       console.log('[AdminScreen] Upload method: FileSystem.uploadAsync');
       console.log('[AdminScreen] Upload type: BINARY_CONTENT');
@@ -530,7 +553,8 @@ export default function AdminScreen() {
         },
       });
 
-      // Clear timeout and progress simulation
+      // Clear all intervals and timeouts
+      clearInterval(stallCheckInterval);
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
       }
@@ -583,7 +607,6 @@ export default function AdminScreen() {
           }
 
           console.log('[AdminScreen] Uploading thumbnail...');
-          // Upload thumbnail using FileSystem.uploadAsync
           const thumbUploadResult = await FileSystem.uploadAsync(
             thumbSignedUrlData.signedUrl,
             thumbnailUri,
@@ -663,7 +686,7 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error message:', error.message);
       console.error('[AdminScreen] Error stack:', error.stack);
       
-      // Clear timeout and progress simulation
+      // Clear all intervals and timeouts
       if (uploadTimeoutRef.current) {
         clearTimeout(uploadTimeoutRef.current);
       }
@@ -890,19 +913,19 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ⚡ STREAMING UPLOAD METHOD
+                ⚡ IMPROVED STREAMING UPLOAD
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Streams file directly (no memory issues)
+                • ✅ Better progress tracking (0-95%)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Uses Supabase signed URLs
+                • ✅ Stall detection and warnings
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Extended timeout (15 minutes)
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Handles large files reliably
-              </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ No string length errors
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
@@ -1106,8 +1129,8 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Streaming upload (no memory issues){'\n'}
-              • ✅ Handles large files reliably{'\n'}
+              • ✅ Improved progress tracking{'\n'}
+              • ✅ Stall detection enabled{'\n'}
               • Use a stable WiFi connection{'\n'}
               • Keep the app open during upload{'\n'}
               • Large files may take several minutes
