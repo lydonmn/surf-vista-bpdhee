@@ -129,9 +129,10 @@ export default function VideoPlayerScreen() {
     }
   }, [videoId]);
 
+  // ✅ FIX 1: Empty dependency array to prevent recursive re-renders
   useEffect(() => {
     loadVideo();
-  }, [loadVideo]);
+  }, []); // Empty array - only run once on mount
 
   // Initialize video player with optimized settings for 4K streaming
   const player = useVideoPlayer(videoUrl || '', (player) => {
@@ -294,23 +295,27 @@ export default function VideoPlayerScreen() {
     isSeekingRef.current = false;
   }, [player, duration]);
 
-  // Fullscreen toggle
+  // ✅ FIX 2: Fullscreen toggle with screen orientation management
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
     setIsFullscreen(newFullscreenState);
     setShowControls(true);
     
-    // Handle screen orientation
+    // Handle screen orientation for native platforms
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          // Lock to landscape when entering fullscreen
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
+          console.log('[VideoPlayer] ✅ Locked to landscape orientation');
         } else {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+          // Unlock or lock to portrait when exiting fullscreen
+          await ScreenOrientation.unlockAsync();
+          console.log('[VideoPlayer] ✅ Unlocked screen orientation');
         }
       } catch (e) {
-        console.log('[VideoPlayer] Screen orientation not available');
+        console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
   }, [isFullscreen]);
