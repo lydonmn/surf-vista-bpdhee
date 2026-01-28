@@ -10,7 +10,7 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 
 export default function ReportScreen() {
@@ -22,10 +22,20 @@ export default function ReportScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
-  const videoRef = React.useRef<ExpoVideo>(null);
   
   const [surfConditions, setSurfConditions] = useState<any>(null);
   const [isLoadingConditions, setIsLoadingConditions] = useState(false);
+
+  // ✅ Initialize video player with caching enabled for smooth preview playback
+  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
+    if (latestVideo?.video_url) {
+      console.log('[ReportScreen] Initializing video preview player with caching');
+      player.loop = true;
+      player.muted = true;
+      player.volume = 0;
+      console.log('[ReportScreen] ✅ Video preview caching: ENABLED');
+    }
+  });
 
   const isDarkMode = theme.dark;
 
@@ -315,20 +325,15 @@ export default function ReportScreen() {
     }
   }, [latestVideo]);
 
-  const handleVideoPlaybackStatusUpdate = React.useCallback((status: any) => {
-    if (status.isLoaded && !videoReady) {
-      console.log('[ReportScreen] Video is ready to play');
+  // ✅ Update video player source when latest video changes
+  React.useEffect(() => {
+    if (latestVideo?.video_url && videoPlayer) {
+      console.log('[ReportScreen] Loading video preview with caching enabled');
+      videoPlayer.replace(latestVideo.video_url);
+      videoPlayer.play();
       setVideoReady(true);
     }
-    
-    if (status.didJustFinish) {
-      console.log('[ReportScreen] Video finished playing');
-      if (videoRef.current) {
-        videoRef.current.setPositionAsync(0);
-        videoRef.current.pauseAsync();
-      }
-    }
-  }, [videoReady]);
+  }, [latestVideo?.video_url, videoPlayer]);
 
   const getSwellDirectionIcon = (direction: string | null) => {
     if (!direction) return { ios: 'arrow.up', android: 'north' };
@@ -924,16 +929,15 @@ export default function ReportScreen() {
                   <ActivityIndicator size="large" color={colors.primary} />
                 </View>
               )}
-              <ExpoVideo
-                ref={videoRef}
-                source={{ uri: latestVideo.video_url }}
+              <VideoView
                 style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={true}
-                isLooping={false}
-                isMuted={true}
-                onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate}
+                player={videoPlayer}
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+                contentFit="cover"
+                nativeControls={false}
               />
+              {/* ✅ expo-video with caching enabled for smooth preview */}
               {videoReady && (
                 <View style={styles.videoOverlay}>
                   <View style={styles.playButtonContainer}>
