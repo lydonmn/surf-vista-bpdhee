@@ -470,74 +470,24 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
       console.log('[AdminScreen] Video metadata:', videoMetadata);
 
-      // Step 1: Get file size explicitly
-      console.log('[AdminScreen] Step 1: Getting file size...');
-      const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
-      if (!fileInfo.exists) {
-        throw new Error('Video file no longer exists. Please select the video again.');
-      }
+      // Step 1: Convert file URI to Blob using fetch (CRITICAL FIX)
+      console.log('[AdminScreen] Step 1: Converting file URI to Blob using fetch...');
+      setUploadStatus('Converting file to Blob...');
       
-      const fileSize = fileInfo.size || 0;
-      if (fileSize === 0) {
-        throw new Error('Video file is empty (0 bytes)');
-      }
+      const response = await fetch(selectedVideo);
+      const videoBlob = await response.blob();
       
-      console.log('[AdminScreen] ✅ File size retrieved:', formatFileSize(fileSize));
-      console.log('[AdminScreen] File URI:', fileInfo.uri);
+      console.log('[AdminScreen] ✅ Blob created successfully');
+      console.log('[AdminScreen] Blob size:', formatFileSize(videoBlob.size));
+      console.log('[AdminScreen] Blob type:', videoBlob.type);
 
-      setUploadProgress(5);
-      setUploadStatus('Creating file reader...');
+      // Step 2: Get the size from the Blob object itself
+      const totalSize = videoBlob.size;
+      console.log('[AdminScreen] Step 2: Total size from Blob:', formatFileSize(totalSize));
 
-      // Step 2: Create a custom file reader for TUS that reads chunks directly
-      console.log('[AdminScreen] Step 2: Creating custom file reader for TUS...');
-      
-      // Create a custom reader that reads the file in chunks
-      class FileReader {
-        private uri: string;
-        private size: number;
-        private position: number = 0;
-
-        constructor(uri: string, size: number) {
-          this.uri = uri;
-          this.size = size;
-        }
-
-        async read(length: number): Promise<Uint8Array> {
-          const start = this.position;
-          const end = Math.min(start + length, this.size);
-          const actualLength = end - start;
-
-          console.log(`[FileReader] Reading chunk: ${start} to ${end} (${actualLength} bytes)`);
-
-          // Read chunk as base64
-          const base64Chunk = await FileSystem.readAsStringAsync(this.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-            position: start,
-            length: actualLength,
-          });
-
-          // Convert base64 to Uint8Array
-          const binaryString = atob(base64Chunk);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-
-          this.position = end;
-          return bytes;
-        }
-
-        getSize(): number {
-          return this.size;
-        }
-
-        getPosition(): number {
-          return this.position;
-        }
+      if (totalSize === 0) {
+        throw new Error('Blob is empty (0 bytes). File conversion failed.');
       }
-
-      const fileReader = new FileReader(selectedVideo, fileSize);
-      console.log('[AdminScreen] ✅ File reader created');
 
       setUploadProgress(10);
       setUploadStatus('Getting upload URL...');
@@ -562,31 +512,22 @@ export default function AdminScreen() {
       const startTime = Date.now();
       let lastProgressUpdate = Date.now();
 
-      // Step 4: Create TUS upload with custom reader and EXPLICIT uploadSize
-      console.log('[AdminScreen] Step 4: Creating TUS upload...');
+      // Step 4: Create TUS upload with Blob and EXPLICIT uploadSize
+      console.log('[AdminScreen] Step 4: Creating TUS upload with Blob...');
       console.log('[AdminScreen] Chunk size:', formatFileSize(TUS_CHUNK_SIZE));
-      console.log('[AdminScreen] File size:', formatFileSize(fileSize));
-      console.log('[AdminScreen] ⚠️ CRITICAL: Setting uploadSize explicitly to:', fileSize);
-      console.log('[AdminScreen] Estimated chunks:', Math.ceil(fileSize / TUS_CHUNK_SIZE));
+      console.log('[AdminScreen] File size:', formatFileSize(totalSize));
+      console.log('[AdminScreen] ⚠️ CRITICAL: Setting uploadSize explicitly to:', totalSize);
+      console.log('[AdminScreen] Estimated chunks:', Math.ceil(totalSize / TUS_CHUNK_SIZE));
 
-      // Create a custom upload source that uses our FileReader
-      const uploadSource = {
-        size: fileSize,
-        read: async (chunkSize: number) => {
-          const chunk = await fileReader.read(chunkSize);
-          return chunk;
-        },
-      };
-
-      const upload = new tus.Upload(uploadSource as any, {
+      const upload = new tus.Upload(videoBlob, {
         endpoint: tusEndpoint,
         retryDelays: [0, 3000, 5000, 10000, 20000],
         chunkSize: TUS_CHUNK_SIZE,
-        uploadSize: fileSize, // ✅ CRITICAL FIX: Explicitly provide the upload size
+        uploadSize: totalSize, // ✅ CRITICAL FIX: Explicitly provide the upload size
         metadata: {
           bucketName: 'videos',
           objectName: fileName,
-          contentType: `video/${fileExt}`,
+          contentType: videoBlob.type || `video/${fileExt}`,
           cacheControl: '3600',
         },
         headers: {
@@ -624,7 +565,7 @@ export default function AdminScreen() {
         },
         onSuccess: () => {
           const uploadDuration = (Date.now() - startTime) / 1000;
-          const speedMBps = (fileSize / (1024 * 1024) / uploadDuration).toFixed(2);
+          const speedMBps = (totalSize / (1024 * 1024) / uploadDuration).toFixed(2);
           console.log('[AdminScreen] ✅ TUS upload completed successfully!');
           console.log('[AdminScreen] Upload duration:', uploadDuration.toFixed(1), 'seconds');
           console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
@@ -634,7 +575,7 @@ export default function AdminScreen() {
       tusUploadRef.current = upload;
 
       // Start the upload
-      console.log('[AdminScreen] 🚀 Starting TUS upload...');
+      console.log('[AdminScreen] 🚀 Starting TUS upload with Blob...');
       await new Promise<void>((resolve, reject) => {
         upload.start();
         
@@ -654,7 +595,7 @@ export default function AdminScreen() {
       });
 
       const uploadDuration = (Date.now() - startTime) / 1000;
-      const speedMBps = (fileSize / (1024 * 1024) / uploadDuration).toFixed(2);
+      const speedMBps = (totalSize / (1024 * 1024) / uploadDuration).toFixed(2);
       
       setUploadProgress(90);
       setUploadStatus('Verifying upload...');
@@ -755,7 +696,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: fileSize,
+          file_size_bytes: totalSize,
           uploaded_by: user?.id
         });
 
@@ -773,8 +714,8 @@ export default function AdminScreen() {
         `Video uploaded successfully using TUS resumable upload!\n\n` +
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
-        `📊 Size: ${formatFileSize(fileSize)}\n` +
-        `🔄 Chunks: ${Math.ceil(fileSize / TUS_CHUNK_SIZE)}\n\n` +
+        `📊 Size: ${formatFileSize(totalSize)}\n` +
+        `🔄 Chunks: ${Math.ceil(totalSize / TUS_CHUNK_SIZE)}\n\n` +
         `The video is now available.`,
         [{ text: 'OK' }]
       );
@@ -796,7 +737,10 @@ export default function AdminScreen() {
       let errorMessage = 'Failed to upload video.\n\n';
       let errorTitle = 'Upload Failed';
       
-      if (error.message?.includes('String length exceeds limit')) {
+      if (error.message?.includes('Blob') || error.message?.includes('blob')) {
+        errorTitle = '❌ Blob Conversion Failed';
+        errorMessage = 'Failed to convert the video file to a Blob object.\n\nThis may happen with very large files or corrupted videos.\n\nSolutions:\n• Try a smaller video file\n• Compress the video\n• Ensure the video file is not corrupted';
+      } else if (error.message?.includes('String length exceeds limit')) {
         errorTitle = '❌ File Too Large for Memory';
         errorMessage = 'The video file is too large to process in memory.\n\nThis is a known limitation with very large files.\n\nSolutions:\n• Compress the video to reduce file size\n• Use a computer to upload via Supabase dashboard\n• Split video into smaller segments';
       } else if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
@@ -1027,7 +971,10 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                🚀 TUS RESUMABLE UPLOAD ACTIVE
+                🚀 TUS RESUMABLE UPLOAD WITH BLOB CONVERSION
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ File URI converted to Blob via fetch()
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Chunked uploads (6MB chunks)
@@ -1039,7 +986,7 @@ export default function AdminScreen() {
                 • ✅ Real-time progress tracking
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Memory-efficient chunk reading
+                • ✅ Memory-efficient native Blob handling
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Direct storage hostname for speed
@@ -1211,7 +1158,7 @@ export default function AdminScreen() {
                 {uploadProgress.toFixed(1)}% complete
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8, fontStyle: 'italic' }]}>
-                TUS resumable upload - will auto-resume if interrupted
+                TUS resumable upload with Blob - will auto-resume if interrupted
               </Text>
             </View>
           )}
@@ -1248,11 +1195,13 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              TUS Upload Tips:{'\n'}
+              TUS Upload with Blob Tips:{'\n'}
+              • File URI converted to Blob via fetch(){'\n'}
+              • Native code efficiently creates the Blob{'\n'}
               • Uploads are chunked into 6MB pieces{'\n'}
               • Network interruptions will auto-resume{'\n'}
               • Real-time speed and progress tracking{'\n'}
-              • Memory-efficient chunk reading{'\n'}
+              • Memory-efficient Blob handling{'\n'}
               • File size is explicitly specified{'\n'}
               • Keep app open during upload{'\n'}
               • Use stable WiFi for best results{'\n'}
