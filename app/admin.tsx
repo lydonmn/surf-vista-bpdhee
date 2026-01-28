@@ -49,11 +49,25 @@ export default function AdminScreen() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
+  const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
   }, [profile]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   const loadUsers = async () => {
     try {
@@ -444,6 +458,7 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] Video URI:', selectedVideo);
       console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
+      console.log('[AdminScreen] Video metadata:', videoMetadata);
 
       // Verify file is readable
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
@@ -451,6 +466,7 @@ export default function AdminScreen() {
         throw new Error('Video file no longer exists. Please select the video again.');
       }
       console.log('[AdminScreen] ✓ File verified as readable');
+      console.log('[AdminScreen] File info:', fileInfo);
 
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
@@ -472,14 +488,40 @@ export default function AdminScreen() {
 
       const uploadUrl = signedUrlData.signedUrl;
       console.log('[AdminScreen] ✓ Got signed upload URL');
+      console.log('[AdminScreen] Upload URL (first 100 chars):', uploadUrl.substring(0, 100));
 
       setUploadProgress(10);
       setUploadStatus('Uploading video...');
 
       const startTime = Date.now();
+      let progressSimulation = 10;
+
+      // Start a progress simulation since FileSystem.uploadAsync doesn't provide real progress
+      progressIntervalRef.current = setInterval(() => {
+        progressSimulation += 1;
+        if (progressSimulation < 80) {
+          setUploadProgress(progressSimulation);
+          const elapsed = (Date.now() - startTime) / 1000;
+          setUploadStatus(`Uploading video... (${elapsed.toFixed(0)}s elapsed)`);
+        }
+      }, 2000);
+
+      // Set a timeout to detect if upload is stuck
+      const UPLOAD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+      uploadTimeoutRef.current = setTimeout(() => {
+        console.error('[AdminScreen] ❌ Upload timeout - no response after 10 minutes');
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+        }
+        throw new Error('Upload timeout - the upload is taking too long. Please check your internet connection and try again.');
+      }, UPLOAD_TIMEOUT);
 
       // Upload using FileSystem.uploadAsync with progress tracking
       console.log('[AdminScreen] Starting streaming upload...');
+      console.log('[AdminScreen] Upload method: FileSystem.uploadAsync');
+      console.log('[AdminScreen] Upload type: BINARY_CONTENT');
+      console.log('[AdminScreen] Content-Type: video/' + fileExt);
+      
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'PUT',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
@@ -488,10 +530,21 @@ export default function AdminScreen() {
         },
       });
 
+      // Clear timeout and progress simulation
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+
+      console.log('[AdminScreen] Upload result status:', uploadResult.status);
+      console.log('[AdminScreen] Upload result body (first 200 chars):', uploadResult.body?.substring(0, 200));
+
       if (uploadResult.status !== 200) {
         console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
         console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}`);
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
       }
 
       const uploadDuration = (Date.now() - startTime) / 1000;
@@ -511,10 +564,12 @@ export default function AdminScreen() {
 
       const thumbnailUrl = await (async () => {
         try {
+          console.log('[AdminScreen] Generating thumbnail...');
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
             time: 1000,
           });
           
+          console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
           // Get signed URL for thumbnail
@@ -527,6 +582,7 @@ export default function AdminScreen() {
             return null;
           }
 
+          console.log('[AdminScreen] Uploading thumbnail...');
           // Upload thumbnail using FileSystem.uploadAsync
           const thumbUploadResult = await FileSystem.uploadAsync(
             thumbSignedUrlData.signedUrl,
@@ -560,6 +616,7 @@ export default function AdminScreen() {
       setUploadProgress(95);
       setUploadStatus('Saving video information...');
 
+      console.log('[AdminScreen] Saving to database...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -603,6 +660,16 @@ export default function AdminScreen() {
     } catch (error: any) {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
+      console.error('[AdminScreen] Error message:', error.message);
+      console.error('[AdminScreen] Error stack:', error.stack);
+      
+      // Clear timeout and progress simulation
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
       
       let errorMessage = 'Failed to upload video. ';
       
@@ -620,6 +687,7 @@ export default function AdminScreen() {
     } finally {
       setUploading(false);
       setUploadStatus('');
+      setUploadProgress(0);
     }
   };
 
