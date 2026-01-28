@@ -432,11 +432,17 @@ export default function AdminScreen() {
   const uploadVideo = async () => {
     console.log('[AdminScreen] ========== STARTING UPLOAD ==========');
     console.log('[AdminScreen] Upload initiated at:', new Date().toISOString());
+    console.log('[AdminScreen] User tapped Upload Video button');
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
+      console.log('[AdminScreen] ❌ Missing required fields');
       Alert.alert('Error', 'Please select a valid video and enter a title');
       return;
     }
+    
+    console.log('[AdminScreen] ✅ All required fields present');
+    console.log('[AdminScreen] Video title:', videoTitle);
+    console.log('[AdminScreen] Video description:', videoDescription || '(none)');
 
     if (!session?.access_token) {
       Alert.alert('Error', 'You are not logged in. Please log out and log back in.');
@@ -535,15 +541,45 @@ export default function AdminScreen() {
         setUploadStatus(`Uploading... ${elapsed.toFixed(0)}s elapsed`);
       }, 2000);
 
-      // Execute the upload
+      // Execute the upload with timeout protection
       console.log('[AdminScreen] 🚀 Executing upload now...');
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
+      console.log('[AdminScreen] Upload URL length:', uploadUrl.length);
+      console.log('[AdminScreen] File URI:', selectedVideo);
+      console.log('[AdminScreen] Content-Type:', `video/${fileExt}`);
+      
+      // Create a timeout promise (10 minutes for large files)
+      const UPLOAD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+      console.log('[AdminScreen] Upload timeout set to:', UPLOAD_TIMEOUT / 1000, 'seconds');
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          console.error('[AdminScreen] ⏰ Upload timeout reached!');
+          reject(new Error(`Upload timed out after ${UPLOAD_TIMEOUT / 1000} seconds. The file may be too large or your connection is too slow.`));
+        }, UPLOAD_TIMEOUT);
+      });
+
+      // Race between upload and timeout
+      console.log('[AdminScreen] Starting FileSystem.uploadAsync...');
+      const uploadStartTime = Date.now();
+      
+      const uploadPromise = FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'PUT',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
           'Content-Type': `video/${fileExt}`,
         },
+      }).then((result) => {
+        const uploadTime = (Date.now() - uploadStartTime) / 1000;
+        console.log('[AdminScreen] ✅ FileSystem.uploadAsync completed in', uploadTime.toFixed(1), 'seconds');
+        return result;
+      }).catch((err) => {
+        const uploadTime = (Date.now() - uploadStartTime) / 1000;
+        console.error('[AdminScreen] ❌ FileSystem.uploadAsync failed after', uploadTime.toFixed(1), 'seconds');
+        console.error('[AdminScreen] Upload error:', err);
+        throw err;
       });
+
+      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as FileSystem.FileSystemUploadResult;
 
       // Clear progress interval
       if (progressIntervalRef.current) {
@@ -553,12 +589,28 @@ export default function AdminScreen() {
       const uploadDuration = (Date.now() - startTime) / 1000;
       console.log('[AdminScreen] Upload completed in', uploadDuration.toFixed(1), 'seconds');
       console.log('[AdminScreen] Upload result status:', uploadResult.status);
+      console.log('[AdminScreen] Upload result headers:', JSON.stringify(uploadResult.headers || {}));
       console.log('[AdminScreen] Upload result body (first 500 chars):', uploadResult.body?.substring(0, 500));
 
-      if (uploadResult.status !== 200) {
+      // Check for various success status codes
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
         console.error('[AdminScreen] ❌ Upload failed with status:', uploadResult.status);
         console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body || 'No response body'}`);
+        console.error('[AdminScreen] Response headers:', uploadResult.headers);
+        
+        // Provide more specific error messages
+        let errorMessage = `Upload failed with status ${uploadResult.status}`;
+        if (uploadResult.status === 413) {
+          errorMessage = 'File is too large for the server to accept (413 Payload Too Large)';
+        } else if (uploadResult.status === 403) {
+          errorMessage = 'Access denied (403 Forbidden). Check storage bucket permissions.';
+        } else if (uploadResult.status === 400) {
+          errorMessage = 'Bad request (400). The upload URL may have expired or is invalid.';
+        } else if (uploadResult.status === 0) {
+          errorMessage = 'Network error (status 0). Check your internet connection.';
+        }
+        
+        throw new Error(`${errorMessage}\n\nResponse: ${uploadResult.body || 'No response body'}`);
       }
 
       console.log('[AdminScreen] ✅ Upload successful!');
@@ -566,10 +618,30 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Average upload speed:', speedMBps, 'MB/s');
       
       setUploadProgress(85);
+      setUploadStatus('Verifying upload...');
+
+      // Step 5: Verify the file exists in storage
+      console.log('[AdminScreen] Step 5: Verifying file exists in storage...');
+      const { data: fileList, error: listError } = await supabase.storage
+        .from('videos')
+        .list('uploads', {
+          search: fileName.split('/').pop()
+        });
+
+      if (listError) {
+        console.error('[AdminScreen] ⚠️ Could not verify file existence:', listError);
+      } else if (!fileList || fileList.length === 0) {
+        console.error('[AdminScreen] ❌ File not found in storage after upload!');
+        throw new Error('Upload appeared to succeed but file is not in storage. This may indicate a storage bucket configuration issue.');
+      } else {
+        console.log('[AdminScreen] ✅ File verified in storage:', fileList[0]);
+      }
+
+      setUploadProgress(88);
       setUploadStatus('Getting public URL...');
 
-      // Step 5: Get public URL
-      console.log('[AdminScreen] Step 5: Getting public URL...');
+      // Step 6: Get public URL
+      console.log('[AdminScreen] Step 6: Getting public URL...');
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
@@ -579,8 +651,8 @@ export default function AdminScreen() {
       setUploadProgress(90);
       setUploadStatus('Generating thumbnail...');
 
-      // Step 6: Generate and upload thumbnail
-      console.log('[AdminScreen] Step 6: Generating thumbnail...');
+      // Step 7: Generate and upload thumbnail
+      console.log('[AdminScreen] Step 7: Generating thumbnail...');
       const thumbnailUrl = await (async () => {
         try {
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
@@ -632,8 +704,8 @@ export default function AdminScreen() {
       setUploadProgress(95);
       setUploadStatus('Saving to database...');
 
-      // Step 7: Save to database
-      console.log('[AdminScreen] Step 7: Saving video record to database...');
+      // Step 8: Save to database
+      console.log('[AdminScreen] Step 8: Saving video record to database...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -678,6 +750,7 @@ export default function AdminScreen() {
       console.error('[AdminScreen] ========== UPLOAD FAILED ==========');
       console.error('[AdminScreen] Error:', error);
       console.error('[AdminScreen] Error message:', error.message);
+      console.error('[AdminScreen] Error name:', error.name);
       console.error('[AdminScreen] Error stack:', error.stack);
       
       if (progressIntervalRef.current) {
@@ -685,20 +758,31 @@ export default function AdminScreen() {
       }
       
       let errorMessage = 'Failed to upload video.\n\n';
+      let errorTitle = 'Upload Failed';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
-        errorMessage += '❌ File Too Large\n\nThe video exceeds the maximum upload size.\n\nSolutions:\n• Compress the video\n• Reduce resolution or quality\n• Trim to shorter duration';
-      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
-        errorMessage += '❌ Network Error\n\nThe upload failed due to network issues.\n\nSolutions:\n• Check internet connection\n• Use stable WiFi\n• Disable VPN if active';
-      } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
-        errorMessage += '❌ Upload Timeout\n\nThe upload took too long.\n\nSolutions:\n• Use faster internet\n• Compress the video\n• Try during off-peak hours';
-      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL')) {
-        errorMessage += '❌ Upload URL Error\n\nFailed to get upload permission from server.\n\nSolutions:\n• Check your admin permissions\n• Try logging out and back in\n• Contact support if issue persists';
+        errorTitle = '❌ File Too Large';
+        errorMessage = 'The video exceeds the maximum upload size.\n\nSolutions:\n• Compress the video\n• Reduce resolution or quality\n• Trim to shorter duration';
+      } else if (error.message?.includes('timed out') || error.message?.includes('timeout')) {
+        errorTitle = '❌ Upload Timeout';
+        errorMessage = `The upload took too long and was cancelled.\n\nFile size: ${formatFileSize(videoMetadata?.size || 0)}\n\nSolutions:\n• Use faster internet connection\n• Compress the video to reduce file size\n• Try uploading during off-peak hours\n• Ensure stable WiFi connection`;
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch') || error.message?.includes('status 0')) {
+        errorTitle = '❌ Network Error';
+        errorMessage = 'The upload failed due to network issues.\n\nSolutions:\n• Check your internet connection\n• Use stable WiFi (not cellular)\n• Disable VPN if active\n• Move closer to WiFi router\n• Restart your router';
+      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL') || error.message?.includes('400')) {
+        errorTitle = '❌ Upload URL Error';
+        errorMessage = 'Failed to get upload permission from server.\n\nSolutions:\n• The upload URL may have expired\n• Try selecting the video again\n• Check your admin permissions\n• Try logging out and back in';
+      } else if (error.message?.includes('403') || error.message?.includes('Forbidden')) {
+        errorTitle = '❌ Access Denied';
+        errorMessage = 'You do not have permission to upload to storage.\n\nSolutions:\n• Check storage bucket permissions in Supabase\n• Verify your admin status\n• Contact support';
+      } else if (error.message?.includes('not in storage') || error.message?.includes('not found')) {
+        errorTitle = '❌ Storage Verification Failed';
+        errorMessage = 'The upload completed but the file could not be verified in storage.\n\nThis may indicate:\n• Storage bucket configuration issue\n• Temporary storage service problem\n\nSolutions:\n• Check the Video Management section to see if the video actually uploaded\n• Try uploading again\n• Check Supabase storage bucket settings';
       } else {
-        errorMessage += error.message || 'Unknown error occurred.';
+        errorMessage = error.message || 'Unknown error occurred.\n\nPlease check the console logs for more details.';
       }
       
-      Alert.alert('Upload Failed', errorMessage);
+      Alert.alert(errorTitle, errorMessage);
     } finally {
       uploadAbortRef.current = true;
       setUploading(false);
