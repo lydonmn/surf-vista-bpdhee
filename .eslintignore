@@ -13,3 +13,6 @@ node_modules/
 
 # Ignore Supabase Edge Functions (Deno runtime)
 supabase/functions/
+
+# Ignore Node.js scripts
+scripts/
