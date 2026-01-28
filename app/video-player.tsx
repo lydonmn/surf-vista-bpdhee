@@ -49,9 +49,15 @@ export default function VideoPlayerScreen() {
   // Refs
   const isSeekingRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
+  const hasLoadedRef = useRef(false);
 
   // Fetch video signed URL from Supabase storage
   const loadVideo = useCallback(async () => {
+    if (hasLoadedRef.current) {
+      console.log('[VideoPlayer] Already loaded, skipping...');
+      return;
+    }
+    
     try {
       setIsLoading(true);
       setError(null);
@@ -125,6 +131,7 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] ✅ URL verified as HTTPS');
       
       setVideoUrl(generatedUrl);
+      hasLoadedRef.current = true;
       
       // Set duration if available from metadata
       if (data.duration_seconds) {
@@ -138,12 +145,12 @@ export default function VideoPlayerScreen() {
     }
   }, [videoId]);
 
-  // ✅ FIX 1: Empty dependency array to prevent recursive re-renders
+  // ✅ FIX 1: Load video only once on mount
   useEffect(() => {
     loadVideo();
-  }, []); // Empty array - only run once on mount
+  }, []);
 
-  // Initialize video player with optimized settings for 4K streaming
+  // ✅ FIX 2: Initialize player ONLY when videoUrl is ready
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player for 4K streaming');
@@ -151,20 +158,14 @@ export default function VideoPlayerScreen() {
       player.loop = false;
       player.muted = false;
       player.volume = volume;
-      player.allowsExternalPlayback = true; // Enable AirPlay/Chromecast
-      
-      // Expo Video automatically handles:
-      // - Adaptive bitrate streaming
-      // - Efficient buffering for large files
-      // - Hardware acceleration for 4K decoding
-      // - Memory management for long-form content
+      player.allowsExternalPlayback = true;
       console.log('[VideoPlayer] Player configured for long-form 4K playback');
     }
   });
 
   // Set up player event listeners
   useEffect(() => {
-    if (!player) return;
+    if (!player || !videoUrl) return;
 
     console.log('[VideoPlayer] Setting up player event listeners');
 
@@ -232,7 +233,7 @@ export default function VideoPlayerScreen() {
       playingListener.remove();
       timeUpdateListener.remove();
     };
-  }, [player, duration]);
+  }, [player, duration, videoUrl]);
 
   // Update player source when URL changes
   useEffect(() => {
@@ -305,7 +306,7 @@ export default function VideoPlayerScreen() {
     isSeekingRef.current = false;
   }, [player, duration]);
 
-  // ✅ FIX 2: Fullscreen toggle with screen orientation management
+  // ✅ FIX 3: Smart orientation handling based on video aspect ratio
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
@@ -316,11 +317,22 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // Lock to landscape when entering fullscreen
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
-          console.log('[VideoPlayer] ✅ Locked to landscape orientation');
+          // Determine if video is portrait or landscape
+          const isPortraitVideo = video && video.resolution_height && video.resolution_width 
+            ? video.resolution_height > video.resolution_width 
+            : false;
+          
+          if (isPortraitVideo) {
+            // For portrait videos, allow all orientations or lock to portrait
+            console.log('[VideoPlayer] ✅ Portrait video detected - unlocking orientation');
+            await ScreenOrientation.unlockAsync();
+          } else {
+            // For landscape videos, lock to landscape
+            console.log('[VideoPlayer] ✅ Landscape video detected - locking to landscape');
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          }
         } else {
-          // Unlock or lock to portrait when exiting fullscreen
+          // Unlock orientation when exiting fullscreen
           await ScreenOrientation.unlockAsync();
           console.log('[VideoPlayer] ✅ Unlocked screen orientation');
         }
@@ -328,7 +340,7 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
-  }, [isFullscreen]);
+  }, [isFullscreen, video]);
 
   // Auto-hide controls in fullscreen
   const resetControlsTimeout = useCallback(() => {
@@ -430,7 +442,10 @@ export default function VideoPlayerScreen() {
           
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
-            onPress={loadVideo}
+            onPress={() => {
+              hasLoadedRef.current = false;
+              loadVideo();
+            }}
           >
             <IconSymbol
               ios_icon_name="arrow.clockwise"
