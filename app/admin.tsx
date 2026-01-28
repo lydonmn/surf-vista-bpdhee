@@ -49,9 +49,8 @@ export default function AdminScreen() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadAbortRef = useRef<boolean>(false);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastProgressUpdateRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (profile?.is_admin) {
@@ -61,9 +60,6 @@ export default function AdminScreen() {
 
   useEffect(() => {
     return () => {
-      if (uploadTimeoutRef.current) {
-        clearTimeout(uploadTimeoutRef.current);
-      }
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
@@ -434,7 +430,8 @@ export default function AdminScreen() {
   };
 
   const uploadVideo = async () => {
-    console.log('[AdminScreen] ========== STARTING UPLOAD (IMPROVED STREAMING METHOD) ==========');
+    console.log('[AdminScreen] ========== STARTING UPLOAD ==========');
+    console.log('[AdminScreen] Upload initiated at:', new Date().toISOString());
     
     if (!selectedVideo || !videoTitle || !videoMetadata) {
       Alert.alert('Error', 'Please select a valid video and enter a title');
@@ -452,6 +449,8 @@ export default function AdminScreen() {
       return;
     }
 
+    uploadAbortRef.current = false;
+
     try {
       setUploading(true);
       setUploadProgress(0);
@@ -461,90 +460,83 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
       console.log('[AdminScreen] Video metadata:', videoMetadata);
 
-      // Verify file is readable
+      // Step 1: Verify file exists and is readable
+      console.log('[AdminScreen] Step 1: Verifying file...');
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
       if (!fileInfo.exists) {
         throw new Error('Video file no longer exists. Please select the video again.');
       }
-      console.log('[AdminScreen] ✓ File verified as readable');
-      console.log('[AdminScreen] File info:', fileInfo);
+      console.log('[AdminScreen] ✅ File verified - exists and readable');
+      console.log('[AdminScreen] File URI:', fileInfo.uri);
+      console.log('[AdminScreen] File size:', fileInfo.size);
 
+      setUploadProgress(5);
+      setUploadStatus('Creating upload path...');
+
+      // Step 2: Generate filename
       const fileExt = selectedVideo.split('.').pop()?.toLowerCase() || 'mp4';
       const fileName = `uploads/${Date.now()}.${fileExt}`;
+      console.log('[AdminScreen] Step 2: Target filename:', fileName);
 
-      console.log('[AdminScreen] Target filename:', fileName);
-      setUploadProgress(5);
-      setUploadStatus('Getting upload URL...');
+      setUploadProgress(10);
+      setUploadStatus('Getting signed upload URL...');
 
-      // Get signed upload URL from Supabase
-      console.log('[AdminScreen] Creating signed upload URL...');
+      // Step 3: Get signed upload URL
+      console.log('[AdminScreen] Step 3: Requesting signed upload URL from Supabase...');
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
 
       if (signedUrlError || !signedUrlData) {
-        console.error('[AdminScreen] Error creating signed URL:', signedUrlError);
-        throw new Error('Failed to get upload URL from Supabase');
+        console.error('[AdminScreen] ❌ Failed to get signed URL:', signedUrlError);
+        throw new Error(`Failed to get upload URL: ${signedUrlError?.message || 'Unknown error'}`);
       }
 
       const uploadUrl = signedUrlData.signedUrl;
-      console.log('[AdminScreen] ✓ Got signed upload URL');
+      console.log('[AdminScreen] ✅ Got signed upload URL');
       console.log('[AdminScreen] Upload URL (first 100 chars):', uploadUrl.substring(0, 100));
+      console.log('[AdminScreen] Upload token:', signedUrlData.token);
 
-      setUploadProgress(10);
-      setUploadStatus('Uploading video...');
+      setUploadProgress(15);
+      setUploadStatus('Starting upload...');
 
-      const startTime = Date.now();
-      let progressSimulation = 10;
-      lastProgressUpdateRef.current = Date.now();
-
-      // Improved progress simulation that goes all the way to 95%
-      progressIntervalRef.current = setInterval(() => {
-        const elapsed = (Date.now() - startTime) / 1000;
-        
-        // Gradually slow down progress as we get closer to completion
-        if (progressSimulation < 50) {
-          progressSimulation += 2;
-        } else if (progressSimulation < 70) {
-          progressSimulation += 1.5;
-        } else if (progressSimulation < 85) {
-          progressSimulation += 1;
-        } else if (progressSimulation < 95) {
-          progressSimulation += 0.5;
-        }
-        
-        setUploadProgress(Math.min(progressSimulation, 95));
-        setUploadStatus(`Uploading video... (${elapsed.toFixed(0)}s elapsed)`);
-        
-        lastProgressUpdateRef.current = Date.now();
-      }, 1500);
-
-      // Stall detection - if no progress update in 3 minutes, warn user
-      const stallCheckInterval = setInterval(() => {
-        const timeSinceLastUpdate = (Date.now() - lastProgressUpdateRef.current) / 1000;
-        if (timeSinceLastUpdate > 180) {
-          console.warn('[AdminScreen] ⚠️ Upload may be stalled - no progress in 3 minutes');
-          setUploadStatus('Upload may be slow... Please keep waiting...');
-        }
-      }, 30000);
-
-      // Set a reasonable timeout (15 minutes for large files)
-      const UPLOAD_TIMEOUT = 15 * 60 * 1000;
-      uploadTimeoutRef.current = setTimeout(() => {
-        console.error('[AdminScreen] ❌ Upload timeout - no response after 15 minutes');
-        clearInterval(stallCheckInterval);
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-        }
-        throw new Error('Upload timeout - the upload is taking too long. Please check your internet connection and try again with a smaller file or better connection.');
-      }, UPLOAD_TIMEOUT);
-
-      // Upload using FileSystem.uploadAsync
-      console.log('[AdminScreen] Starting streaming upload...');
-      console.log('[AdminScreen] Upload method: FileSystem.uploadAsync');
+      // Step 4: Start the actual upload
+      console.log('[AdminScreen] Step 4: Starting FileSystem.uploadAsync...');
+      console.log('[AdminScreen] Upload method: PUT');
       console.log('[AdminScreen] Upload type: BINARY_CONTENT');
       console.log('[AdminScreen] Content-Type: video/' + fileExt);
       
+      const startTime = Date.now();
+      let progressValue = 15;
+
+      // Progress simulation with realistic increments
+      progressIntervalRef.current = setInterval(() => {
+        if (uploadAbortRef.current) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+          }
+          return;
+        }
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        
+        // Slow down progress as we approach completion
+        if (progressValue < 40) {
+          progressValue += 3;
+        } else if (progressValue < 60) {
+          progressValue += 2;
+        } else if (progressValue < 80) {
+          progressValue += 1;
+        } else if (progressValue < 90) {
+          progressValue += 0.5;
+        }
+        
+        setUploadProgress(Math.min(progressValue, 90));
+        setUploadStatus(`Uploading... ${elapsed.toFixed(0)}s elapsed`);
+      }, 2000);
+
+      // Execute the upload
+      console.log('[AdminScreen] 🚀 Executing upload now...');
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, selectedVideo, {
         httpMethod: 'PUT',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
@@ -553,42 +545,44 @@ export default function AdminScreen() {
         },
       });
 
-      // Clear all intervals and timeouts
-      clearInterval(stallCheckInterval);
-      if (uploadTimeoutRef.current) {
-        clearTimeout(uploadTimeoutRef.current);
-      }
+      // Clear progress interval
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
 
+      const uploadDuration = (Date.now() - startTime) / 1000;
+      console.log('[AdminScreen] Upload completed in', uploadDuration.toFixed(1), 'seconds');
       console.log('[AdminScreen] Upload result status:', uploadResult.status);
-      console.log('[AdminScreen] Upload result body (first 200 chars):', uploadResult.body?.substring(0, 200));
+      console.log('[AdminScreen] Upload result body (first 500 chars):', uploadResult.body?.substring(0, 500));
 
       if (uploadResult.status !== 200) {
-        console.error('[AdminScreen] Upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] ❌ Upload failed with status:', uploadResult.status);
         console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body}`);
+        throw new Error(`Upload failed with status ${uploadResult.status}: ${uploadResult.body || 'No response body'}`);
       }
 
-      const uploadDuration = (Date.now() - startTime) / 1000;
+      console.log('[AdminScreen] ✅ Upload successful!');
       const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
-      
-      console.log('[AdminScreen] ✅ Upload complete in', uploadDuration.toFixed(1), 'seconds');
-      console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
+      console.log('[AdminScreen] Average upload speed:', speedMBps, 'MB/s');
       
       setUploadProgress(85);
-      setUploadStatus('Generating thumbnail...');
+      setUploadStatus('Getting public URL...');
 
+      // Step 5: Get public URL
+      console.log('[AdminScreen] Step 5: Getting public URL...');
       const { data: { publicUrl: videoPublicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
       
-      console.log('[AdminScreen] Public URL:', videoPublicUrl);
+      console.log('[AdminScreen] ✅ Public URL:', videoPublicUrl);
 
+      setUploadProgress(90);
+      setUploadStatus('Generating thumbnail...');
+
+      // Step 6: Generate and upload thumbnail
+      console.log('[AdminScreen] Step 6: Generating thumbnail...');
       const thumbnailUrl = await (async () => {
         try {
-          console.log('[AdminScreen] Generating thumbnail...');
           const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(selectedVideo, {
             time: 1000,
           });
@@ -596,7 +590,6 @@ export default function AdminScreen() {
           console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
           const thumbnailFileName = `thumbnails/${Date.now()}.jpg`;
           
-          // Get signed URL for thumbnail
           const { data: thumbSignedUrlData, error: thumbSignedUrlError } = await supabase.storage
             .from('videos')
             .createSignedUploadUrl(thumbnailFileName);
@@ -628,18 +621,19 @@ export default function AdminScreen() {
             .from('videos')
             .getPublicUrl(thumbnailFileName);
           
-          console.log('[AdminScreen] ✓ Thumbnail uploaded:', thumbPublicUrl);
+          console.log('[AdminScreen] ✅ Thumbnail uploaded:', thumbPublicUrl);
           return thumbPublicUrl;
         } catch (thumbnailError) {
-          console.error('[AdminScreen] Error generating thumbnail:', thumbnailError);
+          console.error('[AdminScreen] Error with thumbnail:', thumbnailError);
           return null;
         }
       })();
 
       setUploadProgress(95);
-      setUploadStatus('Saving video information...');
+      setUploadStatus('Saving to database...');
 
-      console.log('[AdminScreen] Saving to database...');
+      // Step 7: Save to database
+      console.log('[AdminScreen] Step 7: Saving video record to database...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -655,7 +649,7 @@ export default function AdminScreen() {
         });
 
       if (dbError) {
-        console.error('[AdminScreen] Database error:', dbError);
+        console.error('[AdminScreen] ❌ Database error:', dbError);
         throw dbError;
       }
       
@@ -669,7 +663,7 @@ export default function AdminScreen() {
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
         `📊 Size: ${formatFileSize(videoMetadata.size)}\n\n` +
-        `The video is now playable.`,
+        `The video is now available.`,
         [{ text: 'OK' }]
       );
       
@@ -686,28 +680,27 @@ export default function AdminScreen() {
       console.error('[AdminScreen] Error message:', error.message);
       console.error('[AdminScreen] Error stack:', error.stack);
       
-      // Clear all intervals and timeouts
-      if (uploadTimeoutRef.current) {
-        clearTimeout(uploadTimeoutRef.current);
-      }
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
       
-      let errorMessage = 'Failed to upload video. ';
+      let errorMessage = 'Failed to upload video.\n\n';
       
       if (error.message?.includes('Payload too large') || error.message?.includes('413')) {
-        errorMessage = '❌ File Too Large\n\nThe video file exceeds the maximum upload size.\n\nSolutions:\n1. Compress the video before uploading\n2. Reduce video resolution or quality\n3. Trim the video to a shorter duration';
+        errorMessage += '❌ File Too Large\n\nThe video exceeds the maximum upload size.\n\nSolutions:\n• Compress the video\n• Reduce resolution or quality\n• Trim to shorter duration';
       } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
-        errorMessage = '❌ Network Error\n\nThe upload failed due to a network issue.\n\nSolutions:\n1. Check your internet connection\n2. Try again with a stable WiFi connection\n3. Disable VPN if you are using one';
+        errorMessage += '❌ Network Error\n\nThe upload failed due to network issues.\n\nSolutions:\n• Check internet connection\n• Use stable WiFi\n• Disable VPN if active';
       } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
-        errorMessage = '❌ Upload Timeout\n\nThe upload took too long and timed out.\n\nSolutions:\n1. Try with a faster internet connection\n2. Compress the video to reduce file size\n3. Try uploading during off-peak hours';
+        errorMessage += '❌ Upload Timeout\n\nThe upload took too long.\n\nSolutions:\n• Use faster internet\n• Compress the video\n• Try during off-peak hours';
+      } else if (error.message?.includes('signed URL') || error.message?.includes('upload URL')) {
+        errorMessage += '❌ Upload URL Error\n\nFailed to get upload permission from server.\n\nSolutions:\n• Check your admin permissions\n• Try logging out and back in\n• Contact support if issue persists';
       } else {
-        errorMessage += error.message || 'Unknown error. Please try again.';
+        errorMessage += error.message || 'Unknown error occurred.';
       }
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
+      uploadAbortRef.current = true;
       setUploading(false);
       setUploadStatus('');
       setUploadProgress(0);
@@ -904,33 +897,33 @@ export default function AdminScreen() {
             {uploadVideoTitle}
           </Text>
 
-          <View style={[styles.infoBox, { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' }]}>
+          <View style={[styles.infoBox, { backgroundColor: '#E3F2FD', borderColor: '#2196F3' }]}>
             <IconSymbol
-              ios_icon_name="bolt.fill"
-              android_material_icon_name="flash-on"
+              ios_icon_name="info.circle.fill"
+              android_material_icon_name="info"
               size={20}
-              color="#388E3C"
+              color="#1976D2"
             />
             <View style={styles.requirementsTextContainer}>
-              <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                ⚡ IMPROVED STREAMING UPLOAD
+              <Text style={[styles.requirementsTitle, { color: '#0D47A1' }]}>
+                📹 FUNCTIONAL UPLOADER
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Better progress tracking (0-95%)
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • ✅ Direct binary upload to Supabase
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Stall detection and warnings
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • ✅ Detailed logging at each step
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Extended timeout (15 minutes)
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • ✅ Better error detection and reporting
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ Handles large files reliably
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
+                • ✅ File verification before upload
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Maximum Duration: 90 seconds
               </Text>
-              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+              <Text style={[styles.requirementsText, { color: '#1565C0' }]}>
                 • Maximum File Size: 3 GB
               </Text>
             </View>
@@ -1090,8 +1083,8 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
                 {uploadProgress.toFixed(1)}% complete
               </Text>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-                Please keep the app open and maintain internet connection.
+              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8, fontStyle: 'italic' }]}>
+                Check console logs for detailed upload progress
               </Text>
             </View>
           )}
@@ -1129,11 +1122,11 @@ export default function AdminScreen() {
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
               Upload Tips:{'\n'}
-              • ✅ Improved progress tracking{'\n'}
-              • ✅ Stall detection enabled{'\n'}
-              • Use a stable WiFi connection{'\n'}
-              • Keep the app open during upload{'\n'}
-              • Large files may take several minutes
+              • Use stable WiFi connection{'\n'}
+              • Keep app open during upload{'\n'}
+              • Check console for detailed progress{'\n'}
+              • Large files may take several minutes{'\n'}
+              • Upload will show step-by-step progress
             </Text>
           </View>
         </View>
