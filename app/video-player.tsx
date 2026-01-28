@@ -86,6 +86,28 @@ export default function VideoPlayerScreen() {
     startControlsTimeout();
   }, [startControlsTimeout]);
 
+  const handleExitPlayer = useCallback(async () => {
+    console.log('[VideoPlayer] User exiting video player');
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    
+    if (player) {
+      player.pause();
+    }
+    
+    if (isFullscreen && Platform.OS !== 'web') {
+      try {
+        await ScreenOrientation.unlockAsync();
+      } catch (e) {
+        console.log('[VideoPlayer] Error unlocking orientation:', e);
+      }
+    }
+    
+    router.back();
+  }, [isFullscreen]);
+
   useEffect(() => {
     console.log('[VideoPlayer] Component mounted, loading video:', videoId);
     
@@ -413,7 +435,7 @@ export default function VideoPlayerScreen() {
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
           style={styles.headerBackButton}
-          onPress={() => router.back()}
+          onPress={handleExitPlayer}
         >
           <IconSymbol
             ios_icon_name="chevron.left"
@@ -442,7 +464,7 @@ export default function VideoPlayerScreen() {
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
           style={styles.headerBackButton}
-          onPress={() => router.back()}
+          onPress={handleExitPlayer}
         >
           <IconSymbol
             ios_icon_name="chevron.left"
@@ -486,7 +508,7 @@ export default function VideoPlayerScreen() {
           
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.secondary, marginTop: 12 }]}
-            onPress={() => router.back()}
+            onPress={handleExitPlayer}
           >
             <Text style={[styles.buttonText, { color: colors.text }]}>{backText}</Text>
           </TouchableOpacity>
@@ -501,7 +523,7 @@ export default function VideoPlayerScreen() {
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
           style={styles.headerBackButton}
-          onPress={() => router.back()}
+          onPress={handleExitPlayer}
         >
           <IconSymbol
             ios_icon_name="chevron.left"
@@ -558,16 +580,27 @@ export default function VideoPlayerScreen() {
             <View style={styles.topBar}>
               <TouchableOpacity
                 style={styles.iconButton}
+                onPress={handleExitPlayer}
+              >
+                <IconSymbol
+                  ios_icon_name="chevron.left"
+                  android_material_icon_name="arrow-back"
+                  size={24}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+              <Text style={styles.fullscreenTitle}>{videoTitle}</Text>
+              <TouchableOpacity
+                style={styles.iconButton}
                 onPress={toggleFullscreen}
               >
                 <IconSymbol
                   ios_icon_name="xmark"
                   android_material_icon_name="close"
-                  size={28}
+                  size={24}
                   color="#FFFFFF"
                 />
               </TouchableOpacity>
-              <Text style={styles.fullscreenTitle}>{videoTitle}</Text>
             </View>
 
             <View style={styles.centerControls}>
@@ -652,7 +685,7 @@ export default function VideoPlayerScreen() {
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <TouchableOpacity
         style={styles.headerBackButton}
-        onPress={() => router.back()}
+        onPress={handleExitPlayer}
       >
         <IconSymbol
           ios_icon_name="chevron.left"
