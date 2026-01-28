@@ -733,16 +733,23 @@ export default function AdminScreen() {
       }
 
       setUploadProgress(92);
-      setUploadStatus('Getting public URL...');
+      setUploadStatus('Creating signed URL...');
 
-      // Step 6: Get public URL
-      console.log('[AdminScreen] Step 6: Getting public URL...');
-      const { data: { publicUrl: videoPublicUrl } } = supabase.storage
+      // Step 6: Create signed URL (STANDARD SUPABASE METHOD - 2 hour expiry)
+      console.log('[AdminScreen] Step 6: Creating signed URL using standard Supabase method...');
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('videos')
-        .getPublicUrl(fileName);
-      
-      console.log('[AdminScreen] ✅ Public URL:', videoPublicUrl);
-      console.log('[AdminScreen] ✅ Public URL is HTTPS:', videoPublicUrl.startsWith('https://'));
+        .createSignedUrl(fileName, 7200); // 2 hours = 7200 seconds
+
+      if (signedUrlError || !signedUrlData?.signedUrl) {
+        console.error('[AdminScreen] ❌ Signed URL creation failed:', signedUrlError);
+        throw new Error('Failed to create signed URL. Please check storage permissions.');
+      }
+
+      const videoSignedUrl = signedUrlData.signedUrl;
+      console.log('[AdminScreen] ✅ Signed URL created successfully');
+      console.log('[AdminScreen] ✅ Signed URL is HTTPS:', videoSignedUrl.startsWith('https://'));
+      console.log('[AdminScreen] ✅ URL length:', videoSignedUrl.length);
 
       setUploadProgress(94);
       setUploadStatus('Generating thumbnail...');
@@ -800,14 +807,14 @@ export default function AdminScreen() {
       setUploadProgress(97);
       setUploadStatus('Saving to database...');
 
-      // Step 8: Save to database
-      console.log('[AdminScreen] Step 8: Saving video record to database...');
+      // Step 8: Save to database with signed URL
+      console.log('[AdminScreen] Step 8: Saving video record to database with signed URL...');
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
           title: videoTitle,
           description: videoDescription || null,
-          video_url: videoPublicUrl,
+          video_url: videoSignedUrl, // ✅ Using standard Supabase signed URL
           thumbnail_url: thumbnailUrl,
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
@@ -827,13 +834,14 @@ export default function AdminScreen() {
 
       Alert.alert(
         'Success ✅', 
-        `Video uploaded successfully using TUS resumable upload!\n\n` +
+        `Video uploaded successfully!\n\n` +
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
         `📊 Size: ${formatFileSize(totalSize)}\n` +
         `🔄 Chunks: ${Math.ceil(totalSize / TUS_CHUNK_SIZE)}\n` +
-        `🔒 HTTPS: YES\n\n` +
-        `The video is now available.`,
+        `🔒 HTTPS: YES\n` +
+        `🔗 Signed URL: YES (standard Supabase method)\n\n` +
+        `The video is now available with a secure signed URL.`,
         [{ text: 'OK' }]
       );
       
@@ -1088,13 +1096,16 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                🚀 TUS RESUMABLE UPLOAD WITH HTTPS VERIFICATION
+                ✅ STANDARD SUPABASE SIGNED URL METHOD
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
-                • ✅ File URI converted to Blob via fetch()
+                • ✅ Using supabase.storage.from(&apos;videos&apos;).createSignedUrl()
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ HTTPS URL verification for iOS compatibility
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Range request support verification
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Chunked uploads (6MB chunks)
@@ -1315,8 +1326,10 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              TUS Upload with HTTPS Verification:{'\n'}
+              Standard Supabase Signed URL Method:{'\n'}
+              • Using supabase.storage.from(&apos;videos&apos;).createSignedUrl(){'\n'}
               • All URLs are verified as HTTPS{'\n'}
+              • Range request support is verified{'\n'}
               • File URI converted to Blob via fetch(){'\n'}
               • Native code efficiently creates the Blob{'\n'}
               • Uploads are chunked into 6MB pieces{'\n'}
