@@ -23,6 +23,9 @@ interface Video {
   created_at: string;
 }
 
+// ✅ CONFIGURABLE CONTROL TIMEOUT (in milliseconds)
+const CONTROLS_HIDE_DELAY = 3000; // 3 seconds of inactivity
+
 export default function VideoPlayerScreen() {
   const theme = useTheme();
   const { videoId } = useLocalSearchParams();
@@ -42,7 +45,7 @@ export default function VideoPlayerScreen() {
   
   // UI states
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
   
   // Refs
   const isSeekingRef = useRef(false);
@@ -50,7 +53,51 @@ export default function VideoPlayerScreen() {
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ FIX 1: Load video only once on mount - NO dependencies
+  // ✅ ENHANCED: Clear timeout helper function
+  const clearControlsTimeout = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+  }, []);
+
+  // ✅ ENHANCED: Start timeout helper function
+  const startControlsTimeout = useCallback(() => {
+    clearControlsTimeout();
+    
+    // Only auto-hide if playing
+    if (isPlaying) {
+      console.log('[VideoPlayer] Starting controls hide timer:', CONTROLS_HIDE_DELAY, 'ms');
+      controlsTimeoutRef.current = setTimeout(() => {
+        console.log('[VideoPlayer] Hiding controls after inactivity');
+        setControlsVisible(false);
+      }, CONTROLS_HIDE_DELAY);
+    }
+  }, [isPlaying, clearControlsTimeout]);
+
+  // ✅ ENHANCED: Toggle controls visibility with smart timeout management
+  const toggleControls = useCallback(() => {
+    console.log('[VideoPlayer] User toggled controls');
+    const newVisibility = !controlsVisible;
+    setControlsVisible(newVisibility);
+    
+    if (newVisibility) {
+      // Controls shown - start hide timer if playing
+      startControlsTimeout();
+    } else {
+      // Controls hidden - clear any pending timer
+      clearControlsTimeout();
+    }
+  }, [controlsVisible, startControlsTimeout, clearControlsTimeout]);
+
+  // ✅ ENHANCED: Reset controls timeout on user interaction
+  const resetControlsTimeout = useCallback(() => {
+    console.log('[VideoPlayer] User interaction detected - resetting controls timer');
+    setControlsVisible(true);
+    startControlsTimeout();
+  }, [startControlsTimeout]);
+
+  // ✅ Load video only once on mount - NO dependencies
   useEffect(() => {
     console.log('[VideoPlayer] Component mounted, loading video:', videoId);
     
@@ -150,7 +197,7 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, []); // ✅ Empty dependency array - only run once on mount
 
-  // ✅ FIX 2: Initialize player ONLY when videoUrl is ready - use stable reference
+  // ✅ Initialize player ONLY when videoUrl is ready - use stable reference
   // ✅ CACHING ENABLED: expo-video automatically caches video data for smooth playback
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
@@ -165,7 +212,7 @@ export default function VideoPlayerScreen() {
     }
   });
 
-  // ✅ FIX 3: Set up player event listeners - only depend on player and videoUrl
+  // ✅ Set up player event listeners - only depend on player and videoUrl
   useEffect(() => {
     if (!player || !videoUrl) return;
 
@@ -276,7 +323,26 @@ export default function VideoPlayerScreen() {
     return () => clearInterval(interval);
   }, [player, isPlaying]);
 
-  // Toggle play/pause
+  // ✅ ENHANCED: Auto-hide controls based on playing state
+  useEffect(() => {
+    console.log('[VideoPlayer] Playing state changed:', isPlaying, '| Controls visible:', controlsVisible);
+    
+    if (isPlaying && controlsVisible) {
+      // Video is playing and controls are visible - start hide timer
+      startControlsTimeout();
+    } else if (!isPlaying) {
+      // Video paused - clear timer and keep controls visible
+      clearControlsTimeout();
+      setControlsVisible(true);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      clearControlsTimeout();
+    };
+  }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
+
+  // ✅ ENHANCED: Toggle play/pause with control visibility management
   const togglePlayPause = useCallback(() => {
     if (!player) return;
     
@@ -286,17 +352,25 @@ export default function VideoPlayerScreen() {
     if (currentlyPlaying) {
       player.pause();
       setIsPlaying(false);
+      // Show controls when paused
+      setControlsVisible(true);
+      clearControlsTimeout();
     } else {
       player.play();
       setIsPlaying(true);
+      // Start hide timer when playing
+      resetControlsTimeout();
     }
-  }, [player]);
+  }, [player, resetControlsTimeout, clearControlsTimeout]);
 
   // Seek handlers
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] Seek started');
     isSeekingRef.current = true;
-  }, []);
+    // Show controls during seek
+    setControlsVisible(true);
+    clearControlsTimeout();
+  }, [clearControlsTimeout]);
 
   const handleSeekChange = useCallback((value: number) => {
     setCurrentTime(value);
@@ -310,14 +384,21 @@ export default function VideoPlayerScreen() {
       setCurrentTime(clampedValue);
     }
     isSeekingRef.current = false;
-  }, [player, duration]);
+    // Reset timer after seek
+    resetControlsTimeout();
+  }, [player, duration, resetControlsTimeout]);
 
-  // ✅ FIX 4: Smart orientation handling based on video aspect ratio
+  // ✅ Smart orientation handling based on video aspect ratio
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
     setIsFullscreen(newFullscreenState);
-    setShowControls(true);
+    setControlsVisible(true);
+    
+    // Start hide timer if entering fullscreen and playing
+    if (newFullscreenState && isPlaying) {
+      startControlsTimeout();
+    }
     
     // Handle screen orientation for native platforms
     if (Platform.OS !== 'web') {
@@ -346,49 +427,7 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
-  }, [isFullscreen, video]);
-
-  // ✅ FIX 5: Auto-hide controls in fullscreen - use ref instead of state for timeout
-  useEffect(() => {
-    // Clear any existing timeout
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-      controlsTimeoutRef.current = null;
-    }
-
-    // Only auto-hide controls in fullscreen when playing
-    if (isFullscreen && isPlaying) {
-      setShowControls(true);
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    } else if (isFullscreen) {
-      // Show controls when paused in fullscreen
-      setShowControls(true);
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-        controlsTimeoutRef.current = null;
-      }
-    };
-  }, [isFullscreen, isPlaying]); // ✅ Only depend on isFullscreen and isPlaying
-
-  // Reset controls timeout when user interacts
-  const resetControlsTimeout = useCallback(() => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    setShowControls(true);
-    
-    if (isFullscreen && isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [isFullscreen, isPlaying]);
+  }, [isFullscreen, video, isPlaying, startControlsTimeout]);
 
   // Format time helper
   const formatTime = (seconds: number) => {
@@ -526,7 +565,7 @@ export default function VideoPlayerScreen() {
       <TouchableOpacity 
         style={styles.fullscreenContainer}
         activeOpacity={1}
-        onPress={resetControlsTimeout}
+        onPress={toggleControls}
       >
         <VideoView
           style={styles.fullscreenVideo}
@@ -547,8 +586,8 @@ export default function VideoPlayerScreen() {
           </View>
         )}
         
-        {/* Custom controls overlay */}
-        {showControls && (
+        {/* ✅ ENHANCED: Custom controls overlay with manual visibility control */}
+        {controlsVisible && (
           <View style={styles.fullscreenControls}>
             {/* Top bar - Exit fullscreen */}
             <View style={styles.topBar}>
@@ -649,6 +688,7 @@ export default function VideoPlayerScreen() {
   const backButtonText = "Back";
   const optimizedForText = "Optimized for 4K streaming";
   const httpsVerifiedText = "✓ HTTPS Verified";
+  const controlsAutoHideText = "✓ Auto-hide Controls";
   
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -785,6 +825,18 @@ export default function VideoPlayerScreen() {
               color="#FFFFFF"
             />
             <Text style={styles.cachingText}>Caching Enabled</Text>
+          </View>
+        </View>
+        
+        <View style={styles.badgeRow}>
+          <View style={[styles.autoHideBadge, { backgroundColor: '#9C27B0' }]}>
+            <IconSymbol
+              ios_icon_name="eye.slash.fill"
+              android_material_icon_name="visibility-off"
+              size={14}
+              color="#FFFFFF"
+            />
+            <Text style={styles.autoHideText}>{controlsAutoHideText}</Text>
           </View>
         </View>
         
@@ -1088,7 +1140,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 12,
+    flexWrap: 'wrap',
   },
   optimizedBadge: {
     flexDirection: 'row',
@@ -1125,6 +1178,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   cachingText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  autoHideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  autoHideText: {
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
