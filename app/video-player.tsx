@@ -39,118 +39,118 @@ export default function VideoPlayerScreen() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [bufferProgress, setBufferProgress] = useState(0);
   
   // UI states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   
   // Refs
   const isSeekingRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
   const hasLoadedRef = useRef(false);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch video signed URL from Supabase storage
-  const loadVideo = useCallback(async () => {
-    if (hasLoadedRef.current) {
-      console.log('[VideoPlayer] Already loaded, skipping...');
-      return;
-    }
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-      console.log('[VideoPlayer] Loading video:', videoId);
-
-      // Check authentication
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Not authenticated. Please log in again.');
-      }
-
-      // Fetch video metadata from database
-      const { data, error: fetchError } = await supabase
-        .from('videos')
-        .select('*')
-        .eq('id', videoId)
-        .single();
-
-      if (fetchError) {
-        console.error('[VideoPlayer] Error loading video:', fetchError);
-        throw fetchError;
-      }
-
-      console.log('[VideoPlayer] Video loaded:', data.title);
-      console.log('[VideoPlayer] Resolution:', data.resolution_width, 'x', data.resolution_height);
-      console.log('[VideoPlayer] File size:', (data.file_size_bytes / (1024 * 1024 * 1024)).toFixed(2), 'GB');
-      setVideo(data);
-
-      // Extract filename from stored URL
-      let fileName = '';
-      try {
-        const urlParts = data.video_url.split('/videos/');
-        if (urlParts.length === 2) {
-          fileName = urlParts[1].split('?')[0];
-          console.log('[VideoPlayer] Extracted filename:', fileName);
-        } else {
-          const url = new URL(data.video_url);
-          const pathParts = url.pathname.split('/');
-          fileName = pathParts[pathParts.length - 1];
-          console.log('[VideoPlayer] Extracted filename (alternative):', fileName);
-        }
-      } catch (e) {
-        console.error('[VideoPlayer] Error parsing URL:', e);
-        throw new Error('Invalid video URL format');
-      }
-
-      if (!fileName) {
-        throw new Error('Could not extract filename from video URL');
-      }
-
-      // Create signed URL for streaming (valid for 2 hours for long videos)
-      console.log('[VideoPlayer] Creating signed URL for 4K streaming...');
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('videos')
-        .createSignedUrl(fileName, 7200); // 2 hours expiry for long-form content
-
-      if (signedUrlError || !signedUrlData?.signedUrl) {
-        console.error('[VideoPlayer] Signed URL error:', signedUrlError);
-        throw new Error('Failed to generate streaming URL. Please check storage permissions.');
-      }
-
-      const generatedUrl = signedUrlData.signedUrl;
-      console.log('[VideoPlayer] ✓ Signed URL created successfully');
-      console.log('[VideoPlayer] URL length:', generatedUrl.length);
-      
-      // ✅ VERIFY HTTPS URL
-      if (!generatedUrl.startsWith('https://')) {
-        console.error('[VideoPlayer] ❌ URL is not HTTPS:', generatedUrl);
-        throw new Error('Video URL must use HTTPS. iOS requires secure connections.');
-      }
-      console.log('[VideoPlayer] ✅ URL verified as HTTPS');
-      
-      setVideoUrl(generatedUrl);
-      hasLoadedRef.current = true;
-      
-      // Set duration if available from metadata
-      if (data.duration_seconds) {
-        setDuration(data.duration_seconds);
-      }
-    } catch (error: any) {
-      console.error('[VideoPlayer] Exception loading video:', error);
-      setError(error.message || 'Failed to load video');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [videoId]);
-
-  // ✅ FIX 1: Load video only once on mount
+  // ✅ FIX 1: Load video only once on mount - NO dependencies
   useEffect(() => {
-    loadVideo();
-  }, []);
+    console.log('[VideoPlayer] Component mounted, loading video:', videoId);
+    
+    const loadVideo = async () => {
+      if (hasLoadedRef.current) {
+        console.log('[VideoPlayer] Already loaded, skipping...');
+        return;
+      }
+      
+      try {
+        setIsLoading(true);
+        setError(null);
+        console.log('[VideoPlayer] Loading video:', videoId);
 
-  // ✅ FIX 2: Initialize player ONLY when videoUrl is ready
+        // Check authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('Not authenticated. Please log in again.');
+        }
+
+        // Fetch video metadata from database
+        const { data, error: fetchError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('id', videoId)
+          .single();
+
+        if (fetchError) {
+          console.error('[VideoPlayer] Error loading video:', fetchError);
+          throw fetchError;
+        }
+
+        console.log('[VideoPlayer] Video loaded:', data.title);
+        console.log('[VideoPlayer] Resolution:', data.resolution_width, 'x', data.resolution_height);
+        console.log('[VideoPlayer] File size:', (data.file_size_bytes / (1024 * 1024 * 1024)).toFixed(2), 'GB');
+        setVideo(data);
+
+        // Extract filename from stored URL
+        let fileName = '';
+        try {
+          const urlParts = data.video_url.split('/videos/');
+          if (urlParts.length === 2) {
+            fileName = urlParts[1].split('?')[0];
+            console.log('[VideoPlayer] Extracted filename:', fileName);
+          } else {
+            const url = new URL(data.video_url);
+            const pathParts = url.pathname.split('/');
+            fileName = pathParts[pathParts.length - 1];
+            console.log('[VideoPlayer] Extracted filename (alternative):', fileName);
+          }
+        } catch (e) {
+          console.error('[VideoPlayer] Error parsing URL:', e);
+          throw new Error('Invalid video URL format');
+        }
+
+        if (!fileName) {
+          throw new Error('Could not extract filename from video URL');
+        }
+
+        // Create signed URL for streaming (valid for 2 hours for long videos)
+        console.log('[VideoPlayer] Creating signed URL for 4K streaming...');
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('videos')
+          .createSignedUrl(fileName, 7200); // 2 hours expiry for long-form content
+
+        if (signedUrlError || !signedUrlData?.signedUrl) {
+          console.error('[VideoPlayer] Signed URL error:', signedUrlError);
+          throw new Error('Failed to generate streaming URL. Please check storage permissions.');
+        }
+
+        const generatedUrl = signedUrlData.signedUrl;
+        console.log('[VideoPlayer] ✓ Signed URL created successfully');
+        console.log('[VideoPlayer] URL length:', generatedUrl.length);
+        
+        // ✅ VERIFY HTTPS URL
+        if (!generatedUrl.startsWith('https://')) {
+          console.error('[VideoPlayer] ❌ URL is not HTTPS:', generatedUrl);
+          throw new Error('Video URL must use HTTPS. iOS requires secure connections.');
+        }
+        console.log('[VideoPlayer] ✅ URL verified as HTTPS');
+        
+        setVideoUrl(generatedUrl);
+        hasLoadedRef.current = true;
+        
+        // Set duration if available from metadata
+        if (data.duration_seconds) {
+          setDuration(data.duration_seconds);
+        }
+      } catch (error: any) {
+        console.error('[VideoPlayer] Exception loading video:', error);
+        setError(error.message || 'Failed to load video');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadVideo();
+  }, []); // ✅ Empty dependency array - only run once on mount
+
+  // ✅ FIX 2: Initialize player ONLY when videoUrl is ready - use stable reference
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayer] Initializing player for 4K streaming');
@@ -163,7 +163,7 @@ export default function VideoPlayerScreen() {
     }
   });
 
-  // Set up player event listeners
+  // ✅ FIX 3: Set up player event listeners - only depend on player and videoUrl
   useEffect(() => {
     if (!player || !videoUrl) return;
 
@@ -213,13 +213,17 @@ export default function VideoPlayerScreen() {
         setCurrentTime(newTime);
       }
       
-      // Update duration if not set
-      if (duration === 0 && player.duration && player.duration > 0) {
-        setDuration(player.duration);
+      // Update duration if not set (only once)
+      if (player.duration && player.duration > 0) {
+        setDuration(prevDuration => {
+          if (prevDuration === 0) {
+            return player.duration;
+          }
+          return prevDuration;
+        });
       }
 
-      // Estimate buffer progress (Expo Video handles this internally)
-      // For display purposes, show buffering when loading
+      // Update buffering state
       if (player.status === 'loading') {
         setIsBuffering(true);
       } else {
@@ -233,7 +237,7 @@ export default function VideoPlayerScreen() {
       playingListener.remove();
       timeUpdateListener.remove();
     };
-  }, [player, duration, videoUrl]);
+  }, [player, videoUrl]); // ✅ Only depend on player and videoUrl
 
   // Update player source when URL changes
   useEffect(() => {
@@ -306,7 +310,7 @@ export default function VideoPlayerScreen() {
     isSeekingRef.current = false;
   }, [player, duration]);
 
-  // ✅ FIX 3: Smart orientation handling based on video aspect ratio
+  // ✅ FIX 4: Smart orientation handling based on video aspect ratio
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
@@ -342,31 +346,47 @@ export default function VideoPlayerScreen() {
     }
   }, [isFullscreen, video]);
 
-  // Auto-hide controls in fullscreen
+  // ✅ FIX 5: Auto-hide controls in fullscreen - use ref instead of state for timeout
+  useEffect(() => {
+    // Clear any existing timeout
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+
+    // Only auto-hide controls in fullscreen when playing
+    if (isFullscreen && isPlaying) {
+      setShowControls(true);
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    } else if (isFullscreen) {
+      // Show controls when paused in fullscreen
+      setShowControls(true);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
+      }
+    };
+  }, [isFullscreen, isPlaying]); // ✅ Only depend on isFullscreen and isPlaying
+
+  // Reset controls timeout when user interacts
   const resetControlsTimeout = useCallback(() => {
-    if (controlsTimeout) {
-      clearTimeout(controlsTimeout);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
     }
     setShowControls(true);
     
     if (isFullscreen && isPlaying) {
-      const timeout = setTimeout(() => {
+      controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
       }, 3000);
-      setControlsTimeout(timeout);
     }
-  }, [controlsTimeout, isFullscreen, isPlaying]);
-
-  useEffect(() => {
-    if (isFullscreen) {
-      resetControlsTimeout();
-    }
-    return () => {
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
-      }
-    };
-  }, [isFullscreen, isPlaying, resetControlsTimeout, controlsTimeout]);
+  }, [isFullscreen, isPlaying]);
 
   // Format time helper
   const formatTime = (seconds: number) => {
@@ -444,7 +464,13 @@ export default function VideoPlayerScreen() {
             style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
             onPress={() => {
               hasLoadedRef.current = false;
-              loadVideo();
+              setIsLoading(true);
+              setError(null);
+              // Trigger reload by remounting component
+              router.back();
+              setTimeout(() => {
+                router.push(`/video-player?videoId=${videoId}`);
+              }, 100);
             }}
           >
             <IconSymbol
