@@ -470,15 +470,20 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video size:', formatFileSize(videoMetadata.size));
       console.log('[AdminScreen] Video metadata:', videoMetadata);
 
-      // Step 1: Verify file exists and is readable
-      console.log('[AdminScreen] Step 1: Verifying file...');
+      // Step 1: Get file size explicitly
+      console.log('[AdminScreen] Step 1: Getting file size...');
       const fileInfo = await FileSystem.getInfoAsync(selectedVideo);
       if (!fileInfo.exists) {
         throw new Error('Video file no longer exists. Please select the video again.');
       }
-      console.log('[AdminScreen] ✅ File verified - exists and readable');
+      
+      const fileSize = fileInfo.size || 0;
+      if (fileSize === 0) {
+        throw new Error('Video file is empty (0 bytes)');
+      }
+      
+      console.log('[AdminScreen] ✅ File size retrieved:', formatFileSize(fileSize));
       console.log('[AdminScreen] File URI:', fileInfo.uri);
-      console.log('[AdminScreen] File size:', fileInfo.size);
 
       setUploadProgress(5);
       setUploadStatus('Creating file reader...');
@@ -531,7 +536,7 @@ export default function AdminScreen() {
         }
       }
 
-      const fileReader = new FileReader(selectedVideo, videoMetadata.size);
+      const fileReader = new FileReader(selectedVideo, fileSize);
       console.log('[AdminScreen] ✅ File reader created');
 
       setUploadProgress(10);
@@ -557,15 +562,16 @@ export default function AdminScreen() {
       const startTime = Date.now();
       let lastProgressUpdate = Date.now();
 
-      // Step 4: Create TUS upload with custom reader
+      // Step 4: Create TUS upload with custom reader and EXPLICIT uploadSize
       console.log('[AdminScreen] Step 4: Creating TUS upload...');
       console.log('[AdminScreen] Chunk size:', formatFileSize(TUS_CHUNK_SIZE));
-      console.log('[AdminScreen] File size:', formatFileSize(videoMetadata.size));
-      console.log('[AdminScreen] Estimated chunks:', Math.ceil(videoMetadata.size / TUS_CHUNK_SIZE));
+      console.log('[AdminScreen] File size:', formatFileSize(fileSize));
+      console.log('[AdminScreen] ⚠️ CRITICAL: Setting uploadSize explicitly to:', fileSize);
+      console.log('[AdminScreen] Estimated chunks:', Math.ceil(fileSize / TUS_CHUNK_SIZE));
 
       // Create a custom upload source that uses our FileReader
       const uploadSource = {
-        size: videoMetadata.size,
+        size: fileSize,
         read: async (chunkSize: number) => {
           const chunk = await fileReader.read(chunkSize);
           return chunk;
@@ -576,6 +582,7 @@ export default function AdminScreen() {
         endpoint: tusEndpoint,
         retryDelays: [0, 3000, 5000, 10000, 20000],
         chunkSize: TUS_CHUNK_SIZE,
+        uploadSize: fileSize, // ✅ CRITICAL FIX: Explicitly provide the upload size
         metadata: {
           bucketName: 'videos',
           objectName: fileName,
@@ -617,7 +624,7 @@ export default function AdminScreen() {
         },
         onSuccess: () => {
           const uploadDuration = (Date.now() - startTime) / 1000;
-          const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
+          const speedMBps = (fileSize / (1024 * 1024) / uploadDuration).toFixed(2);
           console.log('[AdminScreen] ✅ TUS upload completed successfully!');
           console.log('[AdminScreen] Upload duration:', uploadDuration.toFixed(1), 'seconds');
           console.log('[AdminScreen] Average speed:', speedMBps, 'MB/s');
@@ -647,7 +654,7 @@ export default function AdminScreen() {
       });
 
       const uploadDuration = (Date.now() - startTime) / 1000;
-      const speedMBps = (videoMetadata.size / (1024 * 1024) / uploadDuration).toFixed(2);
+      const speedMBps = (fileSize / (1024 * 1024) / uploadDuration).toFixed(2);
       
       setUploadProgress(90);
       setUploadStatus('Verifying upload...');
@@ -748,7 +755,7 @@ export default function AdminScreen() {
           duration_seconds: videoMetadata.duration > 0 ? videoMetadata.duration : null,
           resolution_width: videoMetadata.width,
           resolution_height: videoMetadata.height,
-          file_size_bytes: videoMetadata.size,
+          file_size_bytes: fileSize,
           uploaded_by: user?.id
         });
 
@@ -766,8 +773,8 @@ export default function AdminScreen() {
         `Video uploaded successfully using TUS resumable upload!\n\n` +
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
-        `📊 Size: ${formatFileSize(videoMetadata.size)}\n` +
-        `🔄 Chunks: ${Math.ceil(videoMetadata.size / TUS_CHUNK_SIZE)}\n\n` +
+        `📊 Size: ${formatFileSize(fileSize)}\n` +
+        `🔄 Chunks: ${Math.ceil(fileSize / TUS_CHUNK_SIZE)}\n\n` +
         `The video is now available.`,
         [{ text: 'OK' }]
       );
@@ -1038,6 +1045,9 @@ export default function AdminScreen() {
                 • ✅ Direct storage hostname for speed
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ Explicit uploadSize specification
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • Maximum Duration: 90 seconds
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
@@ -1243,6 +1253,7 @@ export default function AdminScreen() {
               • Network interruptions will auto-resume{'\n'}
               • Real-time speed and progress tracking{'\n'}
               • Memory-efficient chunk reading{'\n'}
+              • File size is explicitly specified{'\n'}
               • Keep app open during upload{'\n'}
               • Use stable WiFi for best results{'\n'}
               • Check console for detailed progress
