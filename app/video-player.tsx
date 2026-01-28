@@ -9,6 +9,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as Haptics from 'expo-haptics';
 
 interface Video {
   id: string;
@@ -23,37 +24,32 @@ interface Video {
   created_at: string;
 }
 
-// ✅ CONFIGURABLE CONTROL TIMEOUT (in milliseconds)
-const CONTROLS_HIDE_DELAY = 3000; // 3 seconds of inactivity
+const CONTROLS_HIDE_DELAY = 3000;
 
 export default function VideoPlayerScreen() {
   const theme = useTheme();
   const { videoId } = useLocalSearchParams();
   
-  // Video data and loading states
   const [video, setVideo] = useState<Video | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Playback states
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [isBuffering, setIsBuffering] = useState(false);
   
-  // UI states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [showMetadata, setShowMetadata] = useState(false);
   
-  // Refs
   const isSeekingRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ ENHANCED: Clear timeout helper function
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
@@ -61,13 +57,11 @@ export default function VideoPlayerScreen() {
     }
   }, []);
 
-  // ✅ ENHANCED: Start timeout helper function
   const startControlsTimeout = useCallback(() => {
     clearControlsTimeout();
     
-    // Only auto-hide if playing
     if (isPlaying) {
-      console.log('[VideoPlayer] Starting controls hide timer:', CONTROLS_HIDE_DELAY, 'ms');
+      console.log('[VideoPlayer] Starting controls hide timer');
       controlsTimeoutRef.current = setTimeout(() => {
         console.log('[VideoPlayer] Hiding controls after inactivity');
         setControlsVisible(false);
@@ -75,29 +69,24 @@ export default function VideoPlayerScreen() {
     }
   }, [isPlaying, clearControlsTimeout]);
 
-  // ✅ ENHANCED: Toggle controls visibility with smart timeout management
   const toggleControls = useCallback(() => {
     console.log('[VideoPlayer] User toggled controls');
     const newVisibility = !controlsVisible;
     setControlsVisible(newVisibility);
     
     if (newVisibility) {
-      // Controls shown - start hide timer if playing
       startControlsTimeout();
     } else {
-      // Controls hidden - clear any pending timer
       clearControlsTimeout();
     }
   }, [controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
-  // ✅ ENHANCED: Reset controls timeout on user interaction
   const resetControlsTimeout = useCallback(() => {
-    console.log('[VideoPlayer] User interaction detected - resetting controls timer');
+    console.log('[VideoPlayer] User interaction - resetting timer');
     setControlsVisible(true);
     startControlsTimeout();
   }, [startControlsTimeout]);
 
-  // ✅ Load video only once on mount - NO dependencies
   useEffect(() => {
     console.log('[VideoPlayer] Component mounted, loading video:', videoId);
     
@@ -112,13 +101,11 @@ export default function VideoPlayerScreen() {
         setError(null);
         console.log('[VideoPlayer] Loading video:', videoId);
 
-        // Check authentication
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error('Not authenticated. Please log in again.');
         }
 
-        // Fetch video metadata from database
         const { data, error: fetchError } = await supabase
           .from('videos')
           .select('*')
@@ -131,22 +118,17 @@ export default function VideoPlayerScreen() {
         }
 
         console.log('[VideoPlayer] Video loaded:', data.title);
-        console.log('[VideoPlayer] Resolution:', data.resolution_width, 'x', data.resolution_height);
-        console.log('[VideoPlayer] File size:', (data.file_size_bytes / (1024 * 1024 * 1024)).toFixed(2), 'GB');
         setVideo(data);
 
-        // Extract filename from stored URL
         let fileName = '';
         try {
           const urlParts = data.video_url.split('/videos/');
           if (urlParts.length === 2) {
             fileName = urlParts[1].split('?')[0];
-            console.log('[VideoPlayer] Extracted filename:', fileName);
           } else {
             const url = new URL(data.video_url);
             const pathParts = url.pathname.split('/');
             fileName = pathParts[pathParts.length - 1];
-            console.log('[VideoPlayer] Extracted filename (alternative):', fileName);
           }
         } catch (e) {
           console.error('[VideoPlayer] Error parsing URL:', e);
@@ -157,32 +139,27 @@ export default function VideoPlayerScreen() {
           throw new Error('Could not extract filename from video URL');
         }
 
-        // Create signed URL for streaming (valid for 2 hours for long videos)
-        console.log('[VideoPlayer] Creating signed URL for 4K streaming...');
+        console.log('[VideoPlayer] Creating signed URL...');
         const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from('videos')
-          .createSignedUrl(fileName, 7200); // 2 hours expiry for long-form content
+          .createSignedUrl(fileName, 7200);
 
         if (signedUrlError || !signedUrlData?.signedUrl) {
           console.error('[VideoPlayer] Signed URL error:', signedUrlError);
-          throw new Error('Failed to generate streaming URL. Please check storage permissions.');
+          throw new Error('Failed to generate streaming URL');
         }
 
         const generatedUrl = signedUrlData.signedUrl;
-        console.log('[VideoPlayer] ✓ Signed URL created successfully');
-        console.log('[VideoPlayer] URL length:', generatedUrl.length);
+        console.log('[VideoPlayer] ✓ Signed URL created');
         
-        // ✅ VERIFY HTTPS URL
         if (!generatedUrl.startsWith('https://')) {
-          console.error('[VideoPlayer] ❌ URL is not HTTPS:', generatedUrl);
-          throw new Error('Video URL must use HTTPS. iOS requires secure connections.');
+          console.error('[VideoPlayer] ❌ URL is not HTTPS');
+          throw new Error('Video URL must use HTTPS');
         }
-        console.log('[VideoPlayer] ✅ URL verified as HTTPS');
         
         setVideoUrl(generatedUrl);
         hasLoadedRef.current = true;
         
-        // Set duration if available from metadata
         if (data.duration_seconds) {
           setDuration(data.duration_seconds);
         }
@@ -195,30 +172,23 @@ export default function VideoPlayerScreen() {
     };
 
     loadVideo();
-  }, []); // ✅ Empty dependency array - only run once on mount
+  }, []);
 
-  // ✅ Initialize player ONLY when videoUrl is ready - use stable reference
-  // ✅ CACHING ENABLED: expo-video automatically caches video data for smooth playback
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
-      console.log('[VideoPlayer] Initializing player for 4K streaming with caching enabled');
-      console.log('[VideoPlayer] Video URL set');
+      console.log('[VideoPlayer] Initializing player with caching enabled');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
-      console.log('[VideoPlayer] Player configured for long-form 4K playback');
-      console.log('[VideoPlayer] ✅ Caching: ENABLED (expo-video default behavior)');
     }
   });
 
-  // ✅ Set up player event listeners - only depend on player and videoUrl
   useEffect(() => {
     if (!player || !videoUrl) return;
 
     console.log('[VideoPlayer] Setting up player event listeners');
 
-    // Status change listener - handles loading, ready, error states
     const statusListener = player.addListener('statusChange', (status) => {
       console.log('[VideoPlayer] Status:', status.status);
       
@@ -230,10 +200,9 @@ export default function VideoPlayerScreen() {
       
       if (status.status === 'readyToPlay') {
         const videoDuration = status.duration || 0;
-        console.log('[VideoPlayer] Video ready, duration:', videoDuration.toFixed(2), 'seconds');
+        console.log('[VideoPlayer] Video ready, duration:', videoDuration.toFixed(2));
         setDuration(videoDuration);
         setIsBuffering(false);
-        console.log('[VideoPlayer] ✓ 4K stream initialized and ready');
       }
       
       if (status.status === 'loading') {
@@ -242,27 +211,22 @@ export default function VideoPlayerScreen() {
       }
     });
 
-    // Playing state listener
     const playingListener = player.addListener('playingChange', (newIsPlaying) => {
       console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
       setIsPlaying(newIsPlaying);
     });
 
-    // Time update listener - fires during playback
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
       const newTime = timeUpdate.currentTime || 0;
       
-      // Throttle updates to avoid excessive re-renders (100ms intervals)
       const now = Date.now();
       if (now - lastProgressUpdateRef.current < 100) return;
       lastProgressUpdateRef.current = now;
       
-      // Only update if not seeking
       if (!isSeekingRef.current) {
         setCurrentTime(newTime);
       }
       
-      // Update duration if not set (only once)
       if (player.duration && player.duration > 0) {
         setDuration(prevDuration => {
           if (prevDuration === 0) {
@@ -272,7 +236,6 @@ export default function VideoPlayerScreen() {
         });
       }
 
-      // Update buffering state
       if (player.status === 'loading') {
         setIsBuffering(true);
       } else {
@@ -286,16 +249,13 @@ export default function VideoPlayerScreen() {
       playingListener.remove();
       timeUpdateListener.remove();
     };
-  }, [player, videoUrl]); // ✅ Only depend on player and videoUrl
+  }, [player, videoUrl]);
 
-  // Update player source when URL changes
   useEffect(() => {
     if (videoUrl && player) {
-      console.log('[VideoPlayer] Loading 4K video source...');
-      console.log('[VideoPlayer] ✅ URL is HTTPS:', videoUrl.startsWith('https://'));
+      console.log('[VideoPlayer] Loading video source...');
       try {
         player.replace(videoUrl);
-        console.log('[VideoPlayer] ✓ Video source loaded, buffering will begin');
       } catch (e) {
         console.error('[VideoPlayer] Error loading source:', e);
         setError('Failed to load video source');
@@ -303,14 +263,12 @@ export default function VideoPlayerScreen() {
     }
   }, [videoUrl, player]);
 
-  // Update player volume
   useEffect(() => {
     if (player) {
       player.volume = volume;
     }
   }, [volume, player]);
 
-  // Polling for smooth progress updates
   useEffect(() => {
     if (!player || !isPlaying) return;
 
@@ -323,28 +281,28 @@ export default function VideoPlayerScreen() {
     return () => clearInterval(interval);
   }, [player, isPlaying]);
 
-  // ✅ ENHANCED: Auto-hide controls based on playing state
   useEffect(() => {
-    console.log('[VideoPlayer] Playing state changed:', isPlaying, '| Controls visible:', controlsVisible);
+    console.log('[VideoPlayer] Playing state changed:', isPlaying);
     
     if (isPlaying && controlsVisible) {
-      // Video is playing and controls are visible - start hide timer
       startControlsTimeout();
     } else if (!isPlaying) {
-      // Video paused - clear timer and keep controls visible
       clearControlsTimeout();
       setControlsVisible(true);
     }
 
-    // Cleanup on unmount
     return () => {
       clearControlsTimeout();
     };
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
-  // ✅ ENHANCED: Toggle play/pause with control visibility management
   const togglePlayPause = useCallback(() => {
     if (!player) return;
+    
+    // Haptic feedback for immediate response
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     
     const currentlyPlaying = player.playing;
     console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
@@ -352,24 +310,24 @@ export default function VideoPlayerScreen() {
     if (currentlyPlaying) {
       player.pause();
       setIsPlaying(false);
-      // Show controls when paused
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
       player.play();
       setIsPlaying(true);
-      // Start hide timer when playing
       resetControlsTimeout();
     }
   }, [player, resetControlsTimeout, clearControlsTimeout]);
 
-  // Seek handlers
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] Seek started');
     isSeekingRef.current = true;
-    // Show controls during seek
     setControlsVisible(true);
     clearControlsTimeout();
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   }, [clearControlsTimeout]);
 
   const handleSeekChange = useCallback((value: number) => {
@@ -377,51 +335,50 @@ export default function VideoPlayerScreen() {
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seek to:', value.toFixed(2), 'seconds');
+    console.log('[VideoPlayer] Seek to:', value.toFixed(2));
     if (player) {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
     }
     isSeekingRef.current = false;
-    // Reset timer after seek
     resetControlsTimeout();
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   }, [player, duration, resetControlsTimeout]);
 
-  // ✅ Smart orientation handling based on video aspect ratio
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
     
-    // Start hide timer if entering fullscreen and playing
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    
     if (newFullscreenState && isPlaying) {
       startControlsTimeout();
     }
     
-    // Handle screen orientation for native platforms
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // Determine if video is portrait or landscape
           const isPortraitVideo = video && video.resolution_height && video.resolution_width 
             ? video.resolution_height > video.resolution_width 
             : false;
           
           if (isPortraitVideo) {
-            // For portrait videos, allow all orientations or lock to portrait
-            console.log('[VideoPlayer] ✅ Portrait video detected - unlocking orientation');
+            console.log('[VideoPlayer] Portrait video - unlocking orientation');
             await ScreenOrientation.unlockAsync();
           } else {
-            // For landscape videos, lock to landscape
-            console.log('[VideoPlayer] ✅ Landscape video detected - locking to landscape');
+            console.log('[VideoPlayer] Landscape video - locking to landscape');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
           }
         } else {
-          // Unlock orientation when exiting fullscreen
           await ScreenOrientation.unlockAsync();
-          console.log('[VideoPlayer] ✅ Unlocked screen orientation');
         }
       } catch (e) {
         console.log('[VideoPlayer] Screen orientation not available:', e);
@@ -429,7 +386,6 @@ export default function VideoPlayerScreen() {
     }
   }, [isFullscreen, video, isPlaying, startControlsTimeout]);
 
-  // Format time helper
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -437,7 +393,6 @@ export default function VideoPlayerScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Format file size helper
   const formatFileSize = (bytes: number | null) => {
     if (!bytes) return 'Unknown';
     const gb = bytes / (1024 * 1024 * 1024);
@@ -446,7 +401,6 @@ export default function VideoPlayerScreen() {
     return `${mb.toFixed(2)} MB`;
   };
 
-  // Prepare icon variables (ATOMIC JSX)
   const playPauseIconIOS = isPlaying ? "pause.fill" : "play.fill";
   const playPauseIconAndroid = isPlaying ? "pause" : "play-arrow";
   const volumeIconIOS = volume === 0 ? "speaker.slash.fill" : "speaker.wave.2.fill";
@@ -454,33 +408,22 @@ export default function VideoPlayerScreen() {
   const fullscreenIconIOS = isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right";
   const fullscreenIconAndroid = isFullscreen ? "fullscreen-exit" : "fullscreen";
 
-  // Loading state
   if (isLoading) {
-    const loadingText = "Loading 4K video...";
-    const loadingSubtext = "Preparing high-resolution stream";
-    const loadingHint = "This may take a moment for large files";
+    const loadingText = "Loading video...";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>{loadingText}</Text>
-          <Text style={styles.loadingSubtext}>{loadingSubtext}</Text>
-          <Text style={styles.loadingHint}>{loadingHint}</Text>
         </View>
       </View>
     );
   }
 
-  // Error state
   if (error || !video) {
     const errorMessage = error || 'Video not found';
     const errorTitle = "Unable to load video";
-    const errorHint1 = "• Check your internet connection";
-    const errorHint2 = "• Video may be processing";
-    const errorHint3 = "• Storage permissions may be incorrect";
-    const errorHint4 = "• Try refreshing the app";
-    const errorHint5 = "• Ensure video URL uses HTTPS";
     const retryText = "Retry";
     const backText = "Go Back";
     
@@ -495,11 +438,6 @@ export default function VideoPlayerScreen() {
           />
           <Text style={styles.errorTitle}>{errorTitle}</Text>
           <Text style={styles.errorMessage}>{errorMessage}</Text>
-          <Text style={styles.errorHint}>{errorHint1}</Text>
-          <Text style={styles.errorHint}>{errorHint2}</Text>
-          <Text style={styles.errorHint}>{errorHint3}</Text>
-          <Text style={styles.errorHint}>{errorHint4}</Text>
-          <Text style={styles.errorHint}>{errorHint5}</Text>
           
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
@@ -507,7 +445,6 @@ export default function VideoPlayerScreen() {
               hasLoadedRef.current = false;
               setIsLoading(true);
               setError(null);
-              // Trigger reload by remounting component
               router.back();
               setTimeout(() => {
                 router.push(`/video-player?videoId=${videoId}`);
@@ -535,20 +472,17 @@ export default function VideoPlayerScreen() {
   }
 
   if (!videoUrl) {
-    const preparingText = "Preparing video stream...";
-    const preparingSubtext = "Generating secure streaming URL";
+    const preparingText = "Preparing video...";
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>{preparingText}</Text>
-          <Text style={styles.loadingSubtext}>{preparingSubtext}</Text>
         </View>
       </View>
     );
   }
 
-  // Prepare text variables
   const currentTimeText = formatTime(currentTime);
   const durationText = formatTime(duration);
   const videoTitle = video.title;
@@ -556,10 +490,8 @@ export default function VideoPlayerScreen() {
     ? `${video.resolution_width}x${video.resolution_height}` 
     : '4K';
   const videoSize = formatFileSize(video.file_size_bytes);
-  const bufferingText = "Buffering 4K stream...";
-  const bufferingSubtext = "Please wait";
+  const bufferingText = "Buffering...";
 
-  // Fullscreen mode
   if (isFullscreen) {
     return (
       <TouchableOpacity 
@@ -575,21 +507,16 @@ export default function VideoPlayerScreen() {
           contentFit="contain"
           nativeControls={false}
         />
-        {/* ✅ expo-video automatically caches video data for smooth 4K playback */}
         
-        {/* Buffering indicator */}
         {isBuffering && (
           <View style={styles.bufferingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.bufferingText}>{bufferingText}</Text>
-            <Text style={styles.bufferingSubtext}>{bufferingSubtext}</Text>
           </View>
         )}
         
-        {/* ✅ ENHANCED: Custom controls overlay with manual visibility control */}
         {controlsVisible && (
           <View style={styles.fullscreenControls}>
-            {/* Top bar - Exit fullscreen */}
             <View style={styles.topBar}>
               <TouchableOpacity
                 style={styles.iconButton}
@@ -605,7 +532,6 @@ export default function VideoPlayerScreen() {
               <Text style={styles.fullscreenTitle}>{videoTitle}</Text>
             </View>
 
-            {/* Center - Play/Pause button */}
             <View style={styles.centerControls}>
               <TouchableOpacity
                 style={styles.playPauseButton}
@@ -620,9 +546,7 @@ export default function VideoPlayerScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Bottom bar - Seek, volume, fullscreen */}
             <View style={styles.bottomBar}>
-              {/* Seek bar */}
               <View style={styles.seekContainer}>
                 <Text style={styles.timeText}>{currentTimeText}</Text>
                 <Slider
@@ -640,7 +564,6 @@ export default function VideoPlayerScreen() {
                 <Text style={styles.timeText}>{durationText}</Text>
               </View>
 
-              {/* Volume and fullscreen controls */}
               <View style={styles.bottomControls}>
                 <View style={styles.volumeControl}>
                   <IconSymbol
@@ -680,19 +603,16 @@ export default function VideoPlayerScreen() {
     );
   }
 
-  // Normal mode
-  const aboutTitle = "About";
-  const resolutionLabel = "Resolution:";
-  const sizeLabel = "Size:";
-  const durationLabel = "Duration:";
   const backButtonText = "Back";
-  const optimizedForText = "Optimized for 4K streaming";
-  const httpsVerifiedText = "✓ HTTPS Verified";
-  const controlsAutoHideText = "✓ Auto-hide Controls";
+  const optimizedText = "4K Streaming";
+  const httpsText = "Secure";
+  const detailsText = showMetadata ? "Hide Details" : "Show Details";
+  const resolutionLabel = "Resolution";
+  const sizeLabel = "File Size";
+  const durationLabel = "Duration";
   
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Video player */}
+    <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <View style={styles.videoContainer}>
         <VideoView
           style={styles.video}
@@ -702,18 +622,14 @@ export default function VideoPlayerScreen() {
           contentFit="contain"
           nativeControls={false}
         />
-        {/* ✅ expo-video with caching enabled for smooth 4K streaming */}
         
-        {/* Buffering indicator */}
         {isBuffering && (
           <View style={styles.bufferingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.bufferingText}>{bufferingText}</Text>
-            <Text style={styles.bufferingSubtext}>{bufferingSubtext}</Text>
           </View>
         )}
         
-        {/* Fullscreen button overlay */}
         <View style={styles.videoOverlay}>
           <TouchableOpacity
             style={styles.iconButton}
@@ -729,9 +645,7 @@ export default function VideoPlayerScreen() {
         </View>
       </View>
 
-      {/* Controls */}
-      <View style={[styles.controlsContainer, { backgroundColor: theme.colors.card }]}>
-        {/* Play/Pause and seek */}
+      <View style={styles.controlsContainer}>
         <View style={styles.mainControls}>
           <TouchableOpacity
             style={[styles.controlButton, { backgroundColor: colors.primary }]}
@@ -740,42 +654,37 @@ export default function VideoPlayerScreen() {
             <IconSymbol
               ios_icon_name={playPauseIconIOS}
               android_material_icon_name={playPauseIconAndroid}
-              size={28}
+              size={32}
               color="#FFFFFF"
             />
           </TouchableOpacity>
 
           <View style={styles.seekInfo}>
-            <View style={styles.seekRow}>
-              <Text style={[styles.timeLabel, { color: colors.textSecondary }]}>
-                {currentTimeText}
-              </Text>
-              <Slider
-                style={styles.normalSeekBar}
-                minimumValue={0}
-                maximumValue={duration > 0 ? duration : 100}
-                value={currentTime}
-                onSlidingStart={handleSeekStart}
-                onValueChange={handleSeekChange}
-                onSlidingComplete={handleSeekComplete}
-                minimumTrackTintColor={colors.primary}
-                maximumTrackTintColor={colors.textSecondary}
-                thumbTintColor={colors.primary}
-              />
-              <Text style={[styles.timeLabel, { color: colors.textSecondary }]}>
-                {durationText}
-              </Text>
+            <Slider
+              style={styles.normalSeekBar}
+              minimumValue={0}
+              maximumValue={duration > 0 ? duration : 100}
+              value={currentTime}
+              onSlidingStart={handleSeekStart}
+              onValueChange={handleSeekChange}
+              onSlidingComplete={handleSeekComplete}
+              minimumTrackTintColor={colors.primary}
+              maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+              thumbTintColor={colors.primary}
+            />
+            <View style={styles.timeRow}>
+              <Text style={styles.timeLabel}>{currentTimeText}</Text>
+              <Text style={styles.timeLabel}>{durationText}</Text>
             </View>
           </View>
         </View>
 
-        {/* Volume control */}
         <View style={styles.volumeRow}>
           <IconSymbol
             ios_icon_name={volumeIconIOS}
             android_material_icon_name={volumeIconAndroid}
             size={20}
-            color={theme.colors.text}
+            color="#FFFFFF"
           />
           <Slider
             style={styles.normalVolumeSlider}
@@ -784,115 +693,87 @@ export default function VideoPlayerScreen() {
             value={volume}
             onValueChange={setVolume}
             minimumTrackTintColor={colors.primary}
-            maximumTrackTintColor={colors.textSecondary}
+            maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
             thumbTintColor={colors.primary}
           />
         </View>
       </View>
 
-      {/* Video info */}
-      <View style={[styles.infoContainer, { backgroundColor: theme.colors.card }]}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>
-          {videoTitle}
-        </Text>
+      <View style={styles.infoContainer}>
+        <Text style={styles.title}>{videoTitle}</Text>
         
         <View style={styles.badgeRow}>
-          <View style={[styles.optimizedBadge, { backgroundColor: colors.primary }]}>
+          <View style={styles.badge}>
             <IconSymbol
               ios_icon_name="checkmark.circle.fill"
               android_material_icon_name="check-circle"
-              size={16}
-              color="#FFFFFF"
+              size={14}
+              color={colors.primary}
             />
-            <Text style={styles.optimizedText}>{optimizedForText}</Text>
+            <Text style={styles.badgeText}>{optimizedText}</Text>
           </View>
           
-          <View style={[styles.httpsBadge, { backgroundColor: '#4CAF50' }]}>
+          <View style={styles.badge}>
             <IconSymbol
               ios_icon_name="lock.fill"
               android_material_icon_name="lock"
               size={14}
-              color="#FFFFFF"
+              color="#4CAF50"
             />
-            <Text style={styles.httpsText}>{httpsVerifiedText}</Text>
-          </View>
-          
-          <View style={[styles.cachingBadge, { backgroundColor: '#2196F3' }]}>
-            <IconSymbol
-              ios_icon_name="arrow.down.circle.fill"
-              android_material_icon_name="download"
-              size={14}
-              color="#FFFFFF"
-            />
-            <Text style={styles.cachingText}>Caching Enabled</Text>
+            <Text style={styles.badgeText}>{httpsText}</Text>
           </View>
         </View>
         
-        <View style={styles.badgeRow}>
-          <View style={[styles.autoHideBadge, { backgroundColor: '#9C27B0' }]}>
-            <IconSymbol
-              ios_icon_name="eye.slash.fill"
-              android_material_icon_name="visibility-off"
-              size={14}
-              color="#FFFFFF"
-            />
-            <Text style={styles.autoHideText}>{controlsAutoHideText}</Text>
-          </View>
-        </View>
+        <TouchableOpacity
+          style={styles.detailsButton}
+          onPress={() => setShowMetadata(!showMetadata)}
+        >
+          <Text style={styles.detailsButtonText}>{detailsText}</Text>
+          <IconSymbol
+            ios_icon_name={showMetadata ? "chevron.up" : "chevron.down"}
+            android_material_icon_name={showMetadata ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+            size={20}
+            color="rgba(255, 255, 255, 0.7)"
+          />
+        </TouchableOpacity>
         
-        <View style={styles.metaRow}>
-          <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
-            {resolutionLabel}
-          </Text>
-          <Text style={[styles.metaValue, { color: theme.colors.text }]}>
-            {videoResolution}
-          </Text>
-        </View>
-        
-        <View style={styles.metaRow}>
-          <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
-            {sizeLabel}
-          </Text>
-          <Text style={[styles.metaValue, { color: theme.colors.text }]}>
-            {videoSize}
-          </Text>
-        </View>
-        
-        <View style={styles.metaRow}>
-          <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
-            {durationLabel}
-          </Text>
-          <Text style={[styles.metaValue, { color: theme.colors.text }]}>
-            {durationText}
-          </Text>
-        </View>
+        {showMetadata && (
+          <View style={styles.metadataContainer}>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>{resolutionLabel}</Text>
+              <Text style={styles.metaValue}>{videoResolution}</Text>
+            </View>
+            
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>{sizeLabel}</Text>
+              <Text style={styles.metaValue}>{videoSize}</Text>
+            </View>
+            
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>{durationLabel}</Text>
+              <Text style={styles.metaValue}>{durationText}</Text>
+            </View>
 
-        {video.description && (
-          <View style={styles.descriptionContainer}>
-            <Text style={[styles.aboutTitle, { color: theme.colors.text }]}>
-              {aboutTitle}
-            </Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {video.description}
-            </Text>
+            {video.description && (
+              <View style={styles.descriptionContainer}>
+                <Text style={styles.description}>{video.description}</Text>
+              </View>
+            )}
           </View>
         )}
       </View>
 
-      {/* Back button */}
       <TouchableOpacity
-        style={[styles.backButtonLarge, { backgroundColor: colors.secondary }]}
+        style={styles.backButton}
         onPress={() => router.back()}
       >
         <IconSymbol
           ios_icon_name="chevron.left"
           android_material_icon_name="arrow-back"
           size={20}
-          color={colors.text}
+          color="#FFFFFF"
         />
-        <Text style={[styles.buttonText, { color: colors.text }]}>
-          {backButtonText}
-        </Text>
+        <Text style={styles.backButtonText}>{backButtonText}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -910,21 +791,9 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     marginTop: 16,
-  },
-  loadingSubtext: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  loadingHint: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
   },
   errorTitle: {
     color: '#FFFFFF',
@@ -935,14 +804,8 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     color: '#FF6B6B',
-    fontSize: 16,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  errorHint: {
-    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
-    marginTop: 4,
+    marginTop: 8,
     textAlign: 'center',
   },
   button: {
@@ -960,7 +823,7 @@ const styles = StyleSheet.create({
   },
   videoContainer: {
     width: '100%',
-    aspectRatio: 16 / 9,
+    aspectRatio: 9 / 16,
     backgroundColor: '#000000',
     position: 'relative',
   },
@@ -981,18 +844,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   bufferingText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 12,
-  },
-  bufferingSubtext: {
-    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
-    marginTop: 4,
+    fontWeight: '500',
+    marginTop: 12,
   },
   fullscreenContainer: {
     flex: 1,
@@ -1016,13 +874,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     paddingTop: 48,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     gap: 16,
   },
   fullscreenTitle: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
   centerControls: {
@@ -1034,14 +892,14 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   bottomBar: {
     padding: 16,
     paddingBottom: 32,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   seekContainer: {
     flexDirection: 'row',
@@ -1055,9 +913,9 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    minWidth: 50,
+    fontSize: 13,
+    fontWeight: '500',
+    minWidth: 45,
     textAlign: 'center',
   },
   bottomControls: {
@@ -1080,12 +938,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   controlsContainer: {
-    padding: 16,
+    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
   },
   mainControls: {
     flexDirection: 'row',
@@ -1094,28 +953,33 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   controlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   seekInfo: {
     flex: 1,
-  },
-  seekRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   normalSeekBar: {
     flex: 1,
     height: 40,
   },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
   timeLabel: {
-    fontSize: 13,
-    minWidth: 45,
-    textAlign: 'center',
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '500',
   },
   volumeRow: {
     flexDirection: 'row',
@@ -1127,110 +991,96 @@ const styles = StyleSheet.create({
     height: 40,
   },
   infoContainer: {
-    margin: 16,
-    padding: 16,
-    borderRadius: 12,
+    flex: 1,
+    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
+    color: '#FFFFFF',
     marginBottom: 12,
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
   },
-  optimizedBadge: {
+  badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
-  optimizedText: {
-    color: '#FFFFFF',
+  badgeText: {
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 12,
     fontWeight: '600',
   },
-  httpsBadge: {
+  detailsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 8,
+    marginBottom: 12,
   },
-  httpsText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
+  detailsButtonText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontWeight: '500',
   },
-  cachingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  cachingText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  autoHideBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  autoHideText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
+  metadataContainer: {
+    paddingTop: 12,
   },
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
   },
   metaLabel: {
-    fontSize: 14,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   metaValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
   },
   descriptionContainer: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  aboutTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   description: {
-    fontSize: 14,
+    fontSize: 13,
     lineHeight: 20,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
-  backButtonLarge: {
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginHorizontal: 16,
+    marginHorizontal: 20,
     marginBottom: 32,
-    paddingVertical: 14,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
