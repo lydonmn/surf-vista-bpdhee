@@ -113,9 +113,18 @@ export default function VideoPlayerScreen() {
         throw new Error('Failed to generate streaming URL. Please check storage permissions.');
       }
 
+      const generatedUrl = signedUrlData.signedUrl;
       console.log('[VideoPlayer] ✓ Signed URL created successfully');
-      console.log('[VideoPlayer] URL length:', signedUrlData.signedUrl.length);
-      setVideoUrl(signedUrlData.signedUrl);
+      console.log('[VideoPlayer] URL length:', generatedUrl.length);
+      
+      // ✅ VERIFY HTTPS URL
+      if (!generatedUrl.startsWith('https://')) {
+        console.error('[VideoPlayer] ❌ URL is not HTTPS:', generatedUrl);
+        throw new Error('Video URL must use HTTPS. iOS requires secure connections.');
+      }
+      console.log('[VideoPlayer] ✅ URL verified as HTTPS');
+      
+      setVideoUrl(generatedUrl);
       
       // Set duration if available from metadata
       if (data.duration_seconds) {
@@ -229,6 +238,7 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (videoUrl && player) {
       console.log('[VideoPlayer] Loading 4K video source...');
+      console.log('[VideoPlayer] ✅ URL is HTTPS:', videoUrl.startsWith('https://'));
       try {
         player.replace(videoUrl);
         console.log('[VideoPlayer] ✓ Video source loaded, buffering will begin');
@@ -397,6 +407,7 @@ export default function VideoPlayerScreen() {
     const errorHint2 = "• Video may be processing";
     const errorHint3 = "• Storage permissions may be incorrect";
     const errorHint4 = "• Try refreshing the app";
+    const errorHint5 = "• Ensure video URL uses HTTPS";
     const retryText = "Retry";
     const backText = "Go Back";
     
@@ -415,6 +426,7 @@ export default function VideoPlayerScreen() {
           <Text style={styles.errorHint}>{errorHint2}</Text>
           <Text style={styles.errorHint}>{errorHint3}</Text>
           <Text style={styles.errorHint}>{errorHint4}</Text>
+          <Text style={styles.errorHint}>{errorHint5}</Text>
           
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
@@ -592,6 +604,7 @@ export default function VideoPlayerScreen() {
   const durationLabel = "Duration:";
   const backButtonText = "Back";
   const optimizedForText = "Optimized for 4K streaming";
+  const httpsVerifiedText = "✓ HTTPS Verified";
   
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -698,14 +711,26 @@ export default function VideoPlayerScreen() {
           {videoTitle}
         </Text>
         
-        <View style={[styles.optimizedBadge, { backgroundColor: colors.primary }]}>
-          <IconSymbol
-            ios_icon_name="checkmark.circle.fill"
-            android_material_icon_name="check-circle"
-            size={16}
-            color="#FFFFFF"
-          />
-          <Text style={styles.optimizedText}>{optimizedForText}</Text>
+        <View style={styles.badgeRow}>
+          <View style={[styles.optimizedBadge, { backgroundColor: colors.primary }]}>
+            <IconSymbol
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
+              size={16}
+              color="#FFFFFF"
+            />
+            <Text style={styles.optimizedText}>{optimizedForText}</Text>
+          </View>
+          
+          <View style={[styles.httpsBadge, { backgroundColor: '#4CAF50' }]}>
+            <IconSymbol
+              ios_icon_name="lock.fill"
+              android_material_icon_name="lock"
+              size={14}
+              color="#FFFFFF"
+            />
+            <Text style={styles.httpsText}>{httpsVerifiedText}</Text>
+          </View>
         </View>
         
         <View style={styles.metaRow}>
@@ -1004,6 +1029,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
   optimizedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1011,12 +1042,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    alignSelf: 'flex-start',
-    marginBottom: 16,
   },
   optimizedText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  httpsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  httpsText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '600',
   },
   metaRow: {

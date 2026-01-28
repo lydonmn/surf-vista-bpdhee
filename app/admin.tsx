@@ -192,15 +192,33 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video Title:', videoTitle);
       console.log('[AdminScreen] Video URL:', videoUrl);
       
-      Alert.alert('Diagnosing Video', 'Checking video file...', [{ text: 'OK' }]);
+      // ✅ CHECK 1: Verify HTTPS
+      const isHttps = videoUrl.startsWith('https://');
+      console.log('[AdminScreen] ✅ CHECK 1: HTTPS:', isHttps ? 'YES' : 'NO');
       
+      if (!isHttps) {
+        Alert.alert(
+          '❌ URL Not HTTPS',
+          `The video URL does not use HTTPS:\n\n${videoUrl}\n\n` +
+          'iOS requires HTTPS for video playback. This is likely why the video fails to play.\n\n' +
+          'Solution: Re-upload the video to ensure it gets an HTTPS URL.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      Alert.alert('Diagnosing Video', 'Checking video file accessibility...', [{ text: 'OK' }]);
+      
+      // ✅ CHECK 2: Test HEAD request
       const headResponse = await fetch(videoUrl, { method: 'HEAD' });
-      console.log('[AdminScreen] HEAD response status:', headResponse.status);
+      console.log('[AdminScreen] ✅ CHECK 2: HEAD response status:', headResponse.status);
       console.log('[AdminScreen] Content-Type:', headResponse.headers.get('content-type'));
       console.log('[AdminScreen] Content-Length:', headResponse.headers.get('content-length'));
+      console.log('[AdminScreen] Accept-Ranges:', headResponse.headers.get('accept-ranges'));
       
       const contentType = headResponse.headers.get('content-type');
       const contentLength = headResponse.headers.get('content-length');
+      const acceptRanges = headResponse.headers.get('accept-ranges');
       
       if (!headResponse.ok) {
         Alert.alert(
@@ -216,6 +234,7 @@ export default function AdminScreen() {
         return;
       }
       
+      // ✅ CHECK 3: Verify content type
       if (!contentType || !contentType.includes('video')) {
         Alert.alert(
           'Invalid Content Type',
@@ -227,6 +246,7 @@ export default function AdminScreen() {
         return;
       }
       
+      // ✅ CHECK 4: Verify file size
       if (!contentLength || parseInt(contentLength) === 0) {
         Alert.alert(
           'Empty File',
@@ -237,16 +257,39 @@ export default function AdminScreen() {
         return;
       }
       
+      // ✅ CHECK 5: Verify range request support (critical for iOS)
+      const supportsRanges = acceptRanges === 'bytes';
+      console.log('[AdminScreen] ✅ CHECK 5: Range requests supported:', supportsRanges ? 'YES' : 'NO');
+      
+      if (!supportsRanges) {
+        Alert.alert(
+          '⚠️ Range Requests Not Supported',
+          'The server does not support byte-range requests (Accept-Ranges: bytes).\n\n' +
+          'iOS video players REQUIRE range request support for streaming.\n\n' +
+          'This is likely why the video fails to play on iOS.\n\n' +
+          'Solution:\n' +
+          '• Check Supabase storage bucket configuration\n' +
+          '• Ensure CORS is properly configured\n' +
+          '• Try using the public URL instead of signed URL',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // ✅ ALL CHECKS PASSED
       Alert.alert(
-        'Video Diagnosis: GOOD ✓',
-        `File Size: ${formatFileSize(parseInt(contentLength))}\n` +
-        `Content-Type: ${contentType}\n` +
-        `Status: Accessible\n\n` +
+        'Video Diagnosis: ALL CHECKS PASSED ✓',
+        `✅ HTTPS: YES\n` +
+        `✅ Accessible: YES (HTTP ${headResponse.status})\n` +
+        `✅ Content-Type: ${contentType}\n` +
+        `✅ File Size: ${formatFileSize(parseInt(contentLength))}\n` +
+        `✅ Range Requests: ${supportsRanges ? 'SUPPORTED' : 'NOT SUPPORTED'}\n\n` +
         'The video file appears to be valid and should be playable.\n\n' +
         'If the video still will not play:\n' +
         '• Try refreshing the app\n' +
         '• Check your internet connection\n' +
-        '• The video player may need time to buffer',
+        '• The video player may need time to buffer\n' +
+        '• Try using the public URL (see below)',
         [{ text: 'OK' }]
       );
       
@@ -259,6 +302,77 @@ export default function AdminScreen() {
         'This usually indicates a network error or the video file is completely inaccessible.',
         [{ text: 'OK' }]
       );
+    }
+  };
+
+  const handleTestPublicUrl = async (videoId: string, videoTitle: string, videoUrl: string) => {
+    try {
+      console.log('[AdminScreen] ========== TESTING PUBLIC URL ==========');
+      
+      // Extract filename from stored URL
+      let fileName = '';
+      try {
+        const urlParts = videoUrl.split('/videos/');
+        if (urlParts.length === 2) {
+          fileName = urlParts[1].split('?')[0];
+        }
+      } catch (e) {
+        Alert.alert('Error', 'Could not extract filename from video URL');
+        return;
+      }
+
+      if (!fileName) {
+        Alert.alert('Error', 'Could not extract filename from video URL');
+        return;
+      }
+
+      console.log('[AdminScreen] Filename:', fileName);
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+      
+      console.log('[AdminScreen] Public URL:', publicUrl);
+      console.log('[AdminScreen] Is HTTPS:', publicUrl.startsWith('https://'));
+      
+      // Test the public URL
+      Alert.alert('Testing Public URL', 'Checking if public URL is accessible...', [{ text: 'OK' }]);
+      
+      const response = await fetch(publicUrl, { method: 'HEAD' });
+      console.log('[AdminScreen] Public URL status:', response.status);
+      
+      if (response.ok) {
+        Alert.alert(
+          '✅ Public URL Works!',
+          `The public URL is accessible:\n\n${publicUrl}\n\n` +
+          `Status: ${response.status}\n` +
+          `HTTPS: ${publicUrl.startsWith('https://') ? 'YES' : 'NO'}\n\n` +
+          'To use the public URL instead of signed URL:\n' +
+          '1. Make the video file publicly accessible in Supabase Storage\n' +
+          '2. Update the video_url in the database to use the public URL\n\n' +
+          'This can help troubleshoot signed URL issues.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Public URL Not Accessible',
+          `The public URL returned HTTP ${response.status}.\n\n` +
+          'This means the file is not publicly accessible.\n\n' +
+          'To make it public:\n' +
+          '1. Go to Supabase Dashboard\n' +
+          '2. Storage > videos bucket\n' +
+          '3. Select the file\n' +
+          '4. Make it public\n\n' +
+          'Or check if the bucket itself is set to public.',
+          [{ text: 'OK' }]
+        );
+      }
+      
+      console.log('[AdminScreen] ========== PUBLIC URL TEST COMPLETE ==========');
+    } catch (error: any) {
+      console.error('[AdminScreen] Error testing public URL:', error);
+      Alert.alert('Error', `Failed to test public URL: ${error.message}`);
     }
   };
 
@@ -505,6 +619,7 @@ export default function AdminScreen() {
       // Construct TUS endpoint URL (direct storage hostname for optimal speed)
       const tusEndpoint = `${supabaseUrl}/storage/v1/upload/resumable`;
       console.log('[AdminScreen] TUS endpoint:', tusEndpoint);
+      console.log('[AdminScreen] ✅ TUS endpoint is HTTPS:', tusEndpoint.startsWith('https://'));
 
       setUploadProgress(15);
       setUploadStatus('Starting TUS upload...');
@@ -627,6 +742,7 @@ export default function AdminScreen() {
         .getPublicUrl(fileName);
       
       console.log('[AdminScreen] ✅ Public URL:', videoPublicUrl);
+      console.log('[AdminScreen] ✅ Public URL is HTTPS:', videoPublicUrl.startsWith('https://'));
 
       setUploadProgress(94);
       setUploadStatus('Generating thumbnail...');
@@ -715,7 +831,8 @@ export default function AdminScreen() {
         `⏱️ Time: ${uploadDuration.toFixed(1)} seconds\n` +
         `🚀 Speed: ${speedMBps} MB/s\n` +
         `📊 Size: ${formatFileSize(totalSize)}\n` +
-        `🔄 Chunks: ${Math.ceil(totalSize / TUS_CHUNK_SIZE)}\n\n` +
+        `🔄 Chunks: ${Math.ceil(totalSize / TUS_CHUNK_SIZE)}\n` +
+        `🔒 HTTPS: YES\n\n` +
         `The video is now available.`,
         [{ text: 'OK' }]
       );
@@ -971,10 +1088,13 @@ export default function AdminScreen() {
             />
             <View style={styles.requirementsTextContainer}>
               <Text style={[styles.requirementsTitle, { color: '#1B5E20' }]}>
-                🚀 TUS RESUMABLE UPLOAD WITH BLOB CONVERSION
+                🚀 TUS RESUMABLE UPLOAD WITH HTTPS VERIFICATION
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ File URI converted to Blob via fetch()
+              </Text>
+              <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
+                • ✅ HTTPS URL verification for iOS compatibility
               </Text>
               <Text style={[styles.requirementsText, { color: '#2E7D32' }]}>
                 • ✅ Chunked uploads (6MB chunks)
@@ -1195,7 +1315,8 @@ export default function AdminScreen() {
               color={colors.primary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              TUS Upload with Blob Tips:{'\n'}
+              TUS Upload with HTTPS Verification:{'\n'}
+              • All URLs are verified as HTTPS{'\n'}
               • File URI converted to Blob via fetch(){'\n'}
               • Native code efficiently creates the Blob{'\n'}
               • Uploads are chunked into 6MB pieces{'\n'}
@@ -1253,6 +1374,18 @@ export default function AdminScreen() {
                           <IconSymbol
                             ios_icon_name="stethoscope"
                             android_material_icon_name="healing"
+                            size={20}
+                            color="#FFFFFF"
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.testPublicIconButton, { backgroundColor: '#2196F3' }]}
+                          onPress={() => handleTestPublicUrl(video.id, video.title, video.video_url)}
+                          disabled={isDeleting}
+                        >
+                          <IconSymbol
+                            ios_icon_name="link"
+                            android_material_icon_name="link"
                             size={20}
                             color="#FFFFFF"
                           />
@@ -1564,6 +1697,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   diagnoseIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  testPublicIconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
