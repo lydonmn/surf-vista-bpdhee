@@ -10,6 +10,7 @@ import { supabase } from "@/app/integrations/supabase/client";
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Video {
   id: string;
@@ -29,6 +30,7 @@ const CONTROLS_HIDE_DELAY = 3000;
 export default function VideoPlayerScreen() {
   const theme = useTheme();
   const { videoId } = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   
   const [video, setVideo] = useState<Video | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -428,13 +430,15 @@ export default function VideoPlayerScreen() {
   const fullscreenIconIOS = isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right";
   const fullscreenIconAndroid = isFullscreen ? "fullscreen-exit" : "fullscreen";
 
+  const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
+
   if (isLoading) {
     const loadingText = "Loading video...";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
-          style={styles.headerBackButton}
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
         >
           <IconSymbol
@@ -463,7 +467,7 @@ export default function VideoPlayerScreen() {
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
-          style={styles.headerBackButton}
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
         >
           <IconSymbol
@@ -522,7 +526,7 @@ export default function VideoPlayerScreen() {
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
-          style={styles.headerBackButton}
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
         >
           <IconSymbol
@@ -577,7 +581,7 @@ export default function VideoPlayerScreen() {
         
         {controlsVisible && (
           <View style={styles.fullscreenControls}>
-            <View style={styles.topBar}>
+            <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 16) }]}>
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={handleExitPlayer}
@@ -684,7 +688,7 @@ export default function VideoPlayerScreen() {
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <TouchableOpacity
-        style={styles.headerBackButton}
+        style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
         onPress={handleExitPlayer}
       >
         <IconSymbol
@@ -850,7 +854,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingTop: Platform.OS === 'android' ? 48 : 12,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
     zIndex: 10,
   },
@@ -949,7 +952,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 48,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     gap: 16,
   },
