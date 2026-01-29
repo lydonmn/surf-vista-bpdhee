@@ -39,9 +39,9 @@ function getESTDate(): string {
   
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate iOS] Raw EST date string:', estDateString);
-  console.log('[getESTDate iOS] Parsed components:', { month, day, year });
-  console.log('[getESTDate iOS] Current EST date:', estDate);
+  console.log('[getESTDate] Raw EST date string:', estDateString);
+  console.log('[getESTDate] Parsed components:', { month, day, year });
+  console.log('[getESTDate] Current EST date:', estDate);
   
   return estDate;
 }
@@ -57,7 +57,7 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
   
-  // Use the videos hook to get the latest video
+  // Use the videos hook to get the latest video with preloaded URL
   const { videos, isLoading: isLoadingVideos, refreshVideos } = useVideos();
 
   // Memoize subscription status to prevent recalculation
@@ -66,9 +66,9 @@ export default function HomeScreen() {
     return checkSubscription();
   }, [profile, checkSubscription]);
   
-  // Get the latest video
+  // Get the latest video with preloaded signed URL
   const latestVideo = useMemo(() => {
-    console.log('[HomeScreen iOS] Videos data:', {
+    console.log('[HomeScreen] Videos data:', {
       count: videos.length,
       isLoading: isLoadingVideos,
       firstVideo: videos[0] ? {
@@ -77,7 +77,8 @@ export default function HomeScreen() {
         hasThumbnail: !!videos[0].thumbnail_url,
         thumbnailUrl: videos[0].thumbnail_url,
         hasVideoUrl: !!videos[0].video_url,
-        videoUrl: videos[0].video_url
+        videoUrl: videos[0].video_url,
+        hasSignedUrl: !!videos[0].signed_url
       } : null
     });
     
@@ -88,13 +89,13 @@ export default function HomeScreen() {
   // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
     if (isLoadingData) {
-      console.log('[HomeScreen iOS] Already loading data, skipping...');
+      console.log('[HomeScreen] Already loading data, skipping...');
       return;
     }
 
     try {
       setIsLoadingData(true);
-      console.log('[HomeScreen iOS] Fetching reports...');
+      console.log('[HomeScreen] Fetching reports...');
 
       // Load today's surf report
       const today = getESTDate();
@@ -105,16 +106,16 @@ export default function HomeScreen() {
         .maybeSingle();
 
       if (reportError) {
-        console.log('[HomeScreen iOS] Report fetch error:', reportError.message);
+        console.log('[HomeScreen] Report fetch error:', reportError.message);
       } else if (reportData) {
-        console.log('[HomeScreen iOS] Report loaded for:', today, 'Rating:', reportData.rating);
+        console.log('[HomeScreen] Report loaded for:', today, 'Rating:', reportData.rating);
         setTodayReport(reportData);
       } else {
-        console.log('[HomeScreen iOS] No report found for today');
+        console.log('[HomeScreen] No report found for today');
         setTodayReport(null);
       }
     } catch (error) {
-      console.error('[HomeScreen iOS] Error loading data:', error);
+      console.error('[HomeScreen] Error loading data:', error);
     } finally {
       setIsLoadingData(false);
     }
@@ -122,7 +123,7 @@ export default function HomeScreen() {
 
   // Only load data when conditions are met - use separate effect
   useEffect(() => {
-    console.log('[HomeScreen iOS] State update:', {
+    console.log('[HomeScreen] State update:', {
       isInitialized,
       isLoading,
       hasUser: !!user,
@@ -133,10 +134,10 @@ export default function HomeScreen() {
 
     // Only load data when fully initialized, not loading, has user, profile, and subscription
     if (isInitialized && !isLoading && user && profile && hasSubscription) {
-      console.log('[HomeScreen iOS] Conditions met, loading content data...');
+      console.log('[HomeScreen] Conditions met, loading content data...');
       loadData();
     } else {
-      console.log('[HomeScreen iOS] Not loading data - conditions not met');
+      console.log('[HomeScreen] Not loading data - conditions not met');
     }
   }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
 
@@ -163,11 +164,11 @@ export default function HomeScreen() {
   }, []);
 
   const handleSubscribeNow = useCallback(async () => {
-    console.log('[HomeScreen iOS] Subscribe Now button tapped');
+    console.log('[HomeScreen] Subscribe Now button tapped');
     
     // Check if payment system is available FIRST
     if (!isPaymentSystemAvailable()) {
-      console.log('[HomeScreen iOS] Payment system not available - navigating to demo paywall');
+      console.log('[HomeScreen] Payment system not available - navigating to demo paywall');
       router.push('/demo-paywall');
       return;
     }
@@ -175,16 +176,16 @@ export default function HomeScreen() {
     setIsSubscribing(true);
 
     try {
-      console.log('[HomeScreen iOS] Opening subscription paywall...');
+      console.log('[HomeScreen] Opening subscription paywall...');
       
       // Present the RevenueCat Paywall
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[HomeScreen iOS] Paywall result:', result);
+      console.log('[HomeScreen] Paywall result:', result);
       
       // Check if demo mode error
       if (result.state === 'error' && result.message === 'DEMO_MODE') {
-        console.log('[HomeScreen iOS] Demo mode detected - navigating to demo paywall');
+        console.log('[HomeScreen] Demo mode detected - navigating to demo paywall');
         router.push('/demo-paywall');
         setIsSubscribing(false);
         return;
@@ -209,11 +210,11 @@ export default function HomeScreen() {
       // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
-      console.error('[HomeScreen iOS] Subscribe error:', error);
+      console.error('[HomeScreen] Subscribe error:', error);
       
       // Check if it's a demo mode error
       if (error?.message?.includes('DEMO_MODE')) {
-        console.log('[HomeScreen iOS] Demo mode error caught - navigating to demo paywall');
+        console.log('[HomeScreen] Demo mode error caught - navigating to demo paywall');
         router.push('/demo-paywall');
       } else {
         Alert.alert(
@@ -230,21 +231,22 @@ export default function HomeScreen() {
   const handleVideoThumbnailPress = useCallback(() => {
     if (!latestVideo) return;
     
-    console.log('[HomeScreen iOS] Video thumbnail tapped, navigating to video player');
+    console.log('[HomeScreen] Video thumbnail tapped, navigating to video player');
+    console.log('[HomeScreen] Preloaded URL available:', !!latestVideo.signed_url);
+    
+    // Pass the preloaded signed URL if available for instant playback
     router.push({
       pathname: '/video-player',
       params: {
         videoId: latestVideo.id,
-        videoUrl: latestVideo.video_url,
-        videoTitle: latestVideo.title,
-        videoDescription: latestVideo.description || '',
+        preloadedUrl: latestVideo.signed_url || '',
       }
     });
   }, [latestVideo]);
 
   // Show loading state while auth is initializing
   if (!isInitialized) {
-    console.log('[HomeScreen iOS] Rendering: Not initialized');
+    console.log('[HomeScreen] Rendering: Not initialized');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -259,7 +261,7 @@ export default function HomeScreen() {
 
   // Show loading state while profile is being loaded
   if (isLoading) {
-    console.log('[HomeScreen iOS] Rendering: Loading profile');
+    console.log('[HomeScreen] Rendering: Loading profile');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -274,7 +276,7 @@ export default function HomeScreen() {
 
   // Not logged in - show sign in prompt
   if (!user || !session) {
-    console.log('[HomeScreen iOS] Rendering: Not logged in');
+    console.log('[HomeScreen] Rendering: Not logged in');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -294,7 +296,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.primary }]}
             onPress={() => {
-              console.log('[HomeScreen iOS] Navigating to login...');
+              console.log('[HomeScreen] Navigating to login...');
               router.push('/login');
             }}
           >
@@ -307,7 +309,7 @@ export default function HomeScreen() {
 
   // Wait for profile to load
   if (!profile) {
-    console.log('[HomeScreen iOS] Rendering: Waiting for profile');
+    console.log('[HomeScreen] Rendering: Waiting for profile');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -322,7 +324,7 @@ export default function HomeScreen() {
 
   // Logged in but no subscription - show subscribe prompt
   if (!hasSubscription) {
-    console.log('[HomeScreen iOS] Rendering: No subscription');
+    console.log('[HomeScreen] Rendering: No subscription');
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -355,7 +357,7 @@ export default function HomeScreen() {
   }
 
   // Subscribed - show content
-  console.log('[HomeScreen iOS] Rendering: Subscribed content');
+  console.log('[HomeScreen] Rendering: Subscribed content');
   
   // CRITICAL FIX: Always show today's report text and rating
   // Use today's report for both text and rating to ensure consistency with report page
@@ -366,18 +368,19 @@ export default function HomeScreen() {
   // This ensures consistency between home page and report page
   const todayRating = todayReport?.rating ?? null;
   
-  console.log('[HomeScreen iOS] Today\'s report:', {
+  console.log('[HomeScreen] Today\'s report:', {
     hasReport: !!todayReport,
     rating: todayRating,
     hasText: !!reportTextDisplay,
     date: todayReport?.date
   });
   
-  console.log('[HomeScreen iOS] Latest video:', {
+  console.log('[HomeScreen] Latest video:', {
     hasVideo: !!latestVideo,
     videoId: latestVideo?.id,
     hasThumbnail: !!latestVideo?.thumbnail_url,
     thumbnailUrl: latestVideo?.thumbnail_url,
+    hasSignedUrl: !!latestVideo?.signed_url,
     videosCount: videos.length,
     isLoadingVideos
   });
@@ -385,6 +388,7 @@ export default function HomeScreen() {
   // Check if we have a video with thumbnail
   const hasVideoThumbnail = latestVideo && latestVideo.thumbnail_url;
   const videoTitleText = latestVideo?.title || 'Latest Video';
+  const instantPlaybackBadge = latestVideo?.signed_url ? '⚡ Instant Playback' : 'Tap to watch';
   
   return (
     <ScrollView 
@@ -403,7 +407,7 @@ export default function HomeScreen() {
           Welcome to
         </Text>
         
-        {/* Video Thumbnail behind SurfVista - FIXED: Show even without thumbnail */}
+        {/* Video Thumbnail behind SurfVista - OPTIMIZED with preloaded URL */}
         {latestVideo ? (
           hasVideoThumbnail ? (
             <TouchableOpacity 
@@ -429,6 +433,11 @@ export default function HomeScreen() {
                   <Text style={[styles.videoTitle, { color: '#FFFFFF' }]}>
                     {videoTitleText}
                   </Text>
+                  {latestVideo.signed_url && (
+                    <View style={styles.instantBadge}>
+                      <Text style={styles.instantBadgeText}>{instantPlaybackBadge}</Text>
+                    </View>
+                  )}
                 </View>
               </ImageBackground>
             </TouchableOpacity>
@@ -670,6 +679,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
+  },
+  instantBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  instantBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   location: {
     fontSize: 14,

@@ -25,7 +25,9 @@
         "NSCameraUsageDescription": "SurfVista needs access to your camera to capture surf condition videos.",
         "NSMicrophoneUsageDescription": "SurfVista needs access to your microphone to record audio with surf report videos.",
         "NSPhotoLibraryAddUsageDescription": "SurfVista needs permission to save videos to your photo library.",
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
         }

@@ -29,7 +29,7 @@ const CONTROLS_HIDE_DELAY = 3000;
 
 export default function VideoPlayerScreen() {
   const theme = useTheme();
-  const { videoId } = useLocalSearchParams();
+  const { videoId, preloadedUrl } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   
   const [video, setVideo] = useState<Video | null>(null);
@@ -99,7 +99,7 @@ export default function VideoPlayerScreen() {
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       if (__DEV__) {
-        console.log('[VideoPlayer] Initializing player with caching enabled');
+        console.log('[VideoPlayer] Initializing player with optimized settings');
       }
       player.loop = false;
       player.muted = false;
@@ -152,6 +152,7 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (__DEV__) {
       console.log('[VideoPlayer] Component mounted, loading video:', videoId);
+      console.log('[VideoPlayer] Preloaded URL available:', !!preloadedUrl);
     }
     
     const loadVideo = async () => {
@@ -192,6 +193,22 @@ export default function VideoPlayerScreen() {
         }
         setVideo(data);
 
+        // OPTIMIZATION: Use preloaded URL if available
+        if (preloadedUrl && typeof preloadedUrl === 'string') {
+          if (__DEV__) {
+            console.log('[VideoPlayer] ✓ Using preloaded URL (instant playback)');
+          }
+          setVideoUrl(preloadedUrl);
+          hasLoadedRef.current = true;
+          
+          if (data.duration_seconds) {
+            setDuration(data.duration_seconds);
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        // Fallback: Generate signed URL if not preloaded
         let fileName = '';
         try {
           const urlParts = data.video_url.split('/videos/');
@@ -256,7 +273,7 @@ export default function VideoPlayerScreen() {
     };
 
     loadVideo();
-  }, [videoId]);
+  }, [videoId, preloadedUrl]);
 
   useEffect(() => {
     if (!player || !videoUrl) return;
@@ -518,7 +535,7 @@ export default function VideoPlayerScreen() {
   const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
 
   if (isLoading) {
-    const loadingText = "Loading video...";
+    const loadingText = preloadedUrl ? "Starting playback..." : "Loading video...";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
@@ -764,7 +781,7 @@ export default function VideoPlayerScreen() {
   }
 
   const backButtonText = "Back";
-  const optimizedText = "4K Streaming";
+  const optimizedText = preloadedUrl ? "Instant Playback" : "4K Streaming";
   const httpsText = "Secure";
   const resolutionLabel = "Resolution";
   const sizeLabel = "File Size";

@@ -57,7 +57,7 @@ export default function HomeScreen() {
   // Use the surf data hook for weather and forecast
   const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
   
-  // Use the videos hook to get the latest video
+  // Use the videos hook to get the latest video with preloaded URL
   const { videos, isLoading: isLoadingVideos, refreshVideos } = useVideos();
 
   // Memoize subscription status to prevent recalculation
@@ -66,7 +66,7 @@ export default function HomeScreen() {
     return checkSubscription();
   }, [profile, checkSubscription]);
   
-  // Get the latest video
+  // Get the latest video with preloaded signed URL
   const latestVideo = useMemo(() => {
     console.log('[HomeScreen] Videos data:', {
       count: videos.length,
@@ -77,7 +77,8 @@ export default function HomeScreen() {
         hasThumbnail: !!videos[0].thumbnail_url,
         thumbnailUrl: videos[0].thumbnail_url,
         hasVideoUrl: !!videos[0].video_url,
-        videoUrl: videos[0].video_url
+        videoUrl: videos[0].video_url,
+        hasSignedUrl: !!videos[0].signed_url
       } : null
     });
     
@@ -231,13 +232,14 @@ export default function HomeScreen() {
     if (!latestVideo) return;
     
     console.log('[HomeScreen] Video thumbnail tapped, navigating to video player');
+    console.log('[HomeScreen] Preloaded URL available:', !!latestVideo.signed_url);
+    
+    // Pass the preloaded signed URL if available for instant playback
     router.push({
       pathname: '/video-player',
       params: {
         videoId: latestVideo.id,
-        videoUrl: latestVideo.video_url,
-        videoTitle: latestVideo.title,
-        videoDescription: latestVideo.description || '',
+        preloadedUrl: latestVideo.signed_url || '',
       }
     });
   }, [latestVideo]);
@@ -378,6 +380,7 @@ export default function HomeScreen() {
     videoId: latestVideo?.id,
     hasThumbnail: !!latestVideo?.thumbnail_url,
     thumbnailUrl: latestVideo?.thumbnail_url,
+    hasSignedUrl: !!latestVideo?.signed_url,
     videosCount: videos.length,
     isLoadingVideos
   });
@@ -385,6 +388,7 @@ export default function HomeScreen() {
   // Check if we have a video with thumbnail
   const hasVideoThumbnail = latestVideo && latestVideo.thumbnail_url;
   const videoTitleText = latestVideo?.title || 'Latest Video';
+  const instantPlaybackBadge = latestVideo?.signed_url ? '⚡ Instant Playback' : 'Tap to watch';
   
   return (
     <ScrollView 
@@ -403,7 +407,7 @@ export default function HomeScreen() {
           Welcome to
         </Text>
         
-        {/* Video Thumbnail behind SurfVista - FIXED: Show even without thumbnail */}
+        {/* Video Thumbnail behind SurfVista - OPTIMIZED with preloaded URL */}
         {latestVideo ? (
           hasVideoThumbnail ? (
             <TouchableOpacity 
@@ -429,6 +433,11 @@ export default function HomeScreen() {
                   <Text style={[styles.videoTitle, { color: '#FFFFFF' }]}>
                     {videoTitleText}
                   </Text>
+                  {latestVideo.signed_url && (
+                    <View style={styles.instantBadge}>
+                      <Text style={styles.instantBadgeText}>{instantPlaybackBadge}</Text>
+                    </View>
+                  )}
                 </View>
               </ImageBackground>
             </TouchableOpacity>
@@ -670,6 +679,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
+  },
+  instantBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  instantBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   location: {
     fontSize: 14,
