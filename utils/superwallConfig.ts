@@ -219,13 +219,19 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ No offerings available');
       return {
         state: 'error',
-        message: 'No subscription packages available. Please ensure:\n\n' +
-                 '1. Products are created in App Store Connect\n' +
-                 '2. Products are added to RevenueCat dashboard\n' +
-                 '3. An Offering is created in RevenueCat\n' +
-                 '4. The Offering is set as "Current" or default\n' +
-                 '5. A Paywall is configured and linked to the Offering\n\n' +
-                 'Check the RevenueCat dashboard at: https://app.revenuecat.com/'
+        message: '⚠️ Subscription Setup Required\n\n' +
+                 'The subscription system needs to be configured in RevenueCat dashboard:\n\n' +
+                 '1️⃣ Create Products in RevenueCat\n' +
+                 '2️⃣ Create an Offering (name it "default")\n' +
+                 '3️⃣ Add products to the offering\n' +
+                 '4️⃣ Set the offering as "Current"\n' +
+                 '5️⃣ Create and publish a Paywall\n\n' +
+                 '📚 Setup Guide:\n' +
+                 'https://rev.cat/how-to-configure-offerings\n\n' +
+                 '❓ Why are offerings empty:\n' +
+                 'https://rev.cat/why-are-offerings-empty\n\n' +
+                 '🔗 RevenueCat Dashboard:\n' +
+                 'https://app.revenuecat.com/'
       };
     }
 
@@ -258,7 +264,10 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ No offering available to present');
       return {
         state: 'error',
-        message: 'Unable to load subscription options. Please ensure an Offering is configured in RevenueCat dashboard.'
+        message: '⚠️ No Offering Found\n\n' +
+                 'Please create an offering in RevenueCat dashboard and set it as "Current".\n\n' +
+                 '📚 How to configure offerings:\n' +
+                 'https://rev.cat/how-to-configure-offerings'
       };
     }
 
@@ -269,7 +278,10 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ Offering has no packages');
       return {
         state: 'error',
-        message: 'No subscription packages found in the offering. Please add products to your offering in RevenueCat dashboard.'
+        message: '⚠️ No Products in Offering\n\n' +
+                 'The offering exists but has no products. Please add products to your offering in RevenueCat dashboard.\n\n' +
+                 '📚 Setup Guide:\n' +
+                 'https://rev.cat/how-to-configure-offerings'
       };
     }
 
@@ -286,6 +298,25 @@ export const presentPaywall = async (
     } catch (defaultError: any) {
       console.error('[RevenueCat] ❌ Error presenting default paywall:', defaultError);
       
+      // Check if error is about missing paywall configuration
+      const errorMessage = defaultError.message || '';
+      if (errorMessage.includes('configuration') || errorMessage.includes('offerings') || errorMessage.includes('products')) {
+        return {
+          state: 'error',
+          message: '⚠️ Paywall Configuration Required\n\n' +
+                   'The error indicates missing configuration:\n\n' +
+                   '1️⃣ Create a Paywall in RevenueCat dashboard\n' +
+                   '2️⃣ Link the paywall to your "default" offering\n' +
+                   '3️⃣ Publish the paywall\n' +
+                   '4️⃣ Ensure products are added to the offering\n\n' +
+                   '📚 Setup Guide:\n' +
+                   'https://rev.cat/how-to-configure-offerings\n\n' +
+                   '🔗 RevenueCat Dashboard:\n' +
+                   'https://app.revenuecat.com/\n\n' +
+                   '❌ Error: ' + errorMessage
+        };
+      }
+      
       // Fallback: Try with specific offering
       console.log('[RevenueCat] 🔄 Attempting fallback: presenting with specific offering...');
       try {
@@ -299,13 +330,14 @@ export const presentPaywall = async (
         
         return {
           state: 'error',
-          message: 'Unable to display subscription options. Please ensure:\n\n' +
-                   '1. A Paywall is configured in RevenueCat dashboard\n' +
-                   '2. The Paywall is linked to the "default" offering\n' +
-                   '3. The Paywall is published/active\n' +
-                   '4. Products are properly configured\n\n' +
-                   'Visit: https://app.revenuecat.com/\n\n' +
-                   'Error: ' + (fallbackError.message || 'Unknown error')
+          message: '⚠️ Unable to Display Paywall\n\n' +
+                   'Please ensure in RevenueCat dashboard:\n\n' +
+                   '1️⃣ A Paywall is configured\n' +
+                   '2️⃣ The Paywall is linked to "default" offering\n' +
+                   '3️⃣ The Paywall is published/active\n' +
+                   '4️⃣ Products are properly configured\n\n' +
+                   '🔗 Visit: https://app.revenuecat.com/\n\n' +
+                   '❌ Error: ' + (fallbackError.message || 'Unknown error')
         };
       }
     }
@@ -358,12 +390,13 @@ export const presentPaywall = async (
       console.log('[RevenueCat] ⚠️ Paywall was not presented');
       return { 
         state: 'error',
-        message: 'Unable to display subscription options. Please ensure:\n\n' +
-                 '1. A Paywall is configured in RevenueCat dashboard\n' +
-                 '2. The Paywall is linked to the "default" offering\n' +
-                 '3. The Paywall is published/active\n' +
-                 '4. Products are properly configured in App Store Connect\n\n' +
-                 'Visit: https://app.revenuecat.com/ to configure your paywall.'
+        message: '⚠️ Paywall Not Configured\n\n' +
+                 'Please ensure in RevenueCat dashboard:\n\n' +
+                 '1️⃣ A Paywall is configured\n' +
+                 '2️⃣ The Paywall is linked to "default" offering\n' +
+                 '3️⃣ The Paywall is published/active\n' +
+                 '4️⃣ Products are configured in App Store Connect\n\n' +
+                 '🔗 Visit: https://app.revenuecat.com/'
       };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action, result:', paywallResult);
@@ -378,19 +411,35 @@ export const presentPaywall = async (
     console.error('[RevenueCat] Full error:', JSON.stringify(error, null, 2));
 
     // Provide more specific error messages
-    let errorMessage = 'Unable to load subscription options. ';
+    let errorMessage = '⚠️ Unable to Load Subscription Options\n\n';
     
-    if (error.message?.includes('No current offering')) {
-      errorMessage += 'Please configure a default offering in your RevenueCat dashboard.';
-    } else if (error.message?.includes('paywall')) {
+    const errorMsg = error.message || '';
+    
+    if (errorMsg.includes('No current offering') || errorMsg.includes('offerings')) {
+      errorMessage += 'Please configure a default offering in your RevenueCat dashboard.\n\n' +
+                     '📚 Setup Guide:\n' +
+                     'https://rev.cat/how-to-configure-offerings';
+    } else if (errorMsg.includes('paywall') || errorMsg.includes('configuration')) {
       errorMessage += 'Please ensure:\n\n' +
-                     '1. A Paywall is configured in RevenueCat dashboard\n' +
-                     '2. The Paywall is linked to the "default" offering\n' +
-                     '3. The Paywall is published/active';
-    } else if (error.message?.includes('network')) {
+                     '1️⃣ A Paywall is configured in RevenueCat dashboard\n' +
+                     '2️⃣ The Paywall is linked to the "default" offering\n' +
+                     '3️⃣ The Paywall is published/active\n\n' +
+                     '🔗 Visit: https://app.revenuecat.com/';
+    } else if (errorMsg.includes('network')) {
       errorMessage += 'Please check your internet connection and try again.';
+    } else if (errorMsg.includes('products') || errorMsg.includes('App Store')) {
+      errorMessage += 'There is an issue with your configuration:\n\n' +
+                     '• Products need to be created in App Store Connect\n' +
+                     '• Products need to be added to RevenueCat\n' +
+                     '• An Offering needs to be created\n' +
+                     '• The Offering needs products assigned\n\n' +
+                     '📚 Setup Guide:\n' +
+                     'https://rev.cat/how-to-configure-offerings\n\n' +
+                     '❓ Why are offerings empty:\n' +
+                     'https://rev.cat/why-are-offerings-empty';
     } else {
-      errorMessage += 'Please try again later or contact support.\n\nError: ' + (error.message || 'Unknown error');
+      errorMessage += 'Please try again later or contact support.\n\n' +
+                     '❌ Error: ' + errorMsg;
     }
 
     return { 
