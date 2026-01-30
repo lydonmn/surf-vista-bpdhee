@@ -12,7 +12,6 @@ import { supabase } from '@/app/integrations/supabase/client';
 // Production API Keys
 const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda';
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_PRODUCTION_KEY_HERE';
-const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
 
 // Product Configuration
 export const PAYMENT_CONFIG = {
@@ -35,62 +34,100 @@ let currentOffering: PurchasesOffering | null = null;
 
 export const initializeRevenueCat = async (): Promise<boolean> => {
   try {
-    console.log('[RevenueCat] Initializing SDK...');
+    console.log('[RevenueCat] 🚀 Initializing SDK...');
+    console.log('[RevenueCat] Platform:', Platform.OS);
     
-    if (Platform.OS === 'ios' && !REVENUECAT_API_KEY.startsWith('appl_')) {
-      console.error('[RevenueCat] Invalid iOS API key format');
-      return false;
+    // Get the API key for the current platform
+    const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
+    
+    // Only validate the API key for the CURRENT platform
+    if (Platform.OS === 'ios') {
+      if (!REVENUECAT_API_KEY.startsWith('appl_')) {
+        console.error('[RevenueCat] ❌ Invalid iOS API key format');
+        return false;
+      }
+      if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
+        console.error('[RevenueCat] ❌ iOS API key is a placeholder');
+        return false;
+      }
+    } else if (Platform.OS === 'android') {
+      if (!REVENUECAT_API_KEY.startsWith('goog_')) {
+        console.error('[RevenueCat] ❌ Invalid Android API key format');
+        return false;
+      }
+      if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
+        console.error('[RevenueCat] ❌ Android API key is a placeholder');
+        console.error('[RevenueCat] 💡 Please add your Android API key to utils/superwallConfig.ts');
+        return false;
+      }
     }
     
-    if (Platform.OS === 'android' && !REVENUECAT_API_KEY.startsWith('goog_')) {
-      console.error('[RevenueCat] Invalid Android API key format');
-      return false;
-    }
-    
-    if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
-      console.error('[RevenueCat] Placeholder API key detected');
-      return false;
-    }
-    
+    // Configure RevenueCat
     Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
     await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
     
-    console.log('[RevenueCat] SDK initialized successfully');
+    console.log('[RevenueCat] ✅ SDK configured successfully');
     
+    // Fetch offerings
     try {
+      console.log('[RevenueCat] 📦 Fetching offerings...');
       const offerings = await Purchases.getOfferings();
       
       console.log('[RevenueCat] 🔍 Offerings Debug:');
       console.log('[RevenueCat] - Current offering:', offerings.current?.identifier || 'NONE');
       console.log('[RevenueCat] - All offerings:', Object.keys(offerings.all));
       
+      // Try to find the offering in order of preference
       for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
         if (offerings.all[offeringId]) {
           currentOffering = offerings.all[offeringId];
-          console.log('[RevenueCat] ✅ Using offering:', offeringId);
+          console.log('[RevenueCat] ✅ Found offering:', offeringId);
           console.log('[RevenueCat] - Packages:', currentOffering.availablePackages.length);
+          console.log('[RevenueCat] - Package IDs:', currentOffering.availablePackages.map(p => p.identifier));
           break;
         }
       }
       
+      // If no specific offering found, use current
       if (!currentOffering && offerings.current) {
         currentOffering = offerings.current;
         console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
+        console.log('[RevenueCat] - Packages:', currentOffering.availablePackages.length);
+        console.log('[RevenueCat] - Package IDs:', currentOffering.availablePackages.map(p => p.identifier));
+      }
+      
+      // If still no offering, use first available
+      if (!currentOffering && Object.keys(offerings.all).length > 0) {
+        const firstKey = Object.keys(offerings.all)[0];
+        currentOffering = offerings.all[firstKey];
+        console.log('[RevenueCat] ⚠️ Using first available offering:', firstKey);
         console.log('[RevenueCat] - Packages:', currentOffering.availablePackages.length);
       }
       
       if (!currentOffering) {
         console.error('[RevenueCat] ❌ NO OFFERING FOUND!');
-        console.error('[RevenueCat] 💡 SOLUTION: In RevenueCat dashboard, mark offering "ofrnge7bdc97106" as "Current"');
+        console.error('[RevenueCat] 💡 SOLUTION:');
+        console.error('[RevenueCat]    1. Go to RevenueCat dashboard');
+        console.error('[RevenueCat]    2. Navigate to Offerings');
+        console.error('[RevenueCat]    3. Create an offering or mark one as "Current"');
+        console.error('[RevenueCat]    4. Ensure products are linked to the offering');
+        console.error('[RevenueCat]    5. Create and publish a paywall');
+      } else {
+        console.log('[RevenueCat] ✅ Offering ready:', currentOffering.identifier);
       }
-    } catch (offeringError) {
-      console.error('[RevenueCat] Error fetching offerings:', offeringError);
+    } catch (offeringError: any) {
+      console.error('[RevenueCat] ❌ Error fetching offerings:', offeringError.message);
+      console.error('[RevenueCat] 💡 This usually means:');
+      console.error('[RevenueCat]    - No offerings configured in RevenueCat dashboard');
+      console.error('[RevenueCat]    - Network connectivity issues');
+      console.error('[RevenueCat]    - API key permissions issue');
     }
     
     isPaymentSystemInitialized = true;
+    console.log('[RevenueCat] ✅ Initialization complete');
     return true;
   } catch (error: any) {
-    console.error('[RevenueCat] Failed to initialize:', error);
+    console.error('[RevenueCat] ❌ Failed to initialize:', error.message);
     isPaymentSystemInitialized = false;
     return false;
   }
@@ -103,10 +140,17 @@ export const isPaymentSystemAvailable = (): boolean => {
 };
 
 export const checkPaymentConfiguration = (): boolean => {
-  console.log('[RevenueCat] Configuration Check:');
+  console.log('[RevenueCat] 🔍 Configuration Check:');
   console.log('[RevenueCat] - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat] - Platform:', Platform.OS);
   console.log('[RevenueCat] - Current Offering:', currentOffering?.identifier || 'None');
+  console.log('[RevenueCat] - Offering Packages:', currentOffering?.availablePackages.length || 0);
+  
+  if (currentOffering && currentOffering.availablePackages.length > 0) {
+    console.log('[RevenueCat] ✅ Configuration looks good!');
+  } else {
+    console.log('[RevenueCat] ⚠️ Configuration incomplete - check offerings in dashboard');
+  }
   
   return isPaymentSystemInitialized;
 };
@@ -126,12 +170,13 @@ export const presentPaywall = async (
       };
     }
 
+    // Identify user if provided
     if (userId) {
       try {
         await Purchases.logIn(userId);
         console.log('[RevenueCat] ✅ User logged in:', userId);
-      } catch (loginError) {
-        console.error('[RevenueCat] Error logging in user:', loginError);
+      } catch (loginError: any) {
+        console.error('[RevenueCat] ⚠️ Error logging in user:', loginError.message);
       }
     }
 
@@ -139,93 +184,109 @@ export const presentPaywall = async (
       try {
         await Purchases.setEmail(userEmail);
         console.log('[RevenueCat] ✅ Email set:', userEmail);
-      } catch (emailError) {
-        console.error('[RevenueCat] Error setting email:', emailError);
+      } catch (emailError: any) {
+        console.error('[RevenueCat] ⚠️ Error setting email:', emailError.message);
       }
     }
 
+    // Fetch latest offerings
+    console.log('[RevenueCat] 📦 Fetching latest offerings...');
     const offerings = await Purchases.getOfferings();
     
     console.log('[RevenueCat] 🔍 Offerings check:');
     console.log('[RevenueCat] - Current:', offerings.current?.identifier || 'NONE');
     console.log('[RevenueCat] - All:', Object.keys(offerings.all));
     
-    if (!offerings.current && Object.keys(offerings.all).length === 0) {
-      console.error('[RevenueCat] ❌ No offerings available');
-      console.error('[RevenueCat] 💡 SOLUTION: Create and publish an offering in RevenueCat dashboard');
-      return {
-        state: 'error',
-        message: 'No subscription options available.\n\nPlease configure offerings in RevenueCat dashboard.'
-      };
-    }
-
+    // Determine which offering to use
     let offeringToUse: PurchasesOffering | null = null;
     
+    // Try specific offering IDs first
     for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
       if (offerings.all[offeringId]) {
         offeringToUse = offerings.all[offeringId];
-        console.log('[RevenueCat] ✅ Found offering:', offeringId);
+        console.log('[RevenueCat] ✅ Using offering:', offeringId);
         break;
       }
     }
     
+    // Fall back to current offering
     if (!offeringToUse && offerings.current) {
       offeringToUse = offerings.current;
       console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
     }
     
+    // Last resort: use first available offering
     if (!offeringToUse && Object.keys(offerings.all).length > 0) {
       const firstOfferingKey = Object.keys(offerings.all)[0];
       offeringToUse = offerings.all[firstOfferingKey];
       console.log('[RevenueCat] ⚠️ Using first available offering:', firstOfferingKey);
     }
 
+    // Check if we have an offering
     if (!offeringToUse) {
-      console.error('[RevenueCat] ❌ No offering found');
-      console.error('[RevenueCat] 💡 SOLUTION: Mark offering "ofrnge7bdc97106" as "Current" in RevenueCat dashboard');
+      console.error('[RevenueCat] ❌ No offering available');
       return {
         state: 'error',
-        message: 'Unable to load subscription options.\n\nPlease configure a default offering in your RevenueCat dashboard.\n\nSteps:\n1. Go to RevenueCat dashboard\n2. Click on Offerings\n3. Find offering "ofrnge7bdc97106"\n4. Click "Make Current"'
+        message: 'No subscription options available.\n\n' +
+                 'Please ensure an offering is marked as "Current" in your RevenueCat dashboard.\n\n' +
+                 'Steps:\n' +
+                 '1. Go to RevenueCat dashboard\n' +
+                 '2. Click on Offerings\n' +
+                 '3. Find offering "ofrnge7bdc97106"\n' +
+                 '4. Click "Make Current"\n' +
+                 '5. Ensure products are linked\n' +
+                 '6. Create and publish a paywall'
       };
     }
 
+    // Check if offering has packages
     console.log('[RevenueCat] 📦 Offering packages:', offeringToUse.availablePackages.length);
     
     if (offeringToUse.availablePackages.length === 0) {
       console.error('[RevenueCat] ❌ No packages in offering');
-      console.error('[RevenueCat] 💡 SOLUTION: Add products to offering in RevenueCat dashboard');
       return {
         state: 'error',
-        message: 'No subscription plans available.\n\nPlease add products to your offering in RevenueCat dashboard.'
+        message: 'No subscription plans available.\n\n' +
+                 'Please add products to your offering in RevenueCat dashboard.'
       };
     }
 
+    // Present the paywall
     let paywallResult: PAYWALL_RESULT;
     
     try {
-      console.log('[RevenueCat] 🎨 Attempting to present paywall...');
-      paywallResult = await RevenueCatUI.presentPaywall();
-      console.log('[RevenueCat] ✅ Paywall presented successfully');
-    } catch (defaultError: any) {
-      console.error('[RevenueCat] ❌ Error presenting default paywall:', defaultError.message);
+      console.log('[RevenueCat] 🎨 Presenting paywall UI...');
       
+      // Try with explicit offering first
+      paywallResult = await RevenueCatUI.presentPaywall({
+        offering: offeringToUse
+      });
+      
+      console.log('[RevenueCat] ✅ Paywall presented successfully');
+    } catch (paywallError: any) {
+      console.error('[RevenueCat] ❌ Error presenting paywall:', paywallError.message);
+      
+      // Try without explicit offering as fallback
       try {
-        console.log('[RevenueCat] 🔄 Trying with explicit offering...');
-        paywallResult = await RevenueCatUI.presentPaywall({
-          offering: offeringToUse
-        });
-        console.log('[RevenueCat] ✅ Paywall presented with explicit offering');
+        console.log('[RevenueCat] 🔄 Trying default paywall...');
+        paywallResult = await RevenueCatUI.presentPaywall();
+        console.log('[RevenueCat] ✅ Default paywall presented');
       } catch (fallbackError: any) {
         console.error('[RevenueCat] ❌ Fallback also failed:', fallbackError.message);
-        console.error('[RevenueCat] 💡 SOLUTION: Ensure paywall is created and published in RevenueCat dashboard');
         
         return {
           state: 'error',
-          message: 'Unable to display subscription options.\n\nPlease ensure:\n1. Offering "ofrnge7bdc97106" is marked as "Current"\n2. A paywall is created and published\n3. Products are linked to the offering\n\nError: ' + fallbackError.message
+          message: 'Unable to display subscription options.\n\n' +
+                   'Please ensure:\n' +
+                   '1. Offering "ofrnge7bdc97106" is marked as "Current"\n' +
+                   '2. A paywall is created and published\n' +
+                   '3. Products are linked to the offering\n\n' +
+                   'Error: ' + fallbackError.message
         };
       }
     }
 
+    // Handle paywall result
     if (paywallResult === PAYWALL_RESULT.PURCHASED) {
       console.log('[RevenueCat] ✅ Purchase successful');
       
@@ -263,10 +324,10 @@ export const presentPaywall = async (
       };
     } else if (paywallResult === PAYWALL_RESULT.NOT_PRESENTED) {
       console.log('[RevenueCat] ⚠️ Paywall was not presented');
-      console.error('[RevenueCat] 💡 SOLUTION: Create and publish a paywall in RevenueCat dashboard');
       return { 
         state: 'error',
-        message: 'Paywall not configured.\n\nPlease create and publish a paywall in RevenueCat dashboard.'
+        message: 'Paywall not configured.\n\n' +
+                 'Please create and publish a paywall in RevenueCat dashboard.'
       };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action');
@@ -307,7 +368,7 @@ export const presentPaywall = async (
 
 export const presentCustomerCenter = async (): Promise<void> => {
   try {
-    console.log('[RevenueCat] Presenting Customer Center...');
+    console.log('[RevenueCat] 🏢 Presenting Customer Center...');
     
     if (!isPaymentSystemAvailable()) {
       throw new Error('Payment system is not initialized. Please restart the app.');
@@ -315,7 +376,7 @@ export const presentCustomerCenter = async (): Promise<void> => {
 
     await RevenueCatUI.presentCustomerCenter();
     
-    console.log('[RevenueCat] Customer Center closed');
+    console.log('[RevenueCat] ✅ Customer Center closed');
     
     const customerInfo = await Purchases.getCustomerInfo();
     
@@ -325,7 +386,7 @@ export const presentCustomerCenter = async (): Promise<void> => {
     }
     
   } catch (error: any) {
-    console.error('[RevenueCat] Customer Center error:', error);
+    console.error('[RevenueCat] ❌ Customer Center error:', error);
     
     Alert.alert(
       'Manage Subscription',
@@ -343,7 +404,7 @@ export const restorePurchases = async (): Promise<{
   message?: string 
 }> => {
   try {
-    console.log('[RevenueCat] Restoring purchases...');
+    console.log('[RevenueCat] 🔄 Restoring purchases...');
 
     if (!isPaymentSystemAvailable()) {
       throw new Error('Payment system is not initialized.');
@@ -373,7 +434,7 @@ export const restorePurchases = async (): Promise<{
     }
 
   } catch (error: any) {
-    console.error('[RevenueCat] Restore error:', error);
+    console.error('[RevenueCat] ❌ Restore error:', error);
     return {
       success: false,
       message: error.message || 'Failed to restore purchases.'
@@ -390,7 +451,7 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
     const customerInfo = await Purchases.getCustomerInfo();
     return customerInfo;
   } catch (error: any) {
-    console.error('[RevenueCat] Error getting customer info:', error);
+    console.error('[RevenueCat] ❌ Error getting customer info:', error);
     return null;
   }
 };
@@ -406,7 +467,7 @@ export const checkEntitlements = async (): Promise<boolean> => {
     
     return hasEntitlement;
   } catch (error: any) {
-    console.error('[RevenueCat] Error checking entitlements:', error);
+    console.error('[RevenueCat] ❌ Error checking entitlements:', error);
     return false;
   }
 };
@@ -438,7 +499,7 @@ export const checkSubscriptionStatus = async (userId: string): Promise<{
       return await checkSubscriptionInSupabase(userId);
     }
   } catch (error: any) {
-    console.error('[RevenueCat] Error checking subscription:', error);
+    console.error('[RevenueCat] ❌ Error checking subscription:', error);
     return await checkSubscriptionInSupabase(userId);
   }
 };
@@ -463,10 +524,12 @@ export const updateSubscriptionInSupabase = async (userId: string, customerInfo:
       .eq('id', userId);
     
     if (error) {
-      console.error('[RevenueCat] Error updating Supabase:', error);
+      console.error('[RevenueCat] ❌ Error updating Supabase:', error);
+    } else {
+      console.log('[RevenueCat] ✅ Supabase profile updated');
     }
   } catch (error: any) {
-    console.error('[RevenueCat] Exception updating Supabase:', error);
+    console.error('[RevenueCat] ❌ Exception updating Supabase:', error);
   }
 };
 
@@ -494,7 +557,7 @@ export const checkSubscriptionInSupabase = async (userId: string): Promise<{
     
     return { isActive: false, endDate: null };
   } catch (error: any) {
-    console.error('[RevenueCat] Exception checking Supabase subscription:', error);
+    console.error('[RevenueCat] ❌ Exception checking Supabase subscription:', error);
     return { isActive: false, endDate: null };
   }
 };
@@ -506,12 +569,14 @@ export const identifyUser = async (userId: string, email?: string): Promise<void
     }
 
     await Purchases.logIn(userId);
+    console.log('[RevenueCat] ✅ User identified:', userId);
     
     if (email) {
       await Purchases.setEmail(email);
+      console.log('[RevenueCat] ✅ Email set:', email);
     }
   } catch (error: any) {
-    console.error('[RevenueCat] Error identifying user:', error);
+    console.error('[RevenueCat] ❌ Error identifying user:', error);
   }
 };
 
@@ -522,7 +587,8 @@ export const logoutUser = async (): Promise<void> => {
     }
 
     await Purchases.logOut();
+    console.log('[RevenueCat] ✅ User logged out');
   } catch (error: any) {
-    console.error('[RevenueCat] Error logging out user:', error);
+    console.error('[RevenueCat] ❌ Error logging out user:', error);
   }
 };
