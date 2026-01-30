@@ -10,7 +10,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { WidgetProvider } from '@/contexts/WidgetContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -34,36 +33,64 @@ export default function RootLayout() {
       <AuthProvider>
         <WidgetProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="login" options={{ headerShown: false }} />
-              <Stack.Screen name="admin" options={{ headerShown: false }} />
-              <Stack.Screen name="admin-data" options={{ headerShown: false }} />
-              <Stack.Screen name="admin-debug" options={{ headerShown: false }} />
-              <Stack.Screen name="setup-admin" options={{ headerShown: false }} />
-              <Stack.Screen name="edit-report" options={{ headerShown: false }} />
-              <Stack.Screen name="video-player" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-              <Stack.Screen name="video-player-simple" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="login" />
+              <Stack.Screen name="admin" />
+              <Stack.Screen name="admin-data" />
+              <Stack.Screen name="admin-debug" />
+              <Stack.Screen name="admin-users" />
+              <Stack.Screen name="admin-predictions" />
+              <Stack.Screen name="admin-cron-logs" />
+              <Stack.Screen name="setup-admin" />
+              <Stack.Screen name="edit-report" />
+              <Stack.Screen 
+                name="video-player" 
+                options={{ 
+                  presentation: 'fullScreenModal',
+                  animation: 'slide_from_bottom'
+                }} 
+              />
+              <Stack.Screen 
+                name="video-player-simple" 
+                options={{ 
+                  presentation: 'fullScreenModal',
+                  animation: 'slide_from_bottom'
+                }} 
+              />
               <Stack.Screen 
                 name="modal" 
                 options={{ 
-                  presentation: 'modal',
-                  headerShown: false,
+                  presentation: 'modal'
                 }} 
               />
               <Stack.Screen 
                 name="transparent-modal" 
                 options={{ 
                   presentation: 'transparentModal',
-                  headerShown: false,
-                  animation: 'fade',
+                  animation: 'fade'
                 }} 
               />
               <Stack.Screen 
                 name="formsheet" 
                 options={{ 
-                  presentation: 'formSheet',
-                  headerShown: false,
+                  presentation: 'formSheet'
+                }} 
+              />
+              <Stack.Screen 
+                name="privacy-policy" 
+                options={{ 
+                  presentation: 'modal',
+                  headerShown: true,
+                  title: 'Privacy Policy'
+                }} 
+              />
+              <Stack.Screen 
+                name="terms-of-service" 
+                options={{ 
+                  presentation: 'modal',
+                  headerShown: true,
+                  title: 'Terms of Service'
                 }} 
               />
             </Stack>

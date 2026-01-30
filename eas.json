@@ -1,3 +1,4 @@
+
 {
   "cli": {
     "version": ">= 13.2.5",
@@ -23,9 +24,6 @@
       "ios": {
         "resourceClass": "m-medium",
         "bundleIdentifier": "Therealfollysurfreport.SurfVista"
-      },
-      "android": {
-        "buildType": "apk"
       }
     }
   },
