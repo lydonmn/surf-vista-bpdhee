@@ -60,21 +60,28 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     try {
       const offerings = await Purchases.getOfferings();
       
+      console.log('[RevenueCat] 🔍 Offerings Debug:');
+      console.log('[RevenueCat] - Current offering:', offerings.current?.identifier || 'NONE');
+      console.log('[RevenueCat] - All offerings:', Object.keys(offerings.all));
+      
       for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
         if (offerings.all[offeringId]) {
           currentOffering = offerings.all[offeringId];
-          console.log('[RevenueCat] Using offering:', offeringId);
+          console.log('[RevenueCat] ✅ Using offering:', offeringId);
+          console.log('[RevenueCat] - Packages:', currentOffering.availablePackages.length);
           break;
         }
       }
       
       if (!currentOffering && offerings.current) {
         currentOffering = offerings.current;
-        console.log('[RevenueCat] Using current offering:', offerings.current.identifier);
+        console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
+        console.log('[RevenueCat] - Packages:', currentOffering.availablePackages.length);
       }
       
-      if (currentOffering) {
-        console.log('[RevenueCat] Available packages:', currentOffering.availablePackages.length);
+      if (!currentOffering) {
+        console.error('[RevenueCat] ❌ NO OFFERING FOUND!');
+        console.error('[RevenueCat] 💡 SOLUTION: In RevenueCat dashboard, mark offering "ofrnge7bdc97106" as "Current"');
       }
     } catch (offeringError) {
       console.error('[RevenueCat] Error fetching offerings:', offeringError);
@@ -109,10 +116,10 @@ export const presentPaywall = async (
   userEmail?: string
 ): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
   try {
-    console.log('[RevenueCat] Presenting paywall...');
+    console.log('[RevenueCat] 🎯 Presenting paywall...');
     
     if (!isPaymentSystemAvailable()) {
-      console.error('[RevenueCat] Payment system not initialized');
+      console.error('[RevenueCat] ❌ Payment system not initialized');
       return {
         state: 'error',
         message: 'Payment system is not initialized. Please restart the app.'
@@ -122,7 +129,7 @@ export const presentPaywall = async (
     if (userId) {
       try {
         await Purchases.logIn(userId);
-        console.log('[RevenueCat] User logged in');
+        console.log('[RevenueCat] ✅ User logged in:', userId);
       } catch (loginError) {
         console.error('[RevenueCat] Error logging in user:', loginError);
       }
@@ -131,7 +138,7 @@ export const presentPaywall = async (
     if (userEmail) {
       try {
         await Purchases.setEmail(userEmail);
-        console.log('[RevenueCat] Email set');
+        console.log('[RevenueCat] ✅ Email set:', userEmail);
       } catch (emailError) {
         console.error('[RevenueCat] Error setting email:', emailError);
       }
@@ -139,11 +146,16 @@ export const presentPaywall = async (
 
     const offerings = await Purchases.getOfferings();
     
+    console.log('[RevenueCat] 🔍 Offerings check:');
+    console.log('[RevenueCat] - Current:', offerings.current?.identifier || 'NONE');
+    console.log('[RevenueCat] - All:', Object.keys(offerings.all));
+    
     if (!offerings.current && Object.keys(offerings.all).length === 0) {
-      console.error('[RevenueCat] No offerings available');
+      console.error('[RevenueCat] ❌ No offerings available');
+      console.error('[RevenueCat] 💡 SOLUTION: Create and publish an offering in RevenueCat dashboard');
       return {
         state: 'error',
-        message: 'Subscription system needs to be configured in RevenueCat dashboard.'
+        message: 'No subscription options available.\n\nPlease configure offerings in RevenueCat dashboard.'
       };
     }
 
@@ -152,56 +164,70 @@ export const presentPaywall = async (
     for (const offeringId of PAYMENT_CONFIG.OFFERING_IDS) {
       if (offerings.all[offeringId]) {
         offeringToUse = offerings.all[offeringId];
+        console.log('[RevenueCat] ✅ Found offering:', offeringId);
         break;
       }
     }
     
     if (!offeringToUse && offerings.current) {
       offeringToUse = offerings.current;
+      console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
     }
     
     if (!offeringToUse && Object.keys(offerings.all).length > 0) {
       const firstOfferingKey = Object.keys(offerings.all)[0];
       offeringToUse = offerings.all[firstOfferingKey];
+      console.log('[RevenueCat] ⚠️ Using first available offering:', firstOfferingKey);
     }
 
     if (!offeringToUse) {
+      console.error('[RevenueCat] ❌ No offering found');
+      console.error('[RevenueCat] 💡 SOLUTION: Mark offering "ofrnge7bdc97106" as "Current" in RevenueCat dashboard');
       return {
         state: 'error',
-        message: 'No offering found. Please configure offerings in RevenueCat dashboard.'
+        message: 'Unable to load subscription options.\n\nPlease configure a default offering in your RevenueCat dashboard.\n\nSteps:\n1. Go to RevenueCat dashboard\n2. Click on Offerings\n3. Find offering "ofrnge7bdc97106"\n4. Click "Make Current"'
       };
     }
 
+    console.log('[RevenueCat] 📦 Offering packages:', offeringToUse.availablePackages.length);
+    
     if (offeringToUse.availablePackages.length === 0) {
+      console.error('[RevenueCat] ❌ No packages in offering');
+      console.error('[RevenueCat] 💡 SOLUTION: Add products to offering in RevenueCat dashboard');
       return {
         state: 'error',
-        message: 'No products in offering. Please add products in RevenueCat dashboard.'
+        message: 'No subscription plans available.\n\nPlease add products to your offering in RevenueCat dashboard.'
       };
     }
 
     let paywallResult: PAYWALL_RESULT;
     
     try {
+      console.log('[RevenueCat] 🎨 Attempting to present paywall...');
       paywallResult = await RevenueCatUI.presentPaywall();
+      console.log('[RevenueCat] ✅ Paywall presented successfully');
     } catch (defaultError: any) {
-      console.error('[RevenueCat] Error presenting default paywall:', defaultError);
+      console.error('[RevenueCat] ❌ Error presenting default paywall:', defaultError.message);
       
       try {
+        console.log('[RevenueCat] 🔄 Trying with explicit offering...');
         paywallResult = await RevenueCatUI.presentPaywall({
           offering: offeringToUse
         });
+        console.log('[RevenueCat] ✅ Paywall presented with explicit offering');
       } catch (fallbackError: any) {
-        console.error('[RevenueCat] Fallback also failed:', fallbackError);
+        console.error('[RevenueCat] ❌ Fallback also failed:', fallbackError.message);
+        console.error('[RevenueCat] 💡 SOLUTION: Ensure paywall is created and published in RevenueCat dashboard');
         
         return {
           state: 'error',
-          message: 'Unable to display paywall. Please ensure paywall is configured in RevenueCat dashboard.'
+          message: 'Unable to display subscription options.\n\nPlease ensure:\n1. Offering "ofrnge7bdc97106" is marked as "Current"\n2. A paywall is created and published\n3. Products are linked to the offering\n\nError: ' + fallbackError.message
         };
       }
     }
 
     if (paywallResult === PAYWALL_RESULT.PURCHASED) {
-      console.log('[RevenueCat] Purchase successful');
+      console.log('[RevenueCat] ✅ Purchase successful');
       
       const customerInfo = await Purchases.getCustomerInfo();
 
@@ -214,7 +240,7 @@ export const presentPaywall = async (
         message: 'Subscription activated successfully!'
       };
     } else if (paywallResult === PAYWALL_RESULT.RESTORED) {
-      console.log('[RevenueCat] Restore successful');
+      console.log('[RevenueCat] ✅ Restore successful');
       
       const customerInfo = await Purchases.getCustomerInfo();
 
@@ -227,34 +253,41 @@ export const presentPaywall = async (
         message: 'Subscription restored successfully!'
       };
     } else if (paywallResult === PAYWALL_RESULT.CANCELLED) {
-      console.log('[RevenueCat] User cancelled paywall');
+      console.log('[RevenueCat] ℹ️ User cancelled paywall');
       return { state: 'declined' };
     } else if (paywallResult === PAYWALL_RESULT.ERROR) {
-      console.error('[RevenueCat] Paywall error');
+      console.error('[RevenueCat] ❌ Paywall error');
       return { 
         state: 'error',
         message: 'An error occurred while processing your purchase. Please try again.'
       };
     } else if (paywallResult === PAYWALL_RESULT.NOT_PRESENTED) {
-      console.log('[RevenueCat] Paywall was not presented');
+      console.log('[RevenueCat] ⚠️ Paywall was not presented');
+      console.error('[RevenueCat] 💡 SOLUTION: Create and publish a paywall in RevenueCat dashboard');
       return { 
         state: 'error',
-        message: 'Paywall not configured. Please ensure paywall is set up in RevenueCat dashboard.'
+        message: 'Paywall not configured.\n\nPlease create and publish a paywall in RevenueCat dashboard.'
       };
     } else {
-      console.log('[RevenueCat] Paywall closed without action');
+      console.log('[RevenueCat] ℹ️ Paywall closed without action');
       return { state: 'declined' };
     }
 
   } catch (error: any) {
-    console.error('[RevenueCat] Paywall error:', error);
+    console.error('[RevenueCat] ❌ Paywall error:', error);
 
     let errorMessage = 'Unable to load subscription options.\n\n';
     
     const errorMsg = error.message || '';
     
-    if (errorMsg.includes('No current offering') || errorMsg.includes('offerings')) {
-      errorMessage += 'Please configure a default offering in your RevenueCat dashboard.';
+    if (errorMsg.includes('No current offering') || errorMsg.includes('default offering')) {
+      errorMessage += '🔧 SOLUTION:\n\n';
+      errorMessage += '1. Go to RevenueCat dashboard\n';
+      errorMessage += '2. Navigate to Offerings\n';
+      errorMessage += '3. Find offering "ofrnge7bdc97106"\n';
+      errorMessage += '4. Click "Make Current" or "Set as Default"\n';
+      errorMessage += '5. Ensure a paywall is attached\n';
+      errorMessage += '6. Verify products are linked';
     } else if (errorMsg.includes('paywall') || errorMsg.includes('configuration')) {
       errorMessage += 'Please ensure paywall is configured and published in RevenueCat dashboard.';
     } else if (errorMsg.includes('network')) {
