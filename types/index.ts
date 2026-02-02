@@ -2,6 +2,7 @@
 export interface SurfReport {
   id: string;
   date: string;
+  location: string;
   wave_height: string;
   surf_height?: string;
   wave_period?: string;
@@ -25,6 +26,7 @@ export interface SurfReport {
 export interface WeatherData {
   id: string;
   date: string;
+  location: string;
   temperature: string;
   feels_like?: string;
   humidity?: number;
@@ -43,6 +45,7 @@ export interface WeatherData {
 export interface WeatherForecast {
   id: string;
   date: string;
+  location: string;
   day_name?: string;
   high_temp: number | null;
   low_temp: number | null;
@@ -64,6 +67,7 @@ export interface WeatherForecast {
 export interface TideData {
   id: string;
   date: string;
+  location: string;
   time: string;
   type: 'High' | 'Low';
   height: number;
@@ -97,6 +101,7 @@ export interface SurfPrediction {
 export interface Video {
   id: string;
   title: string;
+  location: string;
   description?: string;
   video_url: string;
   thumbnail_url?: string;
