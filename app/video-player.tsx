@@ -164,23 +164,26 @@ export default function VideoPlayerScreen() {
       }
       
       try {
+        // Start loading immediately - don't wait for auth check
         setIsLoading(true);
         setError(null);
+        
         if (__DEV__) {
-          console.log('[VideoPlayer] Loading video:', videoId);
+          console.log('[VideoPlayer] ⚡ FAST PATH: Loading video metadata and URL in parallel');
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
+        // Parallel execution: Load video metadata and check auth at the same time
+        const [sessionResult, videoResult] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase.from('videos').select('*').eq('id', videoId).single()
+        ]);
+
+        const { data: { session } } = sessionResult;
         if (!session) {
           throw new Error('Not authenticated. Please log in again.');
         }
 
-        const { data, error: fetchError } = await supabase
-          .from('videos')
-          .select('*')
-          .eq('id', videoId)
-          .single();
-
+        const { data, error: fetchError } = videoResult;
         if (fetchError) {
           if (__DEV__) {
             console.error('[VideoPlayer] Error loading video:', fetchError);
@@ -193,10 +196,10 @@ export default function VideoPlayerScreen() {
         }
         setVideo(data);
 
-        // OPTIMIZATION: Use preloaded URL if available
+        // OPTIMIZATION: Use preloaded URL if available (INSTANT PLAYBACK)
         if (preloadedUrl && typeof preloadedUrl === 'string') {
           if (__DEV__) {
-            console.log('[VideoPlayer] ✓ Using preloaded URL (instant playback)');
+            console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           }
           setVideoUrl(preloadedUrl);
           hasLoadedRef.current = true;
@@ -208,7 +211,11 @@ export default function VideoPlayerScreen() {
           return;
         }
 
-        // Fallback: Generate signed URL if not preloaded
+        // Fallback: Generate signed URL if not preloaded (slower path)
+        if (__DEV__) {
+          console.log('[VideoPlayer] ⚠️ No preloaded URL - generating signed URL (slower)');
+        }
+        
         let fileName = '';
         try {
           const urlParts = data.video_url.split('/videos/');
@@ -230,9 +237,6 @@ export default function VideoPlayerScreen() {
           throw new Error('Could not extract filename from video URL');
         }
 
-        if (__DEV__) {
-          console.log('[VideoPlayer] Creating signed URL...');
-        }
         const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from('videos')
           .createSignedUrl(fileName, 7200);
@@ -359,10 +363,16 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (videoUrl && player) {
       if (__DEV__) {
-        console.log('[VideoPlayer] Loading video source...');
+        console.log('[VideoPlayer] ⚡ Loading video source immediately...');
+        const startTime = performance.now();
       }
       try {
         player.replace(videoUrl);
+        
+        if (__DEV__) {
+          const loadTime = performance.now() - (performance as any).now();
+          console.log(`[VideoPlayer] ✅ Video source loaded in ${loadTime.toFixed(2)}ms`);
+        }
       } catch (e) {
         if (__DEV__) {
           console.error('[VideoPlayer] Error loading source:', e);

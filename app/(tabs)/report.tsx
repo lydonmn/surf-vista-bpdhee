@@ -318,9 +318,17 @@ export default function ReportScreen() {
   const handleVideoPress = React.useCallback(() => {
     if (latestVideo) {
       console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
+      console.log('[ReportScreen] ✅ Passing preloaded URL for instant playback');
+      
+      // Pass the signed URL if available for instant playback
+      const params: any = { videoId: latestVideo.id };
+      if (latestVideo.video_url) {
+        params.preloadedUrl = latestVideo.video_url;
+      }
+      
       router.push({
         pathname: '/video-player',
-        params: { videoId: latestVideo.id }
+        params
       });
     }
   }, [latestVideo]);

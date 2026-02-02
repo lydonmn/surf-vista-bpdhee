@@ -72,22 +72,40 @@ export function useVideos() {
     }
   }, [extractFileName]);
 
-  // Preload video data by making a HEAD request to warm up the CDN/cache
+  // Preload video data by making range requests to warm up CDN and cache initial chunks
   const preloadVideoData = useCallback(async (signedUrl: string, videoTitle: string) => {
     try {
       console.log(`[useVideos] 🔥 Preloading video data for: ${videoTitle}`);
       
-      // Make a HEAD request to warm up the CDN cache
-      // This doesn't download the full video but tells the CDN to prepare it
-      const response = await fetch(signedUrl, {
+      // Strategy 1: HEAD request to warm up CDN
+      const headResponse = await fetch(signedUrl, {
         method: 'HEAD',
         cache: 'force-cache',
       });
       
-      if (response.ok) {
-        console.log(`[useVideos] ✓ Video data preloaded: ${videoTitle}`);
+      if (!headResponse.ok) {
+        console.log(`[useVideos] ⚠️ HEAD request failed for: ${videoTitle}`);
+        return;
+      }
+      
+      console.log(`[useVideos] ✓ CDN warmed for: ${videoTitle}`);
+      
+      // Strategy 2: Fetch first 2MB of video to cache initial playback data
+      // This ensures instant playback when user taps the video
+      const rangeResponse = await fetch(signedUrl, {
+        method: 'GET',
+        headers: {
+          'Range': 'bytes=0-2097151', // First 2MB
+        },
+        cache: 'force-cache',
+      });
+      
+      if (rangeResponse.ok || rangeResponse.status === 206) {
+        // Read the data to ensure it's cached
+        await rangeResponse.blob();
+        console.log(`[useVideos] ✅ First 2MB cached for instant playback: ${videoTitle}`);
       } else {
-        console.log(`[useVideos] ⚠️ Preload response not OK for: ${videoTitle}`);
+        console.log(`[useVideos] ⚠️ Range request not supported for: ${videoTitle}`);
       }
     } catch (err) {
       console.log(`[useVideos] ⚠️ Preload failed for ${videoTitle}:`, err);
