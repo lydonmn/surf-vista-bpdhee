@@ -6,16 +6,20 @@ const corsHeaders = {
 
 const FUNCTION_TIMEOUT = 45000; // Increased to 45 seconds per function
 
-async function invokeFunctionWithTimeout(url: string, headers: Record<string, string>, timeout: number, retries: number = 2) {
+async function invokeFunctionWithTimeout(url: string, headers: Record<string, string>, timeout: number, retries: number = 2, body?: string) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     try {
       console.log(`Invoking function: ${url} (attempt ${attempt}/${retries})`);
+      if (body) {
+        console.log(`Request body: ${body}`);
+      }
       const response = await fetch(url, {
         method: 'POST',
         headers,
+        body,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -60,6 +64,18 @@ Deno.serve(async (req) => {
     console.log('=== UPDATE ALL SURF DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
 
+    // Parse request body to get location parameter
+    let location = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        location = body.location;
+        console.log('Location parameter received:', location);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -98,8 +114,13 @@ Deno.serve(async (req) => {
     try {
       const weatherResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-weather-data`,
-        requestHeaders,
-        FUNCTION_TIMEOUT
+        {
+          ...requestHeaders,
+          'Content-Type': 'application/json',
+        },
+        FUNCTION_TIMEOUT,
+        2,
+        JSON.stringify({ location })
       );
 
       results.weather = weatherResult.data;
@@ -122,8 +143,13 @@ Deno.serve(async (req) => {
     try {
       const tideResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-tide-data`,
-        requestHeaders,
-        FUNCTION_TIMEOUT
+        {
+          ...requestHeaders,
+          'Content-Type': 'application/json',
+        },
+        FUNCTION_TIMEOUT,
+        2,
+        JSON.stringify({ location })
       );
 
       results.tide = tideResult.data;
@@ -146,8 +172,13 @@ Deno.serve(async (req) => {
     try {
       const surfResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-surf-reports`,
-        requestHeaders,
-        FUNCTION_TIMEOUT
+        {
+          ...requestHeaders,
+          'Content-Type': 'application/json',
+        },
+        FUNCTION_TIMEOUT,
+        2,
+        JSON.stringify({ location })
       );
 
       results.surf = surfResult.data;
@@ -170,8 +201,13 @@ Deno.serve(async (req) => {
     try {
       const surfForecastResult = await invokeFunctionWithTimeout(
         `${supabaseUrl}/functions/v1/fetch-surf-forecast`,
-        requestHeaders,
-        FUNCTION_TIMEOUT
+        {
+          ...requestHeaders,
+          'Content-Type': 'application/json',
+        },
+        FUNCTION_TIMEOUT,
+        2,
+        JSON.stringify({ location })
       );
 
       results.surfForecast = surfForecastResult.data;
@@ -195,8 +231,13 @@ Deno.serve(async (req) => {
       try {
         const reportResult = await invokeFunctionWithTimeout(
           `${supabaseUrl}/functions/v1/generate-daily-report`,
-          requestHeaders,
-          FUNCTION_TIMEOUT
+          {
+            ...requestHeaders,
+            'Content-Type': 'application/json',
+          },
+          FUNCTION_TIMEOUT,
+          2,
+          JSON.stringify({ location })
         );
 
         results.report = reportResult.data;
@@ -224,13 +265,16 @@ Deno.serve(async (req) => {
 
     const criticalSuccess = results.weather?.success && results.surf?.success && results.surfForecast?.success;
 
+    const locationName = location === 'pawleys-island' ? 'Pawleys Island, SC' : 'Folly Beach, SC';
+
     return new Response(
       JSON.stringify({
         success: criticalSuccess,
         message: criticalSuccess 
-          ? 'Surf data and 7-day forecast updated successfully for Folly Beach, SC' 
+          ? `Surf data and 7-day forecast updated successfully for ${locationName}` 
           : 'Failed to update critical surf data',
-        location: 'Folly Beach, SC',
+        location: locationName,
+        locationId: location,
         results,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date().toISOString(),

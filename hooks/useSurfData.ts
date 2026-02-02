@@ -156,6 +156,12 @@ export function useSurfData() {
 
       console.log('[useSurfData] Data fetched successfully for location:', currentLocation);
 
+      // Check if we have any data for this location
+      const hasData = (surfReportsResult.data && surfReportsResult.data.length > 0) ||
+                      weatherResult.data ||
+                      (forecastResult.data && forecastResult.data.length > 0) ||
+                      (tideResult.data && tideResult.data.length > 0);
+
       if (isMountedRef.current) {
         setState({
           surfReports: surfReportsResult.data || [],
@@ -163,7 +169,9 @@ export function useSurfData() {
           weatherForecast: forecastResult.data || [],
           tideData: tideResult.data || [],
           isLoading: false,
-          error: null,
+          error: !hasData && currentLocation === 'pawleys-island' 
+            ? 'Data for Pawleys Island is being set up. Please tap "Update Data" to fetch the latest conditions.' 
+            : null,
           lastUpdated: new Date(),
         });
       }
@@ -362,7 +370,7 @@ export function useSurfData() {
     // Setup app state listener
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
-    // Set up real-time subscription for surf reports with location filter
+    // Set up real-time subscription for surf reports (no filter - we'll filter in the callback)
     const surfReportsSubscription = supabase
       .channel('surf_reports_changes')
       .on(
@@ -371,16 +379,22 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'surf_reports',
-          filter: `location=eq.${currentLocation}`,
         },
-        () => {
-          console.log('[useSurfData] Surf report updated, refreshing data...');
-          fetchData();
+        (payload) => {
+          console.log('[useSurfData] Surf report updated, payload:', payload);
+          // Only refresh if the change is for the current location
+          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
+            console.log('[useSurfData] Surf report for current location updated, refreshing data...');
+            fetchData();
+          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
+            console.log('[useSurfData] Surf report for current location deleted, refreshing data...');
+            fetchData();
+          }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for weather data with location filter
+    // Set up real-time subscription for weather data (no filter - we'll filter in the callback)
     const weatherSubscription = supabase
       .channel('weather_data_changes')
       .on(
@@ -389,16 +403,22 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'weather_data',
-          filter: `location=eq.${currentLocation}`,
         },
-        () => {
-          console.log('[useSurfData] Weather data updated, refreshing data...');
-          fetchData();
+        (payload) => {
+          console.log('[useSurfData] Weather data updated, payload:', payload);
+          // Only refresh if the change is for the current location
+          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
+            console.log('[useSurfData] Weather data for current location updated, refreshing data...');
+            fetchData();
+          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
+            console.log('[useSurfData] Weather data for current location deleted, refreshing data...');
+            fetchData();
+          }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for weather forecast with location filter
+    // Set up real-time subscription for weather forecast (no filter - we'll filter in the callback)
     const forecastSubscription = supabase
       .channel('weather_forecast_changes')
       .on(
@@ -407,16 +427,22 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'weather_forecast',
-          filter: `location=eq.${currentLocation}`,
         },
-        () => {
-          console.log('[useSurfData] Weather forecast updated, refreshing data...');
-          fetchData();
+        (payload) => {
+          console.log('[useSurfData] Weather forecast updated, payload:', payload);
+          // Only refresh if the change is for the current location
+          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
+            console.log('[useSurfData] Weather forecast for current location updated, refreshing data...');
+            fetchData();
+          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
+            console.log('[useSurfData] Weather forecast for current location deleted, refreshing data...');
+            fetchData();
+          }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for tide data with location filter
+    // Set up real-time subscription for tide data (no filter - we'll filter in the callback)
     const tideSubscription = supabase
       .channel('tide_data_changes')
       .on(
@@ -425,12 +451,17 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'tide_data',
-          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
           console.log('[useSurfData] Tide data updated, payload:', payload);
-          console.log('[useSurfData] Refreshing data...');
-          fetchData();
+          // Only refresh if the change is for the current location
+          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
+            console.log('[useSurfData] Tide data for current location updated, refreshing data...');
+            fetchData();
+          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
+            console.log('[useSurfData] Tide data for current location deleted, refreshing data...');
+            fetchData();
+          }
         }
       )
       .subscribe();
