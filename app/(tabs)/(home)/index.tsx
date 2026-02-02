@@ -14,6 +14,8 @@ import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
 import { useVideos } from "@/hooks/useVideos";
+import { LocationSelector } from "@/components/LocationSelector";
+import { useLocation } from "@/contexts/LocationContext";
 
 // Helper to resolve image sources (handles both local require() and remote URLs)
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
@@ -49,6 +51,7 @@ function getESTDate(): string {
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
+  const { locationData } = useLocation();
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -260,7 +263,7 @@ export default function HomeScreen() {
         <View style={styles.centerContent}>
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Exclusive Surf Reports from Folly Beach, SC
+            Exclusive Surf Reports from South Carolina
           </Text>
           <IconSymbol
             ios_icon_name="water.waves"
@@ -450,7 +453,10 @@ export default function HomeScreen() {
           <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
         )}
         
-        <Text style={[styles.location, { color: colors.textSecondary }]}>The Real Folly Surf Report</Text>
+        {/* Location Selector */}
+        <View style={styles.locationContainer}>
+          <LocationSelector />
+        </View>
         
         {/* Last Updated Info */}
         <View style={styles.updateInfo}>
@@ -670,9 +676,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
   },
-  location: {
-    fontSize: 14,
-    marginBottom: 12,
+  locationContainer: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   updateInfo: {
     flexDirection: 'row',
