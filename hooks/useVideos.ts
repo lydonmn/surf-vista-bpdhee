@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 
 export interface Video {
@@ -17,10 +17,15 @@ export interface Video {
   signed_url_expires_at?: number;
 }
 
+// Cache duration: 2 hours (same as Supabase signed URL expiration)
+const SIGNED_URL_CACHE_DURATION_MS = 7200000; // 2 hours in milliseconds
+const SIGNED_URL_EXPIRATION_SECONDS = 7200; // 2 hours in seconds
+
 export function useVideos() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isLoadingRef = useRef(false);
 
   const extractFileName = (videoUrl: string): string | null => {
     try {
@@ -49,7 +54,7 @@ export function useVideos() {
       console.log('[useVideos] Generating signed URL for:', fileName);
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('videos')
-        .createSignedUrl(fileName, 7200); // 2 hours
+        .createSignedUrl(fileName, SIGNED_URL_EXPIRATION_SECONDS);
 
       if (signedUrlError || !signedUrlData?.signedUrl) {
         console.error('[useVideos] Signed URL error:', signedUrlError);
@@ -65,11 +70,18 @@ export function useVideos() {
   };
 
   const loadVideos = async () => {
+    // Prevent duplicate loading
+    if (isLoadingRef.current) {
+      console.log('[useVideos] Already loading, skipping...');
+      return;
+    }
+
     try {
+      isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
 
-      console.log('[useVideos] Loading videos from database...');
+      console.log('[useVideos] 🚀 AGGRESSIVE PRELOAD: Loading ALL videos from database...');
 
       const { data, error: fetchError } = await supabase
         .from('videos')
@@ -81,40 +93,34 @@ export function useVideos() {
         throw fetchError;
       }
 
-      console.log('[useVideos] Loaded videos:', data?.length || 0);
+      console.log(`[useVideos] Loaded ${data?.length || 0} videos`);
       
-      // Preload signed URLs for the first 3 videos (most likely to be watched)
+      // 🚀 AGGRESSIVE PRELOADING: Generate signed URLs for ALL videos immediately
       if (data && data.length > 0) {
+        console.log('[useVideos] 🔥 Preloading signed URLs for ALL videos (instant playback)...');
+        
+        const startTime = Date.now();
+        
+        // Generate signed URLs in parallel for maximum speed
         const videosWithSignedUrls = await Promise.all(
-          data.slice(0, 3).map(async (video, index) => {
-            console.log(`[useVideos] Video ${index + 1}:`, {
-              id: video.id,
-              title: video.title,
-              hasThumbnail: !!video.thumbnail_url,
-              thumbnailUrl: video.thumbnail_url,
-              hasVideoUrl: !!video.video_url,
-              videoUrl: video.video_url,
-              createdAt: video.created_at
-            });
+          data.map(async (video, index) => {
+            console.log(`[useVideos] Preloading video ${index + 1}/${data.length}:`, video.title);
 
-            // Generate signed URL for preloading
+            // Generate signed URL for instant playback
             const signedUrl = await generateSignedUrl(video.video_url);
             return {
               ...video,
               signed_url: signedUrl || undefined,
-              signed_url_expires_at: signedUrl ? Date.now() + 7200000 : undefined // 2 hours from now
+              signed_url_expires_at: signedUrl ? Date.now() + SIGNED_URL_CACHE_DURATION_MS : undefined
             };
           })
         );
 
-        // Merge preloaded videos with the rest
-        const allVideos = [
-          ...videosWithSignedUrls,
-          ...data.slice(3)
-        ];
-
-        console.log('[useVideos] Preloaded signed URLs for first 3 videos');
-        setVideos(allVideos);
+        const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+        
+        console.log(`[useVideos] ✅ ALL ${data.length} videos preloaded in ${duration}s - INSTANT PLAYBACK READY!`);
+        setVideos(videosWithSignedUrls);
       } else {
         setVideos(data || []);
       }
@@ -123,6 +129,7 @@ export function useVideos() {
       setError(err.message || 'Failed to load videos');
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
