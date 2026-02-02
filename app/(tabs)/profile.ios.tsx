@@ -138,12 +138,13 @@ export default function ProfileScreen() {
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
       Alert.alert(
-        'Restore Purchases Unavailable',
-        'Subscription features are currently being configured. This usually means:\n\n' +
-        '• Products need to be set up in RevenueCat dashboard\n' +
-        '• Paywalls need to be configured\n' +
-        '• Offerings need to be created\n\n' +
-        'Please check the console logs for detailed setup instructions, or contact support for assistance.',
+        'RevenueCat Configuration Required',
+        'The subscription system is not properly configured. This is a configuration issue that needs to be fixed in the RevenueCat dashboard.\n\n' +
+        'Please check the console logs for detailed setup instructions on how to:\n\n' +
+        '• Add products to RevenueCat\n' +
+        '• Create and configure offerings\n' +
+        '• Set up and publish paywalls\n\n' +
+        'Once configured, restart the app to try again.',
         [{ text: 'OK' }]
       );
       return;
@@ -191,8 +192,8 @@ export default function ProfileScreen() {
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
       Alert.alert(
-        'Manage Subscription Unavailable',
-        'Subscription features are currently being configured. Please contact support or try again later.',
+        'RevenueCat Configuration Required',
+        'The subscription system is not properly configured. Please check the console logs for setup instructions.',
         [{ text: 'OK' }]
       );
       return;
@@ -239,11 +240,19 @@ export default function ProfileScreen() {
     
     // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
-      console.log('[ProfileScreen iOS] ⚠️ Payment system not available - showing demo paywall');
+      console.log('[ProfileScreen iOS] ⚠️ Payment system not available');
       checkPaymentConfiguration();
       
-      // Show demo paywall directly
-      router.push('/demo-paywall');
+      Alert.alert(
+        'RevenueCat Configuration Required',
+        'The subscription system is not properly configured. This is a configuration issue that needs to be fixed in the RevenueCat dashboard.\n\n' +
+        'Please check the console logs for detailed setup instructions on how to:\n\n' +
+        '• Add products to RevenueCat\n' +
+        '• Create and configure offerings\n' +
+        '• Set up and publish paywalls\n\n' +
+        'Once configured, restart the app to try again.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -259,14 +268,6 @@ export default function ProfileScreen() {
       
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
       
-      // Check if demo mode
-      if (result.state === 'error' && result.message === 'DEMO_MODE') {
-        console.log('[ProfileScreen iOS] 🎬 Demo mode - showing demo paywall');
-        router.push('/demo-paywall');
-        setIsSubscribing(false);
-        return;
-      }
-      
       // Refresh profile to get updated subscription status
       console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
       await refreshProfile();
@@ -281,14 +282,10 @@ export default function ProfileScreen() {
       } else if (result.state === 'error') {
         console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
         
-        // Provide helpful error message
+        // Show the detailed error message from RevenueCat
         Alert.alert(
-          'Unable to Show Subscription Options',
-          result.message || 'The subscription paywall could not be displayed. This usually means:\n\n' +
-          '• Products are not configured in RevenueCat\n' +
-          '• Paywalls are not set up\n' +
-          '• Network connectivity issues\n\n' +
-          'Please check the console logs for more details, or try again later.',
+          'Configuration Required',
+          result.message,
           [{ text: 'OK' }]
         );
       } else if (result.state === 'declined') {
@@ -642,7 +639,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 1.0.0
+          Version 2.0.0
         </Text>
       </View>
     </ScrollView>

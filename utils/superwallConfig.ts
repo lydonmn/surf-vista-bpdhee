@@ -310,11 +310,30 @@ export const presentPaywall = async (
     if (!isPaymentSystemAvailable()) {
       console.error('[RevenueCat] ❌ Payment system not initialized');
       
-      let errorMsg = 'Payment system is not initialized.';
+      let errorMsg = '🚨 RevenueCat Configuration Required\n\n';
+      errorMsg += 'The subscription system is not properly configured. ';
+      errorMsg += 'This is a configuration issue that needs to be fixed in the RevenueCat dashboard.\n\n';
+      
       if (initializationError) {
-        errorMsg += '\n\nError: ' + initializationError;
+        errorMsg += '📋 Error Details:\n' + initializationError + '\n\n';
       }
-      errorMsg += '\n\nPlease check the console logs for detailed troubleshooting steps.';
+      
+      errorMsg += '🔧 How to Fix:\n\n';
+      errorMsg += '1. Go to https://app.revenuecat.com\n';
+      errorMsg += '2. Navigate to "Products" and add:\n';
+      errorMsg += '   • surfvista_monthly\n';
+      errorMsg += '   • surfvista_annual\n\n';
+      errorMsg += '3. Go to "Offerings" and:\n';
+      errorMsg += '   • Create or edit an offering\n';
+      errorMsg += '   • Add both products to it\n';
+      errorMsg += '   • Mark it as "Current"\n\n';
+      errorMsg += '4. Go to "Paywalls" and:\n';
+      errorMsg += '   • Create a paywall\n';
+      errorMsg += '   • Link it to your offering\n';
+      errorMsg += '   • Publish the paywall\n\n';
+      errorMsg += '5. Wait 5-10 minutes for sync\n';
+      errorMsg += '6. Restart the app\n\n';
+      errorMsg += '📖 Check the console logs for detailed troubleshooting steps.';
       
       return {
         state: 'error',
@@ -379,14 +398,16 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ No offering available');
       return {
         state: 'error',
-        message: 'No subscription options available.\n\n' +
-                 '🔧 Configuration Required:\n\n' +
+        message: '🚨 No Subscription Options Available\n\n' +
+                 'RevenueCat configuration is incomplete.\n\n' +
+                 '🔧 Required Steps:\n\n' +
                  '1. Go to RevenueCat dashboard\n' +
                  '2. Create or mark an offering as "Current"\n' +
                  '3. Add products to the offering\n' +
                  '4. Create and publish a paywall\n' +
                  '5. Wait 5-10 minutes for sync\n' +
-                 '6. Restart the app'
+                 '6. Restart the app\n\n' +
+                 '📖 See console logs for detailed instructions.'
       };
     }
 
@@ -397,15 +418,17 @@ export const presentPaywall = async (
       console.error('[RevenueCat] ❌ No packages in offering');
       return {
         state: 'error',
-        message: 'No subscription plans available.\n\n' +
-                 '🔧 Configuration Required:\n\n' +
+        message: '🚨 No Subscription Plans Available\n\n' +
+                 'Products are not configured in RevenueCat.\n\n' +
+                 '🔧 Required Steps:\n\n' +
                  '1. Verify product IDs in App Store Connect:\n' +
                  '   • surfvista_monthly\n' +
                  '   • surfvista_annual\n\n' +
                  '2. Add same product IDs to RevenueCat\n' +
                  '3. Link products to offering\n' +
                  '4. Wait for sync (5-10 minutes)\n' +
-                 '5. Restart the app'
+                 '5. Restart the app\n\n' +
+                 '📖 See console logs for detailed instructions.'
       };
     }
 
@@ -442,13 +465,14 @@ export const presentPaywall = async (
         
         return {
           state: 'error',
-          message: 'Unable to display subscription options.\n\n' +
-                   '🔧 Configuration Required:\n\n' +
+          message: '🚨 Unable to Display Subscription Options\n\n' +
+                   'Paywall is not configured in RevenueCat.\n\n' +
+                   '🔧 Required Steps:\n\n' +
                    '1. Create a paywall in RevenueCat dashboard\n' +
                    '2. Link paywall to offering\n' +
                    '3. Publish the paywall\n' +
                    '4. Restart the app\n\n' +
-                   'Error: ' + fallbackError.message
+                   '📋 Error: ' + fallbackError.message
         };
       }
     }
@@ -493,8 +517,8 @@ export const presentPaywall = async (
       console.log('[RevenueCat] ⚠️ Paywall was not presented');
       return { 
         state: 'error',
-        message: 'Paywall not configured.\n\n' +
-                 '🔧 Create and publish a paywall in RevenueCat dashboard.'
+        message: '🚨 Paywall Not Configured\n\n' +
+                 'Create and publish a paywall in RevenueCat dashboard.'
       };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action');
@@ -504,7 +528,7 @@ export const presentPaywall = async (
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Paywall error:', error);
 
-    let errorMessage = 'Unable to load subscription options.\n\n';
+    let errorMessage = '🚨 Unable to Load Subscription Options\n\n';
     
     const errorMsg = error.message || '';
     
@@ -532,7 +556,7 @@ export const presentPaywall = async (
     } else if (errorMsg.includes('network')) {
       errorMessage += 'Please check your internet connection and try again.';
     } else {
-      errorMessage += 'Please try again later or contact support.\n\nError: ' + errorMsg;
+      errorMessage += 'Please try again later or contact support.\n\n📋 Error: ' + errorMsg;
     }
 
     return { 
