@@ -98,6 +98,15 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     console.log('[RevenueCat] Platform:', Platform.OS);
     console.log('[RevenueCat] Environment:', __DEV__ ? 'Development' : 'Production');
     
+    // ⚠️ CRITICAL: RevenueCat only works on iOS and Android, not web
+    if (Platform.OS === 'web') {
+      console.log('[RevenueCat] ℹ️ Skipping initialization on web platform');
+      console.log('[RevenueCat] ℹ️ RevenueCat only works on iOS and Android');
+      initializationError = 'RevenueCat is not supported on web. Please use iOS or Android app.';
+      isPaymentSystemInitialized = false;
+      return false;
+    }
+    
     // Get the API key for the current platform
     const REVENUECAT_API_KEY = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
     
@@ -273,6 +282,10 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 export const initializePaymentSystem = initializeRevenueCat;
 
 export const isPaymentSystemAvailable = (): boolean => {
+  // RevenueCat is not available on web
+  if (Platform.OS === 'web') {
+    return false;
+  }
   return isPaymentSystemInitialized;
 };
 
@@ -282,11 +295,16 @@ export const getInitializationError = (): string | null => {
 
 export const checkPaymentConfiguration = (): boolean => {
   console.log('[RevenueCat] 🔍 Configuration Check:');
-  console.log('[RevenueCat]    - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat]    - Platform:', Platform.OS);
+  console.log('[RevenueCat]    - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat]    - Current Offering:', currentOffering?.identifier || 'None');
   console.log('[RevenueCat]    - Offering Packages:', currentOffering?.availablePackages.length || 0);
   console.log('[RevenueCat]    - Initialization Error:', initializationError || 'None');
+  
+  if (Platform.OS === 'web') {
+    console.log('[RevenueCat] ℹ️ RevenueCat is not supported on web');
+    return false;
+  }
   
   if (currentOffering && currentOffering.availablePackages.length > 0) {
     console.log('[RevenueCat] ✅ Configuration looks good!');
@@ -306,6 +324,20 @@ export const presentPaywall = async (
 ): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
   try {
     console.log('[RevenueCat] 🎯 Presenting paywall...');
+    
+    // Check if we're on web
+    if (Platform.OS === 'web') {
+      console.log('[RevenueCat] ℹ️ Paywall not available on web');
+      return {
+        state: 'error',
+        message: '📱 Mobile App Required\n\n' +
+                 'Subscriptions are only available in the iOS or Android app.\n\n' +
+                 'Please download the SurfVista app from:\n' +
+                 '• App Store (iOS)\n' +
+                 '• Google Play Store (Android)\n\n' +
+                 'to subscribe and access premium features.'
+      };
+    }
     
     if (!isPaymentSystemAvailable()) {
       console.error('[RevenueCat] ❌ Payment system not initialized');
@@ -570,6 +602,11 @@ export const presentCustomerCenter = async (): Promise<void> => {
   try {
     console.log('[RevenueCat] 🏢 Presenting Customer Center...');
     
+    // Check if we're on web
+    if (Platform.OS === 'web') {
+      throw new Error('Customer Center is only available in the mobile app.');
+    }
+    
     if (!isPaymentSystemAvailable()) {
       throw new Error('Payment system is not initialized. Please restart the app.');
     }
@@ -605,6 +642,14 @@ export const restorePurchases = async (): Promise<{
 }> => {
   try {
     console.log('[RevenueCat] 🔄 Restoring purchases...');
+
+    // Check if we're on web
+    if (Platform.OS === 'web') {
+      return {
+        success: false,
+        message: 'Restore purchases is only available in the mobile app.'
+      };
+    }
 
     if (!isPaymentSystemAvailable()) {
       throw new Error('Payment system is not initialized.');

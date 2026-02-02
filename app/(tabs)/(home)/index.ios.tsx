@@ -166,13 +166,6 @@ export default function HomeScreen() {
   const handleSubscribeNow = useCallback(async () => {
     console.log('[HomeScreen] Subscribe Now button tapped');
     
-    // Check if payment system is available FIRST
-    if (!isPaymentSystemAvailable()) {
-      console.log('[HomeScreen] Payment system not available - navigating to demo paywall');
-      router.push('/demo-paywall');
-      return;
-    }
-
     setIsSubscribing(true);
 
     try {
@@ -182,14 +175,6 @@ export default function HomeScreen() {
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
       console.log('[HomeScreen] Paywall result:', result);
-      
-      // Check if demo mode error
-      if (result.state === 'error' && result.message === 'DEMO_MODE') {
-        console.log('[HomeScreen] Demo mode detected - navigating to demo paywall');
-        router.push('/demo-paywall');
-        setIsSubscribing(false);
-        return;
-      }
       
       // Refresh profile to get updated subscription status
       await refreshProfile();
@@ -202,7 +187,7 @@ export default function HomeScreen() {
         );
       } else if (result.state === 'error') {
         Alert.alert(
-          'Subscribe Failed',
+          'Subscribe',
           result.message || 'Unable to complete purchase. Please try again.',
           [{ text: 'OK' }]
         );
@@ -211,18 +196,11 @@ export default function HomeScreen() {
       
     } catch (error: any) {
       console.error('[HomeScreen] Subscribe error:', error);
-      
-      // Check if it's a demo mode error
-      if (error?.message?.includes('DEMO_MODE')) {
-        console.log('[HomeScreen] Demo mode error caught - navigating to demo paywall');
-        router.push('/demo-paywall');
-      } else {
-        Alert.alert(
-          'Subscribe Failed',
-          error.message || 'Unable to open subscription page. Please try again later.',
-          [{ text: 'OK' }]
-        );
-      }
+      Alert.alert(
+        'Subscribe Failed',
+        error.message || 'Unable to open subscription page. Please try again later.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsSubscribing(false);
     }
