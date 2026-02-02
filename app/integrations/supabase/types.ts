@@ -45,6 +45,7 @@ export type Database = {
           created_at: string | null
           date: string
           id: string
+          location: string
           rating: number | null
           raw_data: Json | null
           source: string
@@ -58,6 +59,7 @@ export type Database = {
           created_at?: string | null
           date: string
           id?: string
+          location?: string
           rating?: number | null
           raw_data?: Json | null
           source: string
@@ -71,6 +73,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           id?: string
+          location?: string
           rating?: number | null
           raw_data?: Json | null
           source?: string
@@ -117,6 +120,7 @@ export type Database = {
           created_at: string | null
           date: string
           id: string
+          location: string
           swell_direction: string | null
           updated_at: string | null
           water_temp: string | null
@@ -130,6 +134,7 @@ export type Database = {
           created_at?: string | null
           date: string
           id?: string
+          location?: string
           swell_direction?: string | null
           updated_at?: string | null
           water_temp?: string | null
@@ -143,6 +148,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           id?: string
+          location?: string
           swell_direction?: string | null
           updated_at?: string | null
           water_temp?: string | null
@@ -163,6 +169,7 @@ export type Database = {
           edited_at: string | null
           edited_by: string | null
           id: string
+          location: string
           rating: number | null
           report_text: string | null
           swell_direction: string | null
@@ -185,6 +192,7 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           id?: string
+          location?: string
           rating?: number | null
           report_text?: string | null
           swell_direction?: string | null
@@ -207,6 +215,7 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           id?: string
+          location?: string
           rating?: number | null
           report_text?: string | null
           swell_direction?: string | null
@@ -228,6 +237,7 @@ export type Database = {
           date: string
           height: number
           id: string
+          location: string
           time: string
           type: string
           updated_at: string | null
@@ -237,6 +247,7 @@ export type Database = {
           date: string
           height: number
           id?: string
+          location?: string
           time: string
           type: string
           updated_at?: string | null
@@ -246,6 +257,7 @@ export type Database = {
           date?: string
           height?: number
           id?: string
+          location?: string
           time?: string
           type?: string
           updated_at?: string | null
@@ -260,6 +272,7 @@ export type Database = {
           duration_seconds: number | null
           file_size_bytes: number | null
           id: string
+          location: string
           resolution_height: number | null
           resolution_width: number | null
           thumbnail_url: string | null
@@ -275,6 +288,7 @@ export type Database = {
           duration_seconds?: number | null
           file_size_bytes?: number | null
           id?: string
+          location?: string
           resolution_height?: number | null
           resolution_width?: number | null
           thumbnail_url?: string | null
@@ -290,6 +304,7 @@ export type Database = {
           duration_seconds?: number | null
           file_size_bytes?: number | null
           id?: string
+          location?: string
           resolution_height?: number | null
           resolution_width?: number | null
           thumbnail_url?: string | null
@@ -309,6 +324,7 @@ export type Database = {
           forecast: string | null
           humidity: number | null
           id: string
+          location: string
           pressure: number | null
           raw_data: Json | null
           temperature: number | null
@@ -326,6 +342,7 @@ export type Database = {
           forecast?: string | null
           humidity?: number | null
           id?: string
+          location?: string
           pressure?: number | null
           raw_data?: Json | null
           temperature?: number | null
@@ -343,6 +360,7 @@ export type Database = {
           forecast?: string | null
           humidity?: number | null
           id?: string
+          location?: string
           pressure?: number | null
           raw_data?: Json | null
           temperature?: number | null
@@ -364,6 +382,7 @@ export type Database = {
           humidity: number | null
           icon: string | null
           id: string
+          location: string
           low_temp: number | null
           precipitation_chance: number | null
           swell_height_max: number | null
@@ -382,6 +401,7 @@ export type Database = {
           humidity?: number | null
           icon?: string | null
           id?: string
+          location?: string
           low_temp?: number | null
           precipitation_chance?: number | null
           swell_height_max?: number | null
@@ -400,6 +420,7 @@ export type Database = {
           humidity?: number | null
           icon?: string | null
           id?: string
+          location?: string
           low_temp?: number | null
           precipitation_chance?: number | null
           swell_height_max?: number | null

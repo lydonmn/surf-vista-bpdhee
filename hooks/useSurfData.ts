@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Database } from '@/app/integrations/supabase/types';
+import { useLocation } from '@/contexts/LocationContext';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
 type WeatherData = Database['public']['Tables']['weather_data']['Row'];
@@ -48,6 +49,7 @@ function getESTDate(): string {
 }
 
 export function useSurfData() {
+  const { currentLocation } = useLocation();
   const [state, setState] = useState<SurfDataState>({
     surfReports: [],
     weatherData: null,
@@ -74,30 +76,35 @@ export function useSurfData() {
       // Get current date in EST
       const today = getESTDate();
       
+      console.log('[useSurfData] Fetching data for location:', currentLocation);
       console.log('[useSurfData] Fetching data for EST date:', today);
       console.log('[useSurfData] Current UTC time:', new Date().toISOString());
 
-      // Fetch all data in parallel
+      // Fetch all data in parallel with location filter
       const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
         supabase
           .from('surf_reports')
           .select('*')
+          .eq('location', currentLocation)
           .order('date', { ascending: false })
           .limit(7),
         supabase
           .from('weather_data')
           .select('*')
+          .eq('location', currentLocation)
           .eq('date', today)
           .maybeSingle(),
         supabase
           .from('weather_forecast')
           .select('*')
+          .eq('location', currentLocation)
           .gte('date', today)
           .order('date', { ascending: true })
           .limit(7),
         supabase
           .from('tide_data')
           .select('*')
+          .eq('location', currentLocation)
           .gte('date', today)
           .order('date', { ascending: true })
           .order('time', { ascending: true }),
@@ -147,7 +154,7 @@ export function useSurfData() {
         throw tideResult.error;
       }
 
-      console.log('[useSurfData] Data fetched successfully');
+      console.log('[useSurfData] Data fetched successfully for location:', currentLocation);
 
       if (isMountedRef.current) {
         setState({
@@ -185,7 +192,7 @@ export function useSurfData() {
         }, RETRY_DELAY);
       }
     }
-  }, []); // Empty dependency array - this function doesn't depend on any props or state
+  }, [currentLocation]); // Add currentLocation as dependency
 
   const updateAllData = useCallback(async () => {
     if (!isMountedRef.current || isUpdatingRef.current) {
@@ -196,17 +203,17 @@ export function useSurfData() {
     try {
       isUpdatingRef.current = true;
       setState(prev => ({ ...prev, isLoading: true, error: null }));
-      console.log('[useSurfData] Updating all data via Edge Functions...');
+      console.log('[useSurfData] Updating all data via Edge Functions for location:', currentLocation);
 
       // Create an AbortController for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FUNCTION_TIMEOUT);
 
       try {
-        // Call the new unified edge function with timeout
+        // Call the unified edge function with location parameter
         const response = await Promise.race([
           supabase.functions.invoke('update-all-surf-data', {
-            body: {},
+            body: { location: currentLocation },
           }),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Request timeout - please try again')), FUNCTION_TIMEOUT)
@@ -306,7 +313,7 @@ export function useSurfData() {
     } finally {
       isUpdatingRef.current = false;
     }
-  }, [fetchData]);
+  }, [fetchData, currentLocation]);
 
   // Setup periodic refresh - memoized
   const setupPeriodicRefresh = useCallback(() => {
@@ -336,6 +343,12 @@ export function useSurfData() {
     appStateRef.current = nextAppState;
   }, [fetchData]);
 
+  // Refetch data when location changes
+  useEffect(() => {
+    console.log('[useSurfData] Location changed to:', currentLocation);
+    fetchData();
+  }, [currentLocation, fetchData]);
+
   useEffect(() => {
     console.log('[useSurfData] Initializing...');
     isMountedRef.current = true;
@@ -349,7 +362,7 @@ export function useSurfData() {
     // Setup app state listener
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
-    // Set up real-time subscription for surf reports
+    // Set up real-time subscription for surf reports with location filter
     const surfReportsSubscription = supabase
       .channel('surf_reports_changes')
       .on(
@@ -358,6 +371,7 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'surf_reports',
+          filter: `location=eq.${currentLocation}`,
         },
         () => {
           console.log('[useSurfData] Surf report updated, refreshing data...');
@@ -366,7 +380,7 @@ export function useSurfData() {
       )
       .subscribe();
 
-    // Set up real-time subscription for weather data
+    // Set up real-time subscription for weather data with location filter
     const weatherSubscription = supabase
       .channel('weather_data_changes')
       .on(
@@ -375,6 +389,7 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'weather_data',
+          filter: `location=eq.${currentLocation}`,
         },
         () => {
           console.log('[useSurfData] Weather data updated, refreshing data...');
@@ -383,7 +398,7 @@ export function useSurfData() {
       )
       .subscribe();
 
-    // Set up real-time subscription for weather forecast
+    // Set up real-time subscription for weather forecast with location filter
     const forecastSubscription = supabase
       .channel('weather_forecast_changes')
       .on(
@@ -392,6 +407,7 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'weather_forecast',
+          filter: `location=eq.${currentLocation}`,
         },
         () => {
           console.log('[useSurfData] Weather forecast updated, refreshing data...');
@@ -400,7 +416,7 @@ export function useSurfData() {
       )
       .subscribe();
 
-    // Set up real-time subscription for tide data
+    // Set up real-time subscription for tide data with location filter
     const tideSubscription = supabase
       .channel('tide_data_changes')
       .on(
@@ -409,6 +425,7 @@ export function useSurfData() {
           event: '*',
           schema: 'public',
           table: 'tide_data',
+          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
           console.log('[useSurfData] Tide data updated, payload:', payload);
@@ -439,7 +456,7 @@ export function useSurfData() {
       forecastSubscription.unsubscribe();
       tideSubscription.unsubscribe();
     };
-  }, [fetchData, handleAppStateChange, setupPeriodicRefresh]);
+  }, [fetchData, handleAppStateChange, setupPeriodicRefresh, currentLocation]);
 
   return {
     ...state,
