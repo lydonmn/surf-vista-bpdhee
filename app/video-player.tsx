@@ -305,6 +305,7 @@ export default function VideoPlayerScreen() {
           console.log('[VideoPlayer] Video ready, duration:', videoDuration.toFixed(2));
         }
         setDuration(videoDuration);
+        // Video is ready - definitely not buffering
         setIsBuffering(false);
       }
       
@@ -312,7 +313,13 @@ export default function VideoPlayerScreen() {
         if (__DEV__) {
           console.log('[VideoPlayer] Video buffering...');
         }
+        // Only show buffering if we're actually loading
         setIsBuffering(true);
+      }
+      
+      // When status changes to idle or error, clear buffering
+      if (status.status === 'idle' || status.status === 'error') {
+        setIsBuffering(false);
       }
     });
 
@@ -321,6 +328,14 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
       }
       setIsPlaying(newIsPlaying);
+      
+      // If video starts playing, it's definitely not buffering anymore
+      if (newIsPlaying) {
+        if (__DEV__) {
+          console.log('[VideoPlayer] Video playing - clearing buffering state');
+        }
+        setIsBuffering(false);
+      }
     });
 
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
@@ -343,11 +358,9 @@ export default function VideoPlayerScreen() {
         });
       }
 
-      if (player.status === 'loading') {
-        setIsBuffering(true);
-      } else {
-        setIsBuffering(false);
-      }
+      // If we're receiving time updates, the video is NOT buffering
+      // Time updates only fire when video is actively playing
+      setIsBuffering(false);
     });
 
     return () => {
