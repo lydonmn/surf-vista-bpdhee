@@ -70,6 +70,7 @@ export default function ReportScreen() {
     try {
       console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
       console.log('[ReportScreen] Current EST date for Charleston, SC:', todayDate);
+      console.log('[ReportScreen] Current location:', currentLocation);
       console.log('[ReportScreen] Total reports available:', surfReports.length);
       
       const todayReports = surfReports.filter(report => {
@@ -84,6 +85,7 @@ export default function ReportScreen() {
         const report = todayReports[0];
         console.log('[ReportScreen] ===== USING TODAY\'S REPORT =====');
         console.log('[ReportScreen] Report ID:', report.id);
+        console.log('[ReportScreen] Report location:', report.location);
         console.log('[ReportScreen] Has conditions:', !!report.conditions);
         console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
         return report;
@@ -95,7 +97,7 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [surfReports, todayDate]);
+  }, [surfReports, todayDate, currentLocation]);
 
   const lastValidReport = useMemo(() => {
     const sortedReports = [...surfReports].sort((a, b) => {
@@ -110,6 +112,7 @@ export default function ReportScreen() {
       totalReports: sortedReports.length,
       foundValid: !!validReport,
       validReportDate: validReport?.date,
+      validReportLocation: validReport?.location,
       validReportSurfHeight: validReport?.surf_height,
       validReportWaveHeight: validReport?.wave_height
     });
@@ -133,6 +136,7 @@ export default function ReportScreen() {
     if (todayReportWithNarrative) {
       console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized):', {
         date: todayReportWithNarrative.date,
+        location: todayReportWithNarrative.location,
         narrativeLength: todayReportWithNarrative.conditions?.length || todayReportWithNarrative.report_text?.length || 0,
         hasWaveData: hasValidSurfData(todayReportWithNarrative)
       });
@@ -147,6 +151,7 @@ export default function ReportScreen() {
     console.log('[ReportScreen] No today report, using most recent with narrative:', {
       found: !!reportWithNarrative,
       date: reportWithNarrative?.date,
+      location: reportWithNarrative?.location,
       narrativeLength: reportWithNarrative?.conditions?.length || reportWithNarrative?.report_text?.length || 0
     });
     
@@ -172,12 +177,13 @@ export default function ReportScreen() {
     try {
       setIsLoadingConditions(true);
       
-      console.log('[ReportScreen] Fetching surf conditions for Charleston, SC date:', todayDate);
+      console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, 'date:', todayDate);
       
       let { data, error } = await supabase
         .from('surf_conditions')
         .select('*')
         .eq('date', todayDate)
+        .eq('location', currentLocation)
         .maybeSingle();
 
       if (error) {
@@ -186,7 +192,7 @@ export default function ReportScreen() {
         console.log('[ReportScreen] Surf conditions loaded for today:', data);
         setSurfConditions(data);
       } else {
-        console.log('[ReportScreen] No surf conditions for today');
+        console.log('[ReportScreen] No surf conditions for today at location:', currentLocation);
         setSurfConditions(null);
       }
     } catch (error) {
@@ -194,17 +200,18 @@ export default function ReportScreen() {
     } finally {
       setIsLoadingConditions(false);
     }
-  }, [todayDate]);
+  }, [todayDate, currentLocation]);
 
   const loadLatestVideo = React.useCallback(async () => {
     try {
       setIsLoadingVideo(true);
       setVideoReady(false);
-      console.log('[ReportScreen] Fetching latest video...');
+      console.log('[ReportScreen] Fetching latest video for location:', currentLocation);
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
         .select('*')
+        .eq('location', currentLocation)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -212,10 +219,10 @@ export default function ReportScreen() {
       if (videoError) {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
-        console.log('[ReportScreen] Video loaded:', videoData.title);
+        console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location);
         setLatestVideo(videoData);
       } else {
-        console.log('[ReportScreen] No videos found');
+        console.log('[ReportScreen] No videos found for location:', currentLocation);
         setLatestVideo(null);
       }
     } catch (error) {
@@ -223,7 +230,7 @@ export default function ReportScreen() {
     } finally {
       setIsLoadingVideo(false);
     }
-  }, []);
+  }, [currentLocation]);
 
   useEffect(() => {
     console.log('[ReportScreen] Auth state:', {
@@ -260,7 +267,14 @@ export default function ReportScreen() {
         },
         (payload) => {
           console.log('[ReportScreen] Surf conditions updated:', payload);
-          fetchSurfConditions();
+          // Only refresh if the change is for the current location
+          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
+            console.log('[ReportScreen] Surf conditions for current location updated, refreshing...');
+            fetchSurfConditions();
+          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
+            console.log('[ReportScreen] Surf conditions for current location deleted, refreshing...');
+            fetchSurfConditions();
+          }
         }
       )
       .subscribe();
@@ -269,10 +283,10 @@ export default function ReportScreen() {
       console.log('[ReportScreen] Cleaning up real-time subscription');
       subscription.unsubscribe();
     };
-  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation]);
 
   const handleRefresh = async () => {
-    console.log('[ReportScreen] User initiated refresh');
+    console.log('[ReportScreen] User initiated refresh for location:', currentLocation);
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo(), fetchSurfConditions()]);
     setIsRefreshing(false);
@@ -281,12 +295,19 @@ export default function ReportScreen() {
   const handleUpdateData = async () => {
     setIsRefreshing(true);
     try {
-      console.log('[ReportScreen] Starting data update...');
+      console.log('[ReportScreen] Starting data update for location:', currentLocation);
       await updateAllData();
       console.log('[ReportScreen] Data update completed successfully');
+      
+      // Wait a moment for the database to update
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Force refresh the data
+      await Promise.all([refreshData(), fetchSurfConditions()]);
+      
       Alert.alert(
         'Update Complete',
-        'Surf data has been updated from NOAA. Pull down to refresh the display.',
+        `Surf data has been updated from NOAA for ${locationData.displayName}. The display has been refreshed.`,
         [{ text: 'OK' }]
       );
     } catch (error) {
@@ -407,6 +428,8 @@ export default function ReportScreen() {
     console.log('[ReportScreen] ===== RENDER REPORT CARD =====');
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
+    console.log('[ReportScreen] Report location:', report.location);
+    console.log('[ReportScreen] Current location:', currentLocation);
     console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
     console.log('[ReportScreen] Display data surf_height:', displayData.surf_height);
     console.log('[ReportScreen] Display data wave_height:', displayData.wave_height);
@@ -979,7 +1002,7 @@ export default function ReportScreen() {
         ) : (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos available yet
+              No videos available yet for {locationData.displayName}
             </Text>
           </View>
         )}
@@ -997,16 +1020,16 @@ export default function ReportScreen() {
             Live surf conditions are automatically updated from official NOAA data sources - the most reliable and accurate surf and weather data available.
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
-            <Text style={{ fontWeight: 'bold' }}>Data Sources:</Text>
+            <Text style={{ fontWeight: 'bold' }}>Data Sources for {locationData.displayName}:</Text>
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-            • NOAA Buoy 41004 (Edisto, SC) - Wave height, period, swell direction
+            • NOAA Buoy {locationData.buoyId} - Wave height, period, swell direction
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
             • NOAA Weather Service - Forecasts and wind conditions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-            • NOAA Tides & Currents (Charleston) - Tide predictions
+            • NOAA Tides & Currents (Station {locationData.tideStationId}) - Tide predictions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
             Surf height shown is the rideable face height (calculated from wave height and period). When wave sensors are temporarily offline, wind and water temperature data are still available from the buoy.

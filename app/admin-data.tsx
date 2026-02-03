@@ -126,6 +126,9 @@ export default function AdminDataScreen() {
       } else if (response.data?.success) {
         addLog(`✅ Daily update completed successfully for ${locationData.displayName}!`, 'success');
         Alert.alert('Success', `Daily update completed for ${locationData.displayName}! Data refreshed and new report generated.`);
+        
+        // Wait for database to update, then reload counts
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Daily update failed';
@@ -170,6 +173,7 @@ export default function AdminDataScreen() {
     setIsLoading(true);
     addLog(`Starting periodic data update for ${locationData.displayName} (no report generation)...`);
     addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
+    addLog(`📍 Location: ${currentLocation}`, 'info');
 
     try {
       const response = await supabase.functions.invoke('update-all-surf-data', {
@@ -177,7 +181,7 @@ export default function AdminDataScreen() {
       });
       
       console.log('Update response:', response);
-      addLog(`Update response received: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      addLog(`Update response received: ${JSON.stringify(response.data).substring(0, 200)}...`);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -196,6 +200,9 @@ export default function AdminDataScreen() {
           Alert.alert('Error', errorMsg);
         }
       } else if (response.data) {
+        // Log the full response for debugging
+        addLog(`📊 Full response: ${JSON.stringify(response.data, null, 2)}`, 'info');
+        
         if (response.data.success) {
           addLog(`✅ All data updated successfully for ${locationData.displayName}!`, 'success');
           
@@ -254,11 +261,16 @@ export default function AdminDataScreen() {
           }
           
           Alert.alert('Success', response.data.message || `Data updated successfully for ${locationData.displayName}`);
+          
+          // Wait for database to update, then reload counts
+          await new Promise(resolve => setTimeout(resolve, 2000));
           await loadDataCounts();
         } else {
           const errorMsg = response.data.error || 'Update failed';
           const errors = response.data.errors || [];
           const fullError = errors.length > 0 ? `${errorMsg}: ${errors.join(', ')}` : errorMsg;
+          
+          addLog(`❌ Update returned success=false: ${fullError}`, 'error');
           
           // Check for timeout errors
           if (fullError.includes('timeout') || fullError.includes('timed out') || fullError.includes('slow')) {
@@ -335,6 +347,10 @@ export default function AdminDataScreen() {
             
             Alert.alert('Update Failed', fullError);
           }
+          
+          // Still reload counts to see if any data was inserted
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await loadDataCounts();
         }
       }
     } catch (error) {
@@ -362,6 +378,7 @@ export default function AdminDataScreen() {
   const handleGenerateReport = async () => {
     setIsLoading(true);
     addLog(`Generating new surf report for ${locationData.displayName}...`);
+    addLog(`📍 Location: ${currentLocation}`, 'info');
 
     try {
       const response = await supabase.functions.invoke('generate-daily-report', {
@@ -369,7 +386,7 @@ export default function AdminDataScreen() {
       });
       
       console.log('Generate report response:', response);
-      addLog(`Generate report response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      addLog(`Generate report response: ${JSON.stringify(response.data).substring(0, 200)}...`);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -386,6 +403,8 @@ export default function AdminDataScreen() {
           Alert.alert('Success', response.data.message || 'Surf report generated successfully');
         }
         
+        // Wait for database to update, then reload counts
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to generate report';
@@ -416,6 +435,7 @@ export default function AdminDataScreen() {
   const handleFetchWeather = async () => {
     setIsLoading(true);
     addLog(`Fetching weather data for ${locationData.displayName}...`);
+    addLog(`📍 Location: ${currentLocation}`, 'info');
     addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
@@ -424,7 +444,7 @@ export default function AdminDataScreen() {
       });
       
       console.log('Weather response:', response);
-      addLog(`Weather response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      addLog(`Weather response: ${JSON.stringify(response.data).substring(0, 200)}...`);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -445,6 +465,9 @@ export default function AdminDataScreen() {
       } else if (response.data?.success) {
         addLog(`✅ Weather fetch successful for ${locationData.displayName}: ${response.data.forecast_periods || 0} forecast periods`, 'success');
         Alert.alert('Success', response.data.message || `Weather data fetched successfully for ${locationData.displayName}`);
+        
+        // Wait for database to update, then reload counts
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch weather data';
@@ -488,6 +511,7 @@ export default function AdminDataScreen() {
   const handleFetchTides = async () => {
     setIsLoading(true);
     addLog(`Fetching tide data for ${locationData.displayName}...`);
+    addLog(`📍 Location: ${currentLocation}`, 'info');
     addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
@@ -496,7 +520,7 @@ export default function AdminDataScreen() {
       });
       
       console.log('Tide response:', response);
-      addLog(`Tide response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      addLog(`Tide response: ${JSON.stringify(response.data).substring(0, 200)}...`);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -517,6 +541,9 @@ export default function AdminDataScreen() {
       } else if (response.data?.success) {
         addLog(`✅ Tide fetch successful for ${locationData.displayName}: ${response.data.count || 0} records`, 'success');
         Alert.alert('Success', response.data.message || `Tide data fetched successfully for ${locationData.displayName}`);
+        
+        // Wait for database to update, then reload counts
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch tide data';
@@ -560,6 +587,7 @@ export default function AdminDataScreen() {
   const handleFetchSurf = async () => {
     setIsLoading(true);
     addLog(`Fetching surf report data for ${locationData.displayName}...`);
+    addLog(`📍 Location: ${currentLocation}`, 'info');
     addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
@@ -568,7 +596,7 @@ export default function AdminDataScreen() {
       });
       
       console.log('Surf response:', response);
-      addLog(`Surf response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      addLog(`Surf response: ${JSON.stringify(response.data).substring(0, 200)}...`);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -589,6 +617,9 @@ export default function AdminDataScreen() {
       } else if (response.data?.success) {
         addLog(`✅ Surf fetch successful for ${locationData.displayName}: Found ${response.data.data?.wave_height || 'N/A'}`, 'success');
         Alert.alert('Success', response.data.message || `Surf data fetched successfully for ${locationData.displayName}`);
+        
+        // Wait for database to update, then reload counts
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch surf data';
