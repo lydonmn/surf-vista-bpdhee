@@ -27,7 +27,7 @@ interface ActivityLog {
   id: string;
   timestamp: string;
   message: string;
-  type: 'info' | 'success' | 'error';
+  type: 'info' | 'success' | 'error' | 'warning';
 }
 
 export default function AdminDataScreen() {
@@ -43,7 +43,7 @@ export default function AdminDataScreen() {
   });
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
 
-  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     const id = `${Date.now()}-${Math.random()}`;
@@ -97,6 +97,7 @@ export default function AdminDataScreen() {
   const handleTriggerDailyUpdate = async () => {
     setIsLoading(true);
     addLog(`Manually triggering daily update for ${locationData.displayName} (same as 5 AM automatic update)...`);
+    addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
 
     try {
       const response = await supabase.functions.invoke('daily-update-cron', {
@@ -108,22 +109,58 @@ export default function AdminDataScreen() {
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Daily update error: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout errors
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+          addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
+          addLog(`💡 Tip: Try again in a few minutes. NOAA servers can be slow during peak hours.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Daily update error: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       } else if (response.data?.success) {
         addLog(`✅ Daily update completed successfully for ${locationData.displayName}!`, 'success');
         Alert.alert('Success', `Daily update completed for ${locationData.displayName}! Data refreshed and new report generated.`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Daily update failed';
-        addLog(`❌ Daily update failed: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout in response data
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
+          addLog(`⏱️ ${errorMsg}`, 'warning');
+          addLog(`💡 Tip: NOAA servers can be slow. The update may complete in the background.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            `${errorMsg}\n\nThe data update may still complete in the background. Try refreshing in a few minutes.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Daily update failed: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       }
     } catch (error) {
       console.error('Error triggering daily update:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Daily update exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to trigger daily update: ${errorMsg}`);
+      
+      // Check for timeout errors
+      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+        addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
+        addLog(`💡 Tip: Try again in a few minutes. The update may complete in the background.`, 'info');
+        Alert.alert(
+          'Request Timed Out',
+          'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        addLog(`❌ Daily update exception: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Failed to trigger daily update: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -132,6 +169,7 @@ export default function AdminDataScreen() {
   const handleUpdateAll = async () => {
     setIsLoading(true);
     addLog(`Starting periodic data update for ${locationData.displayName} (no report generation)...`);
+    addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
 
     try {
       const response = await supabase.functions.invoke('update-all-surf-data', {
@@ -143,8 +181,20 @@ export default function AdminDataScreen() {
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`Error: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout errors
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+          addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
+          addLog(`💡 Tip: Try again in a few minutes. NOAA servers can be slow during peak hours.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Error: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       } else if (response.data) {
         if (response.data.success) {
           addLog(`✅ All data updated successfully for ${locationData.displayName}!`, 'success');
@@ -155,19 +205,45 @@ export default function AdminDataScreen() {
             if (results.weather?.success) {
               addLog(`✅ Weather fetch successful: ${results.weather.message || 'OK'}`, 'success');
             } else if (results.weather) {
-              addLog(`❌ Weather fetch failed: ${results.weather.error}`, 'error');
+              const weatherError = results.weather.error || 'Unknown error';
+              if (weatherError.includes('timeout') || weatherError.includes('timed out')) {
+                addLog(`⏱️ Weather fetch timed out (NOAA servers slow)`, 'warning');
+              } else {
+                addLog(`❌ Weather fetch failed: ${weatherError}`, 'error');
+              }
             }
             
             if (results.tide?.success) {
               addLog(`✅ Tide fetch successful: ${results.tide.count || 0} records`, 'success');
             } else if (results.tide) {
-              addLog(`❌ Tide fetch failed: ${results.tide.error}`, 'error');
+              const tideError = results.tide.error || 'Unknown error';
+              if (tideError.includes('timeout') || tideError.includes('timed out')) {
+                addLog(`⏱️ Tide fetch timed out (NOAA servers slow)`, 'warning');
+              } else {
+                addLog(`❌ Tide fetch failed: ${tideError}`, 'error');
+              }
             }
             
             if (results.surf?.success) {
               addLog(`✅ Surf fetch successful: Found ${results.surf.data?.wave_height || 'N/A'}`, 'success');
             } else if (results.surf) {
-              addLog(`❌ Surf fetch failed: ${results.surf.error}`, 'error');
+              const surfError = results.surf.error || 'Unknown error';
+              if (surfError.includes('timeout') || surfError.includes('timed out')) {
+                addLog(`⏱️ Surf fetch timed out (NOAA servers slow)`, 'warning');
+              } else {
+                addLog(`❌ Surf fetch failed: ${surfError}`, 'error');
+              }
+            }
+            
+            if (results.surfForecast?.success) {
+              addLog(`✅ 7-day surf forecast successful`, 'success');
+            } else if (results.surfForecast) {
+              const forecastError = results.surfForecast.error || 'Unknown error';
+              if (forecastError.includes('timeout') || forecastError.includes('timed out')) {
+                addLog(`⏱️ Surf forecast timed out (NOAA servers slow)`, 'warning');
+              } else {
+                addLog(`❌ Surf forecast failed: ${forecastError}`, 'error');
+              }
             }
             
             if (results.report?.success) {
@@ -184,33 +260,100 @@ export default function AdminDataScreen() {
           const errors = response.data.errors || [];
           const fullError = errors.length > 0 ? `${errorMsg}: ${errors.join(', ')}` : errorMsg;
           
-          addLog(`❌ Update failed: ${fullError}`, 'error');
-          
-          // Show detailed error breakdown
-          if (response.data.results) {
-            const results = response.data.results;
-            if (results.weather && !results.weather.success) {
-              addLog(`❌ Weather: ${results.weather.error || 'Unknown error'}`, 'error');
+          // Check for timeout errors
+          if (fullError.includes('timeout') || fullError.includes('timed out') || fullError.includes('slow')) {
+            addLog(`⏱️ Update timed out: ${fullError}`, 'warning');
+            addLog(`💡 Tip: NOAA servers can be slow. Some data may have been updated successfully.`, 'info');
+            
+            // Show detailed error breakdown
+            if (response.data.results) {
+              const results = response.data.results;
+              if (results.weather && !results.weather.success) {
+                const weatherError = results.weather.error || 'Unknown error';
+                if (weatherError.includes('timeout') || weatherError.includes('timed out')) {
+                  addLog(`⏱️ Weather: Timed out`, 'warning');
+                } else {
+                  addLog(`❌ Weather: ${weatherError}`, 'error');
+                }
+              }
+              if (results.tide && !results.tide.success) {
+                const tideError = results.tide.error || 'Unknown error';
+                if (tideError.includes('timeout') || tideError.includes('timed out')) {
+                  addLog(`⏱️ Tide: Timed out`, 'warning');
+                } else {
+                  addLog(`❌ Tide: ${tideError}`, 'error');
+                }
+              }
+              if (results.surf && !results.surf.success) {
+                const surfError = results.surf.error || 'Unknown error';
+                if (surfError.includes('timeout') || surfError.includes('timed out')) {
+                  addLog(`⏱️ Surf: Timed out`, 'warning');
+                } else {
+                  addLog(`❌ Surf: ${surfError}`, 'error');
+                }
+              }
+              if (results.surfForecast && !results.surfForecast.success) {
+                const forecastError = results.surfForecast.error || 'Unknown error';
+                if (forecastError.includes('timeout') || forecastError.includes('timed out')) {
+                  addLog(`⏱️ Surf Forecast: Timed out`, 'warning');
+                } else {
+                  addLog(`❌ Surf Forecast: ${forecastError}`, 'error');
+                }
+              }
+              if (results.report && !results.report.success) {
+                addLog(`⚠️ Report: ${results.report.error || 'Unknown error'}`, 'info');
+              }
             }
-            if (results.tide && !results.tide.success) {
-              addLog(`❌ Tide: ${results.tide.error || 'Unknown error'}`, 'error');
+            
+            Alert.alert(
+              'Request Timed Out',
+              'NOAA servers are responding slowly. Some data may have been updated successfully.\n\nTry refreshing in a few minutes to see the latest data.',
+              [{ text: 'OK' }]
+            );
+          } else {
+            addLog(`❌ Update failed: ${fullError}`, 'error');
+            
+            // Show detailed error breakdown
+            if (response.data.results) {
+              const results = response.data.results;
+              if (results.weather && !results.weather.success) {
+                addLog(`❌ Weather: ${results.weather.error || 'Unknown error'}`, 'error');
+              }
+              if (results.tide && !results.tide.success) {
+                addLog(`❌ Tide: ${results.tide.error || 'Unknown error'}`, 'error');
+              }
+              if (results.surf && !results.surf.success) {
+                addLog(`❌ Surf: ${results.surf.error || 'Unknown error'}`, 'error');
+              }
+              if (results.surfForecast && !results.surfForecast.success) {
+                addLog(`❌ Surf Forecast: ${results.surfForecast.error || 'Unknown error'}`, 'error');
+              }
+              if (results.report && !results.report.success) {
+                addLog(`⚠️ Report: ${results.report.error || 'Unknown error'}`, 'info');
+              }
             }
-            if (results.surf && !results.surf.success) {
-              addLog(`❌ Surf: ${results.surf.error || 'Unknown error'}`, 'error');
-            }
-            if (results.report && !results.report.success) {
-              addLog(`⚠️ Report: ${results.report.error || 'Unknown error'}`, 'info');
-            }
+            
+            Alert.alert('Update Failed', fullError);
           }
-          
-          Alert.alert('Update Failed', fullError);
         }
       }
     } catch (error) {
       console.error('Error updating data:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to update data: ${errorMsg}`);
+      
+      // Check for timeout errors
+      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+        addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
+        addLog(`💡 Tip: Try again in a few minutes. The update may complete in the background.`, 'info');
+        Alert.alert(
+          'Request Timed Out',
+          'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        addLog(`❌ Exception: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Failed to update data: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -273,6 +416,7 @@ export default function AdminDataScreen() {
   const handleFetchWeather = async () => {
     setIsLoading(true);
     addLog(`Fetching weather data for ${locationData.displayName}...`);
+    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
       const response = await supabase.functions.invoke('fetch-weather-data', {
@@ -284,22 +428,58 @@ export default function AdminDataScreen() {
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Weather error: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout errors
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+          addLog(`⏱️ Weather fetch timed out - NOAA servers are responding slowly`, 'warning');
+          addLog(`💡 Tip: Try again in a few minutes. NOAA servers can be slow during peak hours.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            'NOAA weather servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Weather error: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       } else if (response.data?.success) {
-        addLog(`✅ Weather fetch successful for ${locationData.displayName}: ${response.data.forecast_count || 0} forecast periods`, 'success');
+        addLog(`✅ Weather fetch successful for ${locationData.displayName}: ${response.data.forecast_periods || 0} forecast periods`, 'success');
         Alert.alert('Success', response.data.message || `Weather data fetched successfully for ${locationData.displayName}`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch weather data';
-        addLog(`❌ Weather failed: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout in response data
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
+          addLog(`⏱️ Weather fetch timed out: ${errorMsg}`, 'warning');
+          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            `${errorMsg}\n\nNOAA weather servers are responding slowly. Try again in a few minutes.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Weather failed: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       }
     } catch (error) {
       console.error('Error fetching weather:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Weather exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to fetch weather: ${errorMsg}`);
+      
+      // Check for timeout errors
+      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+        addLog(`⏱️ Weather fetch timed out - NOAA servers are responding slowly`, 'warning');
+        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
+        Alert.alert(
+          'Request Timed Out',
+          'NOAA weather servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        addLog(`❌ Weather exception: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Failed to fetch weather: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -308,6 +488,7 @@ export default function AdminDataScreen() {
   const handleFetchTides = async () => {
     setIsLoading(true);
     addLog(`Fetching tide data for ${locationData.displayName}...`);
+    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
       const response = await supabase.functions.invoke('fetch-tide-data', {
@@ -319,22 +500,58 @@ export default function AdminDataScreen() {
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Tide error: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout errors
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+          addLog(`⏱️ Tide fetch timed out - NOAA servers are responding slowly`, 'warning');
+          addLog(`💡 Tip: Try again in a few minutes.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            'NOAA tide servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Tide error: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       } else if (response.data?.success) {
         addLog(`✅ Tide fetch successful for ${locationData.displayName}: ${response.data.count || 0} records`, 'success');
         Alert.alert('Success', response.data.message || `Tide data fetched successfully for ${locationData.displayName}`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch tide data';
-        addLog(`❌ Tide failed: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        
+        // Check for timeout in response data
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
+          addLog(`⏱️ Tide fetch timed out: ${errorMsg}`, 'warning');
+          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            `${errorMsg}\n\nNOAA tide servers are responding slowly. Try again in a few minutes.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Tide failed: ${errorMsg}`, 'error');
+          Alert.alert('Error', errorMsg);
+        }
       }
     } catch (error) {
       console.error('Error fetching tides:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Tide exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to fetch tides: ${errorMsg}`);
+      
+      // Check for timeout errors
+      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+        addLog(`⏱️ Tide fetch timed out - NOAA servers are responding slowly`, 'warning');
+        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
+        Alert.alert(
+          'Request Timed Out',
+          'NOAA tide servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        addLog(`❌ Tide exception: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Failed to fetch tides: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -343,6 +560,7 @@ export default function AdminDataScreen() {
   const handleFetchSurf = async () => {
     setIsLoading(true);
     addLog(`Fetching surf report data for ${locationData.displayName}...`);
+    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
 
     try {
       const response = await supabase.functions.invoke('fetch-surf-reports', {
@@ -354,8 +572,20 @@ export default function AdminDataScreen() {
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Surf error: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+        
+        // Check for timeout errors
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+          addLog(`⏱️ Surf fetch timed out - NOAA servers are responding slowly`, 'warning');
+          addLog(`💡 Tip: Try again in a few minutes.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            'NOAA buoy servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Surf error: ${errorMsg}`, 'error');
+          Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+        }
       } else if (response.data?.success) {
         addLog(`✅ Surf fetch successful for ${locationData.displayName}: Found ${response.data.data?.wave_height || 'N/A'}`, 'success');
         Alert.alert('Success', response.data.message || `Surf data fetched successfully for ${locationData.displayName}`);
@@ -363,14 +593,38 @@ export default function AdminDataScreen() {
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch surf data';
         const details = response.data?.details ? `\n\nDetails: ${response.data.details}` : '';
-        addLog(`❌ Surf failed: ${errorMsg}${details}`, 'error');
-        Alert.alert('Error', `Edge Function returned a non-2xx status code\n\n${errorMsg}${details}`);
+        
+        // Check for timeout in response data
+        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
+          addLog(`⏱️ Surf fetch timed out: ${errorMsg}`, 'warning');
+          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
+          Alert.alert(
+            'Request Timed Out',
+            `${errorMsg}\n\nNOAA buoy servers are responding slowly. Try again in a few minutes.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          addLog(`❌ Surf failed: ${errorMsg}${details}`, 'error');
+          Alert.alert('Error', `Edge Function returned a non-2xx status code\n\n${errorMsg}${details}`);
+        }
       }
     } catch (error) {
       console.error('Error fetching surf:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Surf exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+      
+      // Check for timeout errors
+      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
+        addLog(`⏱️ Surf fetch timed out - NOAA servers are responding slowly`, 'warning');
+        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
+        Alert.alert(
+          'Request Timed Out',
+          'NOAA buoy servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        addLog(`❌ Surf exception: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -565,6 +819,7 @@ The system will automatically generate a new surf report every morning at 5 AM E
                         styles.logMessage,
                         log.type === 'error' && styles.logError,
                         log.type === 'success' && styles.logSuccess,
+                        log.type === 'warning' && styles.logWarning,
                       ]}>
                         {log.message}
                       </Text>
@@ -723,6 +978,9 @@ const styles = StyleSheet.create({
   },
   logSuccess: {
     color: '#44ff44',
+  },
+  logWarning: {
+    color: '#ffaa00',
   },
   infoCard: {
     backgroundColor: colors.card,
