@@ -162,7 +162,8 @@ function generateReportText(
   weatherData: any, 
   tideSummary: string, 
   rating: number,
-  historicalDate: string | null = null
+  historicalDate: string | null = null,
+  tideData: any[] = []
 ): string {
   try {
     const heightStr = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
@@ -187,15 +188,16 @@ function generateReportText(
       historicalNote = ` (Note: Wave sensors are currently offline, using wave data from ${historicalDate}. Current wind and water conditions are up to date.)`;
     }
 
-    // Build the report with better structure
+    // Build the report with comprehensive details
     let report = '';
 
-    // Opening based on rating
+    // Opening based on rating with more context
     if (rating >= 8) {
       const openings = [
         'It\'s absolutely firing out there!',
         'Epic conditions today!',
         'You gotta see this - it\'s going off!',
+        'Premium surf conditions right now!',
       ];
       report += selectRandom(openings);
     } else if (rating >= 6) {
@@ -203,6 +205,7 @@ function generateReportText(
         'Looking pretty fun out there today.',
         'Decent waves rolling through.',
         'Not bad at all - worth checking out.',
+        'Solid conditions for a session.',
       ];
       report += selectRandom(openings);
     } else if (rating >= 4) {
@@ -210,6 +213,7 @@ function generateReportText(
         'Small but rideable conditions.',
         'Pretty mellow out there.',
         'Not much size but it\'s clean.',
+        'Manageable conditions for all levels.',
       ];
       report += selectRandom(openings);
     } else {
@@ -217,86 +221,197 @@ function generateReportText(
         'Pretty flat today.',
         'Not much happening.',
         'Minimal surf conditions.',
+        'Small day at the beach.',
       ];
       report += selectRandom(openings);
     }
 
     report += historicalNote + ' ';
 
-    // Wave description
+    // DETAILED SURF SIZE AND CONDITIONS
+    report += '\n\n🌊 SURF CONDITIONS: ';
+    
+    // Detailed wave height description
     if (surfHeight >= 7) {
+      report += `We're seeing a massive ${swellDir} swell with waves stacking up overhead at ${heightStr} feet. `;
       if (isClean) {
-        report += `Massive ${swellDir} swell rolling in, waves are stacking up overhead and peeling perfectly. `;
+        report += `The faces are clean and well-formed, offering powerful rides with plenty of push. `;
       } else {
-        report += `Big ${swellDir} swell but the wind is tearing it apart, overhead but pretty messy. `;
+        report += `However, the wind is creating some texture on the faces, making it challenging but still rideable for experienced surfers. `;
       }
     } else if (surfHeight >= 4.5) {
+      report += `A solid ${swellDir} swell is delivering chest to head high waves at ${heightStr} feet. `;
       if (isClean) {
-        report += `Nice ${swellDir} swell, waves are chest to head high and looking super clean. `;
+        report += `The wave faces are glassy and well-shaped, perfect for carving and generating speed. `;
       } else {
-        report += `${swellDir} swell but the wind is adding some texture, chest high but a bit bumpy. `;
+        report += `There's some wind chop on the faces, but the size makes up for it with plenty of power. `;
       }
     } else if (surfHeight >= 2) {
+      report += `A small ${swellDir} swell is producing waist to chest high waves at ${heightStr} feet. `;
       if (isClean) {
-        report += `Small ${swellDir} swell, waves are waist high and clean. `;
+        report += `The conditions are clean and organized, ideal for practicing maneuvers and longboarding. `;
       } else {
-        report += `Small ${swellDir} swell and the wind isn\'t helping, waist high but choppy. `;
+        report += `The wind is adding some bump to the faces, making it a bit choppy but still fun. `;
+      }
+    } else if (surfHeight >= 1) {
+      report += `Minimal swell with ankle to knee high waves at ${heightStr} feet. `;
+      if (isClean) {
+        report += `Despite the small size, the faces are smooth - perfect for beginners or longboard cruising. `;
+      } else {
+        report += `The small size combined with wind chop makes it challenging, best for practicing pop-ups. `;
       }
     } else {
-      report += `Minimal swell, ankle to knee high at best. `;
+      report += `Very minimal swell with waves barely reaching ankle high at ${heightStr} feet. `;
+      report += `Better suited for swimming or stand-up paddleboarding than surfing today. `;
     }
 
-    // Wind and conditions
-    if (isOffshore && windSpeed < 10) {
-      report += `Light offshore winds at ${windSpeed} mph from the ${windDir} are grooming the faces nicely. `;
-    } else if (isOffshore && windSpeed < 15) {
-      report += `Offshore winds at ${windSpeed} mph from the ${windDir} are keeping it clean. `;
-    } else if (!isOffshore && windSpeed < 8) {
-      report += `Light onshore winds at ${windSpeed} mph from the ${windDir}, not too bad. `;
-    } else if (!isOffshore) {
-      report += `Onshore winds at ${windSpeed} mph from the ${windDir} are making it bumpy. `;
-    }
-
-    // Period info
+    // DETAILED WAVE PERIOD AND QUALITY
     if (periodNum >= 12) {
-      report += `Long period swell at ${period} means powerful waves with good shape. `;
+      report += `The wave period is ${period} seconds, which is excellent - these are long-period groundswells that pack serious punch and create well-defined sets with clean intervals between waves. `;
+    } else if (periodNum >= 10) {
+      report += `Wave period is ${period} seconds, indicating a good quality swell with decent power and organized sets. `;
     } else if (periodNum >= 8) {
-      report += `Decent period at ${period} giving the waves some push. `;
+      report += `Wave period is ${period} seconds, providing moderate energy with reasonably spaced sets. `;
+    } else if (periodNum >= 6) {
+      report += `Wave period is ${period} seconds, which is on the shorter side - expect more frequent but less powerful waves with shorter rides. `;
     } else if (periodNum > 0) {
-      report += `Short period at ${period}, waves are a bit choppy. `;
+      report += `Short wave period at ${period} seconds means choppy, wind-driven waves with limited power and quick, bumpy rides. `;
     }
 
-    // Weather and water temp
-    const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
-    report += `Weather is ${weatherConditions.toLowerCase()} and water temp is ${waterTemp}. `;
+    // DETAILED WIND CONDITIONS
+    report += '\n\n💨 WIND CONDITIONS: ';
+    
+    if (isOffshore) {
+      if (windSpeed < 5) {
+        report += `Nearly calm offshore winds at ${windSpeed} mph from the ${windDir} are creating pristine, glassy conditions. The wave faces are smooth as silk, allowing for maximum performance and clean barrels. `;
+      } else if (windSpeed < 10) {
+        report += `Light offshore winds at ${windSpeed} mph from the ${windDir} are grooming the wave faces beautifully. Expect clean, well-shaped waves with excellent form and hollow sections. `;
+      } else if (windSpeed < 15) {
+        report += `Moderate offshore winds at ${windSpeed} mph from the ${windDir} are holding up the wave faces and creating some nice barrel opportunities, though it might get a bit gusty. `;
+      } else if (windSpeed < 20) {
+        report += `Strong offshore winds at ${windSpeed} mph from the ${windDir} are blowing hard - while this cleans up the faces, it can make paddling out challenging and blow out the tops of waves. `;
+      } else {
+        report += `Very strong offshore winds at ${windSpeed} mph from the ${windDir} are creating difficult conditions. The wind is so strong it's blowing the tops off waves and making it hard to paddle. `;
+      }
+    } else {
+      if (windSpeed < 5) {
+        report += `Nearly calm onshore winds at ${windSpeed} mph from the ${windDir} aren't causing much texture. Conditions are relatively smooth despite the wind direction. `;
+      } else if (windSpeed < 8) {
+        report += `Light onshore winds at ${windSpeed} mph from the ${windDir} are adding slight texture to the faces but nothing too disruptive. Still very surfable. `;
+      } else if (windSpeed < 12) {
+        report += `Moderate onshore winds at ${windSpeed} mph from the ${windDir} are creating noticeable chop on the wave faces. Expect bumpy rides and less defined shape. `;
+      } else if (windSpeed < 18) {
+        report += `Strong onshore winds at ${windSpeed} mph from the ${windDir} are making conditions quite choppy and disorganized. The waves are breaking irregularly with lots of texture. `;
+      } else {
+        report += `Very strong onshore winds at ${windSpeed} mph from the ${windDir} are creating blown-out conditions. The waves are messy, choppy, and breaking unpredictably. `;
+      }
+    }
 
-    // Closing recommendation
+    // DETAILED WEATHER CONDITIONS
+    report += '\n\n☀️ WEATHER: ';
+    const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
+    const temp = weatherData.temperature ? `${weatherData.temperature}°F` : 'temperature unavailable';
+    
+    report += `Current conditions are ${weatherConditions.toLowerCase()}`;
+    if (weatherData.temperature) {
+      report += ` with air temperature at ${temp}`;
+    }
+    report += `. Water temperature is ${waterTemp}, `;
+    
+    const waterTempNum = parseNumericValue(waterTemp, 0);
+    if (waterTempNum >= 75) {
+      report += `which is warm and comfortable - boardshorts or a spring suit will do. `;
+    } else if (waterTempNum >= 68) {
+      report += `which is pleasant - a spring suit or thin wetsuit recommended. `;
+    } else if (waterTempNum >= 60) {
+      report += `which is cool - a 3/2mm wetsuit is recommended for comfort. `;
+    } else if (waterTempNum >= 50) {
+      report += `which is cold - you'll want a 4/3mm wetsuit with booties. `;
+    } else if (waterTempNum > 0) {
+      report += `which is very cold - a 5/4mm wetsuit with hood, gloves, and booties is essential. `;
+    }
+
+    // DETAILED TIDE INFORMATION
+    if (tideData && tideData.length > 0) {
+      report += '\n\n🌙 TIDE SCHEDULE: ';
+      
+      // Find current tide phase
+      const now = new Date();
+      const currentTime = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/New_York'
+      });
+      
+      let currentTidePhase = '';
+      for (let i = 0; i < tideData.length - 1; i++) {
+        const currentTide = tideData[i];
+        const nextTide = tideData[i + 1];
+        
+        if (currentTime >= currentTide.time && currentTime < nextTide.time) {
+          if (currentTide.type.toLowerCase() === 'low') {
+            currentTidePhase = `Currently on an incoming tide (rising from ${currentTide.height}${currentTide.height_unit} low to ${nextTide.height}${nextTide.height_unit} high at ${nextTide.time}). `;
+          } else {
+            currentTidePhase = `Currently on an outgoing tide (dropping from ${currentTide.height}${currentTide.height_unit} high to ${nextTide.height}${nextTide.height_unit} low at ${nextTide.time}). `;
+          }
+          break;
+        }
+      }
+      
+      report += currentTidePhase;
+      report += `Today's tide schedule: `;
+      
+      const tideDescriptions = tideData.map(t => {
+        const tideType = t.type.toLowerCase() === 'high' ? 'High' : 'Low';
+        return `${tideType} tide at ${t.time} (${t.height}${t.height_unit})`;
+      });
+      
+      report += tideDescriptions.join(', ');
+      report += `. `;
+      
+      // Add tide advice
+      const hasHighTide = tideData.some(t => t.type.toLowerCase() === 'high');
+      const hasLowTide = tideData.some(t => t.type.toLowerCase() === 'low');
+      
+      if (surfHeight >= 4) {
+        report += `With this size swell, mid to high tide will offer the best shape and power. `;
+      } else if (surfHeight >= 2) {
+        report += `Mid tide usually offers the best balance of wave shape and rideable sections. `;
+      } else {
+        report += `Low to mid tide might give you the best chance at catching the available waves. `;
+      }
+    }
+
+    // COMPREHENSIVE CLOSING RECOMMENDATION
+    report += '\n\n📋 RECOMMENDATION: ';
+    
     if (rating >= 8) {
       const closings = [
-        'Drop everything and get out here!',
-        'This is the one you don\'t want to miss!',
-        'Absolutely worth the session!',
+        'Drop everything and get out here! These are the conditions you dream about - clean faces, good size, and perfect wind. This is a session you\'ll be talking about for weeks.',
+        'This is the one you don\'t want to miss! Everything is lining up perfectly. Call in sick, skip the meeting, do whatever you need to do - you need to be in the water right now.',
+        'Absolutely worth the session! Premium conditions like this don\'t come around often. The stars have aligned with size, wind, and tide all working together.',
       ];
       report += selectRandom(closings);
     } else if (rating >= 6) {
       const closings = [
-        'Definitely worth checking out if you\'ve got time.',
-        'Should be a fun session.',
-        'Worth the paddle out.',
+        'Definitely worth checking out if you\'ve got time. The conditions are solid and you\'ll get some quality rides. Bring your standard shortboard and enjoy the session.',
+        'Should be a fun session. Nothing epic, but definitely good enough to make it worth your while. You\'ll get plenty of waves and have a good time out there.',
+        'Worth the paddle out. The conditions are clean enough and there\'s enough size to make it enjoyable. A solid session awaits if you can make it.',
       ];
       report += selectRandom(closings);
     } else if (rating >= 4) {
       const closings = [
-        'Could be fun for beginners or longboarders.',
-        'Decent for a mellow session.',
-        'Not epic but rideable.',
+        'Could be fun for beginners or longboarders. The small size and manageable conditions make it perfect for learning or cruising. Bring the log and enjoy some mellow rides.',
+        'Decent for a mellow session. Don\'t expect anything epic, but if you\'re looking to get wet and practice your fundamentals, it\'s worth it. Great for working on technique.',
+        'Not epic but rideable. If you\'re itching to surf and don\'t mind small waves, you can still have fun out there. Perfect for a casual session or teaching someone.',
       ];
       report += selectRandom(closings);
     } else {
       const closings = [
-        'Maybe wait for the next swell.',
-        'Check back tomorrow, might be better.',
-        'Not really worth it today.',
+        'Maybe wait for the next swell. The conditions today are pretty minimal and you\'d probably have more fun doing something else. Check back tomorrow or later this week.',
+        'Check back tomorrow, might be better. Today\'s not really worth the effort unless you\'re desperate to get wet. Save your energy for when conditions improve.',
+        'Not really worth it today. The surf is too small and conditions aren\'t great. Better to wait for a better swell or spend your time on other activities.',
       ];
       report += selectRandom(closings);
     }
@@ -513,7 +628,7 @@ Deno.serve(async (req) => {
     // Generate report with valid wave data
     const tideSummary = generateTideSummary(tideData);
     const rating = calculateSurfRating(surfData, weatherData);
-    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate);
+    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate, tideData);
 
     const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
 
