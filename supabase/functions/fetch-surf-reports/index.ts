@@ -6,8 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const BUOY_ID = '41004';
 const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
+
+// Location-specific configuration
+const LOCATION_CONFIG = {
+  'folly-beach': {
+    name: 'Folly Beach, SC',
+    buoyId: '41004', // Edisto, SC
+  },
+  'pawleys-island': {
+    name: 'Pawleys Island, SC',
+    buoyId: '41013', // Frying Pan Shoals
+  },
+};
 
 function getESTDate(): string {
   const now = new Date();
@@ -98,6 +109,37 @@ Deno.serve(async (req) => {
     console.log('=== FETCH SURF REPORTS STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // Get location configuration
+    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
+    if (!locationConfig) {
+      console.error('Invalid location:', locationId);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid location: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location configuration:', locationConfig);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -119,9 +161,9 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching surf conditions from NOAA Buoy...');
+    console.log(`Fetching surf conditions from NOAA Buoy for ${locationConfig.name}...`);
 
-    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${locationConfig.buoyId}.txt`;
 
     let buoyResponse;
     try {
@@ -237,6 +279,7 @@ Deno.serve(async (req) => {
 
     const surfData = {
       date: today,
+      location: locationId,
       wave_height: waveHeightFt !== 'N/A' ? `${waveHeightFt} ft` : 'N/A',
       surf_height: surfHeight,
       wave_period: wavePeriodSec !== 'N/A' ? `${wavePeriodSec} sec` : 'N/A',
@@ -244,7 +287,7 @@ Deno.serve(async (req) => {
       wind_speed: windSpeedMph !== 'N/A' ? `${windSpeedMph} mph` : 'N/A',
       wind_direction: windDir,
       water_temp: waterTempF !== 'N/A' ? `${waterTempF}°F` : 'N/A',
-      buoy_id: BUOY_ID,
+      buoy_id: locationConfig.buoyId,
       updated_at: new Date().toISOString(),
     };
 
@@ -252,7 +295,7 @@ Deno.serve(async (req) => {
 
     const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
-      .upsert(surfData, { onConflict: 'date' })
+      .upsert(surfData, { onConflict: 'date,location' })
       .select();
 
     if (surfError) {
@@ -276,8 +319,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Surf conditions updated successfully for Folly Beach, SC',
-        location: 'Folly Beach, SC',
+        message: `Surf conditions updated successfully for ${locationConfig.name}`,
+        location: locationConfig.name,
+        locationId: locationId,
         data: surfData,
         timestamp: new Date().toISOString(),
       }),

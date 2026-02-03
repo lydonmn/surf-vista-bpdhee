@@ -6,13 +6,23 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Folly Beach coordinates
-const FOLLY_BEACH_LAT = 32.6552;
-const FOLLY_BEACH_LON = -79.9403;
 const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
 
-// NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
-const BUOY_ID = '41004';
+// Location-specific configuration
+const LOCATION_CONFIG = {
+  'folly-beach': {
+    name: 'Folly Beach, SC',
+    lat: 32.6552,
+    lon: -79.9403,
+    buoyId: '41004', // Edisto, SC
+  },
+  'pawleys-island': {
+    name: 'Pawleys Island, SC',
+    lat: 33.4318,
+    lon: -79.1192,
+    buoyId: '41013', // Frying Pan Shoals
+  },
+};
 
 // Helper function to get EST date
 function getESTDate(): string {
@@ -92,10 +102,10 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
 }
 
 // Helper function to fetch current buoy data with retry logic
-async function fetchBuoyData(timeout: number = FETCH_TIMEOUT, retries: number = 3): Promise<{ waveHeight: number, period: number } | null> {
+async function fetchBuoyData(buoyId: string, timeout: number = FETCH_TIMEOUT, retries: number = 3): Promise<{ waveHeight: number, period: number } | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+      const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`;
       console.log(`Fetching buoy data (attempt ${attempt}/${retries}):`, buoyUrl);
 
       const controller = new AbortController();
@@ -185,6 +195,37 @@ Deno.serve(async (req) => {
     console.log('=== FETCH WEATHER DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // Get location configuration
+    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
+    if (!locationConfig) {
+      console.error('Invalid location:', locationId);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid location: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location configuration:', locationConfig);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -206,8 +247,8 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching weather data from NOAA for Folly Beach, SC...');
-    console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
+    console.log(`Fetching weather data from NOAA for ${locationConfig.name}...`);
+    console.log('Coordinates:', { lat: locationConfig.lat, lon: locationConfig.lon });
 
     const today = getESTDate();
     console.log('Current EST date:', today);
@@ -216,6 +257,7 @@ Deno.serve(async (req) => {
       .from('surf_conditions')
       .select('surf_height, wave_height, wave_period')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     if (surfCondError) {
@@ -234,7 +276,7 @@ Deno.serve(async (req) => {
       console.log('✅ Using ACTUAL surf height from database for today:', currentSwellRange);
     }
 
-    const buoyData = await fetchBuoyData();
+    const buoyData = await fetchBuoyData(locationConfig.buoyId);
     
     if (buoyData) {
       const surfCalc = calculateSurfHeight(buoyData.waveHeight, buoyData.period);
@@ -257,7 +299,7 @@ Deno.serve(async (req) => {
       'Accept': 'application/geo+json'
     };
 
-    const pointsUrl = `https://api.weather.gov/points/${FOLLY_BEACH_LAT},${FOLLY_BEACH_LON}`;
+    const pointsUrl = `https://api.weather.gov/points/${locationConfig.lat},${locationConfig.lon}`;
     console.log('Fetching grid point:', pointsUrl);
     
     let pointsResponse;
@@ -348,6 +390,7 @@ Deno.serve(async (req) => {
     
     const weatherData = {
       date: today,
+      location: locationId,
       temperature: currentPeriod.temperature.toString(),
       feels_like: currentPeriod.temperature.toString(),
       humidity: 0,
@@ -368,7 +411,7 @@ Deno.serve(async (req) => {
 
     const { data: weatherInsertData, error: weatherError } = await supabase
       .from('weather_data')
-      .upsert(weatherData, { onConflict: 'date' })
+      .upsert(weatherData, { onConflict: 'date,location' })
       .select();
 
     if (weatherError) {
@@ -427,6 +470,7 @@ Deno.serve(async (req) => {
         
         dailyForecasts.set(formattedDate, {
           date: formattedDate,
+          location: locationId,
           day_name: dayName,
           high_temp: null,
           low_temp: null,
@@ -480,7 +524,7 @@ Deno.serve(async (req) => {
     const { error: deleteError } = await supabase
       .from('weather_forecast')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+      .eq('location', locationId);
 
     if (deleteError) {
       console.error('Error deleting old forecasts:', deleteError);
@@ -512,8 +556,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Weather data updated successfully for Folly Beach, SC',
-        location: 'Folly Beach, SC',
+        message: `Weather data updated successfully for ${locationConfig.name}`,
+        location: locationConfig.name,
+        locationId: locationId,
         current: weatherData,
         forecast_periods: forecastRecords.length,
         timestamp: new Date().toISOString(),

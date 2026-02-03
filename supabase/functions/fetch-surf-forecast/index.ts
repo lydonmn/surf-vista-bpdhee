@@ -6,14 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Folly Beach coordinates
-const FOLLY_BEACH_LAT = 32.6552;
-const FOLLY_BEACH_LON = -79.9403;
-
-// NOAA Buoy 41004 - Edisto, SC (closest to Folly Beach)
-const BUOY_ID = '41004';
-
 const FETCH_TIMEOUT = 30000; // 30 seconds
+
+// Location-specific configuration
+const LOCATION_CONFIG = {
+  'folly-beach': {
+    name: 'Folly Beach, SC',
+    buoyId: '41004', // Edisto, SC
+  },
+  'pawleys-island': {
+    name: 'Pawleys Island, SC',
+    buoyId: '41013', // Frying Pan Shoals
+  },
+};
 
 // Helper function to get EST date
 function getESTDate(): string {
@@ -118,10 +123,10 @@ function calculateSurfRating(surfHeightMin: number, surfHeightMax: number, perio
 }
 
 // Fetch current buoy data
-async function fetchBuoyData(timeout: number = FETCH_TIMEOUT, retries: number = 3): Promise<{ waveHeight: number, period: number, windSpeed: number } | null> {
+async function fetchBuoyData(buoyId: string, timeout: number = FETCH_TIMEOUT, retries: number = 3): Promise<{ waveHeight: number, period: number, windSpeed: number } | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+      const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`;
       console.log(`Fetching buoy data (attempt ${attempt}/${retries}):`, buoyUrl);
 
       const controller = new AbortController();
@@ -295,6 +300,37 @@ Deno.serve(async (req) => {
     console.log('=== FETCH SURF FORECAST STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // Get location configuration
+    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
+    if (!locationConfig) {
+      console.error('Invalid location:', locationId);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid location: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location configuration:', locationConfig);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -316,14 +352,13 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching surf forecast for Folly Beach, SC...');
-    console.log('Coordinates:', { lat: FOLLY_BEACH_LAT, lon: FOLLY_BEACH_LON });
+    console.log(`Fetching surf forecast for ${locationConfig.name}...`);
 
     const today = getESTDate();
     console.log('Current EST date:', today);
 
     // Fetch current buoy data
-    const buoyData = await fetchBuoyData();
+    const buoyData = await fetchBuoyData(locationConfig.buoyId);
     
     if (buoyData) {
       console.log('✅ Current buoy data available:', buoyData);
@@ -358,7 +393,8 @@ Deno.serve(async (req) => {
           prediction_source: forecast.source,
           updated_at: new Date().toISOString(),
         })
-        .eq('date', forecast.date);
+        .eq('date', forecast.date)
+        .eq('location', locationId);
 
       if (updateError) {
         console.error(`Error updating forecast for ${forecast.date}:`, updateError);
@@ -375,6 +411,7 @@ Deno.serve(async (req) => {
         .from('surf_reports')
         .upsert({
           date: today,
+          location: locationId,
           wave_height: `${todayForecast.wave_height_meters.toFixed(1)} m`,
           wave_period: `${todayForecast.wave_period_seconds.toFixed(0)} sec`,
           wind_speed: `${todayForecast.wind_speed_mph.toFixed(0)} mph`,
@@ -384,7 +421,7 @@ Deno.serve(async (req) => {
           conditions: `${todayForecast.surf_height_range} surf`,
           rating: todayForecast.rating,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'date' });
+        }, { onConflict: 'date,location' });
 
       if (surfReportError) {
         console.error('Error updating surf_reports:', surfReportError);
@@ -396,8 +433,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Surf forecast updated successfully',
-        location: 'Folly Beach, SC',
+        message: `Surf forecast updated successfully for ${locationConfig.name}`,
+        location: locationConfig.name,
+        locationId: locationId,
         forecasts: forecasts.map(f => ({
           date: f.date,
           surf_height: f.surf_height_range,

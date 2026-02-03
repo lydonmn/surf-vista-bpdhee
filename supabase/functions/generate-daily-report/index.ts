@@ -317,6 +317,21 @@ Deno.serve(async (req) => {
     console.log('=== GENERATE DAILY REPORT STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    const locationName = locationId === 'pawleys-island' ? 'Pawleys Island, SC' : 'Folly Beach, SC';
+    console.log('Generating report for:', locationName);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -346,6 +361,7 @@ Deno.serve(async (req) => {
       .from('surf_conditions')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     let historicalDataDate: string | null = null;
@@ -355,6 +371,7 @@ Deno.serve(async (req) => {
       surfResult = await supabase
         .from('surf_conditions')
         .select('*')
+        .eq('location', locationId)
         .order('date', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -370,6 +387,7 @@ Deno.serve(async (req) => {
       .from('weather_data')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     if (!weatherResult.data) {
@@ -377,6 +395,7 @@ Deno.serve(async (req) => {
       weatherResult = await supabase
         .from('weather_data')
         .select('*')
+        .eq('location', locationId)
         .order('date', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -387,6 +406,7 @@ Deno.serve(async (req) => {
       .from('tide_data')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .order('time');
 
     if (surfResult.error || weatherResult.error || tideResult.error) {
@@ -430,6 +450,7 @@ Deno.serve(async (req) => {
       const tideSummary = generateTideSummary(tideData);
       const noWaveDataReport = {
         date: today,
+        location: locationId,
         wave_height: 'N/A',
         wave_period: 'N/A',
         swell_direction: 'N/A',
@@ -446,7 +467,8 @@ Deno.serve(async (req) => {
       const { error: deleteError } = await supabase
         .from('surf_reports')
         .delete()
-        .eq('date', today);
+        .eq('date', today)
+        .eq('location', locationId);
 
       // Insert new report
       const { data: insertData, error: reportError } = await supabase
@@ -475,7 +497,9 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Daily surf report generated (wave sensors offline)',
+          message: `Daily surf report generated for ${locationName} (wave sensors offline)`,
+          location: locationName,
+          locationId: locationId,
           report: noWaveDataReport,
           timestamp: new Date().toISOString(),
         }),
@@ -495,6 +519,7 @@ Deno.serve(async (req) => {
 
     const surfReport = {
       date: today,
+      location: locationId,
       wave_height: displayHeight || 'N/A',
       wave_period: surfData.wave_period || 'N/A',
       swell_direction: surfData.swell_direction || 'N/A',
@@ -511,7 +536,8 @@ Deno.serve(async (req) => {
     const { error: deleteError } = await supabase
       .from('surf_reports')
       .delete()
-      .eq('date', today);
+      .eq('date', today)
+      .eq('location', locationId);
 
     // Insert new report
     const { data: insertData, error: reportError } = await supabase
@@ -540,7 +566,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Daily surf report generated successfully',
+        message: `Daily surf report generated successfully for ${locationName}`,
+        location: locationName,
+        locationId: locationId,
         report: surfReport,
         timestamp: new Date().toISOString(),
       }),

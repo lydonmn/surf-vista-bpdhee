@@ -6,8 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const STATION_ID = '8665530';
 const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
+
+// Location-specific configuration
+const LOCATION_CONFIG = {
+  'folly-beach': {
+    name: 'Folly Beach, SC',
+    tideStationId: '8665530', // Charleston
+  },
+  'pawleys-island': {
+    name: 'Pawleys Island, SC',
+    tideStationId: '8661070', // Springmaid Pier, Myrtle Beach
+  },
+};
 
 function getESTDate(daysOffset: number = 0): string {
   const now = new Date();
@@ -76,6 +87,37 @@ Deno.serve(async (req) => {
     console.log('=== FETCH TIDE DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // Get location configuration
+    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
+    if (!locationConfig) {
+      console.error('Invalid location:', locationId);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid location: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location configuration:', locationConfig);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -97,7 +139,7 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching tide data from NOAA for Folly Beach, SC...');
+    console.log(`Fetching tide data from NOAA for ${locationConfig.name}...`);
 
     const today = getESTDate(0);
     const endDate = getESTDate(6);
@@ -110,7 +152,7 @@ Deno.serve(async (req) => {
     const tideUrl = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?` +
       `product=predictions&application=SurfVista&` +
       `begin_date=${todayStr}&end_date=${endDateStr}&` +
-      `datum=MLLW&station=${STATION_ID}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
+      `datum=MLLW&station=${locationConfig.tideStationId}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
 
     console.log('Fetching tide predictions');
 
@@ -172,7 +214,7 @@ Deno.serve(async (req) => {
     const { error: deleteError } = await supabase
       .from('tide_data')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+      .eq('location', locationId);
 
     if (deleteError) {
       console.error('Error deleting old tide data:', deleteError);
@@ -184,6 +226,7 @@ Deno.serve(async (req) => {
       
       return {
         date: date,
+        location: locationId,
         time: timePart,
         type: prediction.type === 'H' ? 'High' : 'Low',
         height: parseFloat(prediction.v),
@@ -220,8 +263,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Tide data updated successfully for Folly Beach, SC',
-        location: 'Folly Beach, SC',
+        message: `Tide data updated successfully for ${locationConfig.name}`,
+        location: locationConfig.name,
+        locationId: locationId,
         tides: tideRecords.length,
         timestamp: new Date().toISOString(),
       }),
