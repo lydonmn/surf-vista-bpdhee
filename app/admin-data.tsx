@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { useLocation } from '@/contexts/LocationContext';
 
 interface DataCounts {
   tides: number;
@@ -31,6 +32,7 @@ interface ActivityLog {
 
 export default function AdminDataScreen() {
   const router = useRouter();
+  const { currentLocation, locationData } = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [dataCounts, setDataCounts] = useState<DataCounts>({
     tides: 0,
@@ -50,7 +52,7 @@ export default function AdminDataScreen() {
 
   const loadDataCounts = useCallback(async () => {
     try {
-      addLog('Loading data counts...');
+      addLog(`Loading data counts for ${locationData.displayName}...`);
       
       // Get current date in EST
       const now = new Date();
@@ -65,11 +67,11 @@ export default function AdminDataScreen() {
       const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 
       const [tidesResult, weatherResult, forecastResult, surfResult, externalResult] = await Promise.all([
-        supabase.from('tide_data').select('id', { count: 'exact', head: true }).eq('date', today),
-        supabase.from('weather_data').select('id', { count: 'exact', head: true }).eq('date', today),
-        supabase.from('weather_forecast').select('id', { count: 'exact', head: true }),
-        supabase.from('surf_conditions').select('id', { count: 'exact', head: true }).eq('date', today),
-        supabase.from('external_surf_reports').select('id', { count: 'exact', head: true }).eq('date', today),
+        supabase.from('tide_data').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
+        supabase.from('weather_data').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
+        supabase.from('weather_forecast').select('id', { count: 'exact', head: true }).eq('location', currentLocation),
+        supabase.from('surf_conditions').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
+        supabase.from('external_surf_reports').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
       ]);
 
       setDataCounts({
@@ -80,12 +82,12 @@ export default function AdminDataScreen() {
         external: externalResult.count || 0,
       });
 
-      addLog(`Data counts loaded: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
+      addLog(`Data counts loaded for ${locationData.displayName}: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
     } catch (error) {
       console.error('Error loading data counts:', error);
       addLog(`Error loading data counts: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
-  }, [addLog]);
+  }, [addLog, currentLocation, locationData]);
 
   useEffect(() => {
     console.log('[AdminDataScreen] Component mounted, loading data counts');
@@ -94,10 +96,12 @@ export default function AdminDataScreen() {
 
   const handleTriggerDailyUpdate = async () => {
     setIsLoading(true);
-    addLog('Manually triggering daily update (same as 5 AM automatic update)...');
+    addLog(`Manually triggering daily update for ${locationData.displayName} (same as 5 AM automatic update)...`);
 
     try {
-      const response = await supabase.functions.invoke('daily-update-cron');
+      const response = await supabase.functions.invoke('daily-update-cron', {
+        body: { location: currentLocation }
+      });
       
       console.log('Daily update response:', response);
       addLog(`Daily update response: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -107,8 +111,8 @@ export default function AdminDataScreen() {
         addLog(`❌ Daily update error: ${errorMsg}`, 'error');
         Alert.alert('Error', errorMsg);
       } else if (response.data?.success) {
-        addLog('✅ Daily update completed successfully!', 'success');
-        Alert.alert('Success', 'Daily update completed! Data refreshed and new report generated.');
+        addLog(`✅ Daily update completed successfully for ${locationData.displayName}!`, 'success');
+        Alert.alert('Success', `Daily update completed for ${locationData.displayName}! Data refreshed and new report generated.`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Daily update failed';
@@ -127,10 +131,12 @@ export default function AdminDataScreen() {
 
   const handleUpdateAll = async () => {
     setIsLoading(true);
-    addLog('Starting periodic data update (no report generation)...');
+    addLog(`Starting periodic data update for ${locationData.displayName} (no report generation)...`);
 
     try {
-      const response = await supabase.functions.invoke('update-all-surf-data');
+      const response = await supabase.functions.invoke('update-all-surf-data', {
+        body: { location: currentLocation }
+      });
       
       console.log('Update response:', response);
       addLog(`Update response received: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -141,7 +147,7 @@ export default function AdminDataScreen() {
         Alert.alert('Error', errorMsg);
       } else if (response.data) {
         if (response.data.success) {
-          addLog('✅ All data updated successfully!', 'success');
+          addLog(`✅ All data updated successfully for ${locationData.displayName}!`, 'success');
           
           // Show detailed results
           if (response.data.results) {
@@ -171,7 +177,7 @@ export default function AdminDataScreen() {
             }
           }
           
-          Alert.alert('Success', response.data.message || 'Data updated successfully');
+          Alert.alert('Success', response.data.message || `Data updated successfully for ${locationData.displayName}`);
           await loadDataCounts();
         } else {
           const errorMsg = response.data.error || 'Update failed';
@@ -212,10 +218,12 @@ export default function AdminDataScreen() {
 
   const handleGenerateReport = async () => {
     setIsLoading(true);
-    addLog('Generating new surf report...');
+    addLog(`Generating new surf report for ${locationData.displayName}...`);
 
     try {
-      const response = await supabase.functions.invoke('generate-daily-report');
+      const response = await supabase.functions.invoke('generate-daily-report', {
+        body: { location: currentLocation }
+      });
       
       console.log('Generate report response:', response);
       addLog(`Generate report response: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -225,7 +233,7 @@ export default function AdminDataScreen() {
         addLog(`❌ Report generation error: ${errorMsg}`, 'error');
         Alert.alert('Error', errorMsg);
       } else if (response.data?.success) {
-        addLog(`✅ Report generated successfully`, 'success');
+        addLog(`✅ Report generated successfully for ${locationData.displayName}`, 'success');
         
         // Show data age warning if applicable
         if (response.data.dataAge && response.data.dataAge !== 'Using current data') {
@@ -264,10 +272,12 @@ export default function AdminDataScreen() {
 
   const handleFetchWeather = async () => {
     setIsLoading(true);
-    addLog('Fetching weather data for Folly Beach, SC...');
+    addLog(`Fetching weather data for ${locationData.displayName}...`);
 
     try {
-      const response = await supabase.functions.invoke('fetch-weather-data');
+      const response = await supabase.functions.invoke('fetch-weather-data', {
+        body: { location: currentLocation }
+      });
       
       console.log('Weather response:', response);
       addLog(`Weather response: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -277,8 +287,8 @@ export default function AdminDataScreen() {
         addLog(`❌ Weather error: ${errorMsg}`, 'error');
         Alert.alert('Error', errorMsg);
       } else if (response.data?.success) {
-        addLog(`✅ Weather fetch successful: ${response.data.forecast_count || 0} forecast periods`, 'success');
-        Alert.alert('Success', response.data.message || 'Weather data fetched successfully');
+        addLog(`✅ Weather fetch successful for ${locationData.displayName}: ${response.data.forecast_count || 0} forecast periods`, 'success');
+        Alert.alert('Success', response.data.message || `Weather data fetched successfully for ${locationData.displayName}`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch weather data';
@@ -297,10 +307,12 @@ export default function AdminDataScreen() {
 
   const handleFetchTides = async () => {
     setIsLoading(true);
-    addLog('Fetching tide data for Folly Beach, SC...');
+    addLog(`Fetching tide data for ${locationData.displayName}...`);
 
     try {
-      const response = await supabase.functions.invoke('fetch-tide-data');
+      const response = await supabase.functions.invoke('fetch-tide-data', {
+        body: { location: currentLocation }
+      });
       
       console.log('Tide response:', response);
       addLog(`Tide response: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -310,8 +322,8 @@ export default function AdminDataScreen() {
         addLog(`❌ Tide error: ${errorMsg}`, 'error');
         Alert.alert('Error', errorMsg);
       } else if (response.data?.success) {
-        addLog(`✅ Tide fetch successful: ${response.data.count || 0} records`, 'success');
-        Alert.alert('Success', response.data.message || 'Tide data fetched successfully');
+        addLog(`✅ Tide fetch successful for ${locationData.displayName}: ${response.data.count || 0} records`, 'success');
+        Alert.alert('Success', response.data.message || `Tide data fetched successfully for ${locationData.displayName}`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch tide data';
@@ -330,10 +342,12 @@ export default function AdminDataScreen() {
 
   const handleFetchSurf = async () => {
     setIsLoading(true);
-    addLog('Fetching surf report data for Folly Beach, SC...');
+    addLog(`Fetching surf report data for ${locationData.displayName}...`);
 
     try {
-      const response = await supabase.functions.invoke('fetch-surf-reports');
+      const response = await supabase.functions.invoke('fetch-surf-reports', {
+        body: { location: currentLocation }
+      });
       
       console.log('Surf response:', response);
       addLog(`Surf response: ${JSON.stringify(response.data).substring(0, 100)}...`);
@@ -343,8 +357,8 @@ export default function AdminDataScreen() {
         addLog(`❌ Surf error: ${errorMsg}`, 'error');
         Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
       } else if (response.data?.success) {
-        addLog(`✅ Surf fetch successful: Found ${response.data.data?.wave_height || 'N/A'}`, 'success');
-        Alert.alert('Success', response.data.message || 'Surf data fetched successfully');
+        addLog(`✅ Surf fetch successful for ${locationData.displayName}: Found ${response.data.data?.wave_height || 'N/A'}`, 'success');
+        Alert.alert('Success', response.data.message || `Surf data fetched successfully for ${locationData.displayName}`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Failed to fetch surf data';
@@ -381,8 +395,8 @@ export default function AdminDataScreen() {
   const backIconName = 'chevron.left';
   const backMaterialIconName = 'arrow_back';
   const backButtonTextContent = 'Back';
-  const headerTitleText = 'Data Sources';
-  const sectionTitleText1 = 'Current Data (Today)';
+  const headerTitleText = `Data Sources - ${locationData.name}`;
+  const sectionTitleText1 = `Current Data (Today) - ${locationData.name}`;
   const countLabelTides = 'Tides';
   const countLabelWeather = 'Weather';
   const countLabelForecast = 'Forecast';

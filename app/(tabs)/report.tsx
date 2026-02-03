@@ -12,11 +12,13 @@ import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
+import { useLocation } from "@/contexts/LocationContext";
 
 export default function ReportScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
+  const { currentLocation, locationData } = useLocation();
   const { surfReports, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
@@ -825,7 +827,7 @@ export default function ReportScreen() {
           Today&apos;s Surf Report
         </Text>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-          Folly Beach, South Carolina
+          {locationData.displayName}
         </Text>
         {lastUpdated && (
           <Text style={[styles.lastUpdated, { color: colors.textSecondary }]}>
