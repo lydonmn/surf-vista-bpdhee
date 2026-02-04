@@ -8,11 +8,11 @@
     "primaryColor": "#1E90FF",
     "description": "Premium surf reports and forecasts for Folly Beach, South Carolina. Get exclusive 6K drone footage, real-time conditions, and AI-powered surf predictions.",
     "privacy": "public",
-    "icon": "./assets/images/final_quest_240x240.png",
+    "icon": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/final_quest_240x240.png",
+      "image": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E90FF"
     },
@@ -36,7 +36,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/final_quest_240x240.png",
+        "foregroundImage": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
         "backgroundColor": "#1E90FF"
       },
       "edgeToEdgeEnabled": true,
@@ -50,7 +50,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/final_quest_240x240.png",
+      "favicon": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
       "bundler": "metro"
     },
     "plugins": [
