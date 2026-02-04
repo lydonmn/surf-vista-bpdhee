@@ -447,7 +447,7 @@ export default function LoginScreen() {
               color={colors.textSecondary}
             />
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              Subscribe for $10.99/month or $100.99/year to access exclusive surf reports and 6K drone footage
+              Subscribe for $12.99/month or $99.99/year to access exclusive surf reports and 6K drone footage
             </Text>
           </View>
 

@@ -422,7 +422,7 @@ export default function ProfileScreen() {
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+                <Text style={styles.subscribeButtonText}>Subscribe Now - $12.99/month</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>

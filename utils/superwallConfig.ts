@@ -33,8 +33,8 @@ export const PAYMENT_CONFIG = {
   // Offering ID from RevenueCat Dashboard
   OFFERING_ID: 'ofrngf25b3975f3', // Your offering identifier
   PRICING: {
-    MONTHLY: '$5.00',  // Your actual pricing
-    ANNUAL: '$50.00',  // Your actual pricing (adjust as needed)
+    MONTHLY: '$12.99',  // Your actual pricing
+    ANNUAL: '$99.99',  // Your actual pricing
   },
 };
 

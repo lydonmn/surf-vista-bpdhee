@@ -319,7 +319,7 @@ export default function HomeScreen() {
             Subscription Required
           </Text>
           <Text style={[styles.description, { color: colors.textSecondary }]}>
-            Subscribe to access exclusive drone footage and daily surf reports for just $10.99/month
+            Subscribe to access exclusive drone footage and daily surf reports for just $12.99/month
           </Text>
           <TouchableOpacity
             style={[styles.ctaButton, { backgroundColor: colors.accent }]}

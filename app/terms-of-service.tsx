@@ -27,7 +27,7 @@ export default function TermsOfServiceScreen() {
         <Text style={styles.paragraph}>
           SurfVista offers auto-renewable subscriptions:
         </Text>
-        <Text style={styles.bulletPoint}>• Monthly Subscription: $10.99/month</Text>
+        <Text style={styles.bulletPoint}>• Monthly Subscription: $12.99/month</Text>
         <Text style={styles.bulletPoint}>• Annual Subscription: $99.99/year</Text>
         
         <Text style={styles.paragraph}>
