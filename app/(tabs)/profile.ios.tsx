@@ -475,22 +475,6 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
-        {/* 🆕 DIAGNOSTIC TOOL BUTTON */}
-        <TouchableOpacity
-          style={[styles.diagnosticButton, { borderColor: '#FF9500', backgroundColor: '#FFF3E0' }]}
-          onPress={() => router.push('/debug-revenuecat')}
-        >
-          <IconSymbol
-            ios_icon_name="stethoscope"
-            android_material_icon_name="medical-services"
-            size={20}
-            color="#FF9500"
-          />
-          <Text style={[styles.diagnosticButtonText, { color: '#FF9500' }]}>
-            🔧 Run RevenueCat Diagnostics
-          </Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.refreshButton, { borderColor: colors.primary }]}
           onPress={handleRefreshProfile}
@@ -806,20 +790,6 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  diagnosticButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
-    borderWidth: 2,
-  },
-  diagnosticButtonText: {
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   refreshButton: {
     flexDirection: 'row',
