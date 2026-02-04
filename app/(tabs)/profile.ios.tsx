@@ -313,7 +313,7 @@ export default function ProfileScreen() {
         <View style={styles.centerContent}>
           <IconSymbol
             ios_icon_name="person.circle.fill"
-            android_material_icon_name="account_circle"
+            android_material_icon_name="account-circle"
             size={80}
             color={colors.textSecondary}
           />
@@ -422,7 +422,7 @@ export default function ProfileScreen() {
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.subscribeButtonText}>Subscribe Now - $10.99/month</Text>
+                <Text style={styles.subscribeButtonText}>Subscribe Now - $5/month</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>
@@ -475,6 +475,22 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
+        {/* 🆕 DIAGNOSTIC TOOL BUTTON */}
+        <TouchableOpacity
+          style={[styles.diagnosticButton, { borderColor: '#FF9500', backgroundColor: '#FFF3E0' }]}
+          onPress={() => router.push('/debug-revenuecat')}
+        >
+          <IconSymbol
+            ios_icon_name="stethoscope"
+            android_material_icon_name="medical-services"
+            size={20}
+            color="#FF9500"
+          />
+          <Text style={[styles.diagnosticButtonText, { color: '#FF9500' }]}>
+            🔧 Run RevenueCat Diagnostics
+          </Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.refreshButton, { borderColor: colors.primary }]}
           onPress={handleRefreshProfile}
@@ -509,7 +525,7 @@ export default function ProfileScreen() {
             </Text>
             <IconSymbol
               ios_icon_name="chevron.right"
-              android_material_icon_name="chevron_right"
+              android_material_icon_name="chevron-right"
               size={20}
               color={colors.textSecondary}
             />
@@ -639,7 +655,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 2.0.0
+          Version 3.0.0
         </Text>
       </View>
     </ScrollView>
@@ -790,6 +806,20 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  diagnosticButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 2,
+  },
+  diagnosticButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   refreshButton: {
     flexDirection: 'row',
