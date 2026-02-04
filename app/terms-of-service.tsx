@@ -101,7 +101,7 @@ export default function TermsOfServiceScreen() {
         <Text style={styles.paragraph}>
           For questions about these terms, please contact us at:
         </Text>
-        <Text style={styles.bulletPoint}>Email: support@surfvista.com</Text>
+        <Text style={styles.bulletPoint}>Email: lydon@entropyfinancialgroup.com</Text>
         <Text style={styles.bulletPoint}>Address: Folly Beach, SC</Text>
 
         <Text style={styles.sectionTitle}>15. Apple-Specific Terms</Text>

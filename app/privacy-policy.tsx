@@ -212,7 +212,7 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.bulletText}>
             SurfVista{'\n'}
             Folly Beach, SC{'\n'}
-            support@surfvista.com
+            lydon@entropyfinancialgroup.com
           </Text>
         </View>
 
