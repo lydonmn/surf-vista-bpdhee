@@ -16,7 +16,10 @@ import { supabase } from '@/app/integrations/supabase/client';
 // RevenueCat API Keys from Dashboard
 // iOS: https://app.revenuecat.com/settings/api-keys
 // Android: https://app.revenuecat.com/settings/api-keys
-const REVENUECAT_API_KEY_IOS = 'test_pOgVpdWTwmnVyqwEJWiaLTwHZsD';
+// 
+// ⚠️ IMPORTANT: Replace with your PRODUCTION key before App Store submission
+// Production keys start with "appl_" for iOS
+const REVENUECAT_API_KEY_IOS = 'test_pOgVpdWTwmnVyqwEJWiaLTwHZsD'; // TODO: Replace with production key (appl_...)
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE'; // Update when you have Android key
 
 // Product Configuration
@@ -42,7 +45,7 @@ export const PAYMENT_CONFIG = {
 // 📚 REVENUECAT SETUP GUIDE
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// STEP 1: CREATE PRODUCTS IN APP STORE CONNECT
+// STEP 1: CREATE PRODUCTS IN APP STORE CONNECT ✅ (YOU'VE DONE THIS)
 // ────────────────────────────────────────────
 // 1. Go to https://appstoreconnect.apple.com
 // 2. Select your app (SurfVista)
@@ -50,13 +53,13 @@ export const PAYMENT_CONFIG = {
 // 4. Create subscription group if needed
 // 5. Add subscriptions:
 //    - Product ID: "monthly" (must match exactly)
-//    - Price: $5.00/month
+//    - Price: $12.99/month
 //    - Product ID: "yearly" (must match exactly)
-//    - Price: $50.00/year (or your preferred annual price)
+//    - Price: $99.99/year
 // 6. Set subscription details (name, description, etc.)
 // 7. Submit for review (products must be "Ready to Submit" or "Approved")
 //
-// STEP 2: ADD PRODUCTS TO REVENUECAT
+// STEP 2: ADD PRODUCTS TO REVENUECAT ✅ (YOU'VE DONE THIS)
 // ───────────────────────────────────
 // 1. Go to https://app.revenuecat.com
 // 2. Select your project (SurfVista)
@@ -70,18 +73,18 @@ export const PAYMENT_CONFIG = {
 //    - Store: iOS App Store
 //    - Click "Save"
 //
-// STEP 3: CREATE OFFERING
+// STEP 3: CREATE OFFERING ✅ (YOU'VE DONE THIS)
 // ────────────────────────
 // 1. In RevenueCat Dashboard, go to "Offerings"
 // 2. Click "New Offering"
-// 3. Give it an identifier (e.g., "default")
+// 3. Give it an identifier: "ofrngf25b3975f3"
 // 4. Add both products to the offering:
 //    - Add "monthly" as a package
 //    - Add "yearly" as a package
 // 5. Click "Make Current" to set as default offering
 // 6. Save the offering
 //
-// STEP 4: CREATE ENTITLEMENT
+// STEP 4: CREATE ENTITLEMENT ✅ (YOU'VE DONE THIS)
 // ───────────────────────────
 // 1. In RevenueCat Dashboard, go to "Entitlements"
 // 2. Click "New Entitlement"
@@ -89,14 +92,14 @@ export const PAYMENT_CONFIG = {
 // 4. Attach both products to this entitlement
 // 5. Save
 //
-// STEP 5: CREATE AND PUBLISH PAYWALL
+// STEP 5: CREATE AND PUBLISH PAYWALL ⚠️ (VERIFY THIS IS PUBLISHED)
 // ───────────────────────────────────
 // 1. In RevenueCat Dashboard, go to "Paywalls"
 // 2. Click "Create Paywall"
 // 3. Choose a template or create custom
-// 4. Link to your offering
+// 4. Link to your offering (ofrngf25b3975f3)
 // 5. Customize text, images, colors
-// 6. Click "Publish"
+// 6. Click "Publish" ⚠️ MUST BE PUBLISHED, NOT JUST SAVED
 //
 // STEP 6: CONFIGURE CUSTOMER CENTER (OPTIONAL)
 // ─────────────────────────────────────────────
@@ -105,7 +108,7 @@ export const PAYMENT_CONFIG = {
 // 3. Customize appearance and options
 // 4. Save configuration
 //
-// STEP 7: TEST WITH SANDBOX
+// STEP 7: TEST WITH SANDBOX ⚠️ (DO THIS BEFORE PRODUCTION)
 // ──────────────────────────
 // 1. On iOS device, go to Settings > App Store
 // 2. Sign out of your Apple ID
@@ -113,6 +116,13 @@ export const PAYMENT_CONFIG = {
 // 4. Run your app and test subscription flow
 // 5. When prompted, sign in with sandbox tester account
 // 6. Complete test purchase (it's free in sandbox)
+//
+// STEP 8: SWITCH TO PRODUCTION KEY (BEFORE APP STORE SUBMISSION)
+// ───────────────────────────────────────────────────────────────
+// 1. In RevenueCat Dashboard, go to Settings > API Keys
+// 2. Copy your PRODUCTION iOS API key (starts with "appl_")
+// 3. Replace REVENUECAT_API_KEY_IOS above with production key
+// 4. Rebuild and submit to App Store
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
