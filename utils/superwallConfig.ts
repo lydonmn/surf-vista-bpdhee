@@ -10,7 +10,7 @@ import { Platform, Alert } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔧 REVENUECAT CONFIGURATION
+// 🔧 REVENUECAT CONFIGURATION - UPDATED FOR SURFVISTA MAIN OFFERING
 // ═══════════════════════════════════════════════════════════════════════════
 
 // RevenueCat API Keys from Dashboard
@@ -22,19 +22,35 @@ import { supabase } from '@/app/integrations/supabase/client';
 const REVENUECAT_API_KEY_IOS = 'test_pOgVpdWTwmnVyqwEJWiaLTwHZsD'; // TODO: Replace with production key (appl_...)
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE'; // Update when you have Android key
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ CONFIGURATION UPDATED - JANUARY 2025
+// ═══════════════════════════════════════════════════════════════════════════
+// Based on your RevenueCat dashboard screenshot:
+// - Offering ID: ofrngf25b3975f3 (SurfVista Main)
+// - Monthly Package: $rc_monthly (SurfVista Monthly)
+// - Annual Package: $rc_annual (Surfvista Premium)
+// - Products are linked to App Store Connect
+// - Paywall is configured (verify it's PUBLISHED in RevenueCat dashboard)
+// ═══════════════════════════════════════════════════════════════════════════
+
 // Product Configuration
 // ⚠️ CRITICAL: These product IDs MUST match EXACTLY in:
 // 1. App Store Connect (iOS) or Google Play Console (Android)
 // 2. RevenueCat Dashboard > Products
 export const PAYMENT_CONFIG = {
   PRODUCTS: {
-    MONTHLY_SUBSCRIPTION: 'monthly',  // Your monthly product ID
-    ANNUAL_SUBSCRIPTION: 'yearly',    // Your yearly product ID
+    MONTHLY_SUBSCRIPTION: 'surfvista_Monthly',  // Your monthly product ID from RevenueCat
+    ANNUAL_SUBSCRIPTION: 'surfvista_Annual',    // Your yearly product ID from RevenueCat
   },
   // Entitlement identifier from RevenueCat Dashboard
   ENTITLEMENT_ID: 'SurfVista', // Your entitlement name
-  // Offering ID from RevenueCat Dashboard
+  // Offering ID from RevenueCat Dashboard (from screenshot)
   OFFERING_ID: 'ofrngf25b3975f3', // Your offering identifier
+  // Package identifiers from RevenueCat (from screenshot)
+  PACKAGE_IDS: {
+    MONTHLY: '$rc_monthly',  // Monthly package identifier
+    ANNUAL: '$rc_annual',    // Annual package identifier
+  },
   PRICING: {
     MONTHLY: '$12.99',  // Your actual pricing
     ANNUAL: '$99.99',  // Your actual pricing
@@ -193,22 +209,15 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
       console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
       
-      if (offerings.current) {
+      // Try to use the specific offering ID from config first
+      if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
+        currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
+        console.log('[RevenueCat] ✅ Using configured offering:', PAYMENT_CONFIG.OFFERING_ID);
+        console.log('[RevenueCat]    - Packages:', currentOffering.availablePackages.length);
+      } else if (offerings.current) {
         currentOffering = offerings.current;
         console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
         console.log('[RevenueCat]    - Packages:', currentOffering.availablePackages.length);
-        
-        if (currentOffering.availablePackages.length > 0) {
-          console.log('[RevenueCat]    - Package details:');
-          currentOffering.availablePackages.forEach((pkg, index) => {
-            console.log(`[RevenueCat]      ${index + 1}. ${pkg.identifier}`);
-            console.log(`[RevenueCat]         Product: ${pkg.product.identifier}`);
-            console.log(`[RevenueCat]         Price: ${pkg.product.priceString}`);
-          });
-        } else {
-          console.warn('[RevenueCat] ⚠️ Offering has NO packages!');
-          console.warn('[RevenueCat] 💡 Follow setup guide above to add products');
-        }
       } else if (Object.keys(offerings.all).length > 0) {
         // Use first available offering
         const firstKey = Object.keys(offerings.all)[0];
@@ -219,6 +228,18 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         console.error('[RevenueCat] ❌ NO OFFERINGS FOUND!');
         console.error('[RevenueCat] 💡 Follow STEP 3 in setup guide above');
         return false;
+      }
+      
+      if (currentOffering && currentOffering.availablePackages.length > 0) {
+        console.log('[RevenueCat]    - Package details:');
+        currentOffering.availablePackages.forEach((pkg, index) => {
+          console.log(`[RevenueCat]      ${index + 1}. ${pkg.identifier}`);
+          console.log(`[RevenueCat]         Product: ${pkg.product.identifier}`);
+          console.log(`[RevenueCat]         Price: ${pkg.product.priceString}`);
+        });
+      } else {
+        console.warn('[RevenueCat] ⚠️ Offering has NO packages!');
+        console.warn('[RevenueCat] 💡 Follow setup guide above to add products');
       }
       
       if (currentOffering && currentOffering.availablePackages.length === 0) {
@@ -339,7 +360,8 @@ export const presentPaywall = async (
     console.log('[RevenueCat] 📦 Fetching latest offerings...');
     const offerings = await Purchases.getOfferings();
     
-    const offeringToUse = offerings.current || currentOffering;
+    // Try to use the specific offering ID from config first
+    let offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current || currentOffering;
 
     if (!offeringToUse) {
       return {
@@ -348,6 +370,9 @@ export const presentPaywall = async (
       };
     }
 
+    console.log('[RevenueCat] 📋 Using offering:', offeringToUse.identifier);
+    console.log('[RevenueCat] 📋 Available packages:', offeringToUse.availablePackages.length);
+
     if (offeringToUse.availablePackages.length === 0) {
       return {
         state: 'error',
@@ -355,7 +380,7 @@ export const presentPaywall = async (
       };
     }
 
-    console.log('[RevenueCat] 📋 Available packages:');
+    console.log('[RevenueCat] 📋 Package details:');
     offeringToUse.availablePackages.forEach((pkg, index) => {
       console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.priceString}`);
     });
