@@ -64,55 +64,87 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     };
 
-    // Step 1: Fetch fresh surf conditions from NOAA buoy
-    console.log('Step 1: Fetching fresh surf conditions from NOAA buoy...');
-    const surfResult = await invokeFunctionWithTimeout(
-      `${supabaseUrl}/functions/v1/fetch-surf-reports`,
-      requestHeaders,
-      45000
-    );
+    // Process both locations
+    const locations = [
+      { id: 'folly-beach', name: 'Folly Beach, SC' },
+      { id: 'pawleys-island', name: 'Pawleys Island, SC' }
+    ];
 
-    if (!surfResult.data.success) {
-      console.log('Failed to fetch surf conditions:', surfResult.data.error);
+    const results = [];
+
+    for (const location of locations) {
+      console.log(`\n=== Processing ${location.name} ===`);
+      
+      try {
+        // Step 1: Fetch fresh surf conditions from NOAA buoy
+        console.log(`Step 1: Fetching fresh surf conditions for ${location.name}...`);
+        const surfResult = await invokeFunctionWithTimeout(
+          `${supabaseUrl}/functions/v1/fetch-surf-reports`,
+          requestHeaders,
+          45000,
+          JSON.stringify({ location: location.id })
+        );
+
+        if (!surfResult.data.success) {
+          console.log(`Failed to fetch surf conditions for ${location.name}:`, surfResult.data.error);
+        }
+
+        // Step 2: Update the report with new buoy data (preserving narrative)
+        console.log(`Step 2: Updating report with new buoy data for ${location.name}...`);
+        const updateResult = await invokeFunctionWithTimeout(
+          `${supabaseUrl}/functions/v1/update-buoy-data-only`,
+          requestHeaders,
+          45000,
+          JSON.stringify({ location: location.id })
+        );
+
+        if (updateResult.data.success) {
+          console.log(`✅ ${location.name}: Buoy data updated successfully (narrative preserved)`);
+          results.push({
+            location: location.name,
+            locationId: location.id,
+            success: true,
+            message: 'Buoy data updated successfully (narrative preserved)',
+          });
+        } else {
+          console.log(`⚠️ ${location.name}: Update failed, keeping most recent successful data`);
+          results.push({
+            location: location.name,
+            locationId: location.id,
+            success: true,
+            message: 'Buoy data unavailable, keeping most recent successful data from today',
+            warning: updateResult.data.error,
+          });
+        }
+      } catch (error) {
+        console.error(`❌ ${location.name}: Error during update:`, error);
+        results.push({
+          location: location.name,
+          locationId: location.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
     }
 
-    // Step 2: Update the report with new buoy data (preserving narrative)
-    console.log('Step 2: Updating report with new buoy data...');
-    const updateResult = await invokeFunctionWithTimeout(
-      `${supabaseUrl}/functions/v1/update-buoy-data-only`,
-      requestHeaders,
-      45000
+    console.log('=== 15-MINUTE BUOY DATA UPDATE COMPLETED ===');
+    
+    const allSucceeded = results.every(r => r.success);
+    
+    return new Response(
+      JSON.stringify({
+        success: allSucceeded,
+        message: allSucceeded 
+          ? 'Buoy data updated successfully for all locations (narratives preserved)' 
+          : 'Some locations failed to update',
+        results: results,
+        timestamp: new Date().toISOString(),
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
     );
-
-    if (updateResult.data.success) {
-      console.log('=== 15-MINUTE BUOY DATA UPDATE COMPLETED ===');
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Buoy data updated successfully (narrative preserved)',
-          report: updateResult.data.report,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    } else {
-      console.log('Update failed, report will show most recent successful data from today');
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Buoy data unavailable, keeping most recent successful data from today',
-          error: updateResult.data.error,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    }
   } catch (error) {
     console.error('=== 15-MINUTE BUOY DATA UPDATE FAILED ===');
     console.error('Error:', error);

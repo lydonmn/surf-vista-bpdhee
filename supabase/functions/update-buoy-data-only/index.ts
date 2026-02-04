@@ -128,6 +128,21 @@ Deno.serve(async (req) => {
     console.log('=== UPDATE BUOY DATA ONLY STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    const locationName = locationId === 'pawleys-island' ? 'Pawleys Island, SC' : 'Folly Beach, SC';
+    console.log('Updating buoy data for:', locationName);
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -152,11 +167,12 @@ Deno.serve(async (req) => {
     const today = getESTDate();
     console.log('Current EST date:', today);
 
-    // Fetch the latest surf conditions for today
+    // Fetch the latest surf conditions for today and this location
     const surfResult = await supabase
       .from('surf_conditions')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     if (surfResult.error) {
@@ -183,11 +199,12 @@ Deno.serve(async (req) => {
       console.log('⚠️ No valid wave data available from latest buoy fetch');
       console.log('Looking for most recent successful buoy data to use as fallback...');
       
-      // Get the existing report for today
+      // Get the existing report for today and this location
       const existingReportResult = await supabase
         .from('surf_reports')
         .select('*')
         .eq('date', today)
+        .eq('location', locationId)
         .maybeSingle();
 
       if (existingReportResult.data) {
@@ -246,10 +263,11 @@ Deno.serve(async (req) => {
         } else {
           console.log('⚠️ Existing report also has no valid wave data, looking for most recent historical data...');
           
-          // Look for the most recent report with valid wave data (from any previous day)
+          // Look for the most recent report with valid wave data (from any previous day) for this location
           const historicalReportResult = await supabase
             .from('surf_reports')
             .select('*')
+            .eq('location', locationId)
             .neq('wave_height', 'N/A')
             .not('wave_height', 'is', null)
             .order('date', { ascending: false })
@@ -299,6 +317,7 @@ Deno.serve(async (req) => {
               .from('surf_reports')
               .update(fallbackUpdate)
               .eq('date', today)
+              .eq('location', locationId)
               .select();
             
             if (updateError) {
@@ -349,11 +368,12 @@ Deno.serve(async (req) => {
       water_temp: newSurfData.water_temp
     });
 
-    // Get the existing report for today to preserve the narrative
+    // Get the existing report for today and this location to preserve the narrative
     const existingReportResult = await supabase
       .from('surf_reports')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     if (!existingReportResult.data) {
@@ -378,6 +398,7 @@ Deno.serve(async (req) => {
       .from('weather_data')
       .select('*')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     const weatherData = weatherResult.data;
@@ -406,6 +427,7 @@ Deno.serve(async (req) => {
       .from('surf_reports')
       .update(updatedReport)
       .eq('date', today)
+      .eq('location', locationId)
       .select();
 
     if (updateError) {
@@ -429,7 +451,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Buoy data updated successfully (narrative preserved)',
+        message: `Buoy data updated successfully for ${locationName} (narrative preserved)`,
+        location: locationName,
+        locationId: locationId,
         report: updateData[0],
         timestamp: new Date().toISOString(),
       }),
