@@ -1,314 +1,338 @@
 
-# RevenueCat + SurfVista Integration Guide
+# RevenueCat Integration Guide for SurfVista
 
-This guide will help you set up RevenueCat for subscription management in your SurfVista app. RevenueCat works seamlessly with Expo and can integrate with Superwall paywalls.
+## 📋 Overview
 
-## 🎯 YOUR SURFVISTA REVENUECAT CONFIGURATION
+This guide will walk you through setting up RevenueCat for your SurfVista app. RevenueCat handles all subscription management, including:
 
-**These are the specific identifiers already configured in your SurfVista app:**
+- ✅ Subscription purchases
+- ✅ Subscription renewals
+- ✅ Restore purchases
+- ✅ Entitlement checking
+- ✅ Customer Center (manage subscriptions)
+- ✅ Cross-platform support (iOS & Android)
 
-### Product Identifiers (In-App Purchase IDs)
-- **Monthly Subscription**: `surfvista_monthly`
-- **Annual Subscription**: `surfvista_annual`
-- **Alternative Monthly**: `monthly`
-- **Alternative Annual**: `yearly`
+## 🔑 Current Configuration
 
-### Offering Identifier
-- **Primary Offering**: `ofrnge7bdc97106`
-- **Fallback Offering**: `default`
+**API Key (Test):** `test_pOgVpdWTwmnVyqwEJWiaLTwHZsD`
 
-### Entitlement Identifier
-- **Entitlement ID**: `premium`
-- **Display Name**: "SurfVista Pro"
+**Products:**
+- Monthly: `monthly` - $5.00/month
+- Yearly: `yearly` - $50.00/year (adjust as needed)
 
-**⚠️ IMPORTANT**: These identifiers MUST match exactly across:
-- App Store Connect (iOS)
-- Google Play Console (Android)
-- RevenueCat Dashboard
-- Your app code (already configured in `utils/superwallConfig.ts`)
+**Entitlement:** `SurfVista`
 
----
+## 📱 Step-by-Step Setup
 
-## Why RevenueCat?
+### STEP 1: Create Products in App Store Connect
 
-- ✅ **Expo Compatible**: Works with Expo Go and development builds
-- ✅ **Cross-Platform**: Single codebase for iOS and Android
-- ✅ **Superwall Integration**: Can display Superwall paywalls
-- ✅ **Easy Setup**: No complex native configuration required
-- ✅ **Analytics**: Built-in subscription analytics and insights
-- ✅ **Server-Side**: Handles receipt validation server-side
+1. Go to [App Store Connect](https://appstoreconnect.apple.com)
+2. Select your app: **SurfVista**
+3. Navigate to **Monetization** > **Subscriptions**
+4. Create a subscription group (if you don't have one)
+5. Add your subscriptions:
 
-## Step 1: Create RevenueCat Account
+   **Monthly Subscription:**
+   - Product ID: `monthly` (must match exactly - case sensitive!)
+   - Price: $5.00/month
+   - Subscription Duration: 1 month
+   - Display Name: "SurfVista Monthly"
+   - Description: "Access to exclusive surf reports and 6K drone videos"
 
-1. Go to [https://www.revenuecat.com/](https://www.revenuecat.com/)
-2. Click "Sign Up" and create a free account
-3. Verify your email address
+   **Yearly Subscription:**
+   - Product ID: `yearly` (must match exactly - case sensitive!)
+   - Price: $50.00/year (or your preferred annual price)
+   - Subscription Duration: 1 year
+   - Display Name: "SurfVista Yearly"
+   - Description: "Annual access to exclusive surf reports and 6K drone videos"
 
-## Step 2: Create Your App in RevenueCat
+6. Fill in all required fields (localization, review information, etc.)
+7. Submit for review
+8. **Important:** Products must be in "Ready to Submit" or "Approved" status
 
-1. Log in to the RevenueCat dashboard
-2. Click "Create New App"
-3. Enter your app details:
-   - **App Name**: SurfVista
-   - **Bundle ID (iOS)**: com.anonymous.Natively (or your custom bundle ID)
-   - **Package Name (Android)**: com.anonymous.Natively (or your custom package name)
+### STEP 2: Add Products to RevenueCat
 
-## Step 3: Configure App Store Connect (iOS)
+1. Go to [RevenueCat Dashboard](https://app.revenuecat.com)
+2. Select your project: **SurfVista**
+3. Click **Products** in the left sidebar
+4. Click **+ New** button
 
-### Create In-App Purchases in App Store Connect
+   **For Monthly Product:**
+   - Product Identifier: `monthly` (must match App Store Connect exactly!)
+   - Store: iOS App Store
+   - Click **Save**
 
-1. Go to [App Store Connect](https://appstoreconnect.apple.com/)
-2. Select your app (or create a new app)
-3. Go to "Features" > "In-App Purchases"
-4. Click the "+" button to create a new subscription
-5. Create auto-renewable subscriptions with YOUR EXACT PRODUCT IDs:
+   **For Yearly Product:**
+   - Product Identifier: `yearly` (must match App Store Connect exactly!)
+   - Store: iOS App Store
+   - Click **Save**
 
-**Monthly Subscription:**
-- **Product ID**: `surfvista_monthly` ⚠️ MUST MATCH EXACTLY
-- Reference Name: SurfVista Monthly Subscription
-- Subscription Group: Create a new group (e.g., "SurfVista Subscriptions")
-- Subscription Duration: 1 Month
-- Price: $5.00 (or your preferred price)
+5. Wait 5-10 minutes for RevenueCat to sync with App Store Connect
 
-**Annual Subscription:**
-- **Product ID**: `surfvista_annual` ⚠️ MUST MATCH EXACTLY
-- Reference Name: SurfVista Annual Subscription
-- Subscription Group: Same as monthly (SurfVista Subscriptions)
-- Subscription Duration: 1 Year
-- Price: $50.00 (or your preferred price)
+### STEP 3: Create an Offering
 
-**Alternative Product IDs (Optional):**
-If you want to use the alternative IDs:
-- **Product ID**: `monthly` for monthly subscription
-- **Product ID**: `yearly` for annual subscription
+Offerings are how you group products together for display in your app.
 
-### Connect App Store Connect to RevenueCat
+1. In RevenueCat Dashboard, go to **Offerings**
+2. Click **+ New Offering**
+3. Give it an identifier: `default` (or any name you prefer)
+4. Add packages to the offering:
+   - Click **+ Add Package**
+   - Select **monthly** product
+   - Package Type: Choose "Monthly" or "Custom"
+   - Click **Add Package**
+   - Select **yearly** product
+   - Package Type: Choose "Annual" or "Custom"
+5. Click **Make Current** to set this as your default offering
+6. Click **Save**
 
-1. In RevenueCat dashboard, go to your app
-2. Click "App Store Connect" under iOS
-3. Follow the instructions to generate and upload an App Store Connect API Key
-4. Enter your Shared Secret (from App Store Connect > App Information > App-Specific Shared Secret)
+### STEP 4: Create Entitlement
 
-## Step 4: Configure Google Play Console (Android)
+Entitlements represent access levels in your app.
 
-### Create In-App Products in Google Play Console
+1. In RevenueCat Dashboard, go to **Entitlements**
+2. Click **+ New Entitlement**
+3. Identifier: `SurfVista` (must match the code exactly!)
+4. Display Name: "SurfVista Premium"
+5. Attach products:
+   - Select both `monthly` and `yearly` products
+6. Click **Save**
 
-1. Go to [Google Play Console](https://play.google.com/console/)
-2. Select your app (or create a new app)
-3. Go to "Monetize" > "Products" > "Subscriptions"
-4. Click "Create subscription"
-5. Create subscriptions with YOUR EXACT PRODUCT IDs:
+### STEP 5: Create and Publish Paywall
 
-**Monthly Subscription:**
-- **Product ID**: `surfvista_monthly` ⚠️ MUST MATCH EXACTLY
-- Name: SurfVista Monthly Subscription
-- Description: Monthly access to exclusive Folly Beach surf reports and 6K drone footage
-- Billing period: 1 Month
-- Price: $5.00 (or your preferred price)
+The paywall is the UI that users see when subscribing.
 
-**Annual Subscription:**
-- **Product ID**: `surfvista_annual` ⚠️ MUST MATCH EXACTLY
-- Name: SurfVista Annual Subscription
-- Description: Annual access to exclusive Folly Beach surf reports and 6K drone footage
-- Billing period: 1 Year
-- Price: $50.00 (or your preferred price)
+1. In RevenueCat Dashboard, go to **Paywalls**
+2. Click **+ Create Paywall**
+3. Choose a template or create custom:
+   - **Recommended:** Use a pre-built template for faster setup
+   - Customize colors to match your brand (ocean blue theme)
+4. Link to your offering:
+   - Select the offering you created in Step 3
+5. Customize content:
+   - Headline: "Unlock Premium Surf Reports"
+   - Features:
+     - "6K Drone Videos Daily"
+     - "Exclusive Surf Forecasts"
+     - "Real-time Conditions"
+     - "Ad-Free Experience"
+6. Set pricing display:
+   - Show both monthly and yearly options
+   - Highlight yearly as "Best Value" (if applicable)
+7. Click **Publish**
 
-### Connect Google Play to RevenueCat
+### STEP 6: Configure Customer Center (Optional but Recommended)
 
-1. In RevenueCat dashboard, go to your app
-2. Click "Google Play" under Android
-3. Follow the instructions to create a service account and upload the JSON key
-4. Grant the service account the necessary permissions in Google Play Console
+The Customer Center allows users to manage their subscriptions.
 
-## Step 5: Create Products in RevenueCat
+1. In RevenueCat Dashboard, go to **Customer Center**
+2. Click **Enable Customer Center**
+3. Customize appearance:
+   - Match your app's branding
+   - Choose which options to show (cancel, pause, etc.)
+4. Configure management options:
+   - Allow users to cancel
+   - Allow users to change plans
+   - Show billing history
+5. Click **Save**
 
-1. In RevenueCat dashboard, go to your app
-2. Click "Products" in the left sidebar
-3. Click "Add Product"
-4. Add each product with YOUR EXACT PRODUCT IDs:
-   - **Product ID**: `surfvista_monthly` (iOS and Android)
-   - **Product ID**: `surfvista_annual` (iOS and Android)
-   - Optionally: `monthly` and `yearly` if you created those
-5. Select the product type (Subscription)
-6. Click "Save" for each
+### STEP 7: Test with Sandbox
 
-## Step 6: Create Entitlement in RevenueCat
+Before going live, test your subscription flow.
 
-1. In RevenueCat dashboard, go to "Entitlements"
-2. Click "Create Entitlement"
-3. Use YOUR EXACT ENTITLEMENT ID:
-   - **Identifier**: `premium` ⚠️ MUST MATCH EXACTLY
-   - **Display Name**: SurfVista Pro
-4. Attach your products to this entitlement:
-   - Add `surfvista_monthly`
-   - Add `surfvista_annual`
-5. Click "Save"
+1. **Create Sandbox Tester:**
+   - Go to App Store Connect
+   - Navigate to **Users and Access** > **Sandbox Testers**
+   - Click **+** to create a new tester
+   - Use a unique email (doesn't need to be real)
+   - Remember the password
 
-## Step 7: Create Offering in RevenueCat
+2. **Configure iOS Device:**
+   - On your iPhone, go to **Settings** > **App Store**
+   - Scroll down and tap **Sandbox Account**
+   - Sign out of any existing sandbox account
+   - Don't sign in yet (you'll be prompted when testing)
 
-1. In RevenueCat dashboard, go to "Offerings"
-2. Click "Create Offering"
-3. Use YOUR EXACT OFFERING ID:
-   - **Identifier**: `ofrnge7bdc97106` ⚠️ (if this is your existing offering ID)
-   - OR create a new one called `default`
-4. Add packages:
-   - Click "Add Package"
-   - Select "Monthly" package type
-   - Link to `surfvista_monthly` product
-   - Click "Add Package" again
-   - Select "Annual" package type
-   - Link to `surfvista_annual` product
-5. Make this offering "Current"
-6. Click "Save"
+3. **Test the Flow:**
+   - Run your app on the device (not simulator)
+   - Navigate to Profile screen
+   - Tap "Subscribe Now"
+   - When prompted, sign in with your sandbox tester account
+   - Complete the purchase (it's free in sandbox)
+   - Verify subscription is active
 
-**Note**: Your app is configured to look for offering `ofrnge7bdc97106` first, then fall back to `default`. Make sure at least one of these exists.
+4. **Test Restore Purchases:**
+   - Delete the app
+   - Reinstall and sign in
+   - Tap "Restore Purchases"
+   - Verify subscription is restored
 
-## Step 8: Get Your API Keys
+5. **Test Customer Center:**
+   - While subscribed, tap "Manage Subscription"
+   - Verify Customer Center opens
+   - Test cancellation (it won't actually cancel in sandbox)
 
-1. In RevenueCat dashboard, go to "Settings" > "API Keys"
-2. Copy your API keys:
-   - **iOS API Key**: Starts with `appl_`
-   - **Android API Key**: Starts with `goog_`
+## 🔧 Troubleshooting
 
-## Step 9: Update Your App Configuration
+### "No offerings found"
+- **Cause:** Offering not created or not marked as "Current"
+- **Solution:** Follow Step 3 above, ensure offering is marked as "Current"
 
-Open `utils/superwallConfig.ts` and replace the placeholder API keys:
+### "No products in offering"
+- **Cause:** Products not added to offering
+- **Solution:** Edit your offering and add both monthly and yearly products
+
+### "Product IDs don't match"
+- **Cause:** Product IDs in App Store Connect don't match RevenueCat
+- **Solution:** Verify product IDs are exactly the same (case-sensitive)
+  - App Store Connect: `monthly` and `yearly`
+  - RevenueCat: `monthly` and `yearly`
+  - Code: `monthly` and `yearly`
+
+### "Paywall not showing"
+- **Cause:** Paywall not published
+- **Solution:** Go to Paywalls in RevenueCat, ensure paywall is published
+
+### "Sandbox purchases not working"
+- **Cause:** Not signed in with sandbox tester account
+- **Solution:** Sign out of App Store in Settings, test again, sign in when prompted
+
+### "Products show as $0.00"
+- **Cause:** Testing on simulator (StoreKit doesn't work on simulator)
+- **Solution:** Test on a real device
+
+## 📱 How It Works in Your App
+
+### Initialization
+
+The SDK is initialized in `app/_layout.tsx`:
 
 ```typescript
-const REVENUECAT_API_KEY_IOS = 'appl_YOUR_IOS_KEY_HERE';
-const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE';
+import { initializeRevenueCat } from '@/utils/superwallConfig';
+
+useEffect(() => {
+  initializeRevenueCat();
+}, []);
 ```
 
-**Your product configuration is already set up correctly:**
+### Presenting Paywall
+
+Users can subscribe from the Profile screen:
 
 ```typescript
-export const PAYMENT_CONFIG = {
-  PRODUCTS: {
-    MONTHLY_SUBSCRIPTION: 'surfvista_monthly',  // ✅ Already configured
-    ANNUAL_SUBSCRIPTION: 'surfvista_annual',    // ✅ Already configured
-    MONTHLY: 'monthly',                         // ✅ Already configured
-    YEARLY: 'yearly',                           // ✅ Already configured
-  },
-  OFFERING_IDS: ['ofrnge7bdc97106', 'default'], // ✅ Already configured
-  ENTITLEMENT_ID: 'premium',                    // ✅ Already configured
+import { presentPaywall } from '@/utils/superwallConfig';
+
+const handleSubscribe = async () => {
+  const result = await presentPaywall(user?.id, user?.email);
+  
+  if (result.state === 'purchased') {
+    // Subscription successful!
+  }
 };
 ```
 
-## Step 10: Test Your Integration
+### Checking Entitlements
 
-### Testing in Development
+Check if user has access:
 
-1. **iOS**: Use a Sandbox Test Account
-   - Create a sandbox tester in App Store Connect
-   - Sign out of your Apple ID in Settings
-   - When prompted during purchase, sign in with sandbox account
+```typescript
+import { checkEntitlements } from '@/utils/superwallConfig';
 
-2. **Android**: Use a Test Account
-   - Add test accounts in Google Play Console
-   - Sign in with a test account on your device
-
-### Test the Flow
-
-1. Run your app: `npm run ios` or `npm run android`
-2. Navigate to the login screen
-3. Try subscribing to the monthly or annual plan
-4. Complete the purchase flow
-5. Verify the subscription is active in your profile
-
-### Verify in RevenueCat Dashboard
-
-1. Go to "Customers" in RevenueCat dashboard
-2. Search for your test user
-3. Verify the subscription is showing as active
-
-## Troubleshooting
-
-### "No offerings found"
-- Verify products are created in App Store Connect / Google Play with IDs: `surfvista_monthly` and `surfvista_annual`
-- Verify products are added to RevenueCat with the same IDs
-- Verify offering `ofrnge7bdc97106` or `default` is created and contains the products
-- Wait a few minutes for changes to sync
-
-### "Purchase failed"
-- Verify you're using a sandbox/test account
-- Verify the product IDs match exactly: `surfvista_monthly` and `surfvista_annual`
-- Check RevenueCat logs in the dashboard
-- Ensure your app's bundle ID matches RevenueCat configuration
-
-### "API key not configured"
-- Verify you've updated the API keys in `utils/superwallConfig.ts`
-- Restart your app after updating the keys
-- Check for typos in the API keys
-
-### "Subscription not showing in app"
-- Verify the subscription is active in RevenueCat dashboard
-- Try refreshing the profile in the app
-- Check the Supabase `profiles` table for subscription status
-- Use "Restore Purchases" to sync subscription status
-
-### "Entitlement not found"
-- Verify entitlement is created with ID: `premium`
-- Verify products are attached to the entitlement
-- Check RevenueCat dashboard for entitlement configuration
-
-## Production Checklist
-
-Before releasing to production:
-
-- [ ] Products created in App Store Connect with IDs: `surfvista_monthly`, `surfvista_annual`
-- [ ] Products created in Google Play Console with IDs: `surfvista_monthly`, `surfvista_annual`
-- [ ] Products added to RevenueCat with matching IDs
-- [ ] Entitlement created with ID: `premium`
-- [ ] Offering created with ID: `ofrnge7bdc97106` or `default`
-- [ ] Products attached to entitlement
-- [ ] Products added to offering
-- [ ] API keys updated in app (production keys, not test)
-- [ ] Tested subscription flow on iOS
-- [ ] Tested subscription flow on Android
-- [ ] Tested restore purchases
-- [ ] Verified subscription status syncs to Supabase
-- [ ] Updated bundle ID and package name
-- [ ] Submitted app for review with in-app purchases
-
-## Quick Reference Card
-
-**Print this and keep it handy:**
-
-```
-SURFVISTA REVENUECAT IDENTIFIERS
-================================
-
-Products (In-App Purchase IDs):
-- surfvista_monthly
-- surfvista_annual
-- monthly (alternative)
-- yearly (alternative)
-
-Offering ID:
-- ofrnge7bdc97106 (primary)
-- default (fallback)
-
-Entitlement ID:
-- premium
-
-These MUST match exactly in:
-✓ App Store Connect
-✓ Google Play Console
-✓ RevenueCat Dashboard
-✓ Your app code
+const hasAccess = await checkEntitlements();
+if (hasAccess) {
+  // User has SurfVista entitlement
+}
 ```
 
-## Support
+### Customer Center
 
-- **RevenueCat Docs**: [https://docs.revenuecat.com/](https://docs.revenuecat.com/)
-- **RevenueCat Support**: [https://community.revenuecat.com/](https://community.revenuecat.com/)
-- **App Store Connect**: [https://developer.apple.com/support/](https://developer.apple.com/support/)
-- **Google Play Console**: [https://support.google.com/googleplay/android-developer/](https://support.google.com/googleplay/android-developer/)
+Let users manage their subscription:
 
-## Next Steps
+```typescript
+import { presentCustomerCenter } from '@/utils/superwallConfig';
 
-1. Follow this guide to set up RevenueCat with YOUR specific identifiers
-2. Test the subscription flow thoroughly
-3. (Optional) Integrate Superwall for custom paywalls
-4. Submit your app for review
-5. Launch! 🚀
+const handleManageSubscription = async () => {
+  await presentCustomerCenter();
+};
+```
+
+### Restore Purchases
+
+Let users restore previous purchases:
+
+```typescript
+import { restorePurchases } from '@/utils/superwallConfig';
+
+const handleRestore = async () => {
+  const result = await restorePurchases();
+  
+  if (result.success) {
+    // Purchases restored!
+  }
+};
+```
+
+## 🚀 Going to Production
+
+When you're ready to launch:
+
+1. **Update API Key:**
+   - In RevenueCat Dashboard, go to **Settings** > **API Keys**
+   - Copy your **Production** iOS API key (starts with `appl_`)
+   - Update `utils/superwallConfig.ts`:
+     ```typescript
+     const REVENUECAT_API_KEY_IOS = 'appl_YOUR_PRODUCTION_KEY';
+     ```
+
+2. **Submit App for Review:**
+   - Ensure products are approved in App Store Connect
+   - Submit your app with subscription features
+   - Include screenshots showing subscription flow
+
+3. **Monitor Dashboard:**
+   - Check RevenueCat Dashboard for real purchases
+   - Monitor subscription metrics
+   - Set up webhooks for subscription events (optional)
+
+## 📊 Key Features Implemented
+
+✅ **Subscription Purchase** - Users can subscribe via paywall
+✅ **Restore Purchases** - Users can restore on new devices
+✅ **Entitlement Checking** - App checks for "SurfVista" entitlement
+✅ **Customer Center** - Users can manage subscriptions
+✅ **Supabase Sync** - Subscription status synced to your database
+✅ **User Identification** - Users linked to their RevenueCat profile
+✅ **Cross-Platform** - Works on iOS (Android ready when you add Android key)
+
+## 🔗 Useful Links
+
+- [RevenueCat Dashboard](https://app.revenuecat.com)
+- [App Store Connect](https://appstoreconnect.apple.com)
+- [RevenueCat Documentation](https://docs.revenuecat.com)
+- [RevenueCat React Native SDK](https://docs.revenuecat.com/docs/reactnative)
+
+## 💡 Best Practices
+
+1. **Always test in sandbox before production**
+2. **Use meaningful product IDs** (monthly, yearly, not prod1, prod2)
+3. **Keep entitlement names simple** (SurfVista, not surf_vista_premium_access)
+4. **Monitor your dashboard regularly** for subscription metrics
+5. **Set up webhooks** to get notified of subscription events
+6. **Provide clear value proposition** in your paywall
+7. **Make restore purchases easy to find** for users switching devices
+
+## 🎯 Next Steps
+
+1. ✅ Complete Steps 1-7 above
+2. ✅ Test thoroughly in sandbox
+3. ✅ Update to production API key
+4. ✅ Submit app for review
+5. ✅ Monitor first real subscriptions
+6. ✅ Iterate based on user feedback
+
+---
+
+**Need Help?**
+- RevenueCat Support: support@revenuecat.com
+- RevenueCat Community: community.revenuecat.com
+- Check console logs for detailed error messages
