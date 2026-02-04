@@ -173,37 +173,54 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     if (Platform.OS === 'ios' && !REVENUECAT_API_KEY.startsWith('appl_') && !REVENUECAT_API_KEY.startsWith('test_')) {
       initializationError = 'Invalid iOS API key format. Must start with "appl_" or "test_"';
       console.error('[RevenueCat] ❌', initializationError);
+      isPaymentSystemInitialized = false;
       return false;
     }
     
     if (Platform.OS === 'android' && !REVENUECAT_API_KEY.startsWith('goog_')) {
       initializationError = 'Invalid Android API key format. Must start with "goog_"';
       console.error('[RevenueCat] ❌', initializationError);
+      isPaymentSystemInitialized = false;
       return false;
     }
     
     if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
       initializationError = `${Platform.OS === 'ios' ? 'iOS' : 'Android'} API key is a placeholder. Please add your actual API key.`;
       console.error('[RevenueCat] ❌', initializationError);
+      isPaymentSystemInitialized = false;
       return false;
     }
     
-    // Configure RevenueCat with detailed logging
-    Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
+    // Configure RevenueCat with detailed logging and error handling
+    try {
+      Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
+      
+      console.log('[RevenueCat] 🔑 Configuring with API key:', REVENUECAT_API_KEY.substring(0, 15) + '...');
+      
+      await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+      
+      console.log('[RevenueCat] ✅ SDK configured successfully');
+      console.log('[RevenueCat] 📋 Configuration:');
+      console.log('[RevenueCat]    - Product IDs:', Object.values(PAYMENT_CONFIG.PRODUCTS));
+      console.log('[RevenueCat]    - Entitlement:', PAYMENT_CONFIG.ENTITLEMENT_ID);
+    } catch (configError: any) {
+      initializationError = `SDK configuration failed: ${configError.message}`;
+      console.error('[RevenueCat] ❌ SDK configuration error:', configError);
+      isPaymentSystemInitialized = false;
+      return false;
+    }
     
-    console.log('[RevenueCat] 🔑 Configuring with API key:', REVENUECAT_API_KEY.substring(0, 15) + '...');
-    
-    await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
-    
-    console.log('[RevenueCat] ✅ SDK configured successfully');
-    console.log('[RevenueCat] 📋 Configuration:');
-    console.log('[RevenueCat]    - Product IDs:', Object.values(PAYMENT_CONFIG.PRODUCTS));
-    console.log('[RevenueCat]    - Entitlement:', PAYMENT_CONFIG.ENTITLEMENT_ID);
-    
-    // Fetch offerings
+    // Fetch offerings with timeout
     try {
       console.log('[RevenueCat] 📦 Fetching offerings from RevenueCat...');
-      const offerings = await Purchases.getOfferings();
+      
+      // Add timeout to prevent hanging
+      const offeringsPromise = Purchases.getOfferings();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Offerings fetch timeout')), 10000)
+      );
+      
+      const offerings = await Promise.race([offeringsPromise, timeoutPromise]) as any;
       
       console.log('[RevenueCat] 🔍 Offerings Response:');
       console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
@@ -227,7 +244,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         initializationError = 'No offerings found. Please create an offering in RevenueCat dashboard.';
         console.error('[RevenueCat] ❌ NO OFFERINGS FOUND!');
         console.error('[RevenueCat] 💡 Follow STEP 3 in setup guide above');
-        return false;
+        // Don't return false - allow app to continue without offerings
+        isPaymentSystemInitialized = true;
+        return true;
       }
       
       if (currentOffering && currentOffering.availablePackages.length > 0) {
@@ -246,7 +265,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         initializationError = 'Offering has no products. Please add products to your offering.';
         console.error('[RevenueCat] ❌ OFFERING HAS NO PACKAGES!');
         console.error('[RevenueCat] 💡 Follow STEP 2 and STEP 3 in setup guide above');
-        return false;
+        // Don't return false - allow app to continue
+        isPaymentSystemInitialized = true;
+        return true;
       }
       
       console.log('[RevenueCat] ✅ Offering ready:', currentOffering?.identifier);
@@ -256,7 +277,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       initializationError = offeringError.message;
       console.error('[RevenueCat] ❌ Error fetching offerings:', offeringError.message);
       console.error('[RevenueCat] 💡 Check setup guide above for troubleshooting');
-      return false;
+      // Don't return false - allow app to continue without offerings
+      isPaymentSystemInitialized = true;
+      return true;
     }
     
     isPaymentSystemInitialized = true;
@@ -266,9 +289,11 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     return true;
     
   } catch (error: any) {
-    initializationError = error.message;
-    console.error('[RevenueCat] ❌ Failed to initialize:', error.message);
+    initializationError = error.message || 'Unknown initialization error';
+    console.error('[RevenueCat] ❌ Failed to initialize:', error);
+    console.error('[RevenueCat] ❌ Error stack:', error.stack);
     isPaymentSystemInitialized = false;
+    // Don't throw - just return false and let the app continue
     return false;
   }
 };
@@ -695,19 +720,38 @@ export const checkSubscriptionInSupabase = async (userId: string): Promise<{
  */
 export const identifyUser = async (userId: string, email?: string): Promise<void> => {
   try {
+    console.log('[RevenueCat] Attempting to identify user:', userId);
+    
     if (!isPaymentSystemAvailable()) {
+      console.log('[RevenueCat] Payment system not available, skipping user identification');
       return;
     }
 
-    await Purchases.logIn(userId);
-    console.log('[RevenueCat] ✅ User identified:', userId);
+    if (!userId) {
+      console.warn('[RevenueCat] No user ID provided, skipping identification');
+      return;
+    }
+
+    try {
+      await Purchases.logIn(userId);
+      console.log('[RevenueCat] ✅ User identified:', userId);
+    } catch (loginError: any) {
+      console.error('[RevenueCat] ⚠️ Error logging in user:', loginError.message);
+      // Don't throw - this is non-critical
+    }
     
     if (email) {
-      await Purchases.setEmail(email);
-      console.log('[RevenueCat] ✅ Email set:', email);
+      try {
+        await Purchases.setEmail(email);
+        console.log('[RevenueCat] ✅ Email set:', email);
+      } catch (emailError: any) {
+        console.error('[RevenueCat] ⚠️ Error setting email:', emailError.message);
+        // Don't throw - this is non-critical
+      }
     }
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Error identifying user:', error);
+    // Don't throw - allow the app to continue
   }
 };
 
@@ -717,13 +761,22 @@ export const identifyUser = async (userId: string, email?: string): Promise<void
  */
 export const logoutUser = async (): Promise<void> => {
   try {
+    console.log('[RevenueCat] Attempting to log out user...');
+    
     if (!isPaymentSystemAvailable()) {
+      console.log('[RevenueCat] Payment system not available, skipping logout');
       return;
     }
 
-    await Purchases.logOut();
-    console.log('[RevenueCat] ✅ User logged out');
+    try {
+      await Purchases.logOut();
+      console.log('[RevenueCat] ✅ User logged out');
+    } catch (logoutError: any) {
+      console.error('[RevenueCat] ⚠️ Error logging out user:', logoutError.message);
+      // Don't throw - this is non-critical
+    }
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Error logging out user:', error);
+    console.error('[RevenueCat] ❌ Error in logout process:', error);
+    // Don't throw - allow the app to continue
   }
 };

@@ -112,17 +112,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        try {
-          console.log('[AuthContext] Initializing RevenueCat...');
-          const revenueCatInitialized = await initializeRevenueCat();
-          if (revenueCatInitialized) {
-            console.log('[AuthContext] ✅ RevenueCat initialized successfully');
-          } else {
-            console.log('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
+        // Initialize RevenueCat in the background (non-blocking)
+        // This prevents the app from crashing if RevenueCat fails to initialize
+        setTimeout(async () => {
+          try {
+            console.log('[AuthContext] Initializing RevenueCat in background...');
+            const revenueCatInitialized = await initializeRevenueCat();
+            if (revenueCatInitialized) {
+              console.log('[AuthContext] ✅ RevenueCat initialized successfully');
+            } else {
+              console.log('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
+            }
+          } catch (revenueCatError) {
+            console.error('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
           }
-        } catch (revenueCatError) {
-          console.error('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
-        }
+        }, 100);
         
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
@@ -135,11 +139,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Loading initial profile...');
           await loadUserProfile(initialSession.user, mounted);
           
-          try {
-            await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-          } catch (error) {
-            console.error('[AuthContext] Error identifying user in RevenueCat:', error);
-          }
+          // Identify user in RevenueCat after a delay (non-blocking)
+          // This is wrapped in setTimeout to prevent blocking the UI
+          setTimeout(async () => {
+            try {
+              console.log('[AuthContext] Attempting to identify user in RevenueCat...');
+              await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+              console.log('[AuthContext] ✅ User identified in RevenueCat');
+            } catch (error) {
+              console.error('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
+              // This is non-critical - the app should continue to work
+            }
+          }, 1000);
         } else {
           console.log('[AuthContext] No session, setting loading to false');
           setIsLoading(false);
@@ -185,11 +196,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
         
-        try {
-          await identifyUser(newSession.user.id, newSession.user.email || undefined);
-        } catch (error) {
-          console.error('[AuthContext] Error identifying user in RevenueCat:', error);
-        }
+        // Identify user in RevenueCat (non-blocking)
+        setTimeout(async () => {
+          try {
+            console.log('[AuthContext] Attempting to identify user in RevenueCat...');
+            await identifyUser(newSession.user.id, newSession.user.email || undefined);
+            console.log('[AuthContext] ✅ User identified in RevenueCat');
+          } catch (error) {
+            console.error('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
+          }
+        }, 1000);
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event detected');
         setSession(newSession);
