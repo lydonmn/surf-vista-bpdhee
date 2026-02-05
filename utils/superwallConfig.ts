@@ -151,6 +151,7 @@ let initializationError: string | null = null;
  * Call this once when the app starts (in _layout.tsx or App.tsx)
  */
 export const initializeRevenueCat = async (): Promise<boolean> => {
+  // Wrap everything in a try-catch to prevent any uncaught errors from crashing the app
   try {
     console.log('[RevenueCat] 🚀 Initializing SDK...');
     console.log('[RevenueCat] Platform:', Platform.OS);
@@ -160,6 +161,14 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     if (Platform.OS === 'web') {
       console.log('[RevenueCat] ℹ️ Skipping initialization on web platform');
       initializationError = 'RevenueCat is not supported on web. Please use iOS or Android app.';
+      isPaymentSystemInitialized = false;
+      return false;
+    }
+    
+    // Add a safety check for Platform.OS
+    if (!Platform.OS || (Platform.OS !== 'ios' && Platform.OS !== 'android')) {
+      console.log('[RevenueCat] ⚠️ Unknown platform, skipping initialization');
+      initializationError = 'RevenueCat is only supported on iOS and Android.';
       isPaymentSystemInitialized = false;
       return false;
     }
@@ -192,21 +201,35 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     }
     
     // Configure RevenueCat with detailed logging and error handling
+    // This is wrapped in a try-catch to prevent crashes if RevenueCat fails to initialize
     try {
-      Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
+      // Set log level first (this should never fail)
+      try {
+        Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
+      } catch (logError) {
+        console.warn('[RevenueCat] ⚠️ Could not set log level:', logError);
+        // Continue anyway - this is not critical
+      }
       
       console.log('[RevenueCat] 🔑 Configuring with API key:', REVENUECAT_API_KEY.substring(0, 15) + '...');
       
-      await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+      // Configure SDK with timeout to prevent hanging
+      const configPromise = Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('SDK configuration timeout')), 15000)
+      );
+      
+      await Promise.race([configPromise, timeoutPromise]);
       
       console.log('[RevenueCat] ✅ SDK configured successfully');
       console.log('[RevenueCat] 📋 Configuration:');
       console.log('[RevenueCat]    - Product IDs:', Object.values(PAYMENT_CONFIG.PRODUCTS));
       console.log('[RevenueCat]    - Entitlement:', PAYMENT_CONFIG.ENTITLEMENT_ID);
     } catch (configError: any) {
-      initializationError = `SDK configuration failed: ${configError.message}`;
+      initializationError = `SDK configuration failed: ${configError?.message || 'Unknown error'}`;
       console.error('[RevenueCat] ❌ SDK configuration error:', configError);
       isPaymentSystemInitialized = false;
+      // Don't throw - just return false and let the app continue
       return false;
     }
     
@@ -289,11 +312,15 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     return true;
     
   } catch (error: any) {
-    initializationError = error.message || 'Unknown initialization error';
+    // This is the final catch-all to ensure no errors escape and crash the app
+    initializationError = error?.message || 'Unknown initialization error';
     console.error('[RevenueCat] ❌ Failed to initialize:', error);
-    console.error('[RevenueCat] ❌ Error stack:', error.stack);
+    if (error?.stack) {
+      console.error('[RevenueCat] ❌ Error stack:', error.stack);
+    }
     isPaymentSystemInitialized = false;
     // Don't throw - just return false and let the app continue
+    // The app should work without RevenueCat (users just can't subscribe)
     return false;
   }
 };
@@ -719,6 +746,7 @@ export const checkSubscriptionInSupabase = async (userId: string): Promise<{
  * Call this after user logs in
  */
 export const identifyUser = async (userId: string, email?: string): Promise<void> => {
+  // Wrap everything in try-catch to prevent crashes
   try {
     console.log('[RevenueCat] Attempting to identify user:', userId);
     
@@ -732,26 +760,39 @@ export const identifyUser = async (userId: string, email?: string): Promise<void
       return;
     }
 
+    // Try to log in user with timeout
     try {
-      await Purchases.logIn(userId);
+      const loginPromise = Purchases.logIn(userId);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Login timeout')), 10000)
+      );
+      
+      await Promise.race([loginPromise, timeoutPromise]);
       console.log('[RevenueCat] ✅ User identified:', userId);
     } catch (loginError: any) {
-      console.error('[RevenueCat] ⚠️ Error logging in user:', loginError.message);
+      console.error('[RevenueCat] ⚠️ Error logging in user:', loginError?.message || 'Unknown error');
       // Don't throw - this is non-critical
     }
     
+    // Try to set email with timeout
     if (email) {
       try {
-        await Purchases.setEmail(email);
+        const emailPromise = Purchases.setEmail(email);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Set email timeout')), 5000)
+        );
+        
+        await Promise.race([emailPromise, timeoutPromise]);
         console.log('[RevenueCat] ✅ Email set:', email);
       } catch (emailError: any) {
-        console.error('[RevenueCat] ⚠️ Error setting email:', emailError.message);
+        console.error('[RevenueCat] ⚠️ Error setting email:', emailError?.message || 'Unknown error');
         // Don't throw - this is non-critical
       }
     }
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Error identifying user:', error);
+    console.error('[RevenueCat] ❌ Error identifying user:', error?.message || 'Unknown error');
     // Don't throw - allow the app to continue
+    // The app should work without user identification in RevenueCat
   }
 };
 
@@ -760,6 +801,7 @@ export const identifyUser = async (userId: string, email?: string): Promise<void
  * Call this when user logs out
  */
 export const logoutUser = async (): Promise<void> => {
+  // Wrap everything in try-catch to prevent crashes
   try {
     console.log('[RevenueCat] Attempting to log out user...');
     
@@ -768,15 +810,22 @@ export const logoutUser = async (): Promise<void> => {
       return;
     }
 
+    // Try to log out with timeout
     try {
-      await Purchases.logOut();
+      const logoutPromise = Purchases.logOut();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Logout timeout')), 5000)
+      );
+      
+      await Promise.race([logoutPromise, timeoutPromise]);
       console.log('[RevenueCat] ✅ User logged out');
     } catch (logoutError: any) {
-      console.error('[RevenueCat] ⚠️ Error logging out user:', logoutError.message);
+      console.error('[RevenueCat] ⚠️ Error logging out user:', logoutError?.message || 'Unknown error');
       // Don't throw - this is non-critical
     }
   } catch (error: any) {
-    console.error('[RevenueCat] ❌ Error in logout process:', error);
+    console.error('[RevenueCat] ❌ Error in logout process:', error?.message || 'Unknown error');
     // Don't throw - allow the app to continue
+    // The app should work without logging out from RevenueCat
   }
 };
