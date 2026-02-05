@@ -174,8 +174,41 @@ export default function HomeScreen() {
     try {
       console.log('[HomeScreen] Opening subscription paywall...');
       
-      // Present the RevenueCat Paywall
-      const result = await presentPaywall(user?.id, user?.email || undefined);
+      // ⚠️ CRITICAL FIX: Automatic retry mechanism
+      // If the payment system is still initializing, wait and retry
+      let retryCount = 0;
+      const maxRetries = 10; // 10 retries = 10 seconds max wait
+      let result: any = null;
+      
+      while (retryCount < maxRetries) {
+        // Present the RevenueCat Paywall
+        result = await presentPaywall(user?.id, user?.email || undefined);
+        
+        // If payment system is still initializing, wait 1 second and retry
+        if (result.state === 'initializing') {
+          console.log(`[HomeScreen] ⏳ Payment system initializing, retry ${retryCount + 1}/${maxRetries}...`);
+          retryCount++;
+          
+          // Wait 1 second before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        
+        // If we got a result other than 'initializing', break the loop
+        break;
+      }
+      
+      // If we exhausted all retries and still initializing, show error
+      if (result.state === 'initializing') {
+        console.log('[HomeScreen] ❌ Payment system failed to initialize after 10 seconds');
+        
+        Alert.alert(
+          'Payment System Not Ready',
+          'The payment system is taking longer than expected to initialize. Please try again in a few moments.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       
       console.log('[HomeScreen] Paywall result:', result);
       

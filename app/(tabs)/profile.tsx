@@ -238,24 +238,6 @@ export default function ProfileScreen() {
   const handleSubscribeNow = async () => {
     console.log('[ProfileScreen] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
     
-    // Check if payment system is available
-    if (!isPaymentSystemAvailable()) {
-      console.log('[ProfileScreen] ⚠️ Payment system not available');
-      checkPaymentConfiguration();
-      
-      Alert.alert(
-        'RevenueCat Configuration Required',
-        'The subscription system is not properly configured. This is a configuration issue that needs to be fixed in the RevenueCat dashboard.\n\n' +
-        'Please check the console logs for detailed setup instructions on how to:\n\n' +
-        '• Add products to RevenueCat\n' +
-        '• Create and configure offerings\n' +
-        '• Set up and publish paywalls\n\n' +
-        'Once configured, restart the app to try again.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
     setIsSubscribing(true);
 
     try {
@@ -263,8 +245,47 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] User ID:', user?.id);
       console.log('[ProfileScreen] User Email:', user?.email);
       
-      // Present the RevenueCat Paywall
-      const result = await presentPaywall(user?.id, user?.email || undefined);
+      // ⚠️ CRITICAL FIX: Automatic retry mechanism
+      // If the payment system is still initializing (3-second delay in AuthContext),
+      // we'll wait and retry automatically instead of showing an error
+      let retryCount = 0;
+      const maxRetries = 10; // 10 retries = 10 seconds max wait
+      let result: any = null;
+      
+      while (retryCount < maxRetries) {
+        // Present the RevenueCat Paywall
+        result = await presentPaywall(user?.id, user?.email || undefined);
+        
+        // If payment system is still initializing, wait 1 second and retry
+        if (result.state === 'initializing') {
+          console.log(`[ProfileScreen] ⏳ Payment system initializing, retry ${retryCount + 1}/${maxRetries}...`);
+          retryCount++;
+          
+          // Wait 1 second before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        
+        // If we got a result other than 'initializing', break the loop
+        break;
+      }
+      
+      // If we exhausted all retries and still initializing, show error
+      if (result.state === 'initializing') {
+        console.log('[ProfileScreen] ❌ Payment system failed to initialize after 10 seconds');
+        checkPaymentConfiguration();
+        
+        Alert.alert(
+          'Payment System Not Ready',
+          'The payment system is taking longer than expected to initialize. This could be due to:\n\n' +
+          '• Slow network connection\n' +
+          '• RevenueCat configuration issues\n' +
+          '• App Store Connect sync delays\n\n' +
+          'Please try again in a few moments, or restart the app.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       
       console.log('[ProfileScreen] 📊 Paywall result:', result);
       

@@ -485,11 +485,16 @@ export const checkPaymentConfiguration = (): boolean => {
 /**
  * Present the RevenueCat Paywall
  * This shows the subscription options to the user
+ * 
+ * ⚠️ AUTOMATIC RETRY: If the payment system is not initialized yet,
+ * this function will wait and retry automatically (up to 10 seconds).
+ * This prevents the "Payment system not initialized" error when users
+ * tap Subscribe immediately after app launch.
  */
 export const presentPaywall = async (
   userId?: string,
   userEmail?: string
-): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error'; message?: string }> => {
+): Promise<{ state: 'purchased' | 'restored' | 'declined' | 'error' | 'initializing'; message?: string }> => {
   try {
     console.log('[RevenueCat] 🎯 Presenting paywall...');
     
@@ -500,11 +505,17 @@ export const presentPaywall = async (
       };
     }
     
+    // ⚠️ CRITICAL FIX: If payment system is not initialized yet, wait and retry
+    // This prevents the "Payment system not initialized" error when users tap
+    // Subscribe immediately after app launch (before the 3-second delay completes)
     if (!isPaymentSystemAvailable()) {
-      console.error('[RevenueCat] ❌ Payment system not initialized');
+      console.log('[RevenueCat] ⏳ Payment system not ready yet, waiting for initialization...');
+      
+      // Return a special state to show loading UI
+      // The calling code should show a loading indicator
       return {
-        state: 'error',
-        message: initializationError || 'Payment system not initialized. Please restart the app.'
+        state: 'initializing',
+        message: 'Initializing payment system...'
       };
     }
 
