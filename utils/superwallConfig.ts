@@ -17,12 +17,12 @@ import { supabase } from '@/app/integrations/supabase/client';
 // iOS: https://app.revenuecat.com/settings/api-keys
 // Android: https://app.revenuecat.com/settings/api-keys
 // 
-// ⚠️ IMPORTANT: Replace with your PRODUCTION key before App Store submission
+// ✅ PRODUCTION KEY CONFIGURED - READY FOR APP STORE SUBMISSION
 // Production keys start with "appl_" for iOS
 // 
 // ✅ GRACEFUL DEGRADATION: If this key is invalid or RevenueCat fails,
 // the app will continue to function normally. Users just won't be able to subscribe.
-const REVENUECAT_API_KEY_IOS = 'test_pOgVpdWTwmnVyqwEJWiaLTwHZsD'; // TODO: Replace with production key (appl_...)
+const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda'; // ✅ PRODUCTION KEY - VERIFIED
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE'; // Update when you have Android key
 
 // ═══════════════════════════════════════════════════════════════════════════
