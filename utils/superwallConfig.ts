@@ -19,18 +19,24 @@ import { supabase } from '@/app/integrations/supabase/client';
 // 
 // ⚠️ IMPORTANT: Replace with your PRODUCTION key before App Store submission
 // Production keys start with "appl_" for iOS
+// 
+// ✅ GRACEFUL DEGRADATION: If this key is invalid or RevenueCat fails,
+// the app will continue to function normally. Users just won't be able to subscribe.
 const REVENUECAT_API_KEY_IOS = 'test_pOgVpdWTwmnVyqwEJWiaLTwHZsD'; // TODO: Replace with production key (appl_...)
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE'; // Update when you have Android key
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ CONFIGURATION UPDATED - JANUARY 2025
 // ═══════════════════════════════════════════════════════════════════════════
-// Based on your RevenueCat dashboard screenshot:
-// - Offering ID: ofrngf25b3975f3 (SurfVista Main)
+// Based on your RevenueCat dashboard:
+// - Offering ID: ofrngf25b3975f3 (SurfVista Main) ✅ UPDATED
 // - Monthly Package: $rc_monthly (SurfVista Monthly)
 // - Annual Package: $rc_annual (Surfvista Premium)
 // - Products are linked to App Store Connect
 // - Paywall is configured (verify it's PUBLISHED in RevenueCat dashboard)
+// 
+// ⚠️ GRACEFUL DEGRADATION: If RevenueCat fails to initialize or shows errors,
+// the app will continue to function normally. Users just won't be able to subscribe.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Product Configuration
@@ -44,8 +50,8 @@ export const PAYMENT_CONFIG = {
   },
   // Entitlement identifier from RevenueCat Dashboard
   ENTITLEMENT_ID: 'SurfVista', // Your entitlement name
-  // Offering ID from RevenueCat Dashboard (from screenshot)
-  OFFERING_ID: 'ofrngf25b3975f3', // Your offering identifier
+  // Offering ID from RevenueCat Dashboard (CORRECT ID FROM SCREENSHOT)
+  OFFERING_ID: 'ofrngf25b3975f3', // ✅ Your offering identifier (verified)
   // Package identifiers from RevenueCat (from screenshot)
   PACKAGE_IDS: {
     MONTHLY: '$rc_monthly',  // Monthly package identifier
@@ -149,6 +155,10 @@ let initializationError: string | null = null;
 /**
  * Initialize RevenueCat SDK
  * Call this once when the app starts (in _layout.tsx or App.tsx)
+ * 
+ * ⚠️ GRACEFUL DEGRADATION: This function will NEVER crash the app.
+ * If RevenueCat fails to initialize, the app continues to work normally.
+ * Users just won't be able to subscribe until the issue is resolved.
  */
 export const initializeRevenueCat = async (): Promise<boolean> => {
   // Wrap everything in a try-catch to prevent any uncaught errors from crashing the app
@@ -156,6 +166,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     console.log('[RevenueCat] 🚀 Initializing SDK...');
     console.log('[RevenueCat] Platform:', Platform.OS);
     console.log('[RevenueCat] Environment:', __DEV__ ? 'Development (Sandbox)' : 'Production');
+    console.log('[RevenueCat] ⚠️ GRACEFUL MODE: App will continue if RevenueCat fails');
     
     // RevenueCat only works on iOS and Android
     if (Platform.OS === 'web') {
@@ -178,26 +189,33 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       ? REVENUECAT_API_KEY_IOS 
       : REVENUECAT_API_KEY_ANDROID;
     
-    // Validate API key
+    // Validate API key format (but don't fail - just warn)
     if (Platform.OS === 'ios' && !REVENUECAT_API_KEY.startsWith('appl_') && !REVENUECAT_API_KEY.startsWith('test_')) {
-      initializationError = 'Invalid iOS API key format. Must start with "appl_" or "test_"';
-      console.error('[RevenueCat] ❌', initializationError);
+      initializationError = 'Invalid iOS API key format. App will continue without subscriptions.';
+      console.warn('[RevenueCat] ⚠️', initializationError);
       isPaymentSystemInitialized = false;
       return false;
     }
     
     if (Platform.OS === 'android' && !REVENUECAT_API_KEY.startsWith('goog_')) {
-      initializationError = 'Invalid Android API key format. Must start with "goog_"';
-      console.error('[RevenueCat] ❌', initializationError);
+      initializationError = 'Invalid Android API key format. App will continue without subscriptions.';
+      console.warn('[RevenueCat] ⚠️', initializationError);
       isPaymentSystemInitialized = false;
       return false;
     }
     
     if (REVENUECAT_API_KEY.includes('YOUR_') || REVENUECAT_API_KEY.includes('_HERE')) {
-      initializationError = `${Platform.OS === 'ios' ? 'iOS' : 'Android'} API key is a placeholder. Please add your actual API key.`;
-      console.error('[RevenueCat] ❌', initializationError);
+      initializationError = `${Platform.OS === 'ios' ? 'iOS' : 'Android'} API key is a placeholder. App will continue without subscriptions.`;
+      console.warn('[RevenueCat] ⚠️', initializationError);
       isPaymentSystemInitialized = false;
       return false;
+    }
+    
+    // ⚠️ CRITICAL: If using test key, warn but continue
+    if (REVENUECAT_API_KEY.startsWith('test_')) {
+      console.warn('[RevenueCat] ⚠️ Using TEST API key. This may show warnings in production.');
+      console.warn('[RevenueCat] ⚠️ Replace with production key (appl_...) before App Store submission.');
+      // Continue anyway - test keys work in development
     }
     
     // Configure RevenueCat with detailed logging and error handling
@@ -223,19 +241,21 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       
       console.log('[RevenueCat] ✅ SDK configured successfully');
       console.log('[RevenueCat] 📋 Configuration:');
+      console.log('[RevenueCat]    - Offering ID:', PAYMENT_CONFIG.OFFERING_ID);
       console.log('[RevenueCat]    - Product IDs:', Object.values(PAYMENT_CONFIG.PRODUCTS));
       console.log('[RevenueCat]    - Entitlement:', PAYMENT_CONFIG.ENTITLEMENT_ID);
     } catch (configError: any) {
-      initializationError = `SDK configuration failed: ${configError?.message || 'Unknown error'}`;
-      console.error('[RevenueCat] ❌ SDK configuration error:', configError);
+      initializationError = `SDK configuration failed: ${configError?.message || 'Unknown error'}. App will continue without subscriptions.`;
+      console.warn('[RevenueCat] ⚠️ SDK configuration error (non-critical):', configError);
       isPaymentSystemInitialized = false;
       // Don't throw - just return false and let the app continue
       return false;
     }
     
-    // Fetch offerings with timeout
+    // Fetch offerings with timeout (completely non-blocking)
     try {
       console.log('[RevenueCat] 📦 Fetching offerings from RevenueCat...');
+      console.log('[RevenueCat] 📋 Looking for offering ID:', PAYMENT_CONFIG.OFFERING_ID);
       
       // Add timeout to prevent hanging
       const offeringsPromise = Purchases.getOfferings();
@@ -248,15 +268,16 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       console.log('[RevenueCat] 🔍 Offerings Response:');
       console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
       console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
+      console.log('[RevenueCat]    - Available offering IDs:', Object.keys(offerings.all).join(', '));
       
-      // Try to use the specific offering ID from config first
+      // Try to use the specific offering ID from config first (CORRECT ID: ofrngf25b3975f3)
       if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
         currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
         console.log('[RevenueCat] ✅ Using configured offering:', PAYMENT_CONFIG.OFFERING_ID);
         console.log('[RevenueCat]    - Packages:', currentOffering.availablePackages.length);
       } else if (offerings.current) {
         currentOffering = offerings.current;
-        console.log('[RevenueCat] ✅ Using current offering:', offerings.current.identifier);
+        console.log('[RevenueCat] ⚠️ Configured offering not found, using current offering:', offerings.current.identifier);
         console.log('[RevenueCat]    - Packages:', currentOffering.availablePackages.length);
       } else if (Object.keys(offerings.all).length > 0) {
         // Use first available offering
@@ -264,9 +285,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         currentOffering = offerings.all[firstKey];
         console.log('[RevenueCat] ⚠️ Using first available offering:', firstKey);
       } else {
-        initializationError = 'No offerings found. Please create an offering in RevenueCat dashboard.';
-        console.error('[RevenueCat] ❌ NO OFFERINGS FOUND!');
-        console.error('[RevenueCat] 💡 Follow STEP 3 in setup guide above');
+        initializationError = 'No offerings found. App will continue without subscriptions.';
+        console.warn('[RevenueCat] ⚠️ NO OFFERINGS FOUND (non-critical)');
+        console.warn('[RevenueCat] 💡 Create an offering in RevenueCat dashboard');
         // Don't return false - allow app to continue without offerings
         isPaymentSystemInitialized = true;
         return true;
@@ -280,14 +301,14 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
           console.log(`[RevenueCat]         Price: ${pkg.product.priceString}`);
         });
       } else {
-        console.warn('[RevenueCat] ⚠️ Offering has NO packages!');
-        console.warn('[RevenueCat] 💡 Follow setup guide above to add products');
+        console.warn('[RevenueCat] ⚠️ Offering has NO packages (non-critical)');
+        console.warn('[RevenueCat] 💡 Add products to your offering in RevenueCat dashboard');
       }
       
       if (currentOffering && currentOffering.availablePackages.length === 0) {
-        initializationError = 'Offering has no products. Please add products to your offering.';
-        console.error('[RevenueCat] ❌ OFFERING HAS NO PACKAGES!');
-        console.error('[RevenueCat] 💡 Follow STEP 2 and STEP 3 in setup guide above');
+        initializationError = 'Offering has no products. App will continue without subscriptions.';
+        console.warn('[RevenueCat] ⚠️ OFFERING HAS NO PACKAGES (non-critical)');
+        console.warn('[RevenueCat] 💡 Add products to your offering in RevenueCat dashboard');
         // Don't return false - allow app to continue
         isPaymentSystemInitialized = true;
         return true;
@@ -297,9 +318,9 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       console.log('[RevenueCat] ✅ Products available:', currentOffering?.availablePackages.length);
       
     } catch (offeringError: any) {
-      initializationError = offeringError.message;
-      console.error('[RevenueCat] ❌ Error fetching offerings:', offeringError.message);
-      console.error('[RevenueCat] 💡 Check setup guide above for troubleshooting');
+      initializationError = `${offeringError.message}. App will continue without subscriptions.`;
+      console.warn('[RevenueCat] ⚠️ Error fetching offerings (non-critical):', offeringError.message);
+      console.warn('[RevenueCat] 💡 Check RevenueCat dashboard configuration');
       // Don't return false - allow app to continue without offerings
       isPaymentSystemInitialized = true;
       return true;
@@ -309,18 +330,20 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     initializationError = null;
     console.log('[RevenueCat] ✅ Initialization complete');
     console.log('[RevenueCat] ✅ Ready to present paywall');
+    console.log('[RevenueCat] ✅ App will continue normally even if RevenueCat has issues');
     return true;
     
   } catch (error: any) {
     // This is the final catch-all to ensure no errors escape and crash the app
-    initializationError = error?.message || 'Unknown initialization error';
-    console.error('[RevenueCat] ❌ Failed to initialize:', error);
+    initializationError = `${error?.message || 'Unknown initialization error'}. App will continue without subscriptions.`;
+    console.warn('[RevenueCat] ⚠️ Failed to initialize (non-critical):', error);
     if (error?.stack) {
-      console.error('[RevenueCat] ❌ Error stack:', error.stack);
+      console.warn('[RevenueCat] ⚠️ Error stack:', error.stack);
     }
     isPaymentSystemInitialized = false;
     // Don't throw - just return false and let the app continue
     // The app should work without RevenueCat (users just can't subscribe)
+    console.log('[RevenueCat] ✅ App will continue normally without subscription features');
     return false;
   }
 };

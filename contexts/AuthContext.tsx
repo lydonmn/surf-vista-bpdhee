@@ -136,14 +136,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Initialize RevenueCat AFTER the app is fully loaded (completely non-blocking)
         // This runs in the background and will not block the UI or cause crashes
         // We use a longer delay to ensure the app is fully rendered first
+        // ⚠️ GRACEFUL DEGRADATION: If RevenueCat fails, the app continues normally
         setTimeout(() => {
           if (!mounted) return;
           
           // Run RevenueCat initialization in a separate async context
           (async () => {
             try {
-              console.log('[AuthContext] Starting background RevenueCat initialization...');
+              console.log('[AuthContext] ⏰ Starting background RevenueCat initialization (delayed)...');
+              console.log('[AuthContext] ⚠️ App will continue normally even if RevenueCat fails');
+              
               const revenueCatInitialized = await initializeRevenueCat();
+              
               if (revenueCatInitialized) {
                 console.log('[AuthContext] ✅ RevenueCat initialized successfully');
                 
@@ -155,19 +159,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
                       console.log('[AuthContext] ✅ User identified in RevenueCat');
                     } catch (error) {
-                      console.error('[AuthContext] ⚠️ Error identifying user (non-critical):', error);
+                      console.warn('[AuthContext] ⚠️ Error identifying user (non-critical):', error);
+                      // App continues normally
                     }
                   }, 500);
                 }
               } else {
-                console.log('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
+                console.warn('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
+                console.log('[AuthContext] ✅ App continues normally without subscription features');
               }
             } catch (revenueCatError) {
-              console.error('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
+              console.warn('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
+              console.log('[AuthContext] ✅ App continues normally without subscription features');
               // App continues to work without RevenueCat
             }
           })();
-        }, 2000); // 2 second delay to ensure app is fully loaded
+        }, 3000); // 3 second delay to ensure app is fully loaded and stable
         
       } catch (error) {
         console.error('[AuthContext] Initialization error:', error);
@@ -205,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
         
-        // Identify user in RevenueCat (completely non-blocking)
+        // Identify user in RevenueCat (completely non-blocking and fault-tolerant)
         setTimeout(() => {
           (async () => {
             try {
@@ -213,10 +220,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               await identifyUser(newSession.user.id, newSession.user.email || undefined);
               console.log('[AuthContext] ✅ User identified in RevenueCat');
             } catch (error) {
-              console.error('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
+              console.warn('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
+              console.log('[AuthContext] ✅ App continues normally');
+              // App continues normally - this is not critical
             }
           })();
-        }, 1500);
+        }, 2000); // Longer delay to ensure stability
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event detected');
         setSession(newSession);
