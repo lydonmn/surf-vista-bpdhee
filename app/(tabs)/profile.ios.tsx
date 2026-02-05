@@ -282,11 +282,35 @@ export default function ProfileScreen() {
       } else if (result.state === 'error') {
         console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
         
-        // Show the detailed error message from RevenueCat
+        // Show the detailed error message from RevenueCat with scrollable content
         Alert.alert(
-          'Configuration Required',
-          result.message,
-          [{ text: 'OK' }]
+          'Setup Required',
+          result.message || 'Unable to load subscription options. Please check the configuration.',
+          [
+            { 
+              text: 'Learn More', 
+              onPress: () => {
+                console.log('[ProfileScreen iOS] User wants to learn more about setup');
+                Alert.alert(
+                  'Quick Setup Guide',
+                  'The subscription system needs products to be created in App Store Connect first.\n\n' +
+                  'Steps:\n' +
+                  '1. Go to appstoreconnect.apple.com\n' +
+                  '2. Select SurfVista app\n' +
+                  '3. Go to Monetization > Subscriptions\n' +
+                  '4. Create subscription group\n' +
+                  '5. Add monthly subscription ($12.99)\n' +
+                  '6. Add annual subscription ($99.99)\n' +
+                  '7. Set to "Ready to Submit"\n' +
+                  '8. Wait 15-30 minutes\n' +
+                  '9. Restart app\n\n' +
+                  'Need help? Contact support.',
+                  [{ text: 'Got It' }]
+                );
+              }
+            },
+            { text: 'OK', style: 'cancel' }
+          ]
         );
       } else if (result.state === 'declined') {
         console.log('[ProfileScreen iOS] ℹ️ User cancelled paywall');

@@ -43,6 +43,15 @@ const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE'; // Update when 
 // ⚠️ CRITICAL: These product IDs MUST match EXACTLY in:
 // 1. App Store Connect (iOS) or Google Play Console (Android)
 // 2. RevenueCat Dashboard > Products
+//
+// 🚨 IMPORTANT: Based on the error you're seeing, you need to:
+// 1. Create products in App Store Connect with these EXACT IDs:
+//    - com.surfvista.monthly (or surfvista_Monthly)
+//    - com.surfvista.annual (or surfvista_Annual)
+// 2. Make sure products are in "Ready to Submit" or "Approved" status
+// 3. Add these products to RevenueCat Dashboard > Products
+// 4. Link them to your offering (ofrngf25b3975f3)
+// 5. Wait 15-30 minutes for App Store Connect to sync with RevenueCat
 export const PAYMENT_CONFIG = {
   PRODUCTS: {
     MONTHLY_SUBSCRIPTION: 'surfvista_Monthly',  // Your monthly product ID from RevenueCat
@@ -67,19 +76,39 @@ export const PAYMENT_CONFIG = {
 // 📚 REVENUECAT SETUP GUIDE
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// STEP 1: CREATE PRODUCTS IN APP STORE CONNECT ✅ (YOU'VE DONE THIS)
+// STEP 1: CREATE PRODUCTS IN APP STORE CONNECT ⚠️ (THIS IS WHERE THE ERROR IS)
 // ────────────────────────────────────────────
+// 🚨 THE ERROR YOU'RE SEEING MEANS THIS STEP IS NOT COMPLETE
+// 
+// The error "None of the products registered in the RevenueCat dashboard could be 
+// fetched from App Store Connect" means:
+// - Products don't exist in App Store Connect yet, OR
+// - Product IDs don't match exactly, OR
+// - Products are not in "Ready to Submit" status, OR
+// - App Store Connect hasn't synced with RevenueCat yet (wait 15-30 min)
+//
+// TO FIX THIS ERROR:
 // 1. Go to https://appstoreconnect.apple.com
 // 2. Select your app (SurfVista)
 // 3. Go to "Monetization" > "Subscriptions"
-// 4. Create subscription group if needed
-// 5. Add subscriptions:
-//    - Product ID: "monthly" (must match exactly)
+// 4. Create subscription group if it doesn't exist
+// 5. Add subscriptions with EXACT product IDs:
+//    - Product ID: "surfvista_Monthly" (MUST MATCH EXACTLY - case sensitive!)
 //    - Price: $12.99/month
-//    - Product ID: "yearly" (must match exactly)
+//    - Duration: 1 month
+//    - Product ID: "surfvista_Annual" (MUST MATCH EXACTLY - case sensitive!)
 //    - Price: $99.99/year
-// 6. Set subscription details (name, description, etc.)
-// 7. Submit for review (products must be "Ready to Submit" or "Approved")
+//    - Duration: 1 year
+// 6. Fill in all required fields (name, description, etc.)
+// 7. Set products to "Ready to Submit" status (this is CRITICAL!)
+// 8. Wait 15-30 minutes for App Store Connect to sync with RevenueCat
+// 9. Restart the app and try again
+//
+// ⚠️ COMMON MISTAKES:
+// - Using wrong product IDs (must be exactly "surfvista_Monthly" and "surfvista_Annual")
+// - Products in "Draft" status (must be "Ready to Submit" or "Approved")
+// - Not waiting for sync (takes 15-30 minutes after creating products)
+// - Typos in product IDs (case sensitive!)
 //
 // STEP 2: ADD PRODUCTS TO REVENUECAT ✅ (YOU'VE DONE THIS)
 // ───────────────────────────────────
@@ -362,12 +391,15 @@ export const getInitializationError = (): string | null => {
 };
 
 export const checkPaymentConfiguration = (): boolean => {
-  console.log('[RevenueCat] 🔍 Configuration Check:');
+  console.log('[RevenueCat] 🔍 ===== CONFIGURATION CHECK =====');
   console.log('[RevenueCat]    - Platform:', Platform.OS);
   console.log('[RevenueCat]    - Initialized:', isPaymentSystemInitialized);
   console.log('[RevenueCat]    - Current Offering:', currentOffering?.identifier || 'None');
   console.log('[RevenueCat]    - Offering Packages:', currentOffering?.availablePackages.length || 0);
   console.log('[RevenueCat]    - Initialization Error:', initializationError || 'None');
+  console.log('[RevenueCat]    - API Key:', REVENUECAT_API_KEY_IOS.substring(0, 15) + '...');
+  console.log('[RevenueCat]    - Expected Offering ID:', PAYMENT_CONFIG.OFFERING_ID);
+  console.log('[RevenueCat]    - Expected Products:', Object.values(PAYMENT_CONFIG.PRODUCTS).join(', '));
   
   if (Platform.OS === 'web') {
     console.log('[RevenueCat] ℹ️ RevenueCat is not supported on web');
@@ -376,12 +408,76 @@ export const checkPaymentConfiguration = (): boolean => {
   
   if (currentOffering && currentOffering.availablePackages.length > 0) {
     console.log('[RevenueCat] ✅ Configuration looks good!');
+    console.log('[RevenueCat] ✅ Available packages:');
+    currentOffering.availablePackages.forEach((pkg, index) => {
+      console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
+    });
     return true;
   } else {
-    console.log('[RevenueCat] ⚠️ Configuration incomplete');
-    if (initializationError) {
-      console.log('[RevenueCat] ❌ Error:', initializationError);
+    console.log('[RevenueCat] ⚠️ ===== CONFIGURATION INCOMPLETE =====');
+    console.log('[RevenueCat] ');
+    console.log('[RevenueCat] 🚨 THE PAYWALL CANNOT BE PRESENTED BECAUSE:');
+    console.log('[RevenueCat] ');
+    
+    if (!isPaymentSystemInitialized) {
+      console.log('[RevenueCat] ❌ RevenueCat SDK is not initialized');
+      console.log('[RevenueCat]    → Check if API key is valid');
+      console.log('[RevenueCat]    → API Key:', REVENUECAT_API_KEY_IOS.substring(0, 15) + '...');
+    } else if (!currentOffering) {
+      console.log('[RevenueCat] ❌ No offering found');
+      console.log('[RevenueCat]    → Expected offering ID:', PAYMENT_CONFIG.OFFERING_ID);
+      console.log('[RevenueCat]    → Go to RevenueCat Dashboard > Offerings');
+      console.log('[RevenueCat]    → Create offering with ID:', PAYMENT_CONFIG.OFFERING_ID);
+      console.log('[RevenueCat]    → Set it as "Current Offering"');
+    } else if (currentOffering.availablePackages.length === 0) {
+      console.log('[RevenueCat] ❌ Offering has NO PACKAGES (products)');
+      console.log('[RevenueCat]    → This is the error you\'re seeing!');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 📋 TO FIX THIS:');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 1️⃣ CREATE PRODUCTS IN APP STORE CONNECT:');
+      console.log('[RevenueCat]    → Go to appstoreconnect.apple.com');
+      console.log('[RevenueCat]    → Select SurfVista app');
+      console.log('[RevenueCat]    → Go to Monetization > Subscriptions');
+      console.log('[RevenueCat]    → Create subscription group');
+      console.log('[RevenueCat]    → Add monthly subscription:');
+      console.log('[RevenueCat]       • Product ID: surfvista_Monthly (EXACT!)');
+      console.log('[RevenueCat]       • Price: $12.99/month');
+      console.log('[RevenueCat]       • Status: Ready to Submit');
+      console.log('[RevenueCat]    → Add annual subscription:');
+      console.log('[RevenueCat]       • Product ID: surfvista_Annual (EXACT!)');
+      console.log('[RevenueCat]       • Price: $99.99/year');
+      console.log('[RevenueCat]       • Status: Ready to Submit');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 2️⃣ ADD PRODUCTS TO REVENUECAT:');
+      console.log('[RevenueCat]    → Go to app.revenuecat.com');
+      console.log('[RevenueCat]    → Select SurfVista project');
+      console.log('[RevenueCat]    → Go to Products');
+      console.log('[RevenueCat]    → Add surfvista_Monthly (iOS App Store)');
+      console.log('[RevenueCat]    → Add surfvista_Annual (iOS App Store)');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 3️⃣ LINK PRODUCTS TO OFFERING:');
+      console.log('[RevenueCat]    → Go to Offerings');
+      console.log('[RevenueCat]    → Edit offering:', PAYMENT_CONFIG.OFFERING_ID);
+      console.log('[RevenueCat]    → Add package: surfvista_Monthly ($rc_monthly)');
+      console.log('[RevenueCat]    → Add package: surfvista_Annual ($rc_annual)');
+      console.log('[RevenueCat]    → Save offering');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 4️⃣ WAIT FOR SYNC:');
+      console.log('[RevenueCat]    → Wait 15-30 minutes for App Store Connect to sync');
+      console.log('[RevenueCat]    → Force quit and restart the app');
+      console.log('[RevenueCat]    → Try again');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 📚 More info: https://rev.cat/why-are-offerings-empty');
     }
+    
+    if (initializationError) {
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] ❌ Initialization Error:', initializationError);
+    }
+    
+    console.log('[RevenueCat] ');
+    console.log('[RevenueCat] ===== END CONFIGURATION CHECK =====');
     return false;
   }
 };
@@ -451,7 +547,22 @@ export const presentPaywall = async (
     if (offeringToUse.availablePackages.length === 0) {
       return {
         state: 'error',
-        message: 'No subscription plans available. Please add products to your offering in RevenueCat.'
+        message: '⚠️ Products Not Found\n\n' +
+          'RevenueCat cannot find your subscription products from App Store Connect.\n\n' +
+          'To fix this:\n\n' +
+          '1. Go to App Store Connect\n' +
+          '2. Create In-App Purchases:\n' +
+          '   • Product ID: surfvista_Monthly\n' +
+          '   • Price: $12.99/month\n' +
+          '   • Product ID: surfvista_Annual\n' +
+          '   • Price: $99.99/year\n\n' +
+          '3. Set products to "Ready to Submit"\n\n' +
+          '4. In RevenueCat Dashboard:\n' +
+          '   • Add these products\n' +
+          '   • Link to offering: ofrngf25b3975f3\n\n' +
+          '5. Wait 15-30 minutes for sync\n\n' +
+          '6. Restart the app\n\n' +
+          'More info: https://rev.cat/why-are-offerings-empty'
       };
     }
 
