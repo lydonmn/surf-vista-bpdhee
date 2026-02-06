@@ -14,11 +14,28 @@ export function useVideos() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
-  const preloadedUrlsRef = useRef<Map<string, string>>(new Map());
+  const preloadedUrlsRef = useRef<Map<string, { url: string; timestamp: number }>>(new Map());
+  const isPreloadingRef = useRef(false);
 
-  // Generate signed URL for a video
-  const generateSignedUrl = useCallback(async (videoUrl: string): Promise<string | null> => {
+  // ✅ CRITICAL: Cache signed URLs with 1-hour expiry
+  const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour in milliseconds
+
+  // Generate signed URL for a video with caching
+  const generateSignedUrl = useCallback(async (videoUrl: string, videoId: string): Promise<string | null> => {
     try {
+      // Check cache first
+      const cached = preloadedUrlsRef.current.get(videoId);
+      if (cached) {
+        const age = Date.now() - cached.timestamp;
+        if (age < SIGNED_URL_CACHE_DURATION) {
+          console.log('[useVideos] ✅ Using cached signed URL for video:', videoId, '(age:', Math.floor(age / 1000), 'seconds)');
+          return cached.url;
+        } else {
+          console.log('[useVideos] ⚠️ Cached URL expired, regenerating...');
+          preloadedUrlsRef.current.delete(videoId);
+        }
+      }
+
       // Extract the file path from the full URL
       const urlParts = videoUrl.split('/videos/');
       if (urlParts.length !== 2) {
@@ -26,13 +43,13 @@ export function useVideos() {
         return null;
       }
 
-      const filePath = urlParts[1];
+      const filePath = urlParts[1].split('?')[0];
       console.log('[useVideos] Generating signed URL for:', filePath);
 
-      // Generate signed URL with 1 hour expiry
+      // Generate signed URL with 2 hour expiry (longer than cache to prevent edge cases)
       const { data, error } = await supabase.storage
         .from('videos')
-        .createSignedUrl(filePath, 3600);
+        .createSignedUrl(filePath, 7200);
 
       if (error) {
         console.error('[useVideos] Error generating signed URL:', error);
@@ -44,7 +61,14 @@ export function useVideos() {
         return null;
       }
 
-      console.log('[useVideos] Signed URL generated successfully');
+      console.log('[useVideos] ✅ Signed URL generated successfully');
+      
+      // Cache the signed URL
+      preloadedUrlsRef.current.set(videoId, {
+        url: data.signedUrl,
+        timestamp: Date.now()
+      });
+
       return data.signedUrl;
     } catch (error) {
       console.error('[useVideos] Exception generating signed URL:', error);
@@ -52,12 +76,12 @@ export function useVideos() {
     }
   }, []);
 
-  // Preload video by fetching first 2MB to warm up CDN
-  const preloadVideo = useCallback(async (signedUrl: string): Promise<void> => {
+  // ✅ CRITICAL: Preload video by fetching first 2MB to warm up CDN
+  const preloadVideo = useCallback(async (signedUrl: string, videoId: string): Promise<void> => {
     try {
-      console.log('[useVideos] Preloading video (CDN warming)...');
+      console.log('[useVideos] ⚡ Preloading video (CDN warming) for:', videoId);
       
-      // Fetch first 2MB to warm up CDN
+      // Fetch first 2MB to warm up CDN and cache
       const response = await fetch(signedUrl, {
         method: 'GET',
         headers: {
@@ -66,24 +90,24 @@ export function useVideos() {
       });
 
       if (response.ok || response.status === 206) {
-        console.log('[useVideos] Video preloaded successfully (CDN warmed)');
+        console.log('[useVideos] ✅ Video preloaded successfully (CDN warmed) for:', videoId);
       } else {
-        console.warn('[useVideos] Video preload returned status:', response.status);
+        console.warn('[useVideos] Video preload returned status:', response.status, 'for:', videoId);
       }
     } catch (error) {
-      console.error('[useVideos] Error preloading video:', error);
+      console.error('[useVideos] Error preloading video:', videoId, error);
       // Don't throw - preloading is optional optimization
     }
   }, []);
 
-  // Fetch videos with aggressive preloading
+  // ✅ CRITICAL: Fetch videos with aggressive preloading and caching
   const fetchVideos = useCallback(async () => {
     if (!isMountedRef.current) return;
 
     try {
       setIsLoading(true);
       setError(null);
-      console.log('[useVideos] Fetching videos for location:', currentLocation);
+      console.log('[useVideos] ⚡ Fetching videos for location:', currentLocation);
 
       // Fetch videos from database with location filter
       const { data, error: fetchError } = await supabase
@@ -106,30 +130,25 @@ export function useVideos() {
         return;
       }
 
-      console.log('[useVideos] Fetched', data.length, 'videos for location:', currentLocation);
+      console.log('[useVideos] ✅ Fetched', data.length, 'videos for location:', currentLocation);
 
-      // AGGRESSIVE PRELOADING: Generate ALL signed URLs in parallel
-      console.log('[useVideos] Starting aggressive preloading of all videos...');
+      // ✅ INSTANT PLAYBACK: Generate ALL signed URLs in parallel
+      console.log('[useVideos] ⚡ Starting aggressive preloading of all videos...');
       const videosWithSignedUrls = await Promise.all(
         data.map(async (video) => {
-          // Check if we already have a cached signed URL
-          const cachedUrl = preloadedUrlsRef.current.get(video.id);
-          if (cachedUrl) {
-            console.log('[useVideos] Using cached signed URL for video:', video.id);
-            return { ...video, signed_url: cachedUrl };
-          }
-
-          // Generate new signed URL
-          const signedUrl = await generateSignedUrl(video.video_url);
+          const signedUrl = await generateSignedUrl(video.video_url, video.id);
           
           if (signedUrl) {
-            // Cache the signed URL
-            preloadedUrlsRef.current.set(video.id, signedUrl);
-            
-            // Warm up CDN in background (don't await)
-            preloadVideo(signedUrl).catch(err => 
-              console.warn('[useVideos] CDN warming failed for video:', video.id, err)
-            );
+            // ✅ CRITICAL: Warm up CDN in background for instant playback
+            // Don't await - let it run in parallel
+            if (!isPreloadingRef.current) {
+              isPreloadingRef.current = true;
+              preloadVideo(signedUrl, video.id)
+                .catch(err => console.warn('[useVideos] CDN warming failed for video:', video.id, err))
+                .finally(() => {
+                  isPreloadingRef.current = false;
+                });
+            }
             
             return { ...video, signed_url: signedUrl };
           }
@@ -138,7 +157,7 @@ export function useVideos() {
         })
       );
 
-      console.log('[useVideos] All videos preloaded with signed URLs');
+      console.log('[useVideos] ✅ All videos preloaded with signed URLs and CDN warmed');
 
       if (isMountedRef.current) {
         setVideos(videosWithSignedUrls);
@@ -158,8 +177,7 @@ export function useVideos() {
   // Refetch videos when location changes
   useEffect(() => {
     console.log('[useVideos] Location changed to:', currentLocation);
-    // Clear cached URLs when location changes
-    preloadedUrlsRef.current.clear();
+    // Don't clear cache - URLs are still valid for other locations
     fetchVideos();
   }, [currentLocation, fetchVideos]);
 

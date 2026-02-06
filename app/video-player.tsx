@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Platform, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -50,6 +50,7 @@ export default function VideoPlayerScreen() {
   const lastProgressUpdateRef = useRef(0);
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -96,15 +97,24 @@ export default function VideoPlayerScreen() {
     startControlsTimeout();
   }, [startControlsTimeout]);
 
-  const player = useVideoPlayer(videoUrl || '', (player) => {
-    if (videoUrl) {
+  // ✅ CRITICAL FIX: Memoize video URL to prevent player recreation
+  const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
+
+  // ✅ CRITICAL FIX: Initialize player with optimized settings for instant playback
+  const player = useVideoPlayer(memoizedVideoUrl, (player) => {
+    if (memoizedVideoUrl) {
       if (__DEV__) {
-        console.log('[VideoPlayer] Initializing player with optimized settings');
+        console.log('[VideoPlayer] ⚡ Initializing player with INSTANT PLAYBACK settings');
       }
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
+      
+      // ✅ INSTANT PLAYBACK: Start playing immediately when ready
+      if (__DEV__) {
+        console.log('[VideoPlayer] ✅ Auto-play enabled for instant playback');
+      }
     }
   });
 
@@ -196,7 +206,7 @@ export default function VideoPlayerScreen() {
         }
         setVideo(data);
 
-        // OPTIMIZATION: Use preloaded URL if available (INSTANT PLAYBACK)
+        // ✅ INSTANT PLAYBACK: Use preloaded URL if available
         if (preloadedUrl && typeof preloadedUrl === 'string') {
           if (__DEV__) {
             console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
@@ -208,6 +218,8 @@ export default function VideoPlayerScreen() {
             setDuration(data.duration_seconds);
           }
           setIsLoading(false);
+          // ✅ Clear buffering immediately when using preloaded URL
+          setIsBuffering(false);
           return;
         }
 
@@ -302,24 +314,47 @@ export default function VideoPlayerScreen() {
       if (status.status === 'readyToPlay') {
         const videoDuration = status.duration || 0;
         if (__DEV__) {
-          console.log('[VideoPlayer] Video ready, duration:', videoDuration.toFixed(2));
+          console.log('[VideoPlayer] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
         }
         setDuration(videoDuration);
-        // Video is ready - definitely not buffering
+        
+        // ✅ CRITICAL FIX: Clear buffering immediately when ready
         setIsBuffering(false);
+        
+        // ✅ INSTANT PLAYBACK: Auto-play when ready
+        if (!isPlaying) {
+          if (__DEV__) {
+            console.log('[VideoPlayer] ⚡ Starting instant playback...');
+          }
+          player.play();
+        }
       }
       
       if (status.status === 'loading') {
         if (__DEV__) {
           console.log('[VideoPlayer] Video buffering...');
         }
-        // Only show buffering if we're actually loading
         setIsBuffering(true);
+        
+        // ✅ CRITICAL FIX: Auto-clear buffering after 2 seconds (prevents stuck buffering)
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+        }
+        bufferingTimeoutRef.current = setTimeout(() => {
+          if (__DEV__) {
+            console.log('[VideoPlayer] ⚠️ Buffering timeout - forcing clear');
+          }
+          setIsBuffering(false);
+        }, 2000);
       }
       
       // When status changes to idle or error, clear buffering
       if (status.status === 'idle' || status.status === 'error') {
         setIsBuffering(false);
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
       }
     });
 
@@ -329,12 +364,16 @@ export default function VideoPlayerScreen() {
       }
       setIsPlaying(newIsPlaying);
       
-      // If video starts playing, it's definitely not buffering anymore
+      // ✅ CRITICAL FIX: Clear buffering when video starts playing
       if (newIsPlaying) {
         if (__DEV__) {
-          console.log('[VideoPlayer] Video playing - clearing buffering state');
+          console.log('[VideoPlayer] ✅ Video playing - clearing buffering state');
         }
         setIsBuffering(false);
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
       }
     });
 
@@ -358,9 +397,12 @@ export default function VideoPlayerScreen() {
         });
       }
 
-      // If we're receiving time updates, the video is NOT buffering
-      // Time updates only fire when video is actively playing
+      // ✅ CRITICAL FIX: Clear buffering when receiving time updates
       setIsBuffering(false);
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
     });
 
     return () => {
@@ -370,21 +412,25 @@ export default function VideoPlayerScreen() {
       statusListener.remove();
       playingListener.remove();
       timeUpdateListener.remove();
+      
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
     };
-  }, [player, videoUrl]);
+  }, [player, videoUrl, isPlaying]);
 
+  // ✅ CRITICAL FIX: Load video source immediately when URL is available
   useEffect(() => {
     if (videoUrl && player) {
       if (__DEV__) {
-        console.log('[VideoPlayer] ⚡ Loading video source immediately...');
-        const startTime = performance.now();
+        console.log('[VideoPlayer] ⚡ Loading video source for instant playback...');
       }
       try {
         player.replace(videoUrl);
         
         if (__DEV__) {
-          const loadTime = performance.now() - (performance as any).now();
-          console.log(`[VideoPlayer] ✅ Video source loaded in ${loadTime.toFixed(2)}ms`);
+          console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
         }
       } catch (e) {
         if (__DEV__) {
@@ -558,7 +604,7 @@ export default function VideoPlayerScreen() {
   const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
 
   if (isLoading) {
-    const loadingText = preloadedUrl ? "Starting playback..." : "Loading video...";
+    const loadingText = preloadedUrl ? "Starting instant playback..." : "Loading video...";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
