@@ -2,23 +2,23 @@
   "expo": {
     "name": "SurfVista",
     "slug": "SurfVista",
-    "version": "4.0.0",
+    "version": "4.0",
     "orientation": "portrait",
     "primaryColor": "#1E90FF",
     "description": "Premium surf reports and forecasts for Folly Beach, South Carolina. Get exclusive 6K drone footage, real-time conditions, and AI-powered surf predictions.",
     "privacy": "public",
-    "icon": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
+    "icon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
+      "image": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E90FF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "4.0.0",
+      "buildNumber": "4.0",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
@@ -35,7 +35,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
+        "foregroundImage": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
         "backgroundColor": "#1E90FF"
       },
       "edgeToEdgeEnabled": true,
@@ -49,7 +49,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/f7acbc2f-7477-4d9c-8e0e-f76e8892faeb.png",
+      "favicon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
       "bundler": "metro"
     },
     "plugins": [
