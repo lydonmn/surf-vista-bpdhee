@@ -748,6 +748,22 @@ export default function AdminScreen() {
             />
             <Text style={styles.actionButtonText}>Debug Tools</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.accent }]}
+            onPress={() => {
+              console.log('[AdminScreen] Navigating to demo paywall for screenshots');
+              router.push('/demo-paywall');
+            }}
+          >
+            <IconSymbol
+              ios_icon_name="creditcard.fill"
+              android_material_icon_name="payment"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.actionButtonText}>Show Demo Paywall</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </ScrollView>
