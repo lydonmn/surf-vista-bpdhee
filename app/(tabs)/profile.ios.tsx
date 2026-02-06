@@ -11,7 +11,8 @@ import {
   restorePurchases, 
   checkPaymentConfiguration,
   presentCustomerCenter,
-  presentPaywall
+  presentPaywall,
+  forceRefreshOfferings
 } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
@@ -21,6 +22,7 @@ export default function ProfileScreen() {
   const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -37,18 +39,15 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen iOS] User confirmed sign out');
               console.log('[ProfileScreen iOS] Current user:', user?.email);
               
-              // Call signOut - it will clear state immediately
               console.log('[ProfileScreen iOS] Calling signOut()...');
               await signOut();
               console.log('[ProfileScreen iOS] ✅ signOut() completed');
               
-              // Navigate to login immediately after signOut completes
               console.log('[ProfileScreen iOS] Navigating to login screen...');
               router.replace('/login');
               console.log('[ProfileScreen iOS] ===== SIGN OUT PROCESS COMPLETE =====');
             } catch (error) {
               console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
-              // Still try to navigate even if there was an error
               router.replace('/login');
             }
           }
@@ -69,7 +68,6 @@ export default function ProfileScreen() {
           text: 'Delete Account',
           style: 'destructive',
           onPress: () => {
-            // Second confirmation
             Alert.alert(
               'Final Confirmation',
               'This is your last chance. Are you absolutely sure you want to delete your account?',
@@ -133,8 +131,67 @@ export default function ProfileScreen() {
     Alert.alert('Success', 'Profile data refreshed');
   };
 
+  const handleRefreshProducts = async () => {
+    console.log('[ProfileScreen iOS] 🔄 ===== REFRESH PRODUCTS BUTTON PRESSED =====');
+    
+    if (!isPaymentSystemAvailable()) {
+      Alert.alert(
+        'Payment System Not Ready',
+        'The payment system is not initialized yet. Please wait a moment and try again.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    setIsRefreshingProducts(true);
+    
+    try {
+      console.log('[ProfileScreen iOS] Forcing refresh of offerings from RevenueCat...');
+      
+      const result = await forceRefreshOfferings();
+      
+      console.log('[ProfileScreen iOS] 📊 Refresh result:', result);
+      
+      if (result.success) {
+        Alert.alert(
+          'Products Refreshed',
+          result.message + '\n\nYou can now try subscribing again.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Refresh Failed',
+          result.message + '\n\nPlease check:\n• Products exist in App Store Connect\n• Products are linked in RevenueCat dashboard\n• Product IDs match exactly\n\nCheck console logs for details.',
+          [
+            { text: 'OK', style: 'cancel' },
+            {
+              text: 'View Diagnostics',
+              onPress: () => {
+                checkPaymentConfiguration();
+                Alert.alert(
+                  'Diagnostics',
+                  'Check the console logs for detailed diagnostic information about your RevenueCat configuration.',
+                  [{ text: 'OK' }]
+                );
+              }
+            }
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('[ProfileScreen iOS] ❌ Refresh products error:', error);
+      Alert.alert(
+        'Refresh Failed',
+        error.message || 'Unable to refresh products. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRefreshingProducts(false);
+      console.log('[ProfileScreen iOS] ===== REFRESH PRODUCTS COMPLETE =====');
+    }
+  };
+
   const handleRestorePurchases = async () => {
-    // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
       Alert.alert(
@@ -159,7 +216,6 @@ export default function ProfileScreen() {
       
       console.log('[ProfileScreen iOS] 📊 Restore result:', result);
       
-      // Refresh profile to get updated subscription status
       await refreshProfile();
       
       if (result.success || result.state === 'restored') {
@@ -188,7 +244,6 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
-    // Check if payment system is available
     if (!isPaymentSystemAvailable()) {
       checkPaymentConfiguration();
       Alert.alert(
@@ -204,18 +259,15 @@ export default function ProfileScreen() {
     try {
       console.log('[ProfileScreen iOS] 🏢 Opening Customer Center...');
       
-      // Present the RevenueCat Customer Center
       await presentCustomerCenter();
       
       console.log('[ProfileScreen iOS] ✅ Customer Center closed');
       
-      // Refresh profile to get updated subscription status
       await refreshProfile();
       
     } catch (error: any) {
       console.error('[ProfileScreen iOS] ❌ Customer Center error:', error);
       
-      // Fallback to native subscription management
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription, cancel, or change your plan:\n\n' +
@@ -245,32 +297,23 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen iOS] User ID:', user?.id);
       console.log('[ProfileScreen iOS] User Email:', user?.email);
       
-      // ⚠️ CRITICAL FIX: Automatic retry mechanism
-      // If the payment system is still initializing (3-second delay in AuthContext),
-      // we'll wait and retry automatically instead of showing an error
       let retryCount = 0;
-      const maxRetries = 10; // 10 retries = 10 seconds max wait
+      const maxRetries = 10;
       let result: any = null;
       
       while (retryCount < maxRetries) {
-        // Present the RevenueCat Paywall
         result = await presentPaywall(user?.id, user?.email || undefined);
         
-        // If payment system is still initializing, wait 1 second and retry
         if (result.state === 'initializing') {
           console.log(`[ProfileScreen iOS] ⏳ Payment system initializing, retry ${retryCount + 1}/${maxRetries}...`);
           retryCount++;
-          
-          // Wait 1 second before retrying
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         }
         
-        // If we got a result other than 'initializing', break the loop
         break;
       }
       
-      // If we exhausted all retries and still initializing, show error
       if (result.state === 'initializing') {
         console.log('[ProfileScreen iOS] ❌ Payment system failed to initialize after 10 seconds');
         checkPaymentConfiguration();
@@ -289,7 +332,6 @@ export default function ProfileScreen() {
       
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
       
-      // Refresh profile to get updated subscription status
       console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
       await refreshProfile();
       
@@ -303,39 +345,19 @@ export default function ProfileScreen() {
       } else if (result.state === 'error') {
         console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
         
-        // Show the detailed error message from RevenueCat with scrollable content
         Alert.alert(
           'Setup Required',
           result.message || 'Unable to load subscription options. Please check the configuration.',
           [
             { 
-              text: 'Learn More', 
-              onPress: () => {
-                console.log('[ProfileScreen iOS] User wants to learn more about setup');
-                Alert.alert(
-                  'Quick Setup Guide',
-                  'The subscription system needs products to be created in App Store Connect first.\n\n' +
-                  'Steps:\n' +
-                  '1. Go to appstoreconnect.apple.com\n' +
-                  '2. Select SurfVista app\n' +
-                  '3. Go to Monetization > Subscriptions\n' +
-                  '4. Create subscription group\n' +
-                  '5. Add monthly subscription ($12.99)\n' +
-                  '6. Add annual subscription ($99.99)\n' +
-                  '7. Set to "Ready to Submit"\n' +
-                  '8. Wait 15-30 minutes\n' +
-                  '9. Restart app\n\n' +
-                  'Need help? Contact support.',
-                  [{ text: 'Got It' }]
-                );
-              }
+              text: 'Refresh Products', 
+              onPress: handleRefreshProducts
             },
             { text: 'OK', style: 'cancel' }
           ]
         );
       } else if (result.state === 'declined') {
         console.log('[ProfileScreen iOS] ℹ️ User cancelled paywall');
-        // User cancelled, do nothing
       }
       
     } catch (error: any) {
@@ -496,6 +518,29 @@ export default function ProfileScreen() {
             )}
           </TouchableOpacity>
         )}
+
+        {/* Refresh Products Button - NEW! */}
+        <TouchableOpacity
+          style={[styles.refreshProductsButton, { borderColor: colors.accent }]}
+          onPress={handleRefreshProducts}
+          disabled={isRefreshingProducts}
+        >
+          {isRefreshingProducts ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <React.Fragment>
+              <IconSymbol
+                ios_icon_name="arrow.triangle.2.circlepath"
+                android_material_icon_name="sync"
+                size={20}
+                color={colors.accent}
+              />
+              <Text style={[styles.refreshProductsButtonText, { color: colors.accent }]}>
+                Refresh Products
+              </Text>
+            </React.Fragment>
+          )}
+        </TouchableOpacity>
 
         {/* Restore Purchases Button */}
         <TouchableOpacity
@@ -819,6 +864,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  refreshProductsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  refreshProductsButtonText: {
     fontSize: 14,
     fontWeight: '600',
   },
