@@ -36,16 +36,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
-              console.log('[ProfileScreen iOS] User confirmed sign out');
-              console.log('[ProfileScreen iOS] Current user:', user?.email);
-              
-              console.log('[ProfileScreen iOS] Calling signOut()...');
               await signOut();
-              console.log('[ProfileScreen iOS] ✅ signOut() completed');
-              
-              console.log('[ProfileScreen iOS] Navigating to login screen...');
               router.replace('/login');
-              console.log('[ProfileScreen iOS] ===== SIGN OUT PROCESS COMPLETE =====');
             } catch (error) {
               console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
               router.replace('/login');
@@ -78,40 +70,25 @@ export default function ProfileScreen() {
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      console.log('[ProfileScreen iOS] ===== DELETE ACCOUNT BUTTON PRESSED =====');
-                      console.log('[ProfileScreen iOS] User confirmed account deletion');
-                      console.log('[ProfileScreen iOS] Current user:', user?.email);
-                      
                       setIsDeleting(true);
-                      
-                      console.log('[ProfileScreen iOS] Calling deleteAccount()...');
                       const result = await deleteAccount();
-                      
                       setIsDeleting(false);
                       
                       if (result.success) {
-                        console.log('[ProfileScreen iOS] ✅ Account deleted successfully');
                         Alert.alert(
                           'Account Deleted',
                           result.message,
                           [
                             {
                               text: 'OK',
-                              onPress: () => {
-                                console.log('[ProfileScreen iOS] Navigating to login screen...');
-                                router.replace('/login');
-                              }
+                              onPress: () => router.replace('/login')
                             }
                           ]
                         );
                       } else {
-                        console.error('[ProfileScreen iOS] ❌ Account deletion failed:', result.message);
                         Alert.alert('Error', result.message);
                       }
-                      
-                      console.log('[ProfileScreen iOS] ===== DELETE ACCOUNT PROCESS COMPLETE =====');
                     } catch (error: any) {
-                      console.error('[ProfileScreen iOS] ❌ Error during account deletion:', error);
                       setIsDeleting(false);
                       Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
                     }
@@ -137,7 +114,7 @@ export default function ProfileScreen() {
     if (!isPaymentSystemAvailable()) {
       Alert.alert(
         'Payment System Not Ready',
-        'The payment system is not initialized yet. Please wait a moment and try again.',
+        'The payment system is not initialized yet. Please restart the app and try again.',
         [{ text: 'OK' }]
       );
       return;
@@ -146,40 +123,14 @@ export default function ProfileScreen() {
     setIsRefreshingProducts(true);
     
     try {
-      console.log('[ProfileScreen iOS] Forcing refresh of offerings from RevenueCat...');
-      
       const result = await forceRefreshOfferings();
       
-      console.log('[ProfileScreen iOS] 📊 Refresh result:', result);
-      
-      if (result.success) {
-        Alert.alert(
-          'Products Refreshed',
-          result.message + '\n\nYou can now try subscribing again.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Refresh Failed',
-          result.message + '\n\nPlease check:\n• Products exist in App Store Connect\n• Products are linked in RevenueCat dashboard\n• Product IDs match exactly\n\nCheck console logs for details.',
-          [
-            { text: 'OK', style: 'cancel' },
-            {
-              text: 'View Diagnostics',
-              onPress: () => {
-                checkPaymentConfiguration();
-                Alert.alert(
-                  'Diagnostics',
-                  'Check the console logs for detailed diagnostic information about your RevenueCat configuration.',
-                  [{ text: 'OK' }]
-                );
-              }
-            }
-          ]
-        );
-      }
+      Alert.alert(
+        result.success ? 'Products Refreshed' : 'Setup Required',
+        result.message,
+        [{ text: 'OK' }]
+      );
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Refresh products error:', error);
       Alert.alert(
         'Refresh Failed',
         error.message || 'Unable to refresh products. Please try again later.',
@@ -187,21 +138,14 @@ export default function ProfileScreen() {
       );
     } finally {
       setIsRefreshingProducts(false);
-      console.log('[ProfileScreen iOS] ===== REFRESH PRODUCTS COMPLETE =====');
     }
   };
 
   const handleRestorePurchases = async () => {
     if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
       Alert.alert(
-        'RevenueCat Configuration Required',
-        'The subscription system is not properly configured. This is a configuration issue that needs to be fixed in the RevenueCat dashboard.\n\n' +
-        'Please check the console logs for detailed setup instructions on how to:\n\n' +
-        '• Add products to RevenueCat\n' +
-        '• Create and configure offerings\n' +
-        '• Set up and publish paywalls\n\n' +
-        'Once configured, restart the app to try again.',
+        'Payment System Not Ready',
+        'The payment system is not initialized. Please restart the app and try again.',
         [{ text: 'OK' }]
       );
       return;
@@ -210,32 +154,18 @@ export default function ProfileScreen() {
     setIsRestoring(true);
     
     try {
-      console.log('[ProfileScreen iOS] 🔄 Starting restore purchases...');
-      
       const result = await restorePurchases();
-      
-      console.log('[ProfileScreen iOS] 📊 Restore result:', result);
-      
       await refreshProfile();
       
-      if (result.success || result.state === 'restored') {
-        Alert.alert(
-          'Purchases Restored',
-          'Your subscription has been restored successfully!',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'No Purchases Found',
-          'We couldn\'t find any previous purchases to restore. If you believe this is an error, please contact support.',
-          [{ text: 'OK' }]
-        );
-      }
+      Alert.alert(
+        result.success ? 'Purchases Restored' : 'No Purchases Found',
+        result.message || 'Unable to restore purchases.',
+        [{ text: 'OK' }]
+      );
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Restore purchases error:', error);
       Alert.alert(
         'Restore Failed',
-        error.message || 'Unable to restore purchases at this time. Please try again later or contact support.',
+        error.message || 'Unable to restore purchases at this time.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -245,10 +175,9 @@ export default function ProfileScreen() {
 
   const handleManageSubscription = async () => {
     if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
       Alert.alert(
-        'RevenueCat Configuration Required',
-        'The subscription system is not properly configured. Please check the console logs for setup instructions.',
+        'Payment System Not Ready',
+        'The payment system is not initialized. Please restart the app and try again.',
         [{ text: 'OK' }]
       );
       return;
@@ -257,23 +186,14 @@ export default function ProfileScreen() {
     setIsLoadingCustomerCenter(true);
     
     try {
-      console.log('[ProfileScreen iOS] 🏢 Opening Customer Center...');
-      
       await presentCustomerCenter();
-      
-      console.log('[ProfileScreen iOS] ✅ Customer Center closed');
-      
       await refreshProfile();
-      
     } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Customer Center error:', error);
-      
       Alert.alert(
         'Manage Subscription',
-        'To manage your subscription, cancel, or change your plan:\n\n' +
-        '• iOS: Go to Settings > [Your Name] > Subscriptions\n' +
-        '• Android: Open Play Store > Menu > Subscriptions\n\n' +
-        'You can also restore your purchases if you\'ve subscribed on another device.',
+        'To manage your subscription:\n\n' +
+        '• iOS: Settings > [Your Name] > Subscriptions\n' +
+        '• Android: Play Store > Menu > Subscriptions',
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -293,61 +213,23 @@ export default function ProfileScreen() {
     setIsSubscribing(true);
 
     try {
-      console.log('[ProfileScreen iOS] 🎨 Opening subscription paywall...');
-      console.log('[ProfileScreen iOS] User ID:', user?.id);
-      console.log('[ProfileScreen iOS] User Email:', user?.email);
-      
-      let retryCount = 0;
-      const maxRetries = 10;
-      let result: any = null;
-      
-      while (retryCount < maxRetries) {
-        result = await presentPaywall(user?.id, user?.email || undefined);
-        
-        if (result.state === 'initializing') {
-          console.log(`[ProfileScreen iOS] ⏳ Payment system initializing, retry ${retryCount + 1}/${maxRetries}...`);
-          retryCount++;
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
-        
-        break;
-      }
-      
-      if (result.state === 'initializing') {
-        console.log('[ProfileScreen iOS] ❌ Payment system failed to initialize after 10 seconds');
-        checkPaymentConfiguration();
-        
-        Alert.alert(
-          'Payment System Not Ready',
-          'The payment system is taking longer than expected to initialize. This could be due to:\n\n' +
-          '• Slow network connection\n' +
-          '• RevenueCat configuration issues\n' +
-          '• App Store Connect sync delays\n\n' +
-          'Please try again in a few moments, or restart the app.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
+      const result = await presentPaywall(user?.id, user?.email || undefined);
       
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
       
-      console.log('[ProfileScreen iOS] 🔄 Refreshing profile...');
       await refreshProfile();
       
       if (result.state === 'purchased' || result.state === 'restored') {
-        console.log('[ProfileScreen iOS] ✅ Purchase/Restore successful!');
         Alert.alert(
           'Success!',
           result.message || 'Subscription activated successfully!',
           [{ text: 'OK' }]
         );
-      } else if (result.state === 'error') {
-        console.log('[ProfileScreen iOS] ❌ Paywall error:', result.message);
-        
+      } else if (result.state === 'not_configured') {
+        // Products not set up yet
         Alert.alert(
           'Setup Required',
-          result.message || 'Unable to load subscription options. Please check the configuration.',
+          result.message || 'Subscriptions are not configured yet.',
           [
             { 
               text: 'Refresh Products', 
@@ -356,13 +238,17 @@ export default function ProfileScreen() {
             { text: 'OK', style: 'cancel' }
           ]
         );
-      } else if (result.state === 'declined') {
-        console.log('[ProfileScreen iOS] ℹ️ User cancelled paywall');
+      } else if (result.state === 'error') {
+        Alert.alert(
+          'Error',
+          result.message || 'Unable to load subscription options.',
+          [{ text: 'OK' }]
+        );
       }
+      // If declined, do nothing (user cancelled)
       
     } catch (error: any) {
       console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
-      console.error('[ProfileScreen iOS] Error details:', JSON.stringify(error, null, 2));
       Alert.alert(
         'Subscribe Failed',
         error.message || 'Unable to open subscription page. Please try again later.',
@@ -370,7 +256,6 @@ export default function ProfileScreen() {
       );
     } finally {
       setIsSubscribing(false);
-      console.log('[ProfileScreen iOS] ===== SUBSCRIBE FLOW COMPLETE =====');
     }
   };
 
@@ -519,7 +404,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Refresh Products Button - NEW! */}
+        {/* Refresh Products Button */}
         <TouchableOpacity
           style={[styles.refreshProductsButton, { borderColor: colors.accent }]}
           onPress={handleRefreshProducts}
@@ -729,7 +614,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 3.0.0
+          Version 4.0.0
         </Text>
       </View>
     </ScrollView>
@@ -918,6 +803,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 16,
+    flex: 1,
   },
   divider: {
     height: 1,
