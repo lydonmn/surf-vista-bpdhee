@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "SurfVista",
@@ -18,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "4.0",
+      "buildNumber": "4.0.1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
