@@ -30,6 +30,17 @@ interface ActivityLog {
   type: 'info' | 'success' | 'error' | 'warning';
 }
 
+interface LocationReport {
+  location: string;
+  locationId: string;
+  date: string;
+  hasReport: boolean;
+  hasNarrative: boolean;
+  narrativeLength: number;
+  waveHeight: string;
+  lastUpdated: string;
+}
+
 export default function AdminDataScreen() {
   const router = useRouter();
   const { currentLocation, locationData } = useLocation();
@@ -42,6 +53,7 @@ export default function AdminDataScreen() {
     external: 0,
   });
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
+  const [locationReports, setLocationReports] = useState<LocationReport[]>([]);
 
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
@@ -83,11 +95,49 @@ export default function AdminDataScreen() {
       });
 
       addLog(`Data counts loaded for ${locationData.displayName}: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
+      
+      // Also load report status for both locations
+      await loadLocationReports(today);
     } catch (error) {
       console.error('Error loading data counts:', error);
       addLog(`Error loading data counts: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
   }, [addLog, currentLocation, locationData]);
+
+  const loadLocationReports = async (today: string) => {
+    try {
+      const locations = [
+        { id: 'folly-beach', name: 'Folly Beach, SC' },
+        { id: 'pawleys-island', name: 'Pawleys Island, SC' }
+      ];
+
+      const reports: LocationReport[] = [];
+
+      for (const loc of locations) {
+        const { data: report } = await supabase
+          .from('surf_reports')
+          .select('*')
+          .eq('date', today)
+          .eq('location', loc.id)
+          .maybeSingle();
+
+        reports.push({
+          location: loc.name,
+          locationId: loc.id,
+          date: today,
+          hasReport: !!report,
+          hasNarrative: !!(report?.conditions && report.conditions.length > 100),
+          narrativeLength: report?.conditions?.length || 0,
+          waveHeight: report?.wave_height || 'N/A',
+          lastUpdated: report?.updated_at || 'Never',
+        });
+      }
+
+      setLocationReports(reports);
+    } catch (error) {
+      console.error('Error loading location reports:', error);
+    }
+  };
 
   useEffect(() => {
     console.log('[AdminDataScreen] Component mounted, loading data counts');
@@ -96,12 +146,13 @@ export default function AdminDataScreen() {
 
   const handleTriggerDailyUpdate = async () => {
     setIsLoading(true);
-    addLog(`Manually triggering daily update for ${locationData.displayName} (same as 5 AM automatic update)...`);
+    addLog(`Manually triggering 5 AM daily report for BOTH locations...`);
     addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
+    addLog(`📍 Processing: Folly Beach, SC AND Pawleys Island, SC`, 'info');
 
     try {
-      const response = await supabase.functions.invoke('daily-update-cron', {
-        body: { location: currentLocation }
+      const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
+        body: {}
       });
       
       console.log('Daily update response:', response);
@@ -120,18 +171,37 @@ export default function AdminDataScreen() {
             [{ text: 'OK' }]
           );
         } else {
-          addLog(`❌ Daily update error: ${errorMsg}`, 'error');
+          addLog(`❌ Daily report error: ${errorMsg}`, 'error');
           Alert.alert('Error', errorMsg);
         }
       } else if (response.data?.success) {
-        addLog(`✅ Daily update completed successfully for ${locationData.displayName}!`, 'success');
-        Alert.alert('Success', `Daily update completed for ${locationData.displayName}! Data refreshed and new report generated.`);
+        const results = response.data.results || [];
+        const successCount = results.filter((r: any) => r.success).length;
+        const totalCount = results.length;
+        
+        addLog(`✅ Daily 5 AM report completed: ${successCount}/${totalCount} locations successful`, 'success');
+        
+        // Log each location result
+        results.forEach((result: any) => {
+          if (result.success) {
+            if (result.skipped) {
+              addLog(`  ✅ ${result.location}: Report already exists`, 'info');
+            } else {
+              addLog(`  ✅ ${result.location}: Report generated successfully`, 'success');
+            }
+          } else {
+            addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
+          }
+        });
+        
+        Alert.alert('Success', `Daily reports generated for ${successCount}/${totalCount} locations!\n\n${results.map((r: any) => `${r.location}: ${r.success ? '✅' : '❌'}`).join('\\n')}`);
         
         // Wait for database to update, then reload counts
         await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
-        const errorMsg = response.data?.error || 'Daily update failed';
+        const errorMsg = response.data?.error || 'Daily report failed';
+        const results = response.data?.results || [];
         
         // Check for timeout in response data
         if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
@@ -143,7 +213,15 @@ export default function AdminDataScreen() {
             [{ text: 'OK' }]
           );
         } else {
-          addLog(`❌ Daily update failed: ${errorMsg}`, 'error');
+          addLog(`❌ Daily report failed: ${errorMsg}`, 'error');
+          
+          // Log individual location failures
+          results.forEach((result: any) => {
+            if (!result.success) {
+              addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
+            }
+          });
+          
           Alert.alert('Error', errorMsg);
         }
       }
@@ -689,12 +767,14 @@ export default function AdminDataScreen() {
   const infoTitleText = '⏰ Automated Update Schedule';
   const infoTextContent = `✅ ACTIVE - Automated updates are running!
 
-• 5:00 AM EST: Full data update + report generation
-• Every 15 min (5 AM - 9 PM): Data updates only
+• 5:00 AM EST: Generate initial conditions narrative for BOTH locations
+  - Folly Beach, SC
+  - Pawleys Island, SC
+• Every 15 min (5 AM - 9 PM): Update buoy data only (narrative preserved)
 • Failed fetches preserve existing data
 
-The system will automatically generate a new surf report every morning at 5 AM EST and update data throughout the day.`;
-  const buttonText1 = '🌅 Trigger Daily Update (5 AM Simulation)';
+The system automatically generates separate reports for each location every morning at 5 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
+  const buttonText1 = '🌅 Trigger 5 AM Report (Both Locations)';
   const buttonText2 = '🔄 Update Data Only (No Report)';
   const buttonText3 = '📝 Generate New Surf Report';
   const sectionTitleText2 = 'Individual Updates';
@@ -704,6 +784,7 @@ The system will automatically generate a new surf report every morning at 5 AM E
   const sectionTitleText3 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
+  const locationStatusTitle = '📍 Today\'s Report Status (Both Locations)';
 
   return (
     <View style={styles.container}>
@@ -749,6 +830,37 @@ The system will automatically generate a new surf report every morning at 5 AM E
               <Text style={styles.countLabel}>{countLabelSurf}</Text>
             </View>
           </View>
+        </View>
+
+        {/* Location Report Status */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
+          {locationReports.map((report) => {
+            const statusIcon = report.hasReport && report.hasNarrative ? '✅' : report.hasReport ? '⚠️' : '❌';
+            const statusText = report.hasReport && report.hasNarrative 
+              ? 'Report with narrative' 
+              : report.hasReport 
+                ? 'Report without narrative' 
+                : 'No report';
+            const lastUpdatedText = report.lastUpdated !== 'Never' 
+              ? new Date(report.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+              : 'Never';
+            
+            return (
+              <View style={styles.locationCard} key={report.locationId}>
+                <View style={styles.locationHeader}>
+                  <Text style={styles.locationName}>{report.location}</Text>
+                  <Text style={styles.locationStatus}>{statusIcon}</Text>
+                </View>
+                <View style={styles.locationDetails}>
+                  <Text style={styles.locationDetailText}>Status: {statusText}</Text>
+                  <Text style={styles.locationDetailText}>Wave Height: {report.waveHeight}</Text>
+                  <Text style={styles.locationDetailText}>Narrative: {report.narrativeLength} chars</Text>
+                  <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
 
         {/* Automated Update Schedule Info */}
@@ -1031,5 +1143,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
+  },
+  locationCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  locationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  locationName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  locationStatus: {
+    fontSize: 24,
+  },
+  locationDetails: {
+    gap: 4,
+  },
+  locationDetailText: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 });
