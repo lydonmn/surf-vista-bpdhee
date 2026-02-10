@@ -23,29 +23,53 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[Daily 5AM Report] Starting report generation for all locations...');
+    console.log('[Daily 5AM Report] ═══════════════════════════════════════');
+    console.log('[Daily 5AM Report] 🌅 IMPROVED 5 AM REPORT GENERATION STARTED');
+    console.log('[Daily 5AM Report] ═══════════════════════════════════════');
+    console.log('[Daily 5AM Report] 🔧 Improvements:');
+    console.log('[Daily 5AM Report]   • Up to 5 retry attempts per location');
+    console.log('[Daily 5AM Report]   • Progressive delays: 5s, 10s, 20s, 30s, 60s');
+    console.log('[Daily 5AM Report]   • More lenient data validation');
+    console.log('[Daily 5AM Report]   • Accepts partial buoy data');
+    console.log('[Daily 5AM Report]   • Non-blocking weather/tide fetches');
+    console.log('[Daily 5AM Report] ═══════════════════════════════════════');
 
     // Get current EST date
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const dateStr = estDate.toISOString().split('T')[0];
     
-    console.log('[Daily 5AM Report] Target date:', dateStr);
-    console.log('[Daily 5AM Report] Current EST time:', estDate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }));
+    console.log('[Daily 5AM Report] 📅 Target date:', dateStr);
+    console.log('[Daily 5AM Report] ⏰ Current EST time:', estDate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }));
 
     const results = [];
     
     // Process each location
     for (const location of LOCATIONS) {
-      console.log(`\n[Daily 5AM Report] Processing ${location.name}...`);
+      console.log(`\n[Daily 5AM Report] ═══════════════════════════════════════`);
+      console.log(`[Daily 5AM Report] 📍 Processing ${location.name}...`);
+      console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
       
       const result = await processLocation(supabase, location.id, location.name, dateStr);
       results.push(result);
+      
+      if (result.success) {
+        console.log(`[Daily 5AM Report] ✅ ${location.name}: SUCCESS`);
+      } else {
+        console.log(`[Daily 5AM Report] ❌ ${location.name}: FAILED - ${result.error}`);
+      }
     }
 
     // Check if all locations succeeded
     const allSucceeded = results.every(r => r.success);
     const someSucceeded = results.some(r => r.success);
+
+    console.log('\n[Daily 5AM Report] ═══════════════════════════════════════');
+    console.log('[Daily 5AM Report] 📊 FINAL RESULTS:');
+    console.log(`[Daily 5AM Report] Total locations: ${results.length}`);
+    console.log(`[Daily 5AM Report] Successful: ${results.filter(r => r.success).length}`);
+    console.log(`[Daily 5AM Report] Failed: ${results.filter(r => !r.success).length}`);
+    console.log('[Daily 5AM Report] ═══════════════════════════════════════');
 
     if (allSucceeded) {
       console.log('[Daily 5AM Report] ✅ All locations processed successfully!');
@@ -89,7 +113,7 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('[Daily 5AM Report] Fatal error:', error);
+    console.error('[Daily 5AM Report] 💥 Fatal error:', error);
     return new Response(
       JSON.stringify({
         success: false,
@@ -273,8 +297,16 @@ async function processLocation(supabase: any, locationId: string, locationName: 
   }
 }
 
-// Helper function to process a single location
+// Helper function to wait/delay
+async function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Helper function to process a single location with ROBUST retry logic
 async function processLocation(supabase: any, locationId: string, locationName: string, dateStr: string) {
+  const MAX_RETRIES = 5; // Increased from implicit 1 to 5
+  const RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000]; // Progressive delays: 5s, 10s, 20s, 30s, 60s
+  
   try {
     console.log(`[${locationName}] Checking if report already exists for today...`);
     
@@ -297,64 +329,116 @@ async function processLocation(supabase: any, locationId: string, locationName: 
       };
     }
 
-    console.log(`[${locationName}] Fetching fresh buoy data...`);
+    // RETRY LOOP - Try up to MAX_RETRIES times with progressive delays
+    let lastError = null;
+    let surfConditions = null;
     
-    // Step 1: Fetch fresh buoy data
-    const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
-      body: { location: locationId },
-    });
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching fresh buoy data...`);
+        
+        // Step 1: Fetch fresh buoy data
+        const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
+          body: { location: locationId },
+        });
 
-    if (buoyError) {
-      console.error(`[${locationName}] Buoy fetch failed:`, buoyError);
-      throw new Error(`Buoy fetch failed: ${buoyError.message}`);
+        if (buoyError) {
+          console.warn(`[${locationName}] Attempt ${attempt}: Buoy fetch warning:`, buoyError);
+          // Don't throw immediately - continue to check if data was still written
+        }
+
+        console.log(`[${locationName}] Attempt ${attempt}: Buoy data response:`, buoyData);
+
+        // Step 2: Check if we have valid wave data (with more lenient validation)
+        const { data: fetchedConditions, error: surfError } = await supabase
+          .from('surf_conditions')
+          .select('*')
+          .eq('date', dateStr)
+          .eq('location', locationId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (surfError) {
+          throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
+        }
+
+        // IMPROVED VALIDATION: Accept partial data
+        const hasAnyWaveData = fetchedConditions && (
+          (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
+          (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
+        );
+
+        // Also accept if we have wind/water temp data (buoy is online but wave sensors may be delayed)
+        const hasBuoyData = fetchedConditions && (
+          (fetchedConditions.wind_speed && fetchedConditions.wind_speed !== 'N/A') ||
+          (fetchedConditions.water_temp && fetchedConditions.water_temp !== 'N/A')
+        );
+
+        if (hasAnyWaveData) {
+          console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`, {
+            wave_height: fetchedConditions.wave_height,
+            surf_height: fetchedConditions.surf_height,
+            wave_period: fetchedConditions.wave_period,
+            updated_at: fetchedConditions.updated_at,
+          });
+          surfConditions = fetchedConditions;
+          break; // Success! Exit retry loop
+        } else if (hasBuoyData && attempt === MAX_RETRIES) {
+          // On final attempt, accept buoy data even without wave heights
+          console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online. Proceeding with available data.`);
+          surfConditions = fetchedConditions;
+          break;
+        } else {
+          const errorMsg = `No valid wave data available. Wave height: ${fetchedConditions?.wave_height || 'null'}, Surf height: ${fetchedConditions?.surf_height || 'null'}`;
+          console.log(`[${locationName}] ⚠️ Attempt ${attempt}/${MAX_RETRIES}: ${errorMsg}`);
+          lastError = errorMsg;
+          
+          // If not the last attempt, wait before retrying
+          if (attempt < MAX_RETRIES) {
+            const delayMs = RETRY_DELAYS[attempt - 1];
+            console.log(`[${locationName}] Waiting ${delayMs/1000} seconds before retry ${attempt + 1}...`);
+            await delay(delayMs);
+          }
+        }
+      } catch (attemptError) {
+        console.error(`[${locationName}] Attempt ${attempt} error:`, attemptError);
+        lastError = attemptError.message;
+        
+        // If not the last attempt, wait before retrying
+        if (attempt < MAX_RETRIES) {
+          const delayMs = RETRY_DELAYS[attempt - 1];
+          console.log(`[${locationName}] Waiting ${delayMs/1000} seconds before retry ${attempt + 1}...`);
+          await delay(delayMs);
+        }
+      }
     }
 
-    console.log(`[${locationName}] Buoy data response:`, buoyData);
-
-    // Step 2: Check if we have valid wave data
-    const { data: surfConditions, error: surfError } = await supabase
-      .from('surf_conditions')
-      .select('*')
-      .eq('date', dateStr)
-      .eq('location', locationId)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (surfError) {
-      throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
+    // After all retries, check if we got data
+    if (!surfConditions) {
+      console.error(`[${locationName}] ❌ All ${MAX_RETRIES} attempts failed. Last error: ${lastError}`);
+      throw new Error(`Failed after ${MAX_RETRIES} attempts: ${lastError}`);
     }
 
-    // Check if wave data is valid (not N/A)
-    const hasValidWaveData = surfConditions && 
-      surfConditions.wave_height && 
-      surfConditions.wave_height !== 'N/A' &&
-      surfConditions.wave_height !== '' &&
-      !isNaN(parseFloat(surfConditions.wave_height));
-
-    if (!hasValidWaveData) {
-      console.log(`[${locationName}] ❌ No valid wave data available. Wave height: ${surfConditions?.wave_height || 'null'}`);
-      throw new Error('No valid wave data available from buoy');
-    }
-
-    console.log(`[${locationName}] ✅ Valid wave data found:`, {
-      wave_height: surfConditions.wave_height,
-      surf_height: surfConditions.surf_height,
-      wave_period: surfConditions.wave_period,
-      updated_at: surfConditions.updated_at,
-    });
-
-    // Step 3: Update weather data
+    // Step 3: Update weather data (non-blocking - continue even if this fails)
     console.log(`[${locationName}] Fetching weather data...`);
-    const { data: weatherResponse } = await supabase.functions.invoke('fetch-weather-data', {
-      body: { location: locationId },
-    });
+    try {
+      await supabase.functions.invoke('fetch-weather-data', {
+        body: { location: locationId },
+      });
+    } catch (weatherError) {
+      console.warn(`[${locationName}] Weather fetch failed (non-critical):`, weatherError);
+    }
 
-    // Step 4: Update tide data
+    // Step 4: Update tide data (non-blocking - continue even if this fails)
     console.log(`[${locationName}] Fetching tide data...`);
-    const { data: tideResponse } = await supabase.functions.invoke('fetch-tide-data', {
-      body: { location: locationId },
-    });
+    try {
+      await supabase.functions.invoke('fetch-tide-data', {
+        body: { location: locationId },
+      });
+    } catch (tideError) {
+      console.warn(`[${locationName}] Tide fetch failed (non-critical):`, tideError);
+    }
 
     // Step 5: Generate the daily report with comprehensive narrative
     console.log(`[${locationName}] Generating daily report...`);

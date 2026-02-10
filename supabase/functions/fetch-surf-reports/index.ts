@@ -229,6 +229,24 @@ Deno.serve(async (req) => {
     console.log('Data line split into fields:', dataLine);
     console.log('Field count:', dataLine.length);
     
+    // IMPROVED: Validate field count before parsing
+    if (dataLine.length < 15) {
+      console.error(`Insufficient fields in data line. Expected at least 15, got ${dataLine.length}`);
+      console.error('Data line:', lines[2]);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Incomplete buoy data: expected at least 15 fields, got ${dataLine.length}`,
+          details: 'Buoy may be reporting partial data. Will retry later.',
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+    
     const waveHeight = parseFloat(dataLine[8]);
     const dominantPeriod = parseFloat(dataLine[9]);
     const meanWaveDirection = parseFloat(dataLine[11]);
@@ -244,6 +262,19 @@ Deno.serve(async (req) => {
       windSpeed,
       waterTemp
     });
+    
+    // IMPROVED: Check if we have at least SOME valid data (not all 99.0 or 999.0)
+    const hasAnyValidData = (
+      (waveHeight !== 99.0 && !isNaN(waveHeight)) ||
+      (dominantPeriod !== 99.0 && !isNaN(dominantPeriod)) ||
+      (windSpeed !== 99.0 && !isNaN(windSpeed)) ||
+      (waterTemp !== 999.0 && !isNaN(waterTemp))
+    );
+    
+    if (!hasAnyValidData) {
+      console.warn('All buoy sensors reporting invalid data (99.0/999.0). Buoy may be offline or sensors malfunctioning.');
+      // Still continue - we'll store N/A values and the narrative will handle it
+    }
 
     const waveHeightFt = waveHeight !== 99.0 && !isNaN(waveHeight) 
       ? (waveHeight * 3.28084).toFixed(1)
