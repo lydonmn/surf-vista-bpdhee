@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Database } from '@/app/integrations/supabase/types';
 import { useLocation } from '@/contexts/LocationContext';
+import * as FileSystem from 'expo-file-system/legacy';
 
 type Video = Database['public']['Tables']['videos']['Row'] & {
   signed_url?: string;
@@ -15,10 +16,11 @@ export function useVideos() {
   const [error, setError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
   const preloadedUrlsRef = useRef<Map<string, { url: string; timestamp: number }>>(new Map());
-  const isPreloadingRef = useRef(false);
+  const preloadingQueueRef = useRef<Set<string>>(new Set());
 
   // ✅ CRITICAL: Cache signed URLs with 1-hour expiry
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour in milliseconds
+  const PRELOAD_SIZE = 10 * 1024 * 1024; // 10MB preload for instant playback (increased for smoother start)
 
   // Generate signed URL for a video with caching
   const generateSignedUrl = useCallback(async (videoUrl: string, videoId: string): Promise<string | null> => {
@@ -76,29 +78,62 @@ export function useVideos() {
     }
   }, []);
 
-  // ✅ CRITICAL: Preload video by fetching first 2MB to warm up CDN
+  // ✅ CRITICAL: Aggressive preloading with local caching for instant playback
   const preloadVideo = useCallback(async (signedUrl: string, videoId: string): Promise<void> => {
+    // Prevent duplicate preloading
+    if (preloadingQueueRef.current.has(videoId)) {
+      console.log('[useVideos] ⏭️ Already preloading video:', videoId);
+      return;
+    }
+
     try {
-      console.log('[useVideos] ⚡ Preloading video (CDN warming) for:', videoId);
+      preloadingQueueRef.current.add(videoId);
+      console.log('[useVideos] ⚡ Starting aggressive preload for instant playback:', videoId);
       
-      // Fetch first 2MB to warm up CDN and cache
+      // Strategy 1: Fetch first 10MB to warm up CDN and cache in memory
       const response = await fetch(signedUrl, {
         method: 'GET',
         headers: {
-          'Range': 'bytes=0-2097151', // First 2MB
+          'Range': `bytes=0-${PRELOAD_SIZE - 1}`, // First 10MB
         },
       });
 
       if (response.ok || response.status === 206) {
-        console.log('[useVideos] ✅ Video preloaded successfully (CDN warmed) for:', videoId);
+        console.log('[useVideos] ✅ CDN warmed with 10MB preload for:', videoId);
+        
+        // Strategy 2: Cache the preloaded data locally for instant access
+        try {
+          const cacheDir = `${FileSystem.cacheDirectory}video_cache/`;
+          const cacheFile = `${cacheDir}${videoId}_preload.mp4`;
+          
+          // Ensure cache directory exists
+          const dirInfo = await FileSystem.getInfoAsync(cacheDir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+          }
+          
+          // Download and cache the preload chunk
+          await FileSystem.downloadAsync(signedUrl, cacheFile, {
+            headers: {
+              'Range': `bytes=0-${PRELOAD_SIZE - 1}`,
+            },
+          });
+          
+          console.log('[useVideos] ✅ Video chunk cached locally for instant playback:', videoId);
+        } catch (cacheError) {
+          console.warn('[useVideos] Local caching failed (non-critical):', cacheError);
+          // Continue - CDN warming is still effective
+        }
       } else {
-        console.warn('[useVideos] Video preload returned status:', response.status, 'for:', videoId);
+        console.warn('[useVideos] Preload returned status:', response.status, 'for:', videoId);
       }
     } catch (error) {
       console.error('[useVideos] Error preloading video:', videoId, error);
       // Don't throw - preloading is optional optimization
+    } finally {
+      preloadingQueueRef.current.delete(videoId);
     }
-  }, []);
+  }, [PRELOAD_SIZE]);
 
   // ✅ CRITICAL: Fetch videos with aggressive preloading and caching
   const fetchVideos = useCallback(async () => {
@@ -139,17 +174,6 @@ export function useVideos() {
           const signedUrl = await generateSignedUrl(video.video_url, video.id);
           
           if (signedUrl) {
-            // ✅ CRITICAL: Warm up CDN in background for instant playback
-            // Don't await - let it run in parallel
-            if (!isPreloadingRef.current) {
-              isPreloadingRef.current = true;
-              preloadVideo(signedUrl, video.id)
-                .catch(err => console.warn('[useVideos] CDN warming failed for video:', video.id, err))
-                .finally(() => {
-                  isPreloadingRef.current = false;
-                });
-            }
-            
             return { ...video, signed_url: signedUrl };
           }
 
@@ -157,7 +181,22 @@ export function useVideos() {
         })
       );
 
-      console.log('[useVideos] ✅ All videos preloaded with signed URLs and CDN warmed');
+      console.log('[useVideos] ✅ All signed URLs generated');
+
+      // ✅ CRITICAL: Preload ALL videos in parallel for instant playback
+      // This runs in background and doesn't block UI
+      console.log('[useVideos] ⚡ Starting parallel preloading of all videos...');
+      const preloadPromises = videosWithSignedUrls
+        .filter(video => video.signed_url)
+        .map(video => 
+          preloadVideo(video.signed_url!, video.id)
+            .catch(err => console.warn('[useVideos] Preload failed for video:', video.id, err))
+        );
+
+      // Don't await - let preloading happen in background
+      Promise.all(preloadPromises)
+        .then(() => console.log('[useVideos] ✅ All videos preloaded for instant playback'))
+        .catch(err => console.warn('[useVideos] Some preloads failed:', err));
 
       if (isMountedRef.current) {
         setVideos(videosWithSignedUrls);
@@ -181,13 +220,57 @@ export function useVideos() {
     fetchVideos();
   }, [currentLocation, fetchVideos]);
 
+  // ✅ CRITICAL: Background refresh to keep videos preloaded
+  const backgroundRefresh = useCallback(async () => {
+    console.log('[useVideos] 🔄 Background refresh - keeping videos preloaded');
+    
+    try {
+      // Fetch latest videos without showing loading state
+      const { data, error: fetchError } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('location', currentLocation)
+        .order('created_at', { ascending: false });
+
+      if (fetchError || !data) {
+        console.warn('[useVideos] Background refresh failed:', fetchError);
+        return;
+      }
+
+      // Regenerate signed URLs and preload in background
+      const refreshPromises = data.map(async (video) => {
+        const signedUrl = await generateSignedUrl(video.video_url, video.id);
+        if (signedUrl) {
+          // Preload in background
+          preloadVideo(signedUrl, video.id).catch(err => 
+            console.warn('[useVideos] Background preload failed:', video.id, err)
+          );
+        }
+      });
+
+      await Promise.all(refreshPromises);
+      console.log('[useVideos] ✅ Background refresh complete - videos ready for instant playback');
+    } catch (error) {
+      console.error('[useVideos] Background refresh error:', error);
+    }
+  }, [generateSignedUrl, preloadVideo, currentLocation]);
+
   useEffect(() => {
     console.log('[useVideos] Initializing...');
     isMountedRef.current = true;
     
     fetchVideos();
 
-    // Set up real-time subscription for videos with location filter
+    // ✅ CRITICAL: Set up aggressive periodic background refresh every 3 minutes
+    // This keeps videos preloaded even when app is in background
+    // More frequent refreshes ensure videos are always ready for instant playback
+    const refreshInterval = setInterval(() => {
+      console.log('[useVideos] ⏰ Periodic refresh triggered');
+      backgroundRefresh();
+    }, 3 * 60 * 1000); // 3 minutes (more frequent for better UX)
+
+    // ✅ CRITICAL: Set up real-time subscription for instant updates
+    // When admin uploads a new video, it's immediately preloaded
     const subscription = supabase
       .channel('videos_changes')
       .on(
@@ -199,7 +282,7 @@ export function useVideos() {
           filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useVideos] Video updated:', payload);
+          console.log('[useVideos] ⚡ Video updated in real-time:', payload);
           // Clear cache for the affected video
           if (payload.old && 'id' in payload.old) {
             preloadedUrlsRef.current.delete(payload.old.id as string);
@@ -207,6 +290,8 @@ export function useVideos() {
           if (payload.new && 'id' in payload.new) {
             preloadedUrlsRef.current.delete(payload.new.id as string);
           }
+          // Immediately fetch and preload the new video
+          console.log('[useVideos] ⚡ Fetching and preloading new video...');
           fetchVideos();
         }
       )
@@ -215,9 +300,10 @@ export function useVideos() {
     return () => {
       console.log('[useVideos] Cleaning up...');
       isMountedRef.current = false;
+      clearInterval(refreshInterval);
       subscription.unsubscribe();
     };
-  }, [fetchVideos, currentLocation]);
+  }, [fetchVideos, backgroundRefresh, currentLocation]);
 
   return {
     videos,

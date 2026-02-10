@@ -12,7 +12,7 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { CurrentConditions } from "@/components/CurrentConditions";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
-import { presentPaywall, isPaymentSystemAvailable } from "@/utils/superwallConfig";
+import { presentPaywall } from "@/utils/superwallConfig";
 import { useVideos } from "@/hooks/useVideos";
 import { LocationSelector } from "@/components/LocationSelector";
 import { useLocation } from "@/contexts/LocationContext";
@@ -51,7 +51,6 @@ function getESTDate(): string {
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
-  const { locationData } = useLocation();
   const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

@@ -7,7 +7,7 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useSurfData } from '@/hooks/useSurfData';
 import { SurfReport, WeatherForecast, TideData } from '@/types';
-import { supabase } from '@/app/integrations/supabase/client';
+
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 
 interface DayForecast {

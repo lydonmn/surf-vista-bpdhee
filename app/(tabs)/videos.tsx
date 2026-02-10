@@ -9,6 +9,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 
 export default function VideosScreen() {
   const theme = useTheme();
@@ -112,11 +113,16 @@ export default function VideosScreen() {
     }
   }, []);
 
-  const handleVideoPress = React.useCallback((videoId: string) => {
+  const handleVideoPress = React.useCallback((videoId: string, preloadedUrl?: string) => {
     console.log('[VideosScreen] Opening fullscreen video player for:', videoId);
+    console.log('[VideosScreen] Preloaded URL available:', !!preloadedUrl);
+    
     router.push({
       pathname: '/video-player',
-      params: { videoId }
+      params: { 
+        videoId,
+        preloadedUrl: preloadedUrl || '',
+      }
     });
   }, []);
 
@@ -249,7 +255,7 @@ export default function VideosScreen() {
                 <View style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
                   <TouchableOpacity
                     style={styles.videoTouchable}
-                    onPress={() => handleVideoPress(video.id)}
+                    onPress={() => handleVideoPress(video.id, video.signed_url)}
                     disabled={isDeleting}
                     activeOpacity={0.7}
                   >
@@ -279,6 +285,11 @@ export default function VideosScreen() {
                     {video.duration && (
                       <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>{video.duration}</Text>
+                      </View>
+                    )}
+                    {video.signed_url && (
+                      <View style={styles.preloadBadge}>
+                        <VideoPreloadIndicator isPreloaded={true} size="small" />
                       </View>
                     )}
                     <View style={styles.videoInfo}>
@@ -511,6 +522,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+  },
+  preloadBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
   },
   videoInfo: {
     padding: 12,

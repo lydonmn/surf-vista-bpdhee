@@ -26,7 +26,7 @@ export default function ReportScreen() {
   const [videoReady, setVideoReady] = useState(false);
   
   const [surfConditions, setSurfConditions] = useState<any>(null);
-  const [isLoadingConditions, setIsLoadingConditions] = useState(false);
+
 
   // ✅ Initialize video player with caching enabled for smooth preview playback
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
@@ -175,30 +175,26 @@ export default function ReportScreen() {
 
   const fetchSurfConditions = React.useCallback(async () => {
     try {
-      setIsLoadingConditions(true);
-      
       console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, 'date:', todayDate);
       
-      let { data, error } = await supabase
+      const { data: conditionsData, error: conditionsError } = await supabase
         .from('surf_conditions')
         .select('*')
         .eq('date', todayDate)
         .eq('location', currentLocation)
         .maybeSingle();
 
-      if (error) {
-        console.error('[ReportScreen] Error fetching surf conditions:', error);
-      } else if (data) {
-        console.log('[ReportScreen] Surf conditions loaded for today:', data);
-        setSurfConditions(data);
+      if (conditionsError) {
+        console.error('[ReportScreen] Error fetching surf conditions:', conditionsError);
+      } else if (conditionsData) {
+        console.log('[ReportScreen] Surf conditions loaded for today:', conditionsData);
+        setSurfConditions(conditionsData);
       } else {
         console.log('[ReportScreen] No surf conditions for today at location:', currentLocation);
         setSurfConditions(null);
       }
     } catch (error) {
       console.error('[ReportScreen] Error in fetchSurfConditions:', error);
-    } finally {
-      setIsLoadingConditions(false);
     }
   }, [todayDate, currentLocation]);
 

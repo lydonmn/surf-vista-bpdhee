@@ -7,9 +7,7 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { 
-  isPaymentSystemAvailable, 
   restorePurchases, 
-  checkPaymentConfiguration,
   presentCustomerCenter,
   presentPaywall,
   forceRefreshOfferings

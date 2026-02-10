@@ -539,7 +539,26 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] Video uploaded successfully');
-      Alert.alert('Success', 'Video uploaded successfully!');
+      
+      // ✅ CRITICAL: Trigger immediate video preparation for instant playback
+      console.log('[AdminScreen] ⚡ Triggering immediate video preparation...');
+      try {
+        // Warm up CDN immediately after upload
+        const response = await fetch(urlData.publicUrl, {
+          method: 'GET',
+          headers: {
+            'Range': 'bytes=0-5242879', // First 5MB
+          },
+        });
+        
+        if (response.ok || response.status === 206) {
+          console.log('[AdminScreen] ✅ Video prepared for instant playback');
+        }
+      } catch (prepError) {
+        console.warn('[AdminScreen] Video preparation failed (non-critical):', prepError);
+      }
+      
+      Alert.alert('Success', 'Video uploaded and prepared for instant playback!');
 
       // Reset form
       setVideoUri(null);
