@@ -43,7 +43,7 @@ interface LocationReport {
 
 export default function AdminDataScreen() {
   const router = useRouter();
-  const { currentLocation, locationData } = useLocation();
+  const { currentLocation, locationData, locations } = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [dataCounts, setDataCounts] = useState<DataCounts>({
     tides: 0,
@@ -106,11 +106,6 @@ export default function AdminDataScreen() {
 
   const loadLocationReports = async (today: string) => {
     try {
-      const locations = [
-        { id: 'folly-beach', name: 'Folly Beach, SC' },
-        { id: 'pawleys-island', name: 'Pawleys Island, SC' }
-      ];
-
       const reports: LocationReport[] = [];
 
       for (const loc of locations) {
@@ -122,7 +117,7 @@ export default function AdminDataScreen() {
           .maybeSingle();
 
         reports.push({
-          location: loc.name,
+          location: loc.displayName,
           locationId: loc.id,
           date: today,
           hasReport: !!report,
@@ -765,16 +760,17 @@ export default function AdminDataScreen() {
   const countLabelForecast = 'Forecast';
   const countLabelSurf = 'Surf';
   const infoTitleText = '⏰ Automated Update Schedule';
+  const locationListText = locations.map(loc => `  - ${loc.displayName}`).join('\n');
   const infoTextContent = `✅ ACTIVE - Automated updates are running!
 
-• 5:00 AM EST: Generate initial conditions narrative for BOTH locations
-  - Folly Beach, SC
-  - Pawleys Island, SC
+• 5:00 AM EST: Generate initial conditions narrative for ALL locations
+${locationListText}
 • Every 15 min (5 AM - 9 PM): Update buoy data only (narrative preserved)
 • Failed fetches preserve existing data
 
 The system automatically generates separate reports for each location every morning at 5 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
-  const buttonText1 = '🌅 Trigger 5 AM Report (Both Locations)';
+  const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
+  const buttonText1 = `🌅 Trigger 5 AM Report (${locationCountText})`;
   const buttonText2 = '🌊 Pull New Surf Data';
   const buttonText3 = '📝 Generate New Narrative Report';
   const sectionTitleText2 = 'Individual Data Sources';
@@ -813,40 +809,29 @@ The system automatically generates separate reports for each location every morn
         <View style={styles.locationSelectorCard}>
           <Text style={styles.locationSelectorTitle}>📍 Select Location</Text>
           <View style={styles.locationButtons}>
-            <TouchableOpacity
-              style={[
-                styles.locationButton,
-                currentLocation === 'folly-beach' && styles.locationButtonActive
-              ]}
-              onPress={() => {
-                console.log('[AdminDataScreen] Switching to Folly Beach');
-                router.setParams({ location: 'folly-beach' });
-              }}
-            >
-              <Text style={[
-                styles.locationButtonText,
-                currentLocation === 'folly-beach' && styles.locationButtonTextActive
-              ]}>
-                Folly Beach
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.locationButton,
-                currentLocation === 'pawleys-island' && styles.locationButtonActive
-              ]}
-              onPress={() => {
-                console.log('[AdminDataScreen] Switching to Pawleys Island');
-                router.setParams({ location: 'pawleys-island' });
-              }}
-            >
-              <Text style={[
-                styles.locationButtonText,
-                currentLocation === 'pawleys-island' && styles.locationButtonTextActive
-              ]}>
-                Pawleys Island
-              </Text>
-            </TouchableOpacity>
+            {locations.map((loc) => {
+              const isActive = currentLocation === loc.id;
+              return (
+                <TouchableOpacity
+                  key={loc.id}
+                  style={[
+                    styles.locationButton,
+                    isActive && styles.locationButtonActive
+                  ]}
+                  onPress={() => {
+                    console.log('[AdminDataScreen] Switching to', loc.name);
+                    router.setParams({ location: loc.id });
+                  }}
+                >
+                  <Text style={[
+                    styles.locationButtonText,
+                    isActive && styles.locationButtonTextActive
+                  ]}>
+                    {loc.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
           <Text style={styles.locationSelectorSubtitle}>
             Currently viewing: {locationData.displayName}
@@ -1254,11 +1239,12 @@ const styles = StyleSheet.create({
   },
   locationButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 8,
   },
   locationButton: {
-    flex: 1,
+    minWidth: '45%',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,

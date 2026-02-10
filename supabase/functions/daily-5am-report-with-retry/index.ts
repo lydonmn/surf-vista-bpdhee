@@ -7,12 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Locations to process
-const LOCATIONS = [
-  { id: 'folly-beach', name: 'Folly Beach, SC' },
-  { id: 'pawleys-island', name: 'Pawleys Island, SC' }
-];
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -32,7 +26,37 @@ serve(async (req) => {
     console.log('[Daily 5AM Report]   • More lenient data validation');
     console.log('[Daily 5AM Report]   • Accepts partial buoy data');
     console.log('[Daily 5AM Report]   • Non-blocking weather/tide fetches');
+    console.log('[Daily 5AM Report]   • Dynamic location support');
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
+
+    // Fetch active locations from database
+    console.log('[Daily 5AM Report] 📍 Fetching active locations from database...');
+    const { data: locationsData, error: locationsError } = await supabase
+      .from('locations')
+      .select('id, name, display_name')
+      .eq('is_active', true)
+      .order('name');
+
+    if (locationsError) {
+      console.error('[Daily 5AM Report] Error fetching locations:', locationsError);
+      throw new Error(`Failed to fetch locations: ${locationsError.message}`);
+    }
+
+    if (!locationsData || locationsData.length === 0) {
+      console.warn('[Daily 5AM Report] No active locations found');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'No active locations found in database',
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log(`[Daily 5AM Report] Found ${locationsData.length} active locations:`, locationsData.map(l => l.display_name).join(', '));
 
     // Get current EST date
     const now = new Date();
@@ -45,18 +69,18 @@ serve(async (req) => {
     const results = [];
     
     // Process each location
-    for (const location of LOCATIONS) {
+    for (const location of locationsData) {
       console.log(`\n[Daily 5AM Report] ═══════════════════════════════════════`);
-      console.log(`[Daily 5AM Report] 📍 Processing ${location.name}...`);
+      console.log(`[Daily 5AM Report] 📍 Processing ${location.display_name}...`);
       console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
       
-      const result = await processLocation(supabase, location.id, location.name, dateStr);
+      const result = await processLocation(supabase, location.id, location.display_name, dateStr);
       results.push(result);
       
       if (result.success) {
-        console.log(`[Daily 5AM Report] ✅ ${location.name}: SUCCESS`);
+        console.log(`[Daily 5AM Report] ✅ ${location.display_name}: SUCCESS`);
       } else {
-        console.log(`[Daily 5AM Report] ❌ ${location.name}: FAILED - ${result.error}`);
+        console.log(`[Daily 5AM Report] ❌ ${location.display_name}: FAILED - ${result.error}`);
       }
     }
 

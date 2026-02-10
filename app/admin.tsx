@@ -15,7 +15,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import 'react-native-url-polyfill/auto';
 import { Database } from '@/app/integrations/supabase/types';
-import { useLocation, LOCATIONS, Location } from '@/contexts/LocationContext';
+import { useLocation } from '@/contexts/LocationContext';
 
 type UserProfile = Database['public']['Tables']['profiles']['Row'];
 
@@ -36,14 +36,14 @@ export default function AdminScreen() {
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState<Location>('folly-beach');
+  const [selectedLocation, setSelectedLocation] = useState<string>('folly-beach');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const { user, profile } = useAuth();
   const { refreshVideos } = useVideos();
-  const { currentLocation } = useLocation();
+  const { currentLocation, locations } = useLocation();
 
   useEffect(() => {
     if (profile && !profile.is_admin) {
@@ -642,20 +642,20 @@ export default function AdminScreen() {
           <View style={styles.locationSection}>
             <Text style={[styles.label, { color: theme.colors.text }]}>Location:</Text>
             <View style={styles.locationButtons}>
-              {Object.entries(LOCATIONS).map(([key, location]) => (
+              {locations.map((location) => (
                 <TouchableOpacity
-                  key={key}
+                  key={location.id}
                   style={[
                     styles.locationButton,
-                    selectedLocation === key && styles.locationButtonActive,
-                    { backgroundColor: selectedLocation === key ? colors.primary : theme.colors.background }
+                    selectedLocation === location.id && styles.locationButtonActive,
+                    { backgroundColor: selectedLocation === location.id ? colors.primary : theme.colors.background }
                   ]}
-                  onPress={() => setSelectedLocation(key as Location)}
+                  onPress={() => setSelectedLocation(location.id)}
                   disabled={isUploading}
                 >
                   <Text style={[
                     styles.locationButtonText,
-                    { color: selectedLocation === key ? '#FFFFFF' : theme.colors.text }
+                    { color: selectedLocation === location.id ? '#FFFFFF' : theme.colors.text }
                   ]}>
                     {location.name}
                   </Text>
@@ -734,6 +734,19 @@ export default function AdminScreen() {
               color="#FFFFFF"
             />
             <Text style={styles.actionButtonText}>Update Surf Data</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/admin-locations')}
+          >
+            <IconSymbol
+              ios_icon_name="map.fill"
+              android_material_icon_name="place"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.actionButtonText}>Manage Locations</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -849,10 +862,11 @@ const styles = StyleSheet.create({
   },
   locationButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   locationButton: {
-    flex: 1,
+    minWidth: '45%',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,

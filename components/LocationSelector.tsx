@@ -4,16 +4,16 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
-import { useLocation, LOCATIONS, Location } from '@/contexts/LocationContext';
+import { useLocation } from '@/contexts/LocationContext';
 
 export function LocationSelector() {
   const theme = useTheme();
-  const { currentLocation, locationData, setLocation } = useLocation();
+  const { currentLocation, locationData, locations, setLocation } = useLocation();
   const [isModalVisible, setIsModalVisible] = useState(false);
 
-  const handleLocationSelect = async (location: Location) => {
-    console.log('[LocationSelector] User selected location:', location);
-    await setLocation(location);
+  const handleLocationSelect = async (locationId: string) => {
+    console.log('[LocationSelector] User selected location:', locationId);
+    await setLocation(locationId);
     setIsModalVisible(false);
   };
 
@@ -28,7 +28,7 @@ export function LocationSelector() {
       >
         <IconSymbol
           ios_icon_name="location.fill"
-          android_material_icon_name="location-on"
+          android_material_icon_name="location_on"
           size={16}
           color={colors.primary}
         />
@@ -37,7 +37,7 @@ export function LocationSelector() {
         </Text>
         <IconSymbol
           ios_icon_name="chevron.down"
-          android_material_icon_name="arrow-drop-down"
+          android_material_icon_name="arrow_drop_down"
           size={16}
           color={colors.textSecondary}
         />
@@ -72,7 +72,7 @@ export function LocationSelector() {
               </TouchableOpacity>
             </View>
 
-            {Object.values(LOCATIONS).map((location) => {
+            {locations.map((location) => {
               const isSelected = location.id === currentLocation;
               
               return (
@@ -89,7 +89,7 @@ export function LocationSelector() {
                   <View style={styles.locationOptionContent}>
                     <IconSymbol
                       ios_icon_name="location.fill"
-                      android_material_icon_name="location-on"
+                      android_material_icon_name="location_on"
                       size={24}
                       color={isSelected ? colors.primary : colors.textSecondary}
                     />
@@ -105,7 +105,7 @@ export function LocationSelector() {
                   {isSelected && (
                     <IconSymbol
                       ios_icon_name="checkmark.circle.fill"
-                      android_material_icon_name="check-circle"
+                      android_material_icon_name="check_circle"
                       size={24}
                       color={colors.primary}
                     />
