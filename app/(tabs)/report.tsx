@@ -470,6 +470,8 @@ export default function ReportScreen() {
     
     const todayDisplayDate = formatDateString(todayDate);
     
+    // CRITICAL FIX: Always prioritize report_text (edited) over conditions (auto-generated)
+    // This ensures edited reports are displayed correctly
     const currentNarrative = report.report_text || report.conditions || '';
     const hasCurrentNarrative = currentNarrative.length > 50;
     
@@ -477,19 +479,29 @@ export default function ReportScreen() {
     let narrativeDate = todayDisplayDate;
     let isHistoricalNarrative = false;
     
+    console.log('[ReportScreen] ===== NARRATIVE SELECTION =====');
+    console.log('[ReportScreen] Report has report_text (edited):', !!report.report_text);
+    console.log('[ReportScreen] Report has conditions (auto):', !!report.conditions);
+    console.log('[ReportScreen] report_text length:', report.report_text?.length || 0);
+    console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
+    
     if (isToday && hasCurrentNarrative) {
       narrativeText = currentNarrative;
       narrativeDate = todayDisplayDate;
       isHistoricalNarrative = false;
       console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized for current day)');
+      console.log('[ReportScreen] Using edited text:', !!report.report_text);
     } else if (!isToday && lastReportWithNarrative) {
       narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
       narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
       isHistoricalNarrative = true;
       console.log('[ReportScreen] Using historical narrative from:', narrativeDate);
+      console.log('[ReportScreen] Using edited text:', !!lastReportWithNarrative.report_text);
     }
     
+    // Mark as custom if using report_text (edited by admin)
     const isCustomReport = !!report.report_text;
+    console.log('[ReportScreen] Is custom report:', isCustomReport);
     
     console.log('[ReportScreen] ===== NARRATIVE TEXT =====');
     console.log('[ReportScreen] Has current narrative:', hasCurrentNarrative);

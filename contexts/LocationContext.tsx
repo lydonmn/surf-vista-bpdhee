@@ -12,6 +12,8 @@ interface LocationData {
     lat: number;
     lon: number;
   };
+  buoyId: string;
+  tideStationId: string;
 }
 
 export const LOCATIONS: Record<Location, LocationData> = {
@@ -22,7 +24,9 @@ export const LOCATIONS: Record<Location, LocationData> = {
     coordinates: {
       lat: 32.6552,
       lon: -79.9403
-    }
+    },
+    buoyId: '41004',
+    tideStationId: '8665530'
   },
   'pawleys-island': {
     id: 'pawleys-island',
@@ -31,7 +35,9 @@ export const LOCATIONS: Record<Location, LocationData> = {
     coordinates: {
       lat: 33.4318,
       lon: -79.1192
-    }
+    },
+    buoyId: '41004',
+    tideStationId: '8662245'
   }
 };
 

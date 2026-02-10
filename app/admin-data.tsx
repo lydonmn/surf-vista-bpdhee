@@ -758,8 +758,8 @@ export default function AdminDataScreen() {
   const backIconName = 'chevron.left';
   const backMaterialIconName = 'arrow_back';
   const backButtonTextContent = 'Back';
-  const headerTitleText = `Data Sources - ${locationData.name}`;
-  const sectionTitleText1 = `Current Data (Today) - ${locationData.name}`;
+  const headerTitleText = 'Data Sources';
+  const sectionTitleText1 = `Current Data (Today)`;
   const countLabelTides = 'Tides';
   const countLabelWeather = 'Weather';
   const countLabelForecast = 'Forecast';
@@ -775,9 +775,9 @@ export default function AdminDataScreen() {
 
 The system automatically generates separate reports for each location every morning at 5 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
   const buttonText1 = '🌅 Trigger 5 AM Report (Both Locations)';
-  const buttonText2 = '🔄 Update Data Only (No Report)';
-  const buttonText3 = '📝 Generate New Surf Report';
-  const sectionTitleText2 = 'Individual Updates';
+  const buttonText2 = '🌊 Pull New Surf Data';
+  const buttonText3 = '📝 Generate New Narrative Report';
+  const sectionTitleText2 = 'Individual Data Sources';
   const buttonText4 = '🌤️ Fetch Weather & Forecast';
   const buttonText5 = '🌊 Fetch Tide Data';
   const buttonText6 = '🏄 Fetch Surf Report';
@@ -809,6 +809,50 @@ The system automatically generates separate reports for each location every morn
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Location Selector */}
+        <View style={styles.locationSelectorCard}>
+          <Text style={styles.locationSelectorTitle}>📍 Select Location</Text>
+          <View style={styles.locationButtons}>
+            <TouchableOpacity
+              style={[
+                styles.locationButton,
+                currentLocation === 'folly-beach' && styles.locationButtonActive
+              ]}
+              onPress={() => {
+                console.log('[AdminDataScreen] Switching to Folly Beach');
+                router.setParams({ location: 'folly-beach' });
+              }}
+            >
+              <Text style={[
+                styles.locationButtonText,
+                currentLocation === 'folly-beach' && styles.locationButtonTextActive
+              ]}>
+                Folly Beach
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.locationButton,
+                currentLocation === 'pawleys-island' && styles.locationButtonActive
+              ]}
+              onPress={() => {
+                console.log('[AdminDataScreen] Switching to Pawleys Island');
+                router.setParams({ location: 'pawleys-island' });
+              }}
+            >
+              <Text style={[
+                styles.locationButtonText,
+                currentLocation === 'pawleys-island' && styles.locationButtonTextActive
+              ]}>
+                Pawleys Island
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.locationSelectorSubtitle}>
+            Currently viewing: {locationData.displayName}
+          </Text>
+        </View>
+
         {/* Data Counts */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{sectionTitleText1}</Text>
@@ -871,6 +915,53 @@ The system automatically generates separate reports for each location every morn
           </Text>
         </View>
 
+        {/* Quick Actions for Current Location */}
+        <View style={styles.quickActionsCard}>
+          <Text style={styles.quickActionsTitle}>⚡ Quick Actions for {locationData.name}</Text>
+          
+          {/* Pull New Surf Data Button */}
+          <TouchableOpacity
+            style={[styles.button, styles.dataButton, isLoading && styles.buttonDisabled]}
+            onPress={handleFetchSurf}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="arrow.down.circle.fill"
+                  android_material_icon_name="download"
+                  size={20}
+                  color="#fff"
+                />
+                <Text style={styles.buttonText}>{buttonText2}</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
+
+          {/* Generate New Narrative Report Button */}
+          <TouchableOpacity
+            style={[styles.button, styles.narrativeButton, isLoading && styles.buttonDisabled]}
+            onPress={handleGenerateReport}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <React.Fragment>
+                <IconSymbol
+                  ios_icon_name="doc.text.fill"
+                  android_material_icon_name="description"
+                  size={20}
+                  color="#fff"
+                />
+                <Text style={styles.buttonText}>{buttonText3}</Text>
+              </React.Fragment>
+            )}
+          </TouchableOpacity>
+        </View>
+
         {/* Manual Daily Update Button (simulates 5 AM automatic update) */}
         <TouchableOpacity
           style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
@@ -881,32 +972,6 @@ The system automatically generates separate reports for each location every morn
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.buttonText}>{buttonText1}</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Update Data Only Button */}
-        <TouchableOpacity
-          style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
-          onPress={handleUpdateAll}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>{buttonText2}</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Generate Report Button */}
-        <TouchableOpacity
-          style={[styles.button, styles.accentButton, isLoading && styles.buttonDisabled]}
-          onPress={handleGenerateReport}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>{buttonText3}</Text>
           )}
         </TouchableOpacity>
 
@@ -1172,5 +1237,79 @@ const styles = StyleSheet.create({
   locationDetailText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  locationSelectorCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  locationSelectorTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  locationButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  locationButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  locationButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  locationButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  locationButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  locationSelectorSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  quickActionsCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+  },
+  quickActionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  dataButton: {
+    backgroundColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  narrativeButton: {
+    backgroundColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
 });

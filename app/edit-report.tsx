@@ -28,6 +28,8 @@ export default function EditReportScreen() {
   const loadReport = useCallback(async () => {
     try {
       setLoading(true);
+      console.log('[EditReportScreen] Loading report:', reportId);
+      
       const { data, error } = await supabase
         .from('surf_reports')
         .select('*')
@@ -35,17 +37,29 @@ export default function EditReportScreen() {
         .single();
 
       if (error) {
-        console.error('Error loading report:', error);
+        console.error('[EditReportScreen] Error loading report:', error);
         Alert.alert('Error', 'Failed to load report');
         router.back();
         return;
       }
 
+      console.log('[EditReportScreen] Report loaded:', {
+        id: data.id,
+        hasReportText: !!data.report_text,
+        reportTextLength: data.report_text?.length || 0,
+        hasConditions: !!data.conditions,
+        conditionsLength: data.conditions?.length || 0,
+        rating: data.rating
+      });
+
       setReport(data);
-      setReportText(data.report_text || data.conditions || '');
+      // Use report_text if available (custom edit), otherwise use conditions (auto-generated)
+      const textToEdit = data.report_text || data.conditions || '';
+      console.log('[EditReportScreen] Setting text to edit, length:', textToEdit.length);
+      setReportText(textToEdit);
       setRating(String(data.rating || 5));
     } catch (error) {
-      console.error('Exception loading report:', error);
+      console.error('[EditReportScreen] Exception loading report:', error);
       Alert.alert('Error', 'Failed to load report');
       router.back();
     } finally {
@@ -68,30 +82,52 @@ export default function EditReportScreen() {
       return;
     }
 
+    // Trim the report text to remove excessive whitespace
+    const trimmedText = reportText.trim();
+    
+    if (!trimmedText) {
+      Alert.alert('Empty Report', 'Please enter some text for the report');
+      return;
+    }
+
+    console.log('[EditReportScreen] Saving report:', {
+      reportId: report.id,
+      textLength: trimmedText.length,
+      rating: ratingValue
+    });
+
     try {
       setSaving(true);
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('surf_reports')
         .update({
-          report_text: reportText,
+          report_text: trimmedText,
           rating: ratingValue,
           edited_by: user.id,
           edited_at: new Date().toISOString(),
         })
-        .eq('id', report.id);
+        .eq('id', report.id)
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error saving report:', error);
+        console.error('[EditReportScreen] Error saving report:', error);
         Alert.alert('Error', 'Failed to save report');
         return;
       }
+
+      console.log('[EditReportScreen] Report saved successfully:', {
+        id: data.id,
+        reportTextLength: data.report_text?.length || 0,
+        rating: data.rating
+      });
 
       Alert.alert('Success', 'Report updated successfully!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
-      console.error('Exception saving report:', error);
+      console.error('[EditReportScreen] Exception saving report:', error);
       Alert.alert('Error', 'Failed to save report');
     } finally {
       setSaving(false);
