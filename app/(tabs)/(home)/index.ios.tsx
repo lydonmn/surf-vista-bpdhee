@@ -170,11 +170,15 @@ function getESTDate(): string {
 }
 
 export default function HomeScreen() {
-  const { user, profile, hasSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, fetchVideos } = useVideos();
   const { surfConditions, fetchSurfConditions } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
+
+  const hasSubscription = useMemo(() => {
+    return checkSubscription();
+  }, [checkSubscription]);
 
   const isLoading = useMemo(() => {
     return authLoading || !isInitialized;
