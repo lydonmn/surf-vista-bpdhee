@@ -1,39 +1,52 @@
+
 {
   "cli": {
-    "version": ">= 13.2.5",
-    "appVersionSource": "remote"
+    "version": ">= 5.0.0"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "resourceClass": "m-medium"
+        "simulator": true
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": true,
-        "resourceClass": "m-medium"
+        "simulator": false,
+        "buildConfiguration": "Release"
       }
     },
     "production": {
-      "autoIncrement": true,
+      "distribution": "store",
       "ios": {
-        "resourceClass": "m-medium",
-        "bundleIdentifier": "Therealfollysurfreport.SurfVista",
+        "simulator": false,
         "buildConfiguration": "Release",
-        "scheme": "SurfVista"
+        "autoIncrement": true,
+        "bundleIdentifier": "Therealfollysurfreport.SurfVista"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production-ios": {
+      "extends": "production",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release",
+        "autoIncrement": true,
+        "bundleIdentifier": "Therealfollysurfreport.SurfVista",
+        "image": "latest"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "lydonmn@aol.com",
-        "ascAppId": "6756734521",
-        "appleTeamId": "BC32GC8XTS"
+        "appleId": "your-apple-id@example.com",
+        "ascAppId": "your-asc-app-id",
+        "appleTeamId": "your-team-id"
       }
     }
   }
