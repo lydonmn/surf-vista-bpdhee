@@ -54,6 +54,8 @@ export default function VideoPlayerScreen() {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
+  const lastPlaybackActivityRef = useRef<number>(Date.now());
+  const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ✅ CRITICAL: Configure audio session for smooth playback on mount
   useEffect(() => {
@@ -160,6 +162,34 @@ export default function VideoPlayerScreen() {
   // ✅ CRITICAL FIX: Memoize video URL to prevent player recreation
   const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
 
+  // ✅ CRITICAL: Refresh connection if idle for too long
+  const refreshConnectionIfNeeded = useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastActivity = now - lastPlaybackActivityRef.current;
+    
+    // If idle for more than 45 seconds, refresh the connection
+    if (timeSinceLastActivity > 45000 && player && videoUrl) {
+      if (__DEV__) {
+        console.log('[VideoPlayer] ⚡ Idle detected - refreshing connection for instant playback');
+      }
+      
+      // Send a lightweight HEAD request to keep connection warm
+      fetch(videoUrl, {
+        method: 'HEAD',
+        cache: 'no-cache',
+      })
+        .then(() => {
+          if (__DEV__) {
+            console.log('[VideoPlayer] ✅ Connection refreshed successfully');
+          }
+          lastPlaybackActivityRef.current = now;
+        })
+        .catch(err => {
+          console.warn('[VideoPlayer] Connection refresh failed:', err);
+        });
+    }
+  }, [player, videoUrl]);
+
   // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl) {
@@ -170,6 +200,9 @@ export default function VideoPlayerScreen() {
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
+      
+      // Update activity timestamp
+      lastPlaybackActivityRef.current = Date.now();
       
       // ✅ SMOOTH PLAYBACK: Configure player for optimal performance
       // expo-video automatically handles:
@@ -236,11 +269,33 @@ export default function VideoPlayerScreen() {
     router.back();
   }, [player, isFullscreen]);
 
+  // ✅ CRITICAL: Set up periodic connection refresh to prevent idle timeouts
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[VideoPlayer] Setting up connection keep-alive mechanism');
+    }
+    
+    // Check connection every 30 seconds and refresh if needed
+    connectionRefreshTimeoutRef.current = setInterval(() => {
+      refreshConnectionIfNeeded();
+    }, 30000); // 30 seconds
+    
+    return () => {
+      if (connectionRefreshTimeoutRef.current) {
+        clearInterval(connectionRefreshTimeoutRef.current);
+        connectionRefreshTimeoutRef.current = null;
+      }
+    };
+  }, [refreshConnectionIfNeeded]);
+
   useEffect(() => {
     if (__DEV__) {
       console.log('[VideoPlayer] Component mounted, loading video:', videoId);
       console.log('[VideoPlayer] Preloaded URL available:', !!preloadedUrl);
     }
+    
+    // Update activity timestamp
+    lastPlaybackActivityRef.current = Date.now();
     
     const loadVideo = async () => {
       if (hasLoadedRef.current) {
@@ -554,6 +609,9 @@ export default function VideoPlayerScreen() {
       if (now - lastProgressUpdateRef.current < 100) return;
       lastProgressUpdateRef.current = now;
       
+      // Update activity timestamp on every time update
+      lastPlaybackActivityRef.current = now;
+      
       if (!isSeekingRef.current) {
         setCurrentTime(newTime);
       }
@@ -653,6 +711,9 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
+    // Update activity timestamp
+    lastPlaybackActivityRef.current = Date.now();
+    
     const currentlyPlaying = player.playing;
     if (__DEV__) {
       console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
@@ -664,11 +725,14 @@ export default function VideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
+      // ✅ CRITICAL: Refresh connection before playing if idle
+      refreshConnectionIfNeeded();
+      
       player.play();
       setIsPlaying(true);
       resetControlsTimeout();
     }
-  }, [player, resetControlsTimeout, clearControlsTimeout]);
+  }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded]);
 
   const handleSeekStart = useCallback(() => {
     if (__DEV__) {
