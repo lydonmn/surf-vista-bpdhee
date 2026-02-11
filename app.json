@@ -2,23 +2,23 @@
   "expo": {
     "name": "SurfVista",
     "slug": "SurfVista",
-    "version": "5.0",
+    "version": "6.0",
     "orientation": "portrait",
     "primaryColor": "#1E90FF",
     "description": "Premium surf reports and forecasts for Folly Beach, South Carolina. Get exclusive 6K drone footage, real-time conditions, and AI-powered surf predictions.",
     "privacy": "public",
-    "icon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+    "icon": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+      "image": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E90FF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "5.0",
+      "buildNumber": "6",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
@@ -37,7 +37,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+        "foregroundImage": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
         "backgroundColor": "#1E90FF"
       },
       "edgeToEdgeEnabled": true,
@@ -52,7 +52,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+      "favicon": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -70,7 +70,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+          "icon": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
           "color": "#1E90FF",
           "sounds": ["./assets/notification.wav"]
         }
