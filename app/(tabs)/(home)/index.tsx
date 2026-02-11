@@ -2,7 +2,7 @@
 import { LocationSelector } from "@/components/LocationSelector";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { SurfReport, WeatherData, WeatherForecast } from "@/types";
+import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType, useColorScheme } from "react-native";

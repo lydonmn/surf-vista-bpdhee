@@ -120,13 +120,13 @@ const flushLogs = async () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(log),
-      }).catch(() => {
+      }).catch((fetchError) => {
         // Log fetch errors only once to avoid spam
         if (!fetchErrorLogged) {
           fetchErrorLogged = true;
           // Use a different method to avoid recursion - write directly without going through our intercept
           if (typeof window !== 'undefined' && window.console) {
-            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat)');
+            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat)', fetchError);
           }
         }
       });
@@ -343,7 +343,7 @@ export const setupErrorLogging = () => {
   // Capture unhandled errors in web environment
   if (typeof window !== 'undefined') {
     // Override window.onerror to catch JavaScript errors
-    window.onerror = (message, source, lineno, colno) => {
+    window.onerror = (message, source, lineno, colno, errorObj) => {
       const sourceFile = source ? source.split('/').pop() : 'unknown';
       const errorMessage = `RUNTIME ERROR: ${message} at ${sourceFile}:${lineno}:${colno}`;
 
@@ -351,6 +351,7 @@ export const setupErrorLogging = () => {
       sendErrorToParent('error', 'JavaScript Runtime Error', {
         message,
         source: `${sourceFile}:${lineno}:${colno}`,
+        error: errorObj,
       });
 
       return false; // Don't prevent default error handling
