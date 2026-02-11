@@ -14,10 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import 'react-native-url-polyfill/auto';
-import { Database } from '@/app/integrations/supabase/types';
 import { useLocation } from '@/contexts/LocationContext';
-
-type UserProfile = Database['public']['Tables']['profiles']['Row'];
 
 interface VideoMetadata {
   width: number;

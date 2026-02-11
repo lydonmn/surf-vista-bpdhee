@@ -32,7 +32,7 @@ let isPaymentSystemInitialized = false;
 let currentOffering: PurchasesOffering | null = null;
 let initializationError: string | null = null;
 
-export const initializeRevenueCat = async (): Promise<boolean> => {
+const initializeRevenueCat = async (): Promise<boolean> => {
   try {
     console.log('[RevenueCat] 🚀 Initializing SDK...');
     console.log('[RevenueCat] Platform:', Platform.OS);
@@ -126,14 +126,14 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 
 export const initializePaymentSystem = initializeRevenueCat;
 
-export const isPaymentSystemAvailable = (): boolean => {
+const isPaymentSystemAvailableInternal = (): boolean => {
   if (Platform.OS === 'web') {
     return false;
   }
   return isPaymentSystemInitialized;
 };
 
-export const getInitializationError = (): string | null => {
+const getInitializationErrorInternal = (): string | null => {
   return initializationError;
 };
 
@@ -162,7 +162,7 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
     console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
     console.log('[RevenueCat]    - All offering IDs:', Object.keys(offerings.all).join(', '));
     
-    const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current;
+    const offeringToUse: PurchasesOffering | null = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current || null;
     
     if (!offeringToUse) {
       currentOffering = null;
@@ -306,16 +306,9 @@ export const checkPaymentConfiguration = (): boolean => {
 
 export const initializePaymentSystem = initializeRevenueCat;
 
-export const isPaymentSystemAvailable = (): boolean => {
-  if (Platform.OS === 'web') {
-    return false;
-  }
-  return isPaymentSystemInitialized;
-};
+export const isPaymentSystemAvailable = isPaymentSystemAvailableInternal;
 
-export const getInitializationError = (): string | null => {
-  return initializationError;
-};
+export const getInitializationError = getInitializationErrorInternal;
 
 export const presentPaywall = async (
   userId?: string,

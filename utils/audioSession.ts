@@ -1,5 +1,5 @@
 
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 
 export interface AudioSessionConfig {
   category: 'playback' | 'ambient' | 'soloAmbient';
@@ -30,8 +30,8 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
       shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
       allowsRecordingIOS: false,
-      interruptionModeIOS: Audio.InterruptionModeIOS.DoNotMix,
-      interruptionModeAndroid: Audio.InterruptionModeAndroid.DoNotMix,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
 
     console.log('[AudioSession] ✅ Audio session configured for uninterrupted playback');
@@ -49,6 +49,8 @@ export function setupAudioInterruptionHandling(
   onInterruptionEnded: () => void
 ): () => void {
   console.log('[AudioSession] Setting up interruption handling...');
+  console.log('[AudioSession] onInterruptionBegan:', typeof onInterruptionBegan);
+  console.log('[AudioSession] onInterruptionEnded:', typeof onInterruptionEnded);
 
   console.log('[AudioSession] ✅ Interruption handling configured');
   console.log('[AudioSession] - Will pause on phone calls, Siri, etc.');
@@ -69,8 +71,8 @@ export async function activateAudioSession(): Promise<void> {
       shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
       allowsRecordingIOS: false,
-      interruptionModeIOS: Audio.InterruptionModeIOS.DoNotMix,
-      interruptionModeAndroid: Audio.InterruptionModeAndroid.DoNotMix,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
     
     console.log('[AudioSession] ✅ Audio session activated for continuous playback');
@@ -89,8 +91,8 @@ export async function deactivateAudioSession(): Promise<void> {
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
       allowsRecordingIOS: false,
-      interruptionModeIOS: Audio.InterruptionModeIOS.MixWithOthers,
-      interruptionModeAndroid: Audio.InterruptionModeAndroid.DuckOthers,
+      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
     });
     
     console.log('[AudioSession] ✅ Audio session deactivated');

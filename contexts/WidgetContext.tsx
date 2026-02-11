@@ -1,7 +1,18 @@
 
 import * as React from "react";
 import { createContext, useCallback, useContext } from "react";
-import { ExtensionStorage } from "@bacons/apple-targets";
+import { Platform } from "react-native";
+
+// Conditionally import ExtensionStorage only on iOS
+let ExtensionStorage: any = null;
+if (Platform.OS === 'ios') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ExtensionStorage = require("@bacons/apple-targets").ExtensionStorage;
+  } catch (error) {
+    console.warn('[WidgetContext] ExtensionStorage not available:', error);
+  }
+}
 
 type WidgetContextType = {
   refreshWidget: () => void;
@@ -11,11 +22,23 @@ const WidgetContext = createContext<WidgetContextType | null>(null);
 
 export function WidgetProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
-    ExtensionStorage.reloadWidget();
+    if (ExtensionStorage && Platform.OS === 'ios') {
+      try {
+        ExtensionStorage.reloadWidget();
+      } catch (error) {
+        console.warn('[WidgetContext] Error reloading widget:', error);
+      }
+    }
   }, []);
 
   const refreshWidget = useCallback(() => {
-    ExtensionStorage.reloadWidget();
+    if (ExtensionStorage && Platform.OS === 'ios') {
+      try {
+        ExtensionStorage.reloadWidget();
+      } catch (error) {
+        console.warn('[WidgetContext] Error refreshing widget:', error);
+      }
+    }
   }, []);
 
   return (

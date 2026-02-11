@@ -3,9 +3,9 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import 'react-native-reanimated';
-import { useColorScheme, AppState, AppStateStatus } from 'react-native';
+import { useColorScheme, AppState, AppStateStatus, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WidgetProvider } from '@/contexts/WidgetContext';
 import { LocationProvider } from '@/contexts/LocationContext';
@@ -13,6 +13,88 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '@/app/integrations/supabase/client';
 
 SplashScreen.preventAutoHideAsync();
+
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error);
+    console.error('[ErrorBoundary] Error info:', errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.message}>
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </Text>
+          <TouchableOpacity
+            style={errorStyles.button}
+            onPress={() => {
+              this.setState({ hasError: false, error: null });
+            }}
+          >
+            <Text style={errorStyles.buttonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#000',
+  },
+  message: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#666',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 // ✅ CRITICAL: Background video preparation service
 // This keeps videos preloaded even when app is in background
@@ -78,15 +160,19 @@ async function prepareVideosInBackground() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
+  const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
   useEffect(() => {
-    if (loaded) {
+    if (fontError) {
+      console.error('[RootLayout] Font loading error:', fontError);
+      // Continue anyway - app can work without custom fonts
+      SplashScreen.hideAsync();
+    } else if (loaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, fontError]);
 
   // ✅ CRITICAL: Set up background video preparation
   useEffect(() => {
@@ -120,76 +206,78 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <LocationProvider>
-          <WidgetProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="login" />
-                <Stack.Screen name="admin" />
-                <Stack.Screen name="admin-data" />
-                <Stack.Screen name="admin-debug" />
-                <Stack.Screen name="admin-users" />
-                <Stack.Screen name="admin-predictions" />
-                <Stack.Screen name="admin-cron-logs" />
-                <Stack.Screen name="setup-admin" />
-                <Stack.Screen name="edit-report" />
-                <Stack.Screen 
-                  name="video-player" 
-                  options={{ 
-                    presentation: 'fullScreenModal',
-                    animation: 'slide_from_bottom'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="video-player-simple" 
-                  options={{ 
-                    presentation: 'fullScreenModal',
-                    animation: 'slide_from_bottom'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="modal" 
-                  options={{ 
-                    presentation: 'modal'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="transparent-modal" 
-                  options={{ 
-                    presentation: 'transparentModal',
-                    animation: 'fade'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="formsheet" 
-                  options={{ 
-                    presentation: 'formSheet'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="privacy-policy" 
-                  options={{ 
-                    presentation: 'modal',
-                    headerShown: true,
-                    title: 'Privacy Policy'
-                  }} 
-                />
-                <Stack.Screen 
-                  name="terms-of-service" 
-                  options={{ 
-                    presentation: 'modal',
-                    headerShown: true,
-                    title: 'Terms of Service'
-                  }} 
-                />
-              </Stack>
-            </ThemeProvider>
-          </WidgetProvider>
-        </LocationProvider>
-      </AuthProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <AuthProvider>
+          <LocationProvider>
+            <WidgetProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="login" />
+                  <Stack.Screen name="admin" />
+                  <Stack.Screen name="admin-data" />
+                  <Stack.Screen name="admin-debug" />
+                  <Stack.Screen name="admin-users" />
+                  <Stack.Screen name="admin-predictions" />
+                  <Stack.Screen name="admin-cron-logs" />
+                  <Stack.Screen name="setup-admin" />
+                  <Stack.Screen name="edit-report" />
+                  <Stack.Screen 
+                    name="video-player" 
+                    options={{ 
+                      presentation: 'fullScreenModal',
+                      animation: 'slide_from_bottom'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="video-player-simple" 
+                    options={{ 
+                      presentation: 'fullScreenModal',
+                      animation: 'slide_from_bottom'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="modal" 
+                    options={{ 
+                      presentation: 'modal'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="transparent-modal" 
+                    options={{ 
+                      presentation: 'transparentModal',
+                      animation: 'fade'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="formsheet" 
+                    options={{ 
+                      presentation: 'formSheet'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="privacy-policy" 
+                    options={{ 
+                      presentation: 'modal',
+                      headerShown: true,
+                      title: 'Privacy Policy'
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="terms-of-service" 
+                    options={{ 
+                      presentation: 'modal',
+                      headerShown: true,
+                      title: 'Terms of Service'
+                    }} 
+                  />
+                </Stack>
+              </ThemeProvider>
+            </WidgetProvider>
+          </LocationProvider>
+        </AuthProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
