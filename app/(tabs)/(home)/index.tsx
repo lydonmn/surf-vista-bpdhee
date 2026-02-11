@@ -4,276 +4,12 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType } from "react-native";
-import { CurrentConditions } from "@/components/CurrentConditions";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType, useColorScheme } from "react-native";
 import { useSurfData } from "@/hooks/useSurfData";
-import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { useVideos } from "@/hooks/useVideos";
 import { colors } from "@/styles/commonStyles";
-import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { router } from "expo-router";
 import { presentPaywall } from "@/utils/superwallConfig";
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    paddingBottom: 100,
-  },
-  welcomeText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  videoCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.card,
-  },
-  videoThumbnail: {
-    width: '100%',
-    height: 350,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  surfVistaTitle: {
-    fontSize: 56,
-    fontWeight: 'bold',
-    color: '#5B9BD5',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  playButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(91, 155, 213, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoInfoSection: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  videoTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  instantPlaybackButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#5B9BD5',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  instantPlaybackText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  locationSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
-  updatedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    gap: 8,
-  },
-  updatedText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  conditionsCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-  },
-  conditionsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 16,
-  },
-  temperatureRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 8,
-  },
-  temperature: {
-    fontSize: 56,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  weatherText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-    marginBottom: 16,
-  },
-  weatherDetailsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 24,
-  },
-  weatherDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  weatherDetailText: {
-    fontSize: 16,
-    color: colors.text,
-  },
-  surfConditionsCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-  },
-  surfConditionsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  surfConditionsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  surfConditionsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  surfConditionItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  surfConditionLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  surfConditionValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  stokeRating: {
-    color: '#FF6B35',
-  },
-  surfConditionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  surfConditionDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  surfConditionDetailText: {
-    fontSize: 14,
-    color: colors.text,
-  },
-  reportCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  reportTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  reportText: {
-    fontSize: 15,
-    color: colors.text,
-    lineHeight: 22,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  subscribeButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  subscribeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
@@ -290,9 +26,12 @@ function getESTDate(): string {
 }
 
 export default function HomeScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
-  const { surfConditions, fetchSurfConditions } = useSurfData();
+  const { surfReports, refreshData } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
 
@@ -317,13 +56,13 @@ export default function HomeScreen() {
     try {
       await Promise.all([
         refreshVideos(),
-        fetchSurfConditions()
+        refreshData()
       ]);
       console.log('[HomeScreen] Data loaded successfully');
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
     }
-  }, [user, refreshVideos, fetchSurfConditions, hasSubscription]);
+  }, [user, refreshVideos, refreshData, hasSubscription]);
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && hasSubscription && session) {
@@ -352,6 +91,245 @@ export default function HomeScreen() {
       Alert.alert('Error', 'Failed to open subscription page. Please try again.');
     }
   }, []);
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: isDark ? '#000000' : colors.background,
+    },
+    scrollContent: {
+      paddingBottom: 100,
+    },
+    welcomeText: {
+      fontSize: 18,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 20,
+      marginBottom: 8,
+    },
+    videoCard: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: isDark ? '#1A1A1A' : colors.card,
+    },
+    videoThumbnail: {
+      width: '100%',
+      height: 350,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    videoOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    surfVistaTitle: {
+      fontSize: 56,
+      fontWeight: 'bold',
+      color: '#5B9BD5',
+      textAlign: 'center',
+      marginBottom: 20,
+    },
+    playButton: {
+      width: 70,
+      height: 70,
+      borderRadius: 35,
+      backgroundColor: 'rgba(91, 155, 213, 0.8)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    locationSection: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+    },
+    updatedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 12,
+      gap: 8,
+    },
+    updatedText: {
+      fontSize: 14,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+    },
+    conditionsCard: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      backgroundColor: isDark ? '#1A1A1A' : colors.card,
+      borderRadius: 16,
+      padding: 20,
+    },
+    conditionsTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+      marginBottom: 16,
+    },
+    temperatureRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      marginBottom: 8,
+    },
+    temperature: {
+      fontSize: 56,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    weatherText: {
+      fontSize: 18,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+      marginBottom: 16,
+    },
+    weatherDetailsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 24,
+    },
+    weatherDetail: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    weatherDetailText: {
+      fontSize: 16,
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    surfConditionsCard: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      backgroundColor: isDark ? '#1A1A1A' : colors.card,
+      borderRadius: 16,
+      padding: 20,
+    },
+    surfConditionsHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      gap: 8,
+    },
+    surfConditionsTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    surfConditionsGrid: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 16,
+    },
+    surfConditionItem: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    surfConditionLabel: {
+      fontSize: 14,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+      marginBottom: 4,
+    },
+    surfConditionValue: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    stokeRating: {
+      color: '#FF6B35',
+    },
+    surfConditionsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingTop: 16,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? '#333333' : colors.secondary,
+    },
+    surfConditionDetail: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    surfConditionDetailText: {
+      fontSize: 14,
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    reportCard: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      backgroundColor: isDark ? '#1A1A1A' : colors.card,
+      borderRadius: 16,
+      padding: 20,
+    },
+    reportHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      gap: 8,
+    },
+    reportTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+    },
+    reportText: {
+      fontSize: 15,
+      color: isDark ? '#FFFFFF' : colors.text,
+      lineHeight: 22,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+      backgroundColor: isDark ? '#000000' : colors.background,
+    },
+    loadingText: {
+      marginTop: 12,
+      fontSize: 16,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+    },
+    errorContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+      backgroundColor: isDark ? '#000000' : colors.background,
+    },
+    errorText: {
+      fontSize: 16,
+      color: colors.error,
+      textAlign: 'center',
+      marginBottom: 16,
+    },
+    retryButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 8,
+    },
+    retryButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    subscribeButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 8,
+      marginTop: 16,
+    },
+    subscribeButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
 
   if (isLoading) {
     return (
@@ -404,7 +382,7 @@ export default function HomeScreen() {
 
   const latestVideo = videos && videos.length > 0 ? videos[0] : null;
   const todayDate = getESTDate();
-  const todayReport = surfConditions?.find((report: SurfReport) => report.date === todayDate);
+  const todayReport = surfReports?.find((report: SurfReport) => report.date === todayDate);
 
   const temperatureText = todayReport?.air_temp ? `${Math.round(todayReport.air_temp)}°F` : '--°F';
   const weatherCondition = todayReport?.weather_condition || 'Sunny';
@@ -416,7 +394,6 @@ export default function HomeScreen() {
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
   const period = todayReport?.wave_period ? `${todayReport.wave_period} sec` : '-- sec';
   const swellDirection = todayReport?.swell_direction || 'SSW';
-  const swellHeight = todayReport?.wave_height ? `${todayReport.wave_height} ft` : '-- ft';
   const swellAngle = todayReport?.swell_angle ? `${todayReport.swell_angle}°` : '--°';
 
   return (
@@ -455,18 +432,6 @@ export default function HomeScreen() {
               </View>
             </View>
           </ImageBackground>
-          <View style={styles.videoInfoSection}>
-            <Text style={styles.videoTitle}>{latestVideo.title}</Text>
-            <TouchableOpacity style={styles.instantPlaybackButton}>
-              <IconSymbol
-                ios_icon_name="bolt.fill"
-                android_material_icon_name="flash-on"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.instantPlaybackText}>Instant Playback</Text>
-            </TouchableOpacity>
-          </View>
         </TouchableOpacity>
       )}
 
@@ -477,7 +442,7 @@ export default function HomeScreen() {
             ios_icon_name="clock"
             android_material_icon_name="schedule"
             size={16}
-            color={colors.textSecondary}
+            color={isDark ? '#B0B0B0' : colors.textSecondary}
           />
           <Text style={styles.updatedText}>Updated Just now</Text>
           <TouchableOpacity onPress={handleRefresh}>
@@ -503,7 +468,7 @@ export default function HomeScreen() {
               ios_icon_name="wind"
               android_material_icon_name="air"
               size={20}
-              color={colors.text}
+              color={isDark ? '#FFFFFF' : colors.text}
             />
             <Text style={styles.weatherDetailText}>{windSpeed} {windDirection}</Text>
           </View>
@@ -539,7 +504,7 @@ export default function HomeScreen() {
               ios_icon_name="timer"
               android_material_icon_name="schedule"
               size={18}
-              color={colors.text}
+              color={isDark ? '#FFFFFF' : colors.text}
             />
             <Text style={styles.surfConditionDetailText}>Period: {period}</Text>
           </View>
@@ -548,7 +513,7 @@ export default function HomeScreen() {
               ios_icon_name="arrow.up"
               android_material_icon_name="arrow-upward"
               size={18}
-              color={colors.text}
+              color={isDark ? '#FFFFFF' : colors.text}
             />
             <Text style={styles.surfConditionDetailText}>Swell: {swellDirection} ({swellAngle})</Text>
           </View>
