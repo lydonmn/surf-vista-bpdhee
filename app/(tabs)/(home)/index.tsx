@@ -1,5 +1,6 @@
 
 import { LocationSelector } from "@/components/LocationSelector";
+import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,7 +32,7 @@ export default function HomeScreen() {
   
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
-  const { surfReports, refreshData } = useSurfData();
+  const { surfReports, weatherForecast, refreshData } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
 
@@ -116,7 +117,7 @@ export default function HomeScreen() {
     },
     videoThumbnail: {
       width: '100%',
-      height: 350,
+      height: 250,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -131,17 +132,17 @@ export default function HomeScreen() {
       alignItems: 'center',
     },
     surfVistaTitle: {
-      fontSize: 56,
+      fontSize: 48,
       fontWeight: 'bold',
       color: '#5B9BD5',
       textAlign: 'center',
-      marginBottom: 20,
+      marginBottom: 16,
     },
     playButton: {
-      width: 70,
-      height: 70,
-      borderRadius: 35,
-      backgroundColor: 'rgba(91, 155, 213, 0.8)',
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: 'rgba(91, 155, 213, 0.9)',
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -165,97 +166,60 @@ export default function HomeScreen() {
       marginBottom: 20,
       backgroundColor: isDark ? '#1A1A1A' : colors.card,
       borderRadius: 16,
-      padding: 20,
+      padding: 16,
     },
     conditionsTitle: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: 'bold',
       color: isDark ? '#FFFFFF' : colors.text,
-      marginBottom: 16,
+      marginBottom: 12,
     },
-    temperatureRow: {
+    conditionsGrid: {
       flexDirection: 'row',
-      alignItems: 'baseline',
-      marginBottom: 8,
+      justifyContent: 'space-between',
+      marginBottom: 12,
     },
-    temperature: {
-      fontSize: 56,
+    conditionItem: {
+      flex: 1,
+    },
+    temperatureText: {
+      fontSize: 32,
       fontWeight: 'bold',
       color: isDark ? '#FFFFFF' : colors.text,
     },
     weatherText: {
-      fontSize: 18,
+      fontSize: 14,
       color: isDark ? '#B0B0B0' : colors.textSecondary,
-      marginBottom: 16,
+      marginTop: 4,
+    },
+    stokeRatingContainer: {
+      alignItems: 'flex-end',
+    },
+    stokeLabel: {
+      fontSize: 12,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+      marginBottom: 4,
+    },
+    stokeRating: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: '#FF6B35',
     },
     weatherDetailsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 24,
+      gap: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? '#333333' : colors.secondary,
     },
     weatherDetail: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
     },
     weatherDetailText: {
-      fontSize: 16,
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    surfConditionsCard: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      backgroundColor: isDark ? '#1A1A1A' : colors.card,
-      borderRadius: 16,
-      padding: 20,
-    },
-    surfConditionsHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 16,
-      gap: 8,
-    },
-    surfConditionsTitle: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    surfConditionsGrid: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 16,
-    },
-    surfConditionItem: {
-      flex: 1,
-      alignItems: 'center',
-    },
-    surfConditionLabel: {
-      fontSize: 14,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-      marginBottom: 4,
-    },
-    surfConditionValue: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    stokeRating: {
-      color: '#FF6B35',
-    },
-    surfConditionsRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingTop: 16,
-      borderTopWidth: 1,
-      borderTopColor: isDark ? '#333333' : colors.secondary,
-    },
-    surfConditionDetail: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    surfConditionDetailText: {
-      fontSize: 14,
+      fontSize: 13,
       color: isDark ? '#FFFFFF' : colors.text,
     },
     reportCard: {
@@ -263,23 +227,23 @@ export default function HomeScreen() {
       marginBottom: 20,
       backgroundColor: isDark ? '#1A1A1A' : colors.card,
       borderRadius: 16,
-      padding: 20,
+      padding: 16,
     },
     reportHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: 16,
+      marginBottom: 12,
       gap: 8,
     },
     reportTitle: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: 'bold',
       color: isDark ? '#FFFFFF' : colors.text,
     },
     reportText: {
-      fontSize: 15,
+      fontSize: 14,
       color: isDark ? '#FFFFFF' : colors.text,
-      lineHeight: 22,
+      lineHeight: 20,
     },
     loadingContainer: {
       flex: 1,
@@ -389,12 +353,7 @@ export default function HomeScreen() {
   const windSpeed = todayReport?.wind_speed ? `${Math.round(todayReport.wind_speed)} mph` : '--';
   const windDirection = todayReport?.wind_direction || 'SW';
   const humidity = todayReport?.humidity ? `${Math.round(todayReport.humidity)}%` : '--%';
-  
-  const waterTemp = todayReport?.water_temp ? `${Math.round(todayReport.water_temp)}°F` : '--°F';
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
-  const period = todayReport?.wave_period ? `${todayReport.wave_period} sec` : '-- sec';
-  const swellDirection = todayReport?.swell_direction || 'SSW';
-  const swellAngle = todayReport?.swell_angle ? `${todayReport.swell_angle}°` : '--°';
 
   return (
     <ScrollView
@@ -426,7 +385,7 @@ export default function HomeScreen() {
                 <IconSymbol
                   ios_icon_name="play.fill"
                   android_material_icon_name="play-arrow"
-                  size={36}
+                  size={32}
                   color="#FFFFFF"
                 />
               </View>
@@ -458,16 +417,22 @@ export default function HomeScreen() {
 
       <View style={styles.conditionsCard}>
         <Text style={styles.conditionsTitle}>Current Conditions</Text>
-        <View style={styles.temperatureRow}>
-          <Text style={styles.temperature}>{temperatureText}</Text>
+        <View style={styles.conditionsGrid}>
+          <View style={styles.conditionItem}>
+            <Text style={styles.temperatureText}>{temperatureText}</Text>
+            <Text style={styles.weatherText}>{weatherCondition}</Text>
+          </View>
+          <View style={styles.stokeRatingContainer}>
+            <Text style={styles.stokeLabel}>Stoke Rating</Text>
+            <Text style={styles.stokeRating}>{stokeRating}</Text>
+          </View>
         </View>
-        <Text style={styles.weatherText}>{weatherCondition}</Text>
         <View style={styles.weatherDetailsRow}>
           <View style={styles.weatherDetail}>
             <IconSymbol
               ios_icon_name="wind"
               android_material_icon_name="air"
-              size={20}
+              size={16}
               color={isDark ? '#FFFFFF' : colors.text}
             />
             <Text style={styles.weatherDetailText}>{windSpeed} {windDirection}</Text>
@@ -478,61 +443,23 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <View style={styles.surfConditionsCard}>
-        <View style={styles.surfConditionsHeader}>
-          <IconSymbol
-            ios_icon_name="waveform"
-            android_material_icon_name="waves"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={styles.surfConditionsTitle}>Surf Conditions</Text>
-        </View>
-        <View style={styles.surfConditionsGrid}>
-          <View style={styles.surfConditionItem}>
-            <Text style={styles.surfConditionLabel}>Water Temp</Text>
-            <Text style={styles.surfConditionValue}>{waterTemp}</Text>
-          </View>
-          <View style={styles.surfConditionItem}>
-            <Text style={styles.surfConditionLabel}>Stoke Rating</Text>
-            <Text style={[styles.surfConditionValue, styles.stokeRating]}>{stokeRating}</Text>
-          </View>
-        </View>
-        <View style={styles.surfConditionsRow}>
-          <View style={styles.surfConditionDetail}>
-            <IconSymbol
-              ios_icon_name="timer"
-              android_material_icon_name="schedule"
-              size={18}
-              color={isDark ? '#FFFFFF' : colors.text}
-            />
-            <Text style={styles.surfConditionDetailText}>Period: {period}</Text>
-          </View>
-          <View style={styles.surfConditionDetail}>
-            <IconSymbol
-              ios_icon_name="arrow.up"
-              android_material_icon_name="arrow-upward"
-              size={18}
-              color={isDark ? '#FFFFFF' : colors.text}
-            />
-            <Text style={styles.surfConditionDetailText}>Swell: {swellDirection} ({swellAngle})</Text>
-          </View>
-        </View>
-      </View>
-
       {todayReport && todayReport.narrative && (
         <View style={styles.reportCard}>
           <View style={styles.reportHeader}>
             <IconSymbol
               ios_icon_name="doc.text"
               android_material_icon_name="description"
-              size={24}
+              size={20}
               color={colors.primary}
             />
             <Text style={styles.reportTitle}>Today's Surf Report</Text>
           </View>
           <Text style={styles.reportText}>{todayReport.narrative}</Text>
         </View>
+      )}
+
+      {weatherForecast && weatherForecast.length > 0 && (
+        <WeeklyForecast forecast={weatherForecast} />
       )}
     </ScrollView>
   );
