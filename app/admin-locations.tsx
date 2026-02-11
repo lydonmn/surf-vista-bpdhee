@@ -4,7 +4,7 @@ import { supabase } from './integrations/supabase/client';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useRouter } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import React from 'react';
 import { useLocation } from '@/contexts/LocationContext';
 
 interface LocationItem {
@@ -31,6 +30,13 @@ interface LocationItem {
   tide_station_id: string;
   is_active: boolean;
   created_at: string;
+}
+
+interface ActivityLog {
+  id: string;
+  timestamp: string;
+  message: string;
+  type: 'info' | 'success' | 'error' | 'warning';
 }
 
 const styles = StyleSheet.create({
