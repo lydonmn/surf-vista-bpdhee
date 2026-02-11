@@ -11,6 +11,8 @@ import { useVideos } from "@/hooks/useVideos";
 import { colors } from "@/styles/commonStyles";
 import { router } from "expo-router";
 import { presentPaywall } from "@/utils/superwallConfig";
+import { selectNarrativeText } from "@/utils/reportNarrativeSelector";
+import { useLocation } from "@/contexts/LocationContext";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
@@ -33,6 +35,7 @@ export default function HomeScreen() {
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
   const { surfReports, weatherData, weatherForecast, refreshData } = useSurfData();
+  const { currentLocation, locationData } = useLocation();
   
   const [refreshing, setRefreshing] = useState(false);
 
@@ -45,7 +48,7 @@ export default function HomeScreen() {
   }, [authLoading, isInitialized]);
 
   const loadData = useCallback(async () => {
-    console.log('[HomeScreen] Loading data...');
+    console.log('[HomeScreen] Loading data for location:', currentLocation);
     console.log('[HomeScreen] User:', user?.id);
     console.log('[HomeScreen] Has subscription:', hasSubscription);
     
@@ -59,18 +62,18 @@ export default function HomeScreen() {
         refreshVideos(),
         refreshData()
       ]);
-      console.log('[HomeScreen] Data loaded successfully');
+      console.log('[HomeScreen] Data loaded successfully for location:', currentLocation);
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
     }
-  }, [user, refreshVideos, refreshData, hasSubscription]);
+  }, [user, refreshVideos, refreshData, hasSubscription, currentLocation]);
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && hasSubscription && session) {
-      console.log('[HomeScreen] Auth ready, loading data...');
+      console.log('[HomeScreen] Auth ready, loading data for location:', currentLocation);
       loadData();
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
+  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData, currentLocation]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -408,13 +411,21 @@ export default function HomeScreen() {
 
   const latestVideo = videos && videos.length > 0 ? videos[0] : null;
   const todayDate = getESTDate();
-  const todayReport = surfReports?.find((report: SurfReport) => report.date === todayDate);
+  
+  // CRITICAL: Filter reports by current location to prevent crossover
+  const locationSurfReports = surfReports?.filter((report: SurfReport) => report.location === currentLocation) || [];
+  const todayReport = locationSurfReports.find((report: SurfReport) => report.date === todayDate);
   const todayWeatherForecast = weatherForecast?.find((w) => w.date === todayDate);
 
-  console.log('[HomeScreen] Display data:', {
+  console.log('[HomeScreen] Display data for location:', currentLocation, locationData.displayName);
+  console.log('[HomeScreen] Data:', {
     todayDate,
+    totalReports: surfReports?.length || 0,
+    locationReports: locationSurfReports.length,
     hasTodayReport: !!todayReport,
+    todayReportLocation: todayReport?.location,
     hasWeatherData: !!weatherData,
+    weatherDataLocation: weatherData?.location,
     hasWeatherForecast: !!todayWeatherForecast,
     weatherDataTemp: weatherData?.temperature,
     forecastTemp: todayWeatherForecast?.temperature,
@@ -447,10 +458,10 @@ export default function HomeScreen() {
   const humidity = humidityFromData || humidityFromForecast ? `${Math.round(humidityFromData || humidityFromForecast || 0)}%` : '--%';
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
   
-  // Prioritize report_text (custom edit) over conditions (auto-generated)
-  const narrativeText = todayReport?.report_text || todayReport?.conditions;
+  // ✅ USE SHARED UTILITY - Ensures identical narrative selection as report page
+  const narrativeText = selectNarrativeText(todayReport);
   
-  console.log('[HomeScreen] Computed display values:', {
+  console.log('[HomeScreen] Computed display values for', locationData.displayName, ':', {
     temperatureText,
     waterTempText,
     weatherCondition,
@@ -459,7 +470,7 @@ export default function HomeScreen() {
     humidity,
     stokeRating,
     narrativeLength: narrativeText?.length || 0,
-    narrativeSource: todayReport?.report_text ? 'report_text (edited)' : 'conditions (auto-generated)'
+    narrativeSource: todayReport?.report_text ? 'report_text (edited)' : todayReport?.conditions ? 'conditions (auto)' : 'none'
   });
 
   return (
@@ -568,7 +579,7 @@ export default function HomeScreen() {
               size={20}
               color={colors.primary}
             />
-            <Text style={styles.reportTitle}>Today's Surf Report</Text>
+            <Text style={styles.reportTitle}>Today&apos;s Surf Report</Text>
           </View>
           <Text style={styles.reportText}>{narrativeText}</Text>
         </View>

@@ -13,6 +13,7 @@ import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
+import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 
 export default function ReportScreen() {
   const theme = useTheme();
@@ -66,41 +67,50 @@ export default function ReportScreen() {
 
   const todayDate = useMemo(() => getESTDate(), []);
 
+  // CRITICAL: Filter reports by current location to prevent crossover
+  const locationSurfReports = useMemo(() => {
+    const filtered = surfReports.filter(report => report.location === currentLocation);
+    console.log('[ReportScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
+    return filtered;
+  }, [surfReports, currentLocation]);
+
   const todaysReport = useMemo(() => {
     try {
       console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
-      console.log('[ReportScreen] Current EST date for Charleston, SC:', todayDate);
-      console.log('[ReportScreen] Current location:', currentLocation);
-      console.log('[ReportScreen] Total reports available:', surfReports.length);
+      console.log('[ReportScreen] Current EST date:', todayDate);
+      console.log('[ReportScreen] Current location:', currentLocation, locationData.displayName);
+      console.log('[ReportScreen] Total reports for this location:', locationSurfReports.length);
       
-      const todayReports = surfReports.filter(report => {
+      const todayReports = locationSurfReports.filter(report => {
         if (!report.date) return false;
         const reportDate = report.date.split('T')[0];
         return reportDate === todayDate;
       });
       
-      console.log('[ReportScreen] Found', todayReports.length, 'reports for today');
+      console.log('[ReportScreen] Found', todayReports.length, 'reports for today at', locationData.displayName);
       
       if (todayReports.length > 0) {
         const report = todayReports[0];
         console.log('[ReportScreen] ===== USING TODAY\'S REPORT =====');
         console.log('[ReportScreen] Report ID:', report.id);
         console.log('[ReportScreen] Report location:', report.location);
-        console.log('[ReportScreen] Has conditions:', !!report.conditions);
+        console.log('[ReportScreen] Has report_text (edited):', !!report.report_text);
+        console.log('[ReportScreen] Has conditions (auto):', !!report.conditions);
+        console.log('[ReportScreen] report_text length:', report.report_text?.length || 0);
         console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
         return report;
       } else {
-        console.log('[ReportScreen] ❌ No report found for today');
+        console.log('[ReportScreen] ❌ No report found for today at', locationData.displayName);
         return null;
       }
     } catch (error) {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [surfReports, todayDate, currentLocation]);
+  }, [locationSurfReports, todayDate, currentLocation, locationData]);
 
   const lastValidReport = useMemo(() => {
-    const sortedReports = [...surfReports].sort((a, b) => {
+    const sortedReports = [...locationSurfReports].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
       return dateB - dateA;
@@ -108,7 +118,7 @@ export default function ReportScreen() {
     
     const validReport = sortedReports.find(report => hasValidSurfData(report));
     
-    console.log('[ReportScreen] Last valid report search:', {
+    console.log('[ReportScreen] Last valid report search for', locationData.displayName, ':', {
       totalReports: sortedReports.length,
       foundValid: !!validReport,
       validReportDate: validReport?.date,
@@ -118,64 +128,26 @@ export default function ReportScreen() {
     });
     
     return validReport;
-  }, [surfReports, hasValidSurfData]);
-
-  const lastReportWithNarrative = useMemo(() => {
-    const sortedReports = [...surfReports].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateB - dateA;
-    });
-    
-    const todayReportWithNarrative = sortedReports.find(report => {
-      const reportDate = report.date.split('T')[0];
-      const narrative = report.report_text || report.conditions || '';
-      return reportDate === todayDate && narrative.length > 50;
-    });
-    
-    if (todayReportWithNarrative) {
-      console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized):', {
-        date: todayReportWithNarrative.date,
-        location: todayReportWithNarrative.location,
-        narrativeLength: todayReportWithNarrative.conditions?.length || todayReportWithNarrative.report_text?.length || 0,
-        hasWaveData: hasValidSurfData(todayReportWithNarrative)
-      });
-      return todayReportWithNarrative;
-    }
-    
-    const reportWithNarrative = sortedReports.find(report => {
-      const narrative = report.report_text || report.conditions || '';
-      return narrative.length > 50;
-    });
-    
-    console.log('[ReportScreen] No today report, using most recent with narrative:', {
-      found: !!reportWithNarrative,
-      date: reportWithNarrative?.date,
-      location: reportWithNarrative?.location,
-      narrativeLength: reportWithNarrative?.conditions?.length || reportWithNarrative?.report_text?.length || 0
-    });
-    
-    return reportWithNarrative;
-  }, [surfReports, todayDate, hasValidSurfData]);
+  }, [locationSurfReports, hasValidSurfData, locationData]);
 
   const displayReport = useMemo(() => {
     if (todaysReport) {
-      console.log('[ReportScreen] ✅ Using today\'s report for display');
+      console.log('[ReportScreen] ✅ Using today\'s report for display at', locationData.displayName);
       return todaysReport;
     }
     
     if (lastValidReport) {
-      console.log('[ReportScreen] Using last valid report from:', lastValidReport.date);
+      console.log('[ReportScreen] Using last valid report from:', lastValidReport.date, 'at', locationData.displayName);
       return lastValidReport;
     }
     
-    console.log('[ReportScreen] ❌ No report to display');
+    console.log('[ReportScreen] ❌ No report to display for', locationData.displayName);
     return null;
-  }, [todaysReport, lastValidReport]);
+  }, [todaysReport, lastValidReport, locationData]);
 
   const fetchSurfConditions = useCallback(async () => {
     try {
-      console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, 'date:', todayDate);
+      console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, locationData.displayName, 'date:', todayDate);
       
       const { data: conditionsData, error: conditionsError } = await supabase
         .from('surf_conditions')
@@ -187,22 +159,22 @@ export default function ReportScreen() {
       if (conditionsError) {
         console.error('[ReportScreen] Error fetching surf conditions:', conditionsError);
       } else if (conditionsData) {
-        console.log('[ReportScreen] Surf conditions loaded for today:', conditionsData);
+        console.log('[ReportScreen] Surf conditions loaded for today at', locationData.displayName, ':', conditionsData);
         setSurfConditions(conditionsData);
       } else {
-        console.log('[ReportScreen] No surf conditions for today at location:', currentLocation);
+        console.log('[ReportScreen] No surf conditions for today at location:', currentLocation, locationData.displayName);
         setSurfConditions(null);
       }
     } catch (error) {
       console.error('[ReportScreen] Error in fetchSurfConditions:', error);
     }
-  }, [todayDate, currentLocation]);
+  }, [todayDate, currentLocation, locationData]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
       setVideoReady(false);
-      console.log('[ReportScreen] Fetching latest video for location:', currentLocation);
+      console.log('[ReportScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
@@ -215,10 +187,10 @@ export default function ReportScreen() {
       if (videoError) {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
-        console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location);
+        console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
         setLatestVideo(videoData);
       } else {
-        console.log('[ReportScreen] No videos found for location:', currentLocation);
+        console.log('[ReportScreen] No videos found for location:', currentLocation, locationData.displayName);
         setLatestVideo(null);
       }
     } catch (error) {
@@ -226,7 +198,7 @@ export default function ReportScreen() {
     } finally {
       setIsLoadingVideo(false);
     }
-  }, [currentLocation]);
+  }, [currentLocation, locationData]);
 
   useEffect(() => {
     console.log('[ReportScreen] Auth state:', {
@@ -240,17 +212,18 @@ export default function ReportScreen() {
 
   useEffect(() => {
     if (isInitialized && !authLoading && user && profile && isSubscribed) {
+      console.log('[ReportScreen] Loading data for location:', currentLocation, locationData.displayName);
       loadLatestVideo();
       fetchSurfConditions();
     }
-  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions, currentLocation]);
 
   useEffect(() => {
     if (!isInitialized || authLoading || !user || !profile || !isSubscribed) {
       return;
     }
 
-    console.log('[ReportScreen] Setting up real-time subscription for surf_conditions');
+    console.log('[ReportScreen] Setting up real-time subscription for surf_conditions at', locationData.displayName);
     
     const subscription = supabase
       .channel('surf_conditions_report_changes')
@@ -265,10 +238,10 @@ export default function ReportScreen() {
           console.log('[ReportScreen] Surf conditions updated:', payload);
           // Only refresh if the change is for the current location
           if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[ReportScreen] Surf conditions for current location updated, refreshing...');
+            console.log('[ReportScreen] Surf conditions for current location', locationData.displayName, 'updated, refreshing...');
             fetchSurfConditions();
           } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[ReportScreen] Surf conditions for current location deleted, refreshing...');
+            console.log('[ReportScreen] Surf conditions for current location', locationData.displayName, 'deleted, refreshing...');
             fetchSurfConditions();
           }
         }
@@ -279,10 +252,10 @@ export default function ReportScreen() {
       console.log('[ReportScreen] Cleaning up real-time subscription');
       subscription.unsubscribe();
     };
-  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation, locationData]);
 
   const handleRefresh = async () => {
-    console.log('[ReportScreen] User initiated refresh for location:', currentLocation);
+    console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo(), fetchSurfConditions()]);
     setIsRefreshing(false);
@@ -291,9 +264,9 @@ export default function ReportScreen() {
   const handleUpdateData = async () => {
     setIsRefreshing(true);
     try {
-      console.log('[ReportScreen] Starting data update for location:', currentLocation);
+      console.log('[ReportScreen] Starting data update for location:', currentLocation, locationData.displayName);
       await updateAllData();
-      console.log('[ReportScreen] Data update completed successfully');
+      console.log('[ReportScreen] Data update completed successfully for', locationData.displayName);
       
       // Wait a moment for the database to update
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -424,7 +397,7 @@ export default function ReportScreen() {
     console.log('[ReportScreen] ===== RENDER REPORT CARD =====');
     console.log('[ReportScreen] Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
-    console.log('[ReportScreen] Report location:', report.location);
+    console.log('[ReportScreen] Report location:', report.location, locationData.displayName);
     console.log('[ReportScreen] Current location:', currentLocation);
     console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
     console.log('[ReportScreen] Display data surf_height:', displayData.surf_height);
@@ -459,51 +432,26 @@ export default function ReportScreen() {
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
+    // CRITICAL: Filter tides by current location to prevent crossover
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
-      return tideDate === todayDate;
+      return tideDate === todayDate && tide.location === currentLocation;
     });
+    
+    console.log('[ReportScreen] Tides for', locationData.displayName, ':', reportTides.length);
     
     const todayDisplayDate = formatDateString(todayDate);
     
-    // CRITICAL FIX: Always prioritize report_text (edited) over conditions (auto-generated)
-    // This ensures edited reports are displayed correctly
-    const currentNarrative = report.report_text || report.conditions || '';
-    const hasCurrentNarrative = currentNarrative.length > 50;
+    // ✅ USE SHARED UTILITY - Ensures identical narrative selection as home page
+    const narrativeText = selectNarrativeText(report);
+    const isCustomReport = isCustomNarrative(report);
     
-    let narrativeText = currentNarrative;
-    let narrativeDate = todayDisplayDate;
-    let isHistoricalNarrative = false;
-    
-    console.log('[ReportScreen] ===== NARRATIVE SELECTION =====');
-    console.log('[ReportScreen] Report has report_text (edited):', !!report.report_text);
-    console.log('[ReportScreen] Report has conditions (auto):', !!report.conditions);
-    console.log('[ReportScreen] report_text length:', report.report_text?.length || 0);
-    console.log('[ReportScreen] conditions length:', report.conditions?.length || 0);
-    
-    if (isToday && hasCurrentNarrative) {
-      narrativeText = currentNarrative;
-      narrativeDate = todayDisplayDate;
-      isHistoricalNarrative = false;
-      console.log('[ReportScreen] ✅ Using today\'s narrative (ALWAYS prioritized for current day)');
-      console.log('[ReportScreen] Using edited text:', !!report.report_text);
-    } else if (!isToday && lastReportWithNarrative) {
-      narrativeText = lastReportWithNarrative.report_text || lastReportWithNarrative.conditions || '';
-      narrativeDate = formatDateString(lastReportWithNarrative.date.split('T')[0]);
-      isHistoricalNarrative = true;
-      console.log('[ReportScreen] Using historical narrative from:', narrativeDate);
-      console.log('[ReportScreen] Using edited text:', !!lastReportWithNarrative.report_text);
-    }
-    
-    // Mark as custom if using report_text (edited by admin)
-    const isCustomReport = !!report.report_text;
-    console.log('[ReportScreen] Is custom report:', isCustomReport);
-    
-    console.log('[ReportScreen] ===== NARRATIVE TEXT =====');
-    console.log('[ReportScreen] Has current narrative:', hasCurrentNarrative);
-    console.log('[ReportScreen] Using historical narrative:', isHistoricalNarrative);
-    console.log('[ReportScreen] Narrative date:', narrativeDate);
-    console.log('[ReportScreen] Narrative length:', narrativeText.length);
+    console.log('[ReportScreen] ===== NARRATIVE DISPLAY =====');
+    console.log('[ReportScreen] Location:', locationData.displayName);
+    console.log('[ReportScreen] Report location:', report.location);
+    console.log('[ReportScreen] Narrative length:', narrativeText?.length || 0);
+    console.log('[ReportScreen] Is custom (edited):', isCustomReport);
+    console.log('[ReportScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
     
     return (
       <View 
@@ -516,7 +464,7 @@ export default function ReportScreen() {
               {todayDisplayDate}
             </Text>
             <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
-              Report for {todayDisplayDate}
+              Report for {locationData.displayName}
             </Text>
             {dataUpdatedAt && (
               <View style={styles.lastUpdatedContainer}>
@@ -729,7 +677,7 @@ export default function ReportScreen() {
               </View>
             ) : (
               <Text style={[styles.conditionValue, { color: valueColor }]}>
-                No tide data available
+                No tide data available for {locationData.displayName}
               </Text>
             )}
           </View>
@@ -759,19 +707,6 @@ export default function ReportScreen() {
           </View>
           {narrativeText ? (
             <>
-              {isHistoricalNarrative && (
-                <View style={[styles.historicalBanner, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
-                  <IconSymbol
-                    ios_icon_name="clock.fill"
-                    android_material_icon_name="schedule"
-                    size={16}
-                    color="#FF9800"
-                  />
-                  <Text style={[styles.historicalBannerText, { color: '#FF9800' }]}>
-                    Showing surf report from {narrativeDate} (most recent available report)
-                  </Text>
-                </View>
-              )}
               <ReportTextDisplay 
                 text={narrativeText}
                 isCustom={isCustomReport}
@@ -784,7 +719,7 @@ export default function ReportScreen() {
             </>
           ) : (
             <Text style={[styles.conditionsText, { color: colors.reportText }]}>
-              No surf conditions narrative available.
+              No surf conditions narrative available for {locationData.displayName}.
             </Text>
           )}
         </View>
@@ -840,7 +775,7 @@ export default function ReportScreen() {
     );
   }
 
-  console.log('[ReportScreen] Showing surf reports');
+  console.log('[ReportScreen] Showing surf reports for', locationData.displayName);
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -909,7 +844,7 @@ export default function ReportScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading surf reports...
+            Loading surf reports for {locationData.displayName}...
           </Text>
         </View>
       ) : !displayReport ? (
@@ -924,7 +859,7 @@ export default function ReportScreen() {
             No Report Available
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Surf reports will be generated automatically from NOAA data.
+            Surf reports for {locationData.displayName} will be generated automatically from NOAA data.
           </Text>
           {profile?.is_admin && (
             <TouchableOpacity
@@ -1340,19 +1275,6 @@ const styles = StyleSheet.create({
   conditionsText: {
     fontSize: 14,
     lineHeight: 20,
-  },
-  historicalBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  historicalBannerText: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
   },
   editedNote: {
     fontSize: 11,
