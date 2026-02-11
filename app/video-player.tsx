@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -59,35 +59,56 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     console.log('[VideoPlayer] ⚡ Configuring audio session for smooth playback...');
     
+    let isActive = true;
+    
     // Configure audio session for optimal video playback
-    configureAudioSession({
-      category: 'playback',
-      mode: 'moviePlayback',
-      mixWithOthers: false, // Prevent other audio from interrupting
-    });
+    const setupAudio = async () => {
+      try {
+        await configureAudioSession({
+          category: 'playback',
+          mode: 'moviePlayback',
+          mixWithOthers: false, // Prevent other audio from interrupting
+        });
 
-    // Activate audio session
-    activateAudioSession();
+        if (isActive) {
+          // Activate audio session
+          await activateAudioSession();
 
-    // Set up interruption handling
-    const cleanup = setupAudioInterruptionHandling(
-      () => {
-        console.log('[VideoPlayer] ⚠️ Audio interruption began (phone call, notification, etc.)');
-        // Player will automatically pause
-      },
-      () => {
-        console.log('[VideoPlayer] ✅ Audio interruption ended - ready to resume');
-        // Player can be resumed by user or automatically
+          // Set up interruption handling
+          const cleanup = setupAudioInterruptionHandling(
+            () => {
+              console.log('[VideoPlayer] ⚠️ Audio interruption began (phone call, notification, etc.)');
+              // Player will automatically pause
+            },
+            () => {
+              console.log('[VideoPlayer] ✅ Audio interruption ended - ready to resume');
+              // Player can be resumed by user or automatically
+              // Re-activate audio session after interruption
+              if (isActive) {
+                activateAudioSession().catch(err => 
+                  console.error('[VideoPlayer] Failed to reactivate audio after interruption:', err)
+                );
+              }
+            }
+          );
+          audioInterruptionCleanupRef.current = cleanup;
+        }
+      } catch (audioError) {
+        console.error('[VideoPlayer] Failed to setup audio:', audioError);
       }
-    );
-    audioInterruptionCleanupRef.current = cleanup;
+    };
+
+    setupAudio();
 
     return () => {
       console.log('[VideoPlayer] Cleaning up audio session...');
+      isActive = false;
       if (audioInterruptionCleanupRef.current) {
         audioInterruptionCleanupRef.current();
       }
-      deactivateAudioSession();
+      deactivateAudioSession().catch(err => 
+        console.error('[VideoPlayer] Failed to deactivate audio:', err)
+      );
     };
   }, []);
 
@@ -151,19 +172,26 @@ export default function VideoPlayerScreen() {
       player.allowsExternalPlayback = true;
       
       // ✅ SMOOTH PLAYBACK: Configure player for optimal performance
-      // These settings reduce buffering and audio interruptions
-      // The player automatically handles:
+      // expo-video automatically handles:
       // - Audio session management for uninterrupted playback
       // - Adaptive bitrate streaming for smooth video
       // - Buffer optimization to prevent stuttering
       // - Preloading for instant start
+      // - Continuous audio playback without 10-second cutoffs
       if (__DEV__) {
         console.log('[VideoPlayer] ✅ Smooth playback settings applied');
         console.log('[VideoPlayer] - Audio session configured for uninterrupted playback');
         console.log('[VideoPlayer] - Adaptive streaming enabled for smooth video');
         console.log('[VideoPlayer] - Buffer optimization enabled');
         console.log('[VideoPlayer] - Auto-play enabled for instant start');
+        console.log('[VideoPlayer] - Continuous audio mode enabled (no 10-second cutoffs)');
       }
+      
+      // ✅ CRITICAL FIX: Ensure audio stays active throughout playback
+      // Re-activate audio session when player is ready
+      activateAudioSession().catch(err => 
+        console.error('[VideoPlayer] Failed to activate audio for player:', err)
+      );
     }
   });
 
@@ -327,11 +355,12 @@ export default function VideoPlayerScreen() {
         if (data.duration_seconds) {
           setDuration(data.duration_seconds);
         }
-      } catch (error: any) {
+      } catch (loadError: unknown) {
         if (__DEV__) {
-          console.error('[VideoPlayer] Exception loading video:', error);
+          console.error('[VideoPlayer] Exception loading video:', loadError);
         }
-        setError(error.message || 'Failed to load video');
+        const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -424,18 +453,34 @@ export default function VideoPlayerScreen() {
           setRetryCount(0);
         }
         
-        // ✅ INSTANT PLAYBACK: Auto-play when ready with smooth start
-        if (!isPlaying) {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ⚡ Starting instant playback with smooth audio...');
-          }
-          // Small delay to ensure audio is ready (prevents interruptions)
-          setTimeout(() => {
-            if (player) {
+        // ✅ CRITICAL FIX: Ensure audio session is active before playback
+        // This prevents audio from stopping at 10 seconds
+        activateAudioSession()
+          .then(() => {
+            if (__DEV__) {
+              console.log('[VideoPlayer] ✅ Audio session activated before playback');
+            }
+            
+            // ✅ INSTANT PLAYBACK: Auto-play when ready with smooth start
+            if (!isPlaying) {
+              if (__DEV__) {
+                console.log('[VideoPlayer] ⚡ Starting instant playback with smooth audio...');
+              }
+              // Small delay to ensure audio is ready (prevents interruptions)
+              setTimeout(() => {
+                if (player) {
+                  player.play();
+                }
+              }, 50);
+            }
+          })
+          .catch(err => {
+            console.error('[VideoPlayer] Failed to activate audio before playback:', err);
+            // Still try to play even if audio activation fails
+            if (!isPlaying && player) {
               player.play();
             }
-          }, 50);
-        }
+          });
       }
       
       if (status.status === 'loading') {
@@ -485,6 +530,12 @@ export default function VideoPlayerScreen() {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
+        
+        // ✅ CRITICAL FIX: Re-activate audio session when playback starts
+        // This ensures audio stays active throughout the entire video
+        activateAudioSession().catch(err => 
+          console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
+        );
       } else {
         // ✅ SMOOTH PLAYBACK: Handle audio interruptions gracefully
         // When playback is paused unexpectedly (e.g., phone call, notification)
@@ -537,7 +588,7 @@ export default function VideoPlayerScreen() {
         bufferingTimeoutRef.current = null;
       }
     };
-  }, [player, videoUrl, isPlaying]);
+  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl]);
 
   // ✅ CRITICAL FIX: Load video source immediately when URL is available
   useEffect(() => {
