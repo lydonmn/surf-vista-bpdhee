@@ -9,7 +9,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { useSurfData } from "@/hooks/useSurfData";
 import { useVideos } from "@/hooks/useVideos";
 import { colors } from "@/styles/commonStyles";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { presentPaywall } from "@/utils/superwallConfig";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
@@ -29,6 +29,7 @@ function getESTDate(): string {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const pathname = usePathname();
   
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
@@ -71,6 +72,14 @@ export default function HomeScreen() {
       loadData();
     }
   }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
+
+  // Redirect to login if not authenticated (only when on home screen)
+  useEffect(() => {
+    if (isInitialized && !isLoading && !user && pathname.includes('/(home)')) {
+      console.log('[HomeScreen] No user detected, redirecting to login');
+      router.replace('/login');
+    }
+  }, [isInitialized, isLoading, user, pathname]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -270,17 +279,6 @@ export default function HomeScreen() {
       textAlign: 'center',
       marginBottom: 16,
     },
-    retryButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 8,
-    },
-    retryButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
-    },
     subscribeButton: {
       backgroundColor: colors.primary,
       paddingHorizontal: 24,
@@ -304,24 +302,9 @@ export default function HomeScreen() {
     );
   }
 
-  if (!user) {
-    return (
-      <View style={styles.errorContainer}>
-        <IconSymbol
-          ios_icon_name="person.crop.circle.badge.exclamationmark"
-          android_material_icon_name="error"
-          size={64}
-          color={colors.error}
-        />
-        <Text style={styles.errorText}>Please log in to view content</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.retryButtonText}>Go to Login</Text>
-        </TouchableOpacity>
-      </View>
-    );
+  // Don't show error state if user is not on home screen (prevents showing on login page)
+  if (!user && !pathname.includes('/(home)')) {
+    return null;
   }
 
   if (!hasSubscription) {

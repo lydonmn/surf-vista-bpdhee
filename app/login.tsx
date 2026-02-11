@@ -23,7 +23,7 @@ export default function LoginScreen() {
   useEffect(() => {
     if (user && !authLoading) {
       console.log('[LoginScreen] User already logged in, redirecting to home');
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/(home)');
     }
   }, [user, authLoading]);
 
@@ -145,7 +145,7 @@ export default function LoginScreen() {
         
         if (result.success) {
           console.log('[LoginScreen] Sign in successful, navigating to home');
-          router.replace('/(tabs)');
+          router.replace('/(tabs)/(home)');
         } else {
           if (result.message.includes('verify your email') || result.message.includes('Email not confirmed')) {
             Alert.alert(
