@@ -329,7 +329,7 @@ export default function LoginScreen() {
       >
         <View style={styles.content}>
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
+            <View style={styles.logoImageContainer}>
               <Image
                 source={require('@/assets/images/1a8c89e7-e01c-4434-aa20-348c0d2cdbb1.png')}
                 style={styles.logoImage}
@@ -498,13 +498,22 @@ const styles = StyleSheet.create({
   logoContainer: {
     width: 120,
     height: 120,
+    borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
+  logoImageContainer: {
+    width: 140,
+    height: 140,
+    marginBottom: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
   logoImage: {
-    width: 120,
-    height: 120,
+    width: '100%',
+    height: '100%',
   },
   title: {
     fontSize: 32,
