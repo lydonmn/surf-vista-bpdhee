@@ -9,7 +9,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { useSurfData } from "@/hooks/useSurfData";
 import { useVideos } from "@/hooks/useVideos";
 import { colors } from "@/styles/commonStyles";
-import { router, usePathname } from "expo-router";
+import { router } from "expo-router";
 import { presentPaywall } from "@/utils/superwallConfig";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
@@ -29,7 +29,6 @@ function getESTDate(): string {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const pathname = usePathname();
   
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
@@ -73,14 +72,6 @@ export default function HomeScreen() {
     }
   }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
 
-  // Redirect to login if not authenticated (only when on home screen)
-  useEffect(() => {
-    if (isInitialized && !isLoading && !user && pathname.includes('/(home)')) {
-      console.log('[HomeScreen] No user detected, redirecting to login');
-      router.replace('/login');
-    }
-  }, [isInitialized, isLoading, user, pathname]);
-
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
@@ -100,6 +91,11 @@ export default function HomeScreen() {
       console.error('[HomeScreen] Error presenting paywall:', error);
       Alert.alert('Error', 'Failed to open subscription page. Please try again.');
     }
+  }, []);
+
+  const handleSignIn = useCallback(() => {
+    console.log('[HomeScreen] Sign In button pressed');
+    router.push('/login');
   }, []);
 
   const styles = StyleSheet.create({
@@ -266,6 +262,62 @@ export default function HomeScreen() {
       fontSize: 16,
       color: isDark ? '#B0B0B0' : colors.textSecondary,
     },
+    welcomeContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+      backgroundColor: isDark ? '#000000' : colors.background,
+    },
+    logoContainer: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 24,
+    },
+    appTitle: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: isDark ? '#FFFFFF' : colors.text,
+      marginBottom: 8,
+    },
+    appSubtitle: {
+      fontSize: 16,
+      color: isDark ? '#B0B0B0' : colors.textSecondary,
+      marginBottom: 40,
+    },
+    signInButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 48,
+      paddingVertical: 16,
+      borderRadius: 12,
+      marginBottom: 16,
+      minWidth: 200,
+      alignItems: 'center',
+    },
+    signInButtonText: {
+      color: '#FFFFFF',
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    signUpButton: {
+      backgroundColor: 'transparent',
+      paddingHorizontal: 48,
+      paddingVertical: 16,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: colors.primary,
+      minWidth: 200,
+      alignItems: 'center',
+    },
+    signUpButtonText: {
+      color: colors.primary,
+      fontSize: 18,
+      fontWeight: '600',
+    },
     errorContainer: {
       flex: 1,
       justifyContent: 'center',
@@ -302,9 +354,36 @@ export default function HomeScreen() {
     );
   }
 
-  // Don't show error state if user is not on home screen (prevents showing on login page)
-  if (!user && !pathname.includes('/(home)')) {
-    return null;
+  // Show welcome screen with sign-in buttons if not authenticated
+  if (!user) {
+    return (
+      <View style={styles.welcomeContainer}>
+        <View style={styles.logoContainer}>
+          <IconSymbol
+            ios_icon_name="waveform"
+            android_material_icon_name="waves"
+            size={64}
+            color="#FFFFFF"
+          />
+        </View>
+        <Text style={styles.appTitle}>SurfVista</Text>
+        <Text style={styles.appSubtitle}>Folly Beach, SC</Text>
+        
+        <TouchableOpacity
+          style={styles.signInButton}
+          onPress={handleSignIn}
+        >
+          <Text style={styles.signInButtonText}>Sign In</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.signUpButton}
+          onPress={handleSignIn}
+        >
+          <Text style={styles.signUpButtonText}>Sign Up</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   if (!hasSubscription) {
