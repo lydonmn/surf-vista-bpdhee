@@ -439,9 +439,20 @@ export default function HomeScreen() {
   });
 
   // Get air temperature from weather_data (current conditions) or weather_forecast
-  const airTempFromData = weatherData?.temperature ? parseFloat(weatherData.temperature) : null;
+  // CRITICAL: Try multiple sources to ensure we always show temperature
+  const airTempFromData = weatherData?.temperature ? parseFloat(String(weatherData.temperature)) : null;
   const airTempFromForecast = todayWeatherForecast?.temperature || todayWeatherForecast?.high_temp;
   const airTemp = airTempFromData || airTempFromForecast;
+  
+  console.log('[HomeScreen] Temperature sources:', {
+    weatherDataTemp: weatherData?.temperature,
+    airTempFromData,
+    forecastTemp: todayWeatherForecast?.temperature,
+    forecastHighTemp: todayWeatherForecast?.high_temp,
+    airTempFromForecast,
+    finalAirTemp: airTemp
+  });
+  
   const temperatureText = airTemp ? `${Math.round(airTemp)}°F` : '--°F';
   
   // Get water temperature from surf report
@@ -449,13 +460,21 @@ export default function HomeScreen() {
   const waterTempNum = waterTempRaw ? parseFloat(waterTempRaw.replace(/[^\d.-]/g, '')) : null;
   const waterTempText = waterTempNum ? `${Math.round(waterTempNum)}°F` : '--°F';
   
-  const weatherCondition = weatherData?.conditions || todayWeatherForecast?.conditions || todayWeatherForecast?.short_forecast || 'Sunny';
+  // Get weather condition with multiple fallbacks
+  const weatherCondition = weatherData?.conditions || 
+                          todayWeatherForecast?.conditions || 
+                          todayWeatherForecast?.short_forecast || 
+                          'Loading...';
   const windSpeedRaw = todayReport?.wind_speed;
   const windSpeed = windSpeedRaw ? `${Math.round(parseFloat(windSpeedRaw.replace(/[^\d.-]/g, '')))} mph` : '--';
   const windDirection = todayReport?.wind_direction || 'SW';
+  // Get humidity with fallbacks
   const humidityFromData = weatherData?.humidity;
   const humidityFromForecast = todayWeatherForecast?.humidity;
-  const humidity = humidityFromData || humidityFromForecast ? `${Math.round(humidityFromData || humidityFromForecast || 0)}%` : '--%';
+  const humidityValue = humidityFromData ?? humidityFromForecast;
+  const humidity = humidityValue !== null && humidityValue !== undefined 
+    ? `${Math.round(humidityValue)}%` 
+    : '--%';
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
   
   // ✅ USE SHARED UTILITY - Ensures identical narrative selection as report page

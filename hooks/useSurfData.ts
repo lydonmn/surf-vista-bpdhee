@@ -92,7 +92,8 @@ export function useSurfData() {
           .from('weather_data')
           .select('*')
           .eq('location', currentLocation)
-          .eq('date', today)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle(),
         supabase
           .from('weather_forecast')
@@ -124,6 +125,10 @@ export function useSurfData() {
         hasData: !!weatherResult.data,
         date: weatherResult.data?.date,
         updated_at: weatherResult.data?.updated_at,
+        temperature: weatherResult.data?.temperature,
+        conditions: weatherResult.data?.conditions,
+        humidity: weatherResult.data?.humidity,
+        location: weatherResult.data?.location,
       });
 
       console.log('[useSurfData] Forecast result:', {
