@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
@@ -329,8 +329,12 @@ export default function LoginScreen() {
       >
         <View style={styles.content}>
           <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
-              <Text style={styles.logoText}>SV</Text>
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('@/assets/images/d743b5ec-f441-420e-b2e7-0c162da475aa.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.title, { color: theme.colors.text }]}>
               SurfVista
@@ -494,15 +498,13 @@ const styles = StyleSheet.create({
   logoContainer: {
     width: 120,
     height: 120,
-    borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
-  logoText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  logoImage: {
+    width: 120,
+    height: 120,
   },
   title: {
     fontSize: 32,
