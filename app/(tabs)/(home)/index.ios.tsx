@@ -171,7 +171,7 @@ function getESTDate(): string {
 
 export default function HomeScreen() {
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
-  const { videos, fetchVideos } = useVideos();
+  const { videos, refreshVideos } = useVideos();
   const { surfConditions, fetchSurfConditions } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
@@ -196,14 +196,14 @@ export default function HomeScreen() {
 
     try {
       await Promise.all([
-        fetchVideos(),
+        refreshVideos(),
         fetchSurfConditions()
       ]);
       console.log('[HomeScreen] Data loaded successfully');
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
     }
-  }, [user, fetchVideos, fetchSurfConditions, hasSubscription]);
+  }, [user, refreshVideos, fetchSurfConditions, hasSubscription]);
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && hasSubscription && session) {
