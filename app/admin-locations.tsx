@@ -18,6 +18,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import React from 'react';
 import { useLocation } from '@/contexts/LocationContext';
 
 interface LocationItem {
@@ -119,6 +120,9 @@ const styles = StyleSheet.create({
   toggleButton: {
     backgroundColor: colors.textSecondary,
   },
+  testButton: {
+    backgroundColor: '#3B82F6',
+  },
   actionButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -162,8 +166,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 4,
     marginTop: 12,
+  },
+  inputHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 6,
+    fontStyle: 'italic',
   },
   input: {
     backgroundColor: colors.card,
@@ -208,6 +218,86 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 40,
+  },
+  testLogSection: {
+    marginTop: 24,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+  },
+  testLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  testLogTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  clearLogButton: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  testLogContainer: {
+    maxHeight: 300,
+  },
+  testLogEntry: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  testLogTimestamp: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginRight: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  testLogMessage: {
+    color: colors.text,
+    fontSize: 12,
+    flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  testLogError: {
+    color: '#ff4444',
+  },
+  testLogSuccess: {
+    color: '#44ff44',
+  },
+  testLogWarning: {
+    color: '#ffaa00',
+  },
+  helpCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  helpTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1976D2',
+    marginBottom: 8,
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#424242',
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  helpExample: {
+    fontSize: 13,
+    color: '#616161',
+    lineHeight: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 8,
   },
 });
 
@@ -419,6 +509,83 @@ export default function AdminLocationsScreen() {
     }
   };
 
+  const handleTestLocation = async (location: LocationItem) => {
+    console.log('AdminLocationsScreen: Testing location data sources:', location);
+    setLoading(true);
+    
+    try {
+      addLog(`Testing data sources for ${location.display_name}...`, 'info');
+      
+      // Test 1: Fetch surf data from buoy
+      addLog(`Testing NOAA Buoy ${location.buoy_id}...`, 'info');
+      const surfResponse = await supabase.functions.invoke('fetch-surf-reports', {
+        body: { location: location.id },
+      });
+      
+      if (surfResponse.error) {
+        addLog(`❌ Buoy test failed: ${surfResponse.error.message}`, 'error');
+      } else if (surfResponse.data?.success) {
+        addLog(`✅ Buoy ${location.buoy_id} is working! Wave data retrieved.`, 'success');
+      } else {
+        addLog(`⚠️ Buoy test returned: ${surfResponse.data?.error || 'Unknown error'}`, 'warning');
+      }
+      
+      // Test 2: Fetch weather data
+      addLog(`Testing NOAA Weather for coordinates (${location.latitude}, ${location.longitude})...`, 'info');
+      const weatherResponse = await supabase.functions.invoke('fetch-weather-data', {
+        body: { location: location.id },
+      });
+      
+      if (weatherResponse.error) {
+        addLog(`❌ Weather test failed: ${weatherResponse.error.message}`, 'error');
+      } else if (weatherResponse.data?.success) {
+        addLog(`✅ Weather API is working! ${weatherResponse.data.forecast_periods || 0} forecast periods retrieved.`, 'success');
+      } else {
+        addLog(`⚠️ Weather test returned: ${weatherResponse.data?.error || 'Unknown error'}`, 'warning');
+      }
+      
+      // Test 3: Fetch tide data
+      addLog(`Testing NOAA Tide Station ${location.tide_station_id}...`, 'info');
+      const tideResponse = await supabase.functions.invoke('fetch-tide-data', {
+        body: { location: location.id },
+      });
+      
+      if (tideResponse.error) {
+        addLog(`❌ Tide test failed: ${tideResponse.error.message}`, 'error');
+      } else if (tideResponse.data?.success) {
+        addLog(`✅ Tide Station ${location.tide_station_id} is working! ${tideResponse.data.tides || 0} tide records retrieved.`, 'success');
+      } else {
+        addLog(`⚠️ Tide test returned: ${tideResponse.data?.error || 'Unknown error'}`, 'warning');
+      }
+      
+      // Summary
+      const allSuccess = 
+        surfResponse.data?.success && 
+        weatherResponse.data?.success && 
+        tideResponse.data?.success;
+      
+      if (allSuccess) {
+        addLog(`🎉 All data sources working for ${location.display_name}!`, 'success');
+        Alert.alert(
+          'Test Successful!',
+          `All data sources are working correctly for ${location.display_name}:\n\n✅ Buoy ${location.buoy_id}\n✅ Weather (${location.latitude}, ${location.longitude})\n✅ Tide Station ${location.tide_station_id}\n\nThis location is ready to generate reports!`
+        );
+      } else {
+        Alert.alert(
+          'Test Results',
+          `Some data sources may have issues for ${location.display_name}. Check the activity log for details.`
+        );
+      }
+      
+    } catch (err) {
+      console.error('AdminLocationsScreen: Error testing location:', err);
+      addLog(`❌ Test failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+      Alert.alert('Error', 'Failed to test location data sources');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteLocation = (location: LocationItem) => {
     console.log('AdminLocationsScreen: Delete requested for:', location);
     Alert.alert(
@@ -460,6 +627,16 @@ export default function AdminLocationsScreen() {
     );
   };
 
+  // Activity log state for test results
+  const [testLog, setTestLog] = useState<ActivityLog[]>([]);
+  
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+    console.log(`[AdminLocationsScreen] ${type.toUpperCase()}: ${message}`);
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const id = `${Date.now()}-${Math.random()}`;
+    setTestLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 20));
+  }, []);
+
   const handleGoBack = () => {
     console.log('AdminLocationsScreen: Navigating back');
     router.back();
@@ -500,6 +677,24 @@ export default function AdminLocationsScreen() {
           <Text style={styles.addButtonText}>+ Add New Location</Text>
         </TouchableOpacity>
 
+        {/* Help Guide */}
+        <View style={styles.helpCard}>
+          <Text style={styles.helpTitle}>📚 How to Add a New Location</Text>
+          <Text style={styles.helpText}>
+            1. Find NOAA Buoy ID at: ndbc.noaa.gov{'\n'}
+            2. Find Tide Station ID at: tidesandcurrents.noaa.gov{'\n'}
+            3. Get coordinates from Google Maps{'\n'}
+            4. Add location and click "Test Data" to verify{'\n'}
+            5. If test passes, activate the location!
+          </Text>
+          <Text style={styles.helpExample}>
+            Example (Holden Beach, NC):{'\n'}
+            • Buoy: 41013 (Frying Pan Shoals){'\n'}
+            • Tide Station: 8658163 (Wrightsville Beach){'\n'}
+            • Coordinates: 33.9176, -78.3086
+          </Text>
+        </View>
+
         {locations.length === 0 ? (
           <Text style={styles.emptyText}>No locations yet. Add your first location!</Text>
         ) : (
@@ -529,6 +724,12 @@ export default function AdminLocationsScreen() {
                 </View>
                 <View style={styles.locationActions}>
                   <TouchableOpacity
+                    style={[styles.actionButton, styles.testButton]}
+                    onPress={() => handleTestLocation(location)}
+                  >
+                    <Text style={styles.actionButtonText}>Test Data</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     style={[styles.actionButton, styles.toggleButton]}
                     onPress={() => handleToggleActive(location)}
                   >
@@ -552,6 +753,36 @@ export default function AdminLocationsScreen() {
               </View>
             );
           })
+        )}
+
+        {/* Test Log */}
+        {testLog.length > 0 && (
+          <View style={styles.testLogSection}>
+            <View style={styles.testLogHeader}>
+              <Text style={styles.testLogTitle}>Test Results</Text>
+              <TouchableOpacity onPress={() => setTestLog([])}>
+                <Text style={styles.clearLogButton}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.testLogContainer}>
+              {testLog.map((log) => {
+                const logTimestampText = `[${log.timestamp}]`;
+                return (
+                  <View key={log.id} style={styles.testLogEntry}>
+                    <Text style={styles.testLogTimestamp}>{logTimestampText}</Text>
+                    <Text style={[
+                      styles.testLogMessage,
+                      log.type === 'error' && styles.testLogError,
+                      log.type === 'success' && styles.testLogSuccess,
+                      log.type === 'warning' && styles.testLogWarning,
+                    ]}>
+                      {log.message}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
         )}
       </ScrollView>
 
@@ -627,6 +858,7 @@ export default function AdminLocationsScreen() {
               />
 
               <Text style={styles.inputLabel}>NOAA Buoy ID</Text>
+              <Text style={styles.inputHint}>Find at: ndbc.noaa.gov (search for nearest buoy)</Text>
               <TextInput
                 style={styles.input}
                 value={formData.buoy_id}
@@ -636,6 +868,7 @@ export default function AdminLocationsScreen() {
               />
 
               <Text style={styles.inputLabel}>NOAA Tide Station ID</Text>
+              <Text style={styles.inputHint}>Find at: tidesandcurrents.noaa.gov (search for nearest station)</Text>
               <TextInput
                 style={styles.input}
                 value={formData.tide_station_id}

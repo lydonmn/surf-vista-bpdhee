@@ -8,18 +8,6 @@ const corsHeaders = {
 
 const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
 
-// Location-specific configuration
-const LOCATION_CONFIG = {
-  'folly-beach': {
-    name: 'Folly Beach, SC',
-    tideStationId: '8665530', // Charleston
-  },
-  'pawleys-island': {
-    name: 'Pawleys Island, SC',
-    tideStationId: '8661070', // Springmaid Pier, Myrtle Beach
-  },
-};
-
 function getESTDate(daysOffset: number = 0): string {
   const now = new Date();
   now.setDate(now.getDate() + daysOffset);
@@ -87,37 +75,6 @@ Deno.serve(async (req) => {
     console.log('=== FETCH TIDE DATA STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    // Parse request body to get location parameter
-    let locationId = 'folly-beach'; // Default location
-    try {
-      const body = await req.json();
-      if (body.location) {
-        locationId = body.location;
-        console.log('Location parameter received:', locationId);
-      }
-    } catch (e) {
-      console.log('No location parameter in request body, using default: folly-beach');
-    }
-
-    // Get location configuration
-    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
-    if (!locationConfig) {
-      console.error('Invalid location:', locationId);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Invalid location: ${locationId}`,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    }
-
-    console.log('Using location configuration:', locationConfig);
-    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -139,7 +96,48 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`Fetching tide data from NOAA for ${locationConfig.name}...`);
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // 🔥 DYNAMIC: Fetch location configuration from database
+    console.log('Fetching location configuration from database for:', locationId);
+    const { data: locationData, error: locationError } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('id', locationId)
+      .single();
+
+    if (locationError || !locationData) {
+      console.error('Location not found in database:', locationId, locationError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Location not found: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location from database:', {
+      id: locationData.id,
+      name: locationData.display_name,
+      tideStationId: locationData.tide_station_id,
+    });
+
+    console.log(`Fetching tide data from NOAA for ${locationData.display_name}...`);
 
     const today = getESTDate(0);
     const endDate = getESTDate(6);
@@ -152,7 +150,7 @@ Deno.serve(async (req) => {
     const tideUrl = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?` +
       `product=predictions&application=SurfVista&` +
       `begin_date=${todayStr}&end_date=${endDateStr}&` +
-      `datum=MLLW&station=${locationConfig.tideStationId}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
+      `datum=MLLW&station=${locationData.tide_station_id}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
 
     console.log('Fetching tide predictions');
 
@@ -263,8 +261,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Tide data updated successfully for ${locationConfig.name}`,
-        location: locationConfig.name,
+        message: `Tide data updated successfully for ${locationData.display_name}`,
+        location: locationData.display_name,
         locationId: locationId,
         tides: tideRecords.length,
         timestamp: new Date().toISOString(),

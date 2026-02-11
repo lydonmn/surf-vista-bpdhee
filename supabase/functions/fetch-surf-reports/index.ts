@@ -8,18 +8,6 @@ const corsHeaders = {
 
 const FETCH_TIMEOUT = 30000; // Increased to 30 seconds
 
-// Location-specific configuration
-const LOCATION_CONFIG = {
-  'folly-beach': {
-    name: 'Folly Beach, SC',
-    buoyId: '41004', // Edisto, SC
-  },
-  'pawleys-island': {
-    name: 'Pawleys Island, SC',
-    buoyId: '41013', // Frying Pan Shoals
-  },
-};
-
 function getESTDate(): string {
   const now = new Date();
   const estDateString = now.toLocaleString('en-US', { 
@@ -100,6 +88,12 @@ async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT, re
   throw new Error('Max retries exceeded');
 }
 
+function getDirectionFromDegrees(degrees: number): string {
+  const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const index = Math.round(degrees / 22.5) % 16;
+  return `${directions[index]} (${degrees.toFixed(0)}°)`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -108,37 +102,6 @@ Deno.serve(async (req) => {
   try {
     console.log('=== FETCH SURF REPORTS STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
-    
-    // Parse request body to get location parameter
-    let locationId = 'folly-beach'; // Default location
-    try {
-      const body = await req.json();
-      if (body.location) {
-        locationId = body.location;
-        console.log('Location parameter received:', locationId);
-      }
-    } catch (e) {
-      console.log('No location parameter in request body, using default: folly-beach');
-    }
-
-    // Get location configuration
-    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
-    if (!locationConfig) {
-      console.error('Invalid location:', locationId);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Invalid location: ${locationId}`,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    }
-
-    console.log('Using location configuration:', locationConfig);
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -161,9 +124,50 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`Fetching surf conditions from NOAA Buoy for ${locationConfig.name}...`);
+    // Parse request body to get location parameter
+    let locationId = 'folly-beach'; // Default location
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
 
-    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${locationConfig.buoyId}.txt`;
+    // 🔥 DYNAMIC: Fetch location configuration from database
+    console.log('Fetching location configuration from database for:', locationId);
+    const { data: locationData, error: locationError } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('id', locationId)
+      .single();
+
+    if (locationError || !locationData) {
+      console.error('Location not found in database:', locationId, locationError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Location not found: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location from database:', {
+      id: locationData.id,
+      name: locationData.display_name,
+      buoyId: locationData.buoy_id,
+    });
+
+    console.log(`Fetching surf conditions from NOAA Buoy for ${locationData.display_name}...`);
+
+    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${locationData.buoy_id}.txt`;
 
     let buoyResponse;
     try {
@@ -318,7 +322,7 @@ Deno.serve(async (req) => {
       wind_speed: windSpeedMph !== 'N/A' ? `${windSpeedMph} mph` : 'N/A',
       wind_direction: windDir,
       water_temp: waterTempF !== 'N/A' ? `${waterTempF}°F` : 'N/A',
-      buoy_id: locationConfig.buoyId,
+      buoy_id: locationData.buoy_id,
       updated_at: new Date().toISOString(),
     };
 
@@ -350,8 +354,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Surf conditions updated successfully for ${locationConfig.name}`,
-        location: locationConfig.name,
+        message: `Surf conditions updated successfully for ${locationData.display_name}`,
+        location: locationData.display_name,
         locationId: locationId,
         data: surfData,
         timestamp: new Date().toISOString(),
@@ -378,9 +382,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-function getDirectionFromDegrees(degrees: number): string {
-  const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-  const index = Math.round(degrees / 22.5) % 16;
-  return `${directions[index]} (${degrees.toFixed(0)}°)`;
-}
