@@ -7,12 +7,12 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { 
-  isPaymentSystemAvailable, 
   restorePurchases, 
-  checkPaymentConfiguration,
   presentCustomerCenter,
   presentPaywall,
-  forceRefreshOfferings
+  forceRefreshOfferings,
+  isPaymentSystemAvailable,
+  initializeRevenueCat
 } from '@/utils/superwallConfig';
 import { 
   setDailyReportNotifications, 
@@ -29,12 +29,15 @@ export default function ProfileScreen() {
   const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
   const [dailyNotificationsEnabled, setDailyNotificationsEnabled] = useState(false);
   const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
+  const [paymentSystemReady, setPaymentSystemReady] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
       return;
     }
+    console.log('[ProfileScreen] 🔍 Loading notification status...');
     const status = await getDailyReportNotificationStatus(user.id);
+    console.log('[ProfileScreen] ✅ Notification status loaded:', status);
     setDailyNotificationsEnabled(status);
   }, [user?.id]);
 
@@ -44,28 +47,55 @@ export default function ProfileScreen() {
     }
   }, [user?.id, loadNotificationStatus]);
 
+  // Check payment system status on mount
+  useEffect(() => {
+    const checkPaymentSystem = async () => {
+      console.log('[ProfileScreen] 💳 Checking payment system status...');
+      
+      const isAvailable = isPaymentSystemAvailable();
+      console.log('[ProfileScreen] 💳 Payment system available:', isAvailable);
+      
+      if (!isAvailable) {
+        console.log('[ProfileScreen] ⚠️ Payment system not ready, attempting initialization...');
+        const initialized = await initializeRevenueCat();
+        console.log('[ProfileScreen] 💳 Initialization result:', initialized);
+        setPaymentSystemReady(initialized);
+      } else {
+        setPaymentSystemReady(true);
+      }
+    };
+    
+    checkPaymentSystem();
+  }, []);
+
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
+      console.error('[ProfileScreen] ❌ No user ID available');
       return;
     }
 
+    console.log('[ProfileScreen] 🔔 Toggle notifications button pressed:', value);
     setIsTogglingNotifications(true);
 
     try {
       const success = await setDailyReportNotifications(user.id, value);
       
       if (success) {
+        console.log('[ProfileScreen] ✅ Notifications updated successfully');
         setDailyNotificationsEnabled(value);
-        const message = value 
+        
+        const statusText = value ? 'Enabled' : 'Disabled';
+        const messageText = value 
           ? 'You will receive a push notification each morning at 5 AM with your daily surf report summary!'
           : 'Daily surf report notifications have been disabled.';
         
         Alert.alert(
-          'Notifications Updated',
-          message,
+          `Notifications ${statusText}`,
+          messageText,
           [{ text: 'OK' }]
         );
       } else {
+        console.error('[ProfileScreen] ❌ Failed to update notifications');
         Alert.alert(
           'Error',
           'Failed to update notification preferences. Please try again.',
@@ -73,7 +103,7 @@ export default function ProfileScreen() {
         );
       }
     } catch (error) {
-      console.error('[ProfileScreen] Error toggling notifications:', error);
+      console.error('[ProfileScreen] ❌ Exception toggling notifications:', error);
       Alert.alert(
         'Error',
         'An error occurred while updating notifications.',
@@ -98,8 +128,8 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen] ===== SIGN OUT BUTTON PRESSED =====');
               await signOut();
               router.replace('/login');
-            } catch {
-              console.error('[ProfileScreen] ❌ Error during sign out');
+            } catch (error) {
+              console.error('[ProfileScreen] ❌ Error during sign out:', error);
               router.replace('/login');
             }
           }
@@ -138,7 +168,12 @@ export default function ProfileScreen() {
                         Alert.alert(
                           'Account Deleted',
                           result.message,
-                          [{ text: 'OK', onPress: () => router.replace('/login') }]
+                          [
+                            {
+                              text: 'OK',
+                              onPress: () => router.replace('/login')
+                            }
+                          ]
                         );
                       } else {
                         Alert.alert('Error', result.message);
@@ -158,6 +193,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
+    console.log('[ProfileScreen] 🔄 Refreshing profile data...');
     await refreshProfile();
     await loadNotificationStatus();
     Alert.alert('Success', 'Profile data refreshed');
@@ -166,47 +202,35 @@ export default function ProfileScreen() {
   const handleRefreshProducts = async () => {
     console.log('[ProfileScreen] 🔄 ===== REFRESH PRODUCTS BUTTON PRESSED =====');
     
-    if (!isPaymentSystemAvailable()) {
-      Alert.alert(
-        'Payment System Not Ready',
-        'The payment system is not initialized yet. Please wait a moment and try again.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
     setIsRefreshingProducts(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       const result = await forceRefreshOfferings();
       
-      if (result.success) {
-        Alert.alert(
-          'Products Refreshed',
-          result.message + '\n\nYou can now try subscribing again.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Refresh Failed',
-          result.message + '\n\nPlease check:\n• Products exist in App Store Connect\n• Products are linked in RevenueCat dashboard\n• Product IDs match exactly\n\nCheck console logs for details.',
-          [
-            { text: 'OK', style: 'cancel' },
-            {
-              text: 'View Diagnostics',
-              onPress: () => {
-                checkPaymentConfiguration();
-                Alert.alert(
-                  'Diagnostics',
-                  'Check the console logs for detailed diagnostic information about your RevenueCat configuration.',
-                  [{ text: 'OK' }]
-                );
-              }
-            }
-          ]
-        );
-      }
-    } catch {
+      Alert.alert(
+        result.success ? 'Products Refreshed' : 'Setup Required',
+        result.message,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[ProfileScreen] ❌ Refresh products error:', error);
       Alert.alert(
         'Refresh Failed',
         'Unable to refresh products. Please try again later.',
@@ -218,53 +242,86 @@ export default function ProfileScreen() {
   };
 
   const handleRestorePurchases = async () => {
-    if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
-      Alert.alert(
-        'RevenueCat Configuration Required',
-        'The subscription system is not properly configured. Please check the console logs for setup instructions.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
+    console.log('[ProfileScreen] 🔄 ===== RESTORE PURCHASES BUTTON PRESSED =====');
+    
     setIsRestoring(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       const result = await restorePurchases();
       await refreshProfile();
       
-      if (result.success || result.state === 'restored') {
-        Alert.alert('Purchases Restored', 'Your subscription has been restored successfully!', [{ text: 'OK' }]);
-      } else {
-        Alert.alert('No Purchases Found', 'We couldn\'t find any previous purchases to restore.', [{ text: 'OK' }]);
-      }
-    } catch {
-      Alert.alert('Restore Failed', 'Unable to restore purchases.', [{ text: 'OK' }]);
+      Alert.alert(
+        result.success ? 'Purchases Restored' : 'No Purchases Found',
+        result.message || 'Unable to restore purchases.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[ProfileScreen] ❌ Restore error:', error);
+      Alert.alert(
+        'Restore Failed',
+        'Unable to restore purchases at this time.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsRestoring(false);
     }
   };
 
   const handleManageSubscription = async () => {
-    if (!isPaymentSystemAvailable()) {
-      checkPaymentConfiguration();
-      Alert.alert('RevenueCat Configuration Required', 'Please check the console logs for setup instructions.', [{ text: 'OK' }]);
-      return;
-    }
-
+    console.log('[ProfileScreen] ⚙️ ===== MANAGE SUBSCRIPTION BUTTON PRESSED =====');
+    
     setIsLoadingCustomerCenter(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       await presentCustomerCenter();
       await refreshProfile();
-    } catch {
+    } catch (error) {
+      console.error('[ProfileScreen] ❌ Customer center error:', error);
       Alert.alert(
         'Manage Subscription',
-        'To manage your subscription:\n\n• Android: Open Play Store > Menu > Subscriptions\n• iOS: Go to Settings > [Your Name] > Subscriptions',
+        'To manage your subscription:\n\n' +
+        '• iOS: Settings > [Your Name] > Subscriptions\n' +
+        '• Android: Play Store > Menu > Subscriptions',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Restore Purchases', onPress: handleRestorePurchases }
+          {
+            text: 'Restore Purchases',
+            onPress: handleRestorePurchases
+          }
         ]
       );
     } finally {
@@ -278,45 +335,62 @@ export default function ProfileScreen() {
     setIsSubscribing(true);
 
     try {
-      let retryCount = 0;
-      const maxRetries = 10;
-      let result: any = null;
-      
-      while (retryCount < maxRetries) {
-        result = await presentPaywall(user?.id, user?.email || undefined);
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
         
-        if (result.state === 'initializing') {
-          retryCount++;
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
         }
         
-        break;
+        setPaymentSystemReady(true);
       }
       
-      if (result.state === 'initializing') {
-        checkPaymentConfiguration();
-        Alert.alert('Payment System Not Ready', 'Please try again in a few moments, or restart the app.', [{ text: 'OK' }]);
-        return;
-      }
+      const result = await presentPaywall(user?.id, user?.email || undefined);
+      
+      console.log('[ProfileScreen] 📊 Paywall result:', result);
       
       await refreshProfile();
       
       if (result.state === 'purchased' || result.state === 'restored') {
-        Alert.alert('Success!', result.message || 'Subscription activated successfully!', [{ text: 'OK' }]);
-      } else if (result.state === 'error') {
+        Alert.alert(
+          'Success!',
+          result.message || 'Subscription activated successfully!',
+          [{ text: 'OK' }]
+        );
+      } else if (result.state === 'not_configured') {
         Alert.alert(
           'Setup Required',
-          result.message || 'Unable to load subscription options.',
+          result.message || 'Subscriptions are not configured yet.',
           [
-            { text: 'Refresh Products', onPress: handleRefreshProducts },
+            { 
+              text: 'Refresh Products', 
+              onPress: handleRefreshProducts
+            },
             { text: 'OK', style: 'cancel' }
           ]
         );
+      } else if (result.state === 'error') {
+        Alert.alert(
+          'Error',
+          result.message || 'Unable to load subscription options.',
+          [{ text: 'OK' }]
+        );
       }
       
-    } catch {
-      Alert.alert('Subscribe Failed', 'Unable to open subscription page.', [{ text: 'OK' }]);
+    } catch (error) {
+      console.error('[ProfileScreen] ❌ Subscribe error:', error);
+      Alert.alert(
+        'Subscribe Failed',
+        'Unable to open subscription page. Please try again later.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsSubscribing(false);
     }
@@ -332,9 +406,16 @@ export default function ProfileScreen() {
             size={80}
             color={colors.textSecondary}
           />
-          <Text style={[styles.title, { color: theme.colors.text }]}>Not Signed In</Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>Please sign in to view your profile</Text>
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.primary }]} onPress={() => router.push('/login')}>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Not Signed In
+          </Text>
+          <Text style={[styles.text, { color: colors.textSecondary }]}>
+            Please sign in to view your profile
+          </Text>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/login')}
+          >
             <Text style={styles.buttonText}>Sign In</Text>
           </TouchableOpacity>
         </View>
@@ -354,12 +435,24 @@ export default function ProfileScreen() {
     >
       <View style={styles.header}>
         <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
-          <IconSymbol ios_icon_name="person.fill" android_material_icon_name="person" size={48} color="#FFFFFF" />
+          <IconSymbol
+            ios_icon_name="person.fill"
+            android_material_icon_name="person"
+            size={48}
+            color="#FFFFFF"
+          />
         </View>
-        <Text style={[styles.email, { color: theme.colors.text }]}>{user.email}</Text>
+        <Text style={[styles.email, { color: theme.colors.text }]}>
+          {user.email}
+        </Text>
         {profile.is_admin && (
           <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-            <IconSymbol ios_icon_name="star.fill" android_material_icon_name="star" size={16} color="#FFFFFF" />
+            <IconSymbol
+              ios_icon_name="star.fill"
+              android_material_icon_name="star"
+              size={16}
+              color="#FFFFFF"
+            />
             <Text style={styles.badgeText}>Admin</Text>
           </View>
         )}
@@ -373,30 +466,50 @@ export default function ProfileScreen() {
             size={24}
             color={isSubscribed ? colors.primary : colors.textSecondary}
           />
-          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Subscription Status</Text>
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Subscription Status
+          </Text>
         </View>
         
         <View style={styles.statusContainer}>
-          <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>Status:</Text>
-          <Text style={[styles.statusValue, { color: isSubscribed ? colors.primary : colors.textSecondary }]}>
+          <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+            Status:
+          </Text>
+          <Text style={[
+            styles.statusValue, 
+            { color: isSubscribed ? colors.primary : colors.textSecondary }
+          ]}>
             {isSubscribed ? 'Active ✓' : 'Inactive'}
           </Text>
         </View>
 
         {subscriptionEndDate && (
           <View style={styles.statusContainer}>
-            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>{isSubscribed ? 'Renews:' : 'Expired:'}</Text>
-            <Text style={[styles.statusValue, { color: theme.colors.text }]}>{subscriptionEndDate}</Text>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              {isSubscribed ? 'Renews:' : 'Expired:'}
+            </Text>
+            <Text style={[styles.statusValue, { color: theme.colors.text }]}>
+              {subscriptionEndDate}
+            </Text>
           </View>
         )}
 
         {!isSubscribed && !profile.is_admin && (
-          <TouchableOpacity style={[styles.subscribeButton, { backgroundColor: colors.accent }]} onPress={handleSubscribeNow} disabled={isSubscribing}>
+          <TouchableOpacity
+            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
+            onPress={handleSubscribeNow}
+            disabled={isSubscribing}
+          >
             {isSubscribing ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
-                <IconSymbol ios_icon_name="star.fill" android_material_icon_name="star" size={20} color="#FFFFFF" />
+                <IconSymbol
+                  ios_icon_name="star.fill"
+                  android_material_icon_name="star"
+                  size={20}
+                  color="#FFFFFF"
+                />
                 <Text style={styles.subscribeButtonText}>Subscribe Now - $12.99/month</Text>
               </>
             )}
@@ -404,43 +517,86 @@ export default function ProfileScreen() {
         )}
 
         {isSubscribed && (
-          <TouchableOpacity style={[styles.manageButton, { borderColor: colors.primary }]} onPress={handleManageSubscription} disabled={isLoadingCustomerCenter}>
+          <TouchableOpacity
+            style={[styles.manageButton, { borderColor: colors.primary }]}
+            onPress={handleManageSubscription}
+            disabled={isLoadingCustomerCenter}
+          >
             {isLoadingCustomerCenter ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <>
-                <IconSymbol ios_icon_name="gearshape.fill" android_material_icon_name="settings" size={20} color={colors.primary} />
-                <Text style={[styles.manageButtonText, { color: colors.primary }]}>Manage Subscription</Text>
+                <IconSymbol
+                  ios_icon_name="gearshape.fill"
+                  android_material_icon_name="settings"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.manageButtonText, { color: colors.primary }]}>
+                  Manage Subscription
+                </Text>
               </>
             )}
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={[styles.refreshProductsButton, { borderColor: colors.accent }]} onPress={handleRefreshProducts} disabled={isRefreshingProducts}>
+        <TouchableOpacity
+          style={[styles.refreshProductsButton, { borderColor: colors.accent }]}
+          onPress={handleRefreshProducts}
+          disabled={isRefreshingProducts}
+        >
           {isRefreshingProducts ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
             <>
-              <IconSymbol ios_icon_name="arrow.triangle.2.circlepath" android_material_icon_name="sync" size={20} color={colors.accent} />
-              <Text style={[styles.refreshProductsButtonText, { color: colors.accent }]}>Refresh Products</Text>
+              <IconSymbol
+                ios_icon_name="arrow.triangle.2.circlepath"
+                android_material_icon_name="sync"
+                size={20}
+                color={colors.accent}
+              />
+              <Text style={[styles.refreshProductsButtonText, { color: colors.accent }]}>
+                Refresh Products
+              </Text>
             </>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.restoreButton, { borderColor: colors.textSecondary }]} onPress={handleRestorePurchases} disabled={isRestoring}>
+        <TouchableOpacity
+          style={[styles.restoreButton, { borderColor: colors.textSecondary }]}
+          onPress={handleRestorePurchases}
+          disabled={isRestoring}
+        >
           {isRestoring ? (
             <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
             <>
-              <IconSymbol ios_icon_name="arrow.clockwise" android_material_icon_name="refresh" size={20} color={colors.textSecondary} />
-              <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>Restore Purchases</Text>
+              <IconSymbol
+                ios_icon_name="arrow.clockwise"
+                android_material_icon_name="refresh"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
+                Restore Purchases
+              </Text>
             </>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.refreshButton, { borderColor: colors.primary }]} onPress={handleRefreshProfile}>
-          <IconSymbol ios_icon_name="arrow.clockwise" android_material_icon_name="refresh" size={20} color={colors.primary} />
-          <Text style={[styles.refreshButtonText, { color: colors.primary }]}>Refresh Profile Data</Text>
+        <TouchableOpacity
+          style={[styles.refreshButton, { borderColor: colors.primary }]}
+          onPress={handleRefreshProfile}
+        >
+          <IconSymbol
+            ios_icon_name="arrow.clockwise"
+            android_material_icon_name="refresh"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.refreshButtonText, { color: colors.primary }]}>
+            Refresh Profile Data
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -481,43 +637,115 @@ export default function ProfileScreen() {
       </View>
 
       {isAdmin() && (
-        <TouchableOpacity style={[styles.card, { backgroundColor: theme.colors.card }]} onPress={() => router.push('/admin')}>
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin')}
+        >
           <View style={styles.cardHeader}>
-            <IconSymbol ios_icon_name="gearshape.fill" android_material_icon_name="settings" size={24} color={colors.primary} />
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Admin Panel</Text>
-            <IconSymbol ios_icon_name="chevron.right" android_material_icon_name="chevron-right" size={20} color={colors.textSecondary} />
+            <IconSymbol
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Admin Panel
+            </Text>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
+              size={20}
+              color={colors.textSecondary}
+            />
           </View>
-          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>Manage videos, surf reports, and subscription settings</Text>
+          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            Manage videos, surf reports, and subscription settings
+          </Text>
         </TouchableOpacity>
       )}
 
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/privacy-policy')}>
-          <IconSymbol ios_icon_name="hand.raised.fill" android_material_icon_name="privacy-tip" size={24} color={colors.textSecondary} />
-          <Text style={[styles.actionText, { color: theme.colors.text }]}>Privacy Policy</Text>
-          <IconSymbol ios_icon_name="chevron.right" android_material_icon_name="chevron-right" size={20} color={colors.textSecondary} />
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={() => router.push('/privacy-policy')}
+        >
+          <IconSymbol
+            ios_icon_name="hand.raised.fill"
+            android_material_icon_name="privacy-tip"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Privacy Policy
+          </Text>
+          <IconSymbol
+            ios_icon_name="chevron.right"
+            android_material_icon_name="chevron-right"
+            size={20}
+            color={colors.textSecondary}
+          />
         </TouchableOpacity>
+
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.actionItem} onPress={() => router.push('/terms-of-service')}>
-          <IconSymbol ios_icon_name="doc.text.fill" android_material_icon_name="description" size={24} color={colors.textSecondary} />
-          <Text style={[styles.actionText, { color: theme.colors.text }]}>Terms of Service</Text>
-          <IconSymbol ios_icon_name="chevron.right" android_material_icon_name="chevron-right" size={20} color={colors.textSecondary} />
+
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={() => router.push('/terms-of-service')}
+        >
+          <IconSymbol
+            ios_icon_name="doc.text.fill"
+            android_material_icon_name="description"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Terms of Service
+          </Text>
+          <IconSymbol
+            ios_icon_name="chevron.right"
+            android_material_icon_name="chevron-right"
+            size={20}
+            color={colors.textSecondary}
+          />
         </TouchableOpacity>
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <TouchableOpacity style={styles.actionItem} onPress={handleSignOut}>
-          <IconSymbol ios_icon_name="rectangle.portrait.and.arrow.right" android_material_icon_name="logout" size={24} color={colors.textSecondary} />
-          <Text style={[styles.actionText, { color: theme.colors.text }]}>Sign Out</Text>
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={handleSignOut}
+        >
+          <IconSymbol
+            ios_icon_name="rectangle.portrait.and.arrow.right"
+            android_material_icon_name="logout"
+            size={24}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.actionText, { color: theme.colors.text }]}>
+            Sign Out
+          </Text>
         </TouchableOpacity>
+
         <View style={styles.divider} />
-        <TouchableOpacity style={styles.actionItem} onPress={handleDeleteAccount} disabled={isDeleting}>
+
+        <TouchableOpacity
+          style={styles.actionItem}
+          onPress={handleDeleteAccount}
+          disabled={isDeleting}
+        >
           {isDeleting ? (
             <ActivityIndicator size="small" color="#FF3B30" />
           ) : (
             <>
-              <IconSymbol ios_icon_name="trash.fill" android_material_icon_name="delete" size={24} color="#FF3B30" />
-              <Text style={[styles.actionText, { color: '#FF3B30' }]}>Delete Account</Text>
+              <IconSymbol
+                ios_icon_name="trash.fill"
+                android_material_icon_name="delete"
+                size={24}
+                color="#FF3B30"
+              />
+              <Text style={[styles.actionText, { color: '#FF3B30' }]}>
+                Delete Account
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -525,64 +753,273 @@ export default function ProfileScreen() {
 
       {__DEV__ && (
         <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>Debug Info</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>User ID: {user.id}</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Is Admin: {profile.is_admin ? 'Yes' : 'No'}</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Is Subscribed: {profile.is_subscribed ? 'Yes' : 'No'}</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Payment System Available: {isPaymentSystemAvailable() ? 'Yes' : 'No'}</Text>
-          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Daily Notifications: {dailyNotificationsEnabled ? 'Enabled' : 'Disabled'}</Text>
+          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
+            Debug Info
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            User ID: {user.id}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Admin: {profile.is_admin ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Is Subscribed: {profile.is_subscribed ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Payment System Ready: {paymentSystemReady ? 'Yes' : 'No'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Daily Notifications: {dailyNotificationsEnabled ? 'Enabled' : 'Disabled'}
+          </Text>
         </View>
       )}
 
       <View style={styles.infoContainer}>
-        <Text style={[styles.infoText, { color: colors.textSecondary }]}>SurfVista - Folly Beach, SC</Text>
-        <Text style={[styles.infoText, { color: colors.textSecondary }]}>Version 4.0.0</Text>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          SurfVista - Folly Beach, SC
+        </Text>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+          Version 6.0.2
+        </Text>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 100 },
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  header: { alignItems: 'center', marginBottom: 24, paddingTop: 20 },
-  avatarContainer: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  email: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
-  badgeText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
-  title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginTop: 16, marginBottom: 8 },
-  text: { fontSize: 16, textAlign: 'center', marginBottom: 24, lineHeight: 24 },
-  button: { paddingHorizontal: 32, paddingVertical: 16, borderRadius: 12 },
-  buttonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
-  card: { borderRadius: 12, padding: 16, marginBottom: 16, boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)', elevation: 3 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', flex: 1 },
-  cardDescription: { fontSize: 14, lineHeight: 20 },
-  statusContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  statusLabel: { fontSize: 16 },
-  statusValue: { fontSize: 16, fontWeight: 'bold' },
-  subscribeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 8, marginTop: 12 },
-  subscribeButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  manageButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8, marginTop: 12, borderWidth: 1 },
-  manageButtonText: { fontSize: 14, fontWeight: '600' },
-  refreshProductsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8, marginTop: 8, borderWidth: 1 },
-  refreshProductsButtonText: { fontSize: 14, fontWeight: '600' },
-  restoreButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8, marginTop: 8, borderWidth: 1 },
-  restoreButtonText: { fontSize: 14, fontWeight: '600' },
-  refreshButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8, marginTop: 8, borderWidth: 1 },
-  refreshButtonText: { fontSize: 14, fontWeight: '600' },
-  notificationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
-  notificationInfo: { flex: 1, marginRight: 12 },
-  notificationTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  notificationDescription: { fontSize: 13, lineHeight: 18 },
-  actionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4, flex: 1 },
-  actionText: { fontSize: 16, flex: 1 },
-  divider: { height: 1, backgroundColor: '#E5E5E5', marginVertical: 12 },
-  debugCard: { borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 2, borderColor: '#FFA07A' },
-  debugTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
-  debugText: { fontSize: 12, marginBottom: 4, fontFamily: 'monospace' },
-  infoContainer: { alignItems: 'center', marginTop: 24, gap: 4 },
-  infoText: { fontSize: 12 },
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 20,
+  },
+  avatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  email: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  text: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  button: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  cardDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statusLabel: {
+    fontSize: 16,
+  },
+  statusValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  subscribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  subscribeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    borderWidth: 1,
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  refreshProductsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  refreshProductsButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  refreshButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  notificationInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  notificationDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 4,
+    flex: 1,
+  },
+  actionText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E5E5',
+    marginVertical: 12,
+  },
+  debugCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FFA07A',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    marginBottom: 4,
+    fontFamily: 'monospace',
+  },
+  infoContainer: {
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 4,
+  },
+  infoText: {
+    fontSize: 12,
+  },
 });

@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
@@ -106,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    console.log('[AuthContext] Initializing...');
+    console.log('[AuthContext] 🚀 Initializing...');
     
     let mounted = true;
 
@@ -130,22 +131,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         if (mounted) {
           setIsInitialized(true);
-          console.log('[AuthContext] Initialization complete');
+          console.log('[AuthContext] ✅ Auth initialization complete');
         }
 
-        // Initialize RevenueCat AFTER the app is fully loaded (completely non-blocking)
-        // This runs in the background and will not block the UI or cause crashes
-        // We use a longer delay to ensure the app is fully rendered first
-        // ⚠️ GRACEFUL DEGRADATION: If RevenueCat fails, the app continues normally
-        setTimeout(() => {
-          if (!mounted) return;
+        // Initialize RevenueCat IMMEDIATELY after auth is ready (not delayed)
+        // This ensures the payment system is ready when users navigate to profile
+        if (mounted && Platform.OS !== 'web') {
+          console.log('[AuthContext] 💳 Starting RevenueCat initialization...');
           
-          // Run RevenueCat initialization in a separate async context
+          // Run in background but start immediately
           (async () => {
             try {
-              console.log('[AuthContext] ⏰ Starting background RevenueCat initialization (delayed)...');
-              console.log('[AuthContext] ⚠️ App will continue normally even if RevenueCat fails');
-              
               const revenueCatInitialized = await initializeRevenueCat();
               
               if (revenueCatInitialized) {
@@ -153,31 +149,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 
                 // If user is logged in, identify them in RevenueCat
                 if (initialSession?.user) {
-                  setTimeout(async () => {
-                    try {
-                      console.log('[AuthContext] Identifying user in RevenueCat...');
-                      await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                      console.log('[AuthContext] ✅ User identified in RevenueCat');
-                    } catch (error) {
-                      console.warn('[AuthContext] ⚠️ Error identifying user (non-critical):', error);
-                      // App continues normally
-                    }
-                  }, 500);
+                  try {
+                    console.log('[AuthContext] 👤 Identifying user in RevenueCat...');
+                    await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+                    console.log('[AuthContext] ✅ User identified in RevenueCat');
+                  } catch (identifyError) {
+                    console.warn('[AuthContext] ⚠️ Error identifying user (non-critical):', identifyError);
+                  }
                 }
               } else {
                 console.warn('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
-                console.log('[AuthContext] ✅ App continues normally without subscription features');
+                console.log('[AuthContext] ℹ️ App continues normally without subscription features');
               }
             } catch (revenueCatError) {
-              console.warn('[AuthContext] ⚠️ RevenueCat initialization error (non-critical):', revenueCatError);
-              console.log('[AuthContext] ✅ App continues normally without subscription features');
-              // App continues to work without RevenueCat
+              console.error('[AuthContext] ❌ RevenueCat initialization error (non-critical):', revenueCatError);
+              console.log('[AuthContext] ℹ️ App continues normally without subscription features');
             }
           })();
-        }, 3000); // 3 second delay to ensure app is fully loaded and stable
+        }
         
       } catch (error) {
-        console.error('[AuthContext] Initialization error:', error);
+        console.error('[AuthContext] ❌ Initialization error:', error);
         if (mounted) {
           setIsLoading(false);
           setIsInitialized(true);
@@ -212,20 +204,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user, mounted);
         
-        // Identify user in RevenueCat (completely non-blocking and fault-tolerant)
-        setTimeout(() => {
+        // Identify user in RevenueCat immediately
+        if (Platform.OS !== 'web') {
           (async () => {
             try {
-              console.log('[AuthContext] Attempting to identify user in RevenueCat...');
+              console.log('[AuthContext] 👤 Identifying user in RevenueCat...');
               await identifyUser(newSession.user.id, newSession.user.email || undefined);
               console.log('[AuthContext] ✅ User identified in RevenueCat');
             } catch (error) {
               console.warn('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
-              console.log('[AuthContext] ✅ App continues normally');
-              // App continues normally - this is not critical
             }
           })();
-        }, 2000); // Longer delay to ensure stability
+        }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event detected');
         setSession(newSession);

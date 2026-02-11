@@ -11,7 +11,8 @@ import {
   presentCustomerCenter,
   presentPaywall,
   forceRefreshOfferings,
-  isPaymentSystemAvailable
+  isPaymentSystemAvailable,
+  initializeRevenueCat
 } from '@/utils/superwallConfig';
 import { 
   setDailyReportNotifications, 
@@ -28,12 +29,15 @@ export default function ProfileScreen() {
   const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
   const [dailyNotificationsEnabled, setDailyNotificationsEnabled] = useState(false);
   const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
+  const [paymentSystemReady, setPaymentSystemReady] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
       return;
     }
+    console.log('[ProfileScreen iOS] 🔍 Loading notification status...');
     const status = await getDailyReportNotificationStatus(user.id);
+    console.log('[ProfileScreen iOS] ✅ Notification status loaded:', status);
     setDailyNotificationsEnabled(status);
   }, [user?.id]);
 
@@ -43,28 +47,55 @@ export default function ProfileScreen() {
     }
   }, [user?.id, loadNotificationStatus]);
 
+  // Check payment system status on mount
+  useEffect(() => {
+    const checkPaymentSystem = async () => {
+      console.log('[ProfileScreen iOS] 💳 Checking payment system status...');
+      
+      const isAvailable = isPaymentSystemAvailable();
+      console.log('[ProfileScreen iOS] 💳 Payment system available:', isAvailable);
+      
+      if (!isAvailable) {
+        console.log('[ProfileScreen iOS] ⚠️ Payment system not ready, attempting initialization...');
+        const initialized = await initializeRevenueCat();
+        console.log('[ProfileScreen iOS] 💳 Initialization result:', initialized);
+        setPaymentSystemReady(initialized);
+      } else {
+        setPaymentSystemReady(true);
+      }
+    };
+    
+    checkPaymentSystem();
+  }, []);
+
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
+      console.error('[ProfileScreen iOS] ❌ No user ID available');
       return;
     }
 
+    console.log('[ProfileScreen iOS] 🔔 Toggle notifications button pressed:', value);
     setIsTogglingNotifications(true);
 
     try {
       const success = await setDailyReportNotifications(user.id, value);
       
       if (success) {
+        console.log('[ProfileScreen iOS] ✅ Notifications updated successfully');
         setDailyNotificationsEnabled(value);
-        const message = value 
+        
+        const statusText = value ? 'Enabled' : 'Disabled';
+        const messageText = value 
           ? 'You will receive a push notification each morning at 5 AM with your daily surf report summary!'
           : 'Daily surf report notifications have been disabled.';
         
         Alert.alert(
-          'Notifications Updated',
-          message,
+          `Notifications ${statusText}`,
+          messageText,
           [{ text: 'OK' }]
         );
       } else {
+        console.error('[ProfileScreen iOS] ❌ Failed to update notifications');
         Alert.alert(
           'Error',
           'Failed to update notification preferences. Please try again.',
@@ -72,7 +103,7 @@ export default function ProfileScreen() {
         );
       }
     } catch (error) {
-      console.error('[ProfileScreen iOS] Error toggling notifications:', error);
+      console.error('[ProfileScreen iOS] ❌ Exception toggling notifications:', error);
       Alert.alert(
         'Error',
         'An error occurred while updating notifications.',
@@ -97,8 +128,8 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
               await signOut();
               router.replace('/login');
-            } catch {
-              console.error('[ProfileScreen iOS] ❌ Error during sign out');
+            } catch (error) {
+              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
               router.replace('/login');
             }
           }
@@ -162,7 +193,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
-    console.log('[ProfileScreen iOS] Refreshing profile data...');
+    console.log('[ProfileScreen iOS] 🔄 Refreshing profile data...');
     await refreshProfile();
     await loadNotificationStatus();
     Alert.alert('Success', 'Profile data refreshed');
@@ -171,18 +202,26 @@ export default function ProfileScreen() {
   const handleRefreshProducts = async () => {
     console.log('[ProfileScreen iOS] 🔄 ===== REFRESH PRODUCTS BUTTON PRESSED =====');
     
-    if (!isPaymentSystemAvailable()) {
-      Alert.alert(
-        'Payment System Not Ready',
-        'The payment system is not initialized yet. Please restart the app and try again.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
     setIsRefreshingProducts(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       const result = await forceRefreshOfferings();
       
       Alert.alert(
@@ -190,7 +229,8 @@ export default function ProfileScreen() {
         result.message,
         [{ text: 'OK' }]
       );
-    } catch {
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Refresh products error:', error);
       Alert.alert(
         'Refresh Failed',
         'Unable to refresh products. Please try again later.',
@@ -202,18 +242,28 @@ export default function ProfileScreen() {
   };
 
   const handleRestorePurchases = async () => {
-    if (!isPaymentSystemAvailable()) {
-      Alert.alert(
-        'Payment System Not Ready',
-        'The payment system is not initialized. Please restart the app and try again.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
+    console.log('[ProfileScreen iOS] 🔄 ===== RESTORE PURCHASES BUTTON PRESSED =====');
+    
     setIsRestoring(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       const result = await restorePurchases();
       await refreshProfile();
       
@@ -222,7 +272,8 @@ export default function ProfileScreen() {
         result.message || 'Unable to restore purchases.',
         [{ text: 'OK' }]
       );
-    } catch {
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Restore error:', error);
       Alert.alert(
         'Restore Failed',
         'Unable to restore purchases at this time.',
@@ -234,21 +285,32 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
-    if (!isPaymentSystemAvailable()) {
-      Alert.alert(
-        'Payment System Not Ready',
-        'The payment system is not initialized. Please restart the app and try again.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
+    console.log('[ProfileScreen iOS] ⚙️ ===== MANAGE SUBSCRIPTION BUTTON PRESSED =====');
+    
     setIsLoadingCustomerCenter(true);
     
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       await presentCustomerCenter();
       await refreshProfile();
-    } catch {
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Customer center error:', error);
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription:\n\n' +
@@ -273,6 +335,23 @@ export default function ProfileScreen() {
     setIsSubscribing(true);
 
     try {
+      // Ensure RevenueCat is initialized first
+      if (!isPaymentSystemAvailable()) {
+        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        const initialized = await initializeRevenueCat();
+        
+        if (!initialized) {
+          Alert.alert(
+            'Payment System Not Ready',
+            'The payment system could not be initialized. Please restart the app and try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        setPaymentSystemReady(true);
+      }
+      
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
       console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
@@ -305,8 +384,8 @@ export default function ProfileScreen() {
         );
       }
       
-    } catch {
-      console.error('[ProfileScreen iOS] ❌ Subscribe error');
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
       Alert.alert(
         'Subscribe Failed',
         'Unable to open subscription page. Please try again later.',
@@ -690,7 +769,7 @@ export default function ProfileScreen() {
             Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-            Payment System Available: {isPaymentSystemAvailable() ? 'Yes' : 'No'}
+            Payment System Ready: {paymentSystemReady ? 'Yes' : 'No'}
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Daily Notifications: {dailyNotificationsEnabled ? 'Enabled' : 'Disabled'}
@@ -703,7 +782,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 4.0.0
+          Version 6.0.2
         </Text>
       </View>
     </ScrollView>
