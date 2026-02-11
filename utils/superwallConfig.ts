@@ -124,8 +124,6 @@ const initializeRevenueCat = async (): Promise<boolean> => {
   }
 };
 
-export const initializePaymentSystem = initializeRevenueCat;
-
 const isPaymentSystemAvailableInternal = (): boolean => {
   if (Platform.OS === 'web') {
     return false;
@@ -162,7 +160,7 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
     console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
     console.log('[RevenueCat]    - All offering IDs:', Object.keys(offerings.all).join(', '));
     
-    const offeringToUse: PurchasesOffering | null = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current || null;
+    const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current || null;
     
     if (!offeringToUse) {
       currentOffering = null;
