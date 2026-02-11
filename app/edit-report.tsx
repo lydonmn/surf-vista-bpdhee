@@ -49,13 +49,20 @@ export default function EditReportScreen() {
         reportTextLength: data.report_text?.length || 0,
         hasConditions: !!data.conditions,
         conditionsLength: data.conditions?.length || 0,
-        rating: data.rating
+        rating: data.rating,
+        reportTextPreview: data.report_text ? data.report_text.substring(0, 100) + '...' : 'none',
+        conditionsPreview: data.conditions ? data.conditions.substring(0, 100) + '...' : 'none'
       });
 
       setReport(data);
-      // Use report_text if available (custom edit), otherwise use conditions (auto-generated)
+      // ALWAYS use report_text if available (custom edit), otherwise use conditions (auto-generated)
+      // This ensures we're editing the custom text, not the auto-generated one
       const textToEdit = data.report_text || data.conditions || '';
-      console.log('[EditReportScreen] Setting text to edit, length:', textToEdit.length);
+      console.log('[EditReportScreen] Setting text to edit:', {
+        length: textToEdit.length,
+        source: data.report_text ? 'report_text (custom)' : 'conditions (auto-generated)',
+        preview: textToEdit.substring(0, 100) + '...'
+      });
       setReportText(textToEdit);
       setRating(String(data.rating || 5));
     } catch (error) {
@@ -93,7 +100,8 @@ export default function EditReportScreen() {
     console.log('[EditReportScreen] Saving report:', {
       reportId: report.id,
       textLength: trimmedText.length,
-      rating: ratingValue
+      rating: ratingValue,
+      textPreview: trimmedText.substring(0, 100) + '...'
     });
 
     try {
@@ -120,8 +128,26 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Report saved successfully:', {
         id: data.id,
         reportTextLength: data.report_text?.length || 0,
-        rating: data.rating
+        rating: data.rating,
+        savedTextPreview: data.report_text ? data.report_text.substring(0, 100) + '...' : 'none'
       });
+
+      // Verify the save by reading it back
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('surf_reports')
+        .select('report_text, rating')
+        .eq('id', report.id)
+        .single();
+
+      if (verifyError) {
+        console.error('[EditReportScreen] Error verifying save:', verifyError);
+      } else {
+        console.log('[EditReportScreen] Verification read:', {
+          reportTextLength: verifyData.report_text?.length || 0,
+          rating: verifyData.rating,
+          verifyTextPreview: verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none'
+        });
+      }
 
       Alert.alert('Success', 'Report updated successfully!', [
         { text: 'OK', onPress: () => router.back() }

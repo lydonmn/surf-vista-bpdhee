@@ -2,7 +2,7 @@
 import { LocationSelector } from "@/components/LocationSelector";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { SurfReport } from "@/types";
+import { SurfReport, WeatherData, WeatherForecast } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType, useColorScheme } from "react-native";
@@ -32,7 +32,7 @@ export default function HomeScreen() {
   
   const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
-  const { surfReports, weatherForecast, refreshData } = useSurfData();
+  const { surfReports, weatherData, weatherForecast, refreshData } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
 
@@ -347,13 +347,58 @@ export default function HomeScreen() {
   const latestVideo = videos && videos.length > 0 ? videos[0] : null;
   const todayDate = getESTDate();
   const todayReport = surfReports?.find((report: SurfReport) => report.date === todayDate);
+  const todayWeatherForecast = weatherForecast?.find((w) => w.date === todayDate);
 
-  const temperatureText = todayReport?.air_temp ? `${Math.round(todayReport.air_temp)}°F` : '--°F';
-  const weatherCondition = todayReport?.weather_condition || 'Sunny';
-  const windSpeed = todayReport?.wind_speed ? `${Math.round(todayReport.wind_speed)} mph` : '--';
+  console.log('[HomeScreen] Display data:', {
+    todayDate,
+    hasTodayReport: !!todayReport,
+    hasWeatherData: !!weatherData,
+    hasWeatherForecast: !!todayWeatherForecast,
+    weatherDataTemp: weatherData?.temperature,
+    forecastTemp: todayWeatherForecast?.temperature,
+    forecastHighTemp: todayWeatherForecast?.high_temp,
+    waterTemp: todayReport?.water_temp,
+    windSpeed: todayReport?.wind_speed,
+    hasReportText: !!todayReport?.report_text,
+    hasConditions: !!todayReport?.conditions,
+    reportTextLength: todayReport?.report_text?.length || 0,
+    conditionsLength: todayReport?.conditions?.length || 0
+  });
+
+  // Get air temperature from weather_data (current conditions) or weather_forecast
+  const airTempFromData = weatherData?.temperature ? parseFloat(weatherData.temperature) : null;
+  const airTempFromForecast = todayWeatherForecast?.temperature || todayWeatherForecast?.high_temp;
+  const airTemp = airTempFromData || airTempFromForecast;
+  const temperatureText = airTemp ? `${Math.round(airTemp)}°F` : '--°F';
+  
+  // Get water temperature from surf report
+  const waterTempRaw = todayReport?.water_temp;
+  const waterTempNum = waterTempRaw ? parseFloat(waterTempRaw.replace(/[^\d.-]/g, '')) : null;
+  const waterTempText = waterTempNum ? `${Math.round(waterTempNum)}°F` : '--°F';
+  
+  const weatherCondition = weatherData?.conditions || todayWeatherForecast?.conditions || todayWeatherForecast?.short_forecast || 'Sunny';
+  const windSpeedRaw = todayReport?.wind_speed;
+  const windSpeed = windSpeedRaw ? `${Math.round(parseFloat(windSpeedRaw.replace(/[^\d.-]/g, '')))} mph` : '--';
   const windDirection = todayReport?.wind_direction || 'SW';
-  const humidity = todayReport?.humidity ? `${Math.round(todayReport.humidity)}%` : '--%';
+  const humidityFromData = weatherData?.humidity;
+  const humidityFromForecast = todayWeatherForecast?.humidity;
+  const humidity = humidityFromData || humidityFromForecast ? `${Math.round(humidityFromData || humidityFromForecast || 0)}%` : '--%';
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
+  
+  // Prioritize report_text (custom edit) over conditions (auto-generated)
+  const narrativeText = todayReport?.report_text || todayReport?.conditions;
+  
+  console.log('[HomeScreen] Computed display values:', {
+    temperatureText,
+    waterTempText,
+    weatherCondition,
+    windSpeed,
+    windDirection,
+    humidity,
+    stokeRating,
+    narrativeLength: narrativeText?.length || 0,
+    narrativeSource: todayReport?.report_text ? 'report_text (edited)' : 'conditions (auto-generated)'
+  });
 
   return (
     <ScrollView
@@ -438,12 +483,21 @@ export default function HomeScreen() {
             <Text style={styles.weatherDetailText}>{windSpeed} {windDirection}</Text>
           </View>
           <View style={styles.weatherDetail}>
+            <IconSymbol
+              ios_icon_name="drop.fill"
+              android_material_icon_name="water_drop"
+              size={16}
+              color={isDark ? '#FFFFFF' : colors.text}
+            />
+            <Text style={styles.weatherDetailText}>Water: {waterTempText}</Text>
+          </View>
+          <View style={styles.weatherDetail}>
             <Text style={styles.weatherDetailText}>Humidity: {humidity}</Text>
           </View>
         </View>
       </View>
 
-      {todayReport && todayReport.narrative && (
+      {todayReport && narrativeText && (
         <View style={styles.reportCard}>
           <View style={styles.reportHeader}>
             <IconSymbol
@@ -454,7 +508,7 @@ export default function HomeScreen() {
             />
             <Text style={styles.reportTitle}>Today's Surf Report</Text>
           </View>
-          <Text style={styles.reportText}>{todayReport.narrative}</Text>
+          <Text style={styles.reportText}>{narrativeText}</Text>
         </View>
       )}
 

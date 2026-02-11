@@ -11,14 +11,14 @@ export interface SurfReport {
   wind_direction: string;
   tide: string;
   water_temp: string;
-  conditions: string;
+  conditions: string; // Auto-generated narrative
   rating?: number;
   created_at?: string;
   updated_at?: string;
   air_temp?: string;
   weather_conditions?: string;
   tide_times?: any;
-  report_text?: string;
+  report_text?: string; // Custom edited narrative (takes priority over conditions)
   edited_by?: string;
   edited_at?: string;
 }
@@ -47,9 +47,11 @@ export interface WeatherForecast {
   date: string;
   location: string;
   day_name?: string;
+  temperature?: number;
   high_temp: number | null;
   low_temp: number | null;
   conditions?: string;
+  short_forecast?: string;
   icon?: string;
   wind_speed?: number;
   wind_direction?: string;
