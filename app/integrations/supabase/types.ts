@@ -93,6 +93,9 @@ export type Database = {
           is_subscribed: boolean | null
           subscription_end_date: string | null
           updated_at: string | null
+          daily_report_notifications: boolean | null
+          push_token: string | null
+          notification_preferences: Json | null
         }
         Insert: {
           created_at?: string | null
@@ -102,6 +105,9 @@ export type Database = {
           is_subscribed?: boolean | null
           subscription_end_date?: string | null
           updated_at?: string | null
+          daily_report_notifications?: boolean | null
+          push_token?: string | null
+          notification_preferences?: Json | null
         }
         Update: {
           created_at?: string | null
@@ -111,6 +117,9 @@ export type Database = {
           is_subscribed?: boolean | null
           subscription_end_date?: string | null
           updated_at?: string | null
+          daily_report_notifications?: boolean | null
+          push_token?: string | null
+          notification_preferences?: Json | null
         }
         Relationships: []
       }

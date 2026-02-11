@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
@@ -462,7 +462,7 @@ export default function LoginScreen() {
                   After creating your account, you&apos;ll receive a verification email. Click the link in the email to verify your account before signing in.
                 </Text>
                 <Text style={[styles.noticeTip, { color: colors.textSecondary }]}>
-                  💡 Check your spam/junk folder if you don&apos;t see it within 2 minutes
+                  💡 Tip: Verification emails sometimes end up in spam/junk folders. Make sure to check there if you don&apos;t see it in your inbox within 2 minutes.
                 </Text>
               </View>
             </View>

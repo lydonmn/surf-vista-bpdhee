@@ -1,6 +1,6 @@
 
-import { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Switch } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -14,6 +14,10 @@ import {
   presentPaywall,
   forceRefreshOfferings
 } from '@/utils/superwallConfig';
+import { 
+  setDailyReportNotifications, 
+  getDailyReportNotificationStatus 
+} from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
   const theme = useTheme();
@@ -23,6 +27,62 @@ export default function ProfileScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRefreshingProducts, setIsRefreshingProducts] = useState(false);
+  const [dailyNotificationsEnabled, setDailyNotificationsEnabled] = useState(false);
+  const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
+
+  const loadNotificationStatus = useCallback(async () => {
+    if (!user?.id) {
+      return;
+    }
+    const status = await getDailyReportNotificationStatus(user.id);
+    setDailyNotificationsEnabled(status);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) {
+      loadNotificationStatus();
+    }
+  }, [user?.id, loadNotificationStatus]);
+
+  const handleToggleDailyNotifications = async (value: boolean) => {
+    if (!user?.id) {
+      return;
+    }
+
+    setIsTogglingNotifications(true);
+
+    try {
+      const success = await setDailyReportNotifications(user.id, value);
+      
+      if (success) {
+        setDailyNotificationsEnabled(value);
+        const message = value 
+          ? 'You will receive a push notification each morning at 5 AM with your daily surf report summary!'
+          : 'Daily surf report notifications have been disabled.';
+        
+        Alert.alert(
+          'Notifications Updated',
+          message,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          'Failed to update notification preferences. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[ProfileScreen] Error toggling notifications:', error);
+      Alert.alert(
+        'Error',
+        'An error occurred while updating notifications.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsTogglingNotifications(false);
+    }
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -99,6 +159,7 @@ export default function ProfileScreen() {
 
   const handleRefreshProfile = async () => {
     await refreshProfile();
+    await loadNotificationStatus();
     Alert.alert('Success', 'Profile data refreshed');
   };
 
@@ -383,6 +444,42 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.cardHeader}>
+          <IconSymbol
+            ios_icon_name="bell.fill"
+            android_material_icon_name="notifications"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Notifications
+          </Text>
+        </View>
+
+        <View style={styles.notificationRow}>
+          <View style={styles.notificationInfo}>
+            <Text style={[styles.notificationTitle, { color: theme.colors.text }]}>
+              Daily Surf Report
+            </Text>
+            <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
+              Get a push notification at 5 AM with your daily surf report summary
+            </Text>
+          </View>
+          {isTogglingNotifications ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Switch
+              value={dailyNotificationsEnabled}
+              onValueChange={handleToggleDailyNotifications}
+              trackColor={{ false: '#767577', true: colors.primary }}
+              thumbColor={dailyNotificationsEnabled ? '#FFFFFF' : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+            />
+          )}
+        </View>
+      </View>
+
       {isAdmin() && (
         <TouchableOpacity style={[styles.card, { backgroundColor: theme.colors.card }]} onPress={() => router.push('/admin')}>
           <View style={styles.cardHeader}>
@@ -434,12 +531,13 @@ export default function ProfileScreen() {
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>Is Subscribed: {profile.is_subscribed ? 'Yes' : 'No'}</Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>Subscription Check: {isSubscribed ? 'Active' : 'Inactive'}</Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>Payment System Available: {isPaymentSystemAvailable() ? 'Yes' : 'No'}</Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>Daily Notifications: {dailyNotificationsEnabled ? 'Enabled' : 'Disabled'}</Text>
         </View>
       )}
 
       <View style={styles.infoContainer}>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>SurfVista - Folly Beach, SC</Text>
-        <Text style={[styles.infoText, { color: colors.textSecondary }]}>Version 3.0.0</Text>
+        <Text style={[styles.infoText, { color: colors.textSecondary }]}>Version 4.0.0</Text>
       </View>
     </ScrollView>
   );
@@ -475,8 +573,12 @@ const styles = StyleSheet.create({
   restoreButtonText: { fontSize: 14, fontWeight: '600' },
   refreshButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8, marginTop: 8, borderWidth: 1 },
   refreshButtonText: { fontSize: 14, fontWeight: '600' },
+  notificationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  notificationInfo: { flex: 1, marginRight: 12 },
+  notificationTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  notificationDescription: { fontSize: 13, lineHeight: 18 },
   actionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4, flex: 1 },
-  actionText: { fontSize: 16 },
+  actionText: { fontSize: 16, flex: 1 },
   divider: { height: 1, backgroundColor: '#E5E5E5', marginVertical: 12 },
   debugCard: { borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 2, borderColor: '#FFA07A' },
   debugTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },

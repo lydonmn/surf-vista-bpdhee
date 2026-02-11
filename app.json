@@ -47,7 +47,8 @@
         "WRITE_EXTERNAL_STORAGE",
         "READ_MEDIA_VIDEO",
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -64,6 +65,14 @@
           "photosPermission": "Allow SurfVista to access your photos to upload 6K drone videos.",
           "savePhotosPermission": "Allow SurfVista to save videos.",
           "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/4645470d-62fd-4952-9b3f-c99a6c82dc9c.png",
+          "color": "#1E90FF",
+          "sounds": ["./assets/notification.wav"]
         }
       ]
     ],
