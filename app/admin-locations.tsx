@@ -1,4 +1,9 @@
 
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from './integrations/supabase/client';
+import { IconSymbol } from '@/components/IconSymbol';
+import { useRouter } from 'expo-router';
+import { colors } from '@/styles/commonStyles';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -10,12 +15,9 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { supabase } from './integrations/supabase/client';
-import { colors } from '@/styles/commonStyles';
-import { IconSymbol } from '@/components/IconSymbol';
-import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/contexts/LocationContext';
 
 interface LocationItem {
@@ -30,606 +32,44 @@ interface LocationItem {
   created_at: string;
 }
 
-export default function AdminLocationsScreen() {
-  const router = useRouter();
-  const { profile } = useAuth();
-  const { refreshLocations } = useLocation();
-  const [locations, setLocations] = useState<LocationItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingLocation, setEditingLocation] = useState<LocationItem | null>(null);
-
-  // Form state
-  const [formId, setFormId] = useState('');
-  const [formName, setFormName] = useState('');
-  const [formDisplayName, setFormDisplayName] = useState('');
-  const [formLatitude, setFormLatitude] = useState('');
-  const [formLongitude, setFormLongitude] = useState('');
-  const [formBuoyId, setFormBuoyId] = useState('');
-  const [formTideStationId, setFormTideStationId] = useState('');
-
-  useEffect(() => {
-    if (profile && !profile.is_admin) {
-      console.log('[AdminLocationsScreen] User is not admin, redirecting...');
-      Alert.alert('Access Denied', 'You do not have admin privileges');
-      router.back();
-    } else {
-      loadLocations();
-    }
-  }, [profile]);
-
-  const loadLocations = async () => {
-    try {
-      setIsLoading(true);
-      console.log('[AdminLocationsScreen] Loading locations...');
-
-      const { data, error } = await supabase
-        .from('locations')
-        .select('*')
-        .order('name');
-
-      if (error) {
-        console.error('[AdminLocationsScreen] Error loading locations:', error);
-        throw error;
-      }
-
-      console.log('[AdminLocationsScreen] Loaded', data?.length || 0, 'locations');
-      setLocations(data || []);
-    } catch (error: any) {
-      console.error('[AdminLocationsScreen] Error loading locations:', error);
-      Alert.alert('Error', `Failed to load locations: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resetForm = () => {
-    setFormId('');
-    setFormName('');
-    setFormDisplayName('');
-    setFormLatitude('');
-    setFormLongitude('');
-    setFormBuoyId('');
-    setFormTideStationId('');
-    setEditingLocation(null);
-  };
-
-  const openAddModal = () => {
-    resetForm();
-    setShowAddModal(true);
-  };
-
-  const openEditModal = (location: LocationItem) => {
-    setFormId(location.id);
-    setFormName(location.name);
-    setFormDisplayName(location.display_name);
-    setFormLatitude(location.latitude.toString());
-    setFormLongitude(location.longitude.toString());
-    setFormBuoyId(location.buoy_id);
-    setFormTideStationId(location.tide_station_id);
-    setEditingLocation(location);
-    setShowAddModal(true);
-  };
-
-  const closeModal = () => {
-    setShowAddModal(false);
-    resetForm();
-  };
-
-  const validateForm = (): boolean => {
-    if (!formId.trim()) {
-      Alert.alert('Validation Error', 'Location ID is required (e.g., "myrtle-beach")');
-      return false;
-    }
-
-    if (!formName.trim()) {
-      Alert.alert('Validation Error', 'Location name is required');
-      return false;
-    }
-
-    if (!formDisplayName.trim()) {
-      Alert.alert('Validation Error', 'Display name is required');
-      return false;
-    }
-
-    const lat = parseFloat(formLatitude);
-    if (isNaN(lat) || lat < -90 || lat > 90) {
-      Alert.alert('Validation Error', 'Latitude must be between -90 and 90');
-      return false;
-    }
-
-    const lon = parseFloat(formLongitude);
-    if (isNaN(lon) || lon < -180 || lon > 180) {
-      Alert.alert('Validation Error', 'Longitude must be between -180 and 180');
-      return false;
-    }
-
-    if (!formBuoyId.trim()) {
-      Alert.alert('Validation Error', 'NOAA Buoy ID is required');
-      return false;
-    }
-
-    if (!formTideStationId.trim()) {
-      Alert.alert('Validation Error', 'NOAA Tide Station ID is required');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSaveLocation = async () => {
-    if (!validateForm()) {
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      console.log('[AdminLocationsScreen] Saving location...');
-
-      const locationData = {
-        id: formId.trim().toLowerCase().replace(/\s+/g, '-'),
-        name: formName.trim(),
-        display_name: formDisplayName.trim(),
-        latitude: parseFloat(formLatitude),
-        longitude: parseFloat(formLongitude),
-        buoy_id: formBuoyId.trim(),
-        tide_station_id: formTideStationId.trim(),
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      };
-
-      if (editingLocation) {
-        // Update existing location
-        const { error } = await supabase
-          .from('locations')
-          .update(locationData)
-          .eq('id', editingLocation.id);
-
-        if (error) {
-          console.error('[AdminLocationsScreen] Error updating location:', error);
-          throw error;
-        }
-
-        console.log('[AdminLocationsScreen] Location updated successfully');
-        Alert.alert('Success', 'Location updated successfully');
-      } else {
-        // Insert new location
-        const { error } = await supabase
-          .from('locations')
-          .insert(locationData);
-
-        if (error) {
-          console.error('[AdminLocationsScreen] Error creating location:', error);
-          throw error;
-        }
-
-        console.log('[AdminLocationsScreen] Location created successfully');
-        Alert.alert('Success', 'Location created successfully! All existing features (reports, videos, data updates) will now work for this location automatically.');
-      }
-
-      // Refresh locations in context
-      await refreshLocations();
-      await loadLocations();
-      closeModal();
-    } catch (error: any) {
-      console.error('[AdminLocationsScreen] Error saving location:', error);
-      Alert.alert('Error', `Failed to save location: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleToggleActive = async (location: LocationItem) => {
-    try {
-      console.log('[AdminLocationsScreen] Toggling active status for:', location.name);
-
-      const { error } = await supabase
-        .from('locations')
-        .update({
-          is_active: !location.is_active,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', location.id);
-
-      if (error) {
-        console.error('[AdminLocationsScreen] Error toggling status:', error);
-        throw error;
-      }
-
-      console.log('[AdminLocationsScreen] Status toggled successfully');
-      Alert.alert('Success', `Location ${!location.is_active ? 'activated' : 'deactivated'} successfully`);
-      
-      await refreshLocations();
-      await loadLocations();
-    } catch (error: any) {
-      console.error('[AdminLocationsScreen] Error toggling status:', error);
-      Alert.alert('Error', `Failed to update location: ${error.message}`);
-    }
-  };
-
-  const handleDeleteLocation = (location: LocationItem) => {
-    Alert.alert(
-      'Delete Location',
-      `Are you sure you want to delete "${location.display_name}"? This will not delete associated data (reports, videos, etc.), but the location will no longer be selectable.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[AdminLocationsScreen] Deleting location:', location.name);
-
-              const { error } = await supabase
-                .from('locations')
-                .delete()
-                .eq('id', location.id);
-
-              if (error) {
-                console.error('[AdminLocationsScreen] Error deleting location:', error);
-                throw error;
-              }
-
-              console.log('[AdminLocationsScreen] Location deleted successfully');
-              Alert.alert('Success', 'Location deleted successfully');
-              
-              await refreshLocations();
-              await loadLocations();
-            } catch (error: any) {
-              console.error('[AdminLocationsScreen] Error deleting location:', error);
-              Alert.alert('Error', `Failed to delete location: ${error.message}`);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleGoBack = () => {
-    console.log('[AdminLocationsScreen] Navigating back...');
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/admin');
-    }
-  };
-
-  const backIconName = 'chevron.left';
-  const backMaterialIconName = 'arrow_back';
-  const backButtonTextContent = 'Back';
-  const headerTitleText = 'Manage Locations';
-  const addButtonText = 'Add New Location';
-  const modalTitleAdd = 'Add New Location';
-  const modalTitleEdit = 'Edit Location';
-  const saveButtonText = 'Save Location';
-  const cancelButtonText = 'Cancel';
-
-  if (!profile?.is_admin) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Checking permissions...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      {/* Custom Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-          <IconSymbol
-            ios_icon_name={backIconName}
-            android_material_icon_name={backMaterialIconName}
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.backButtonText, { color: colors.primary }]}>
-            {backButtonTextContent}
-          </Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{headerTitleText}</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Info Card */}
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>🌍 Dynamic Location Management</Text>
-          <Text style={styles.infoText}>
-            Add new surf locations and all existing features will automatically work for them:
-            {'\n'}• Daily 5 AM reports
-            {'\n'}• 15-minute buoy updates
-            {'\n'}• Video uploads
-            {'\n'}• Weather & tide data
-            {'\n'}• Surf forecasts
-            {'\n\n'}Simply add the location details and everything is set up automatically!
-          </Text>
-        </View>
-
-        {/* Add Button */}
-        <TouchableOpacity
-          style={[styles.button, styles.addButton]}
-          onPress={openAddModal}
-          disabled={isLoading}
-        >
-          <IconSymbol
-            ios_icon_name="plus.circle.fill"
-            android_material_icon_name="add_circle"
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={styles.buttonText}>{addButtonText}</Text>
-        </TouchableOpacity>
-
-        {/* Locations List */}
-        {isLoading && locations.length === 0 ? (
-          <View style={styles.centerContent}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <React.Fragment>
-            {locations.map((location) => {
-              const statusText = location.is_active ? 'Active' : 'Inactive';
-              const statusColor = location.is_active ? colors.accent : colors.textSecondary;
-              
-              return (
-                <View key={location.id} style={styles.locationCard}>
-                  <View style={styles.locationHeader}>
-                    <View style={styles.locationTitleRow}>
-                      <Text style={styles.locationName}>{location.display_name}</Text>
-                      <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-                        <Text style={styles.statusText}>{statusText}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.locationId}>ID: {location.id}</Text>
-                  </View>
-
-                  <View style={styles.locationDetails}>
-                    <Text style={styles.detailText}>📍 Coordinates: {location.latitude}, {location.longitude}</Text>
-                    <Text style={styles.detailText}>🌊 Buoy ID: {location.buoy_id}</Text>
-                    <Text style={styles.detailText}>🌙 Tide Station: {location.tide_station_id}</Text>
-                  </View>
-
-                  <View style={styles.locationActions}>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.editButton]}
-                      onPress={() => openEditModal(location)}
-                    >
-                      <IconSymbol
-                        ios_icon_name="pencil"
-                        android_material_icon_name="edit"
-                        size={16}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.actionButtonText}>Edit</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.actionButton, location.is_active ? styles.deactivateButton : styles.activateButton]}
-                      onPress={() => handleToggleActive(location)}
-                    >
-                      <IconSymbol
-                        ios_icon_name={location.is_active ? 'eye.slash' : 'eye'}
-                        android_material_icon_name={location.is_active ? 'visibility_off' : 'visibility'}
-                        size={16}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.actionButtonText}>
-                        {location.is_active ? 'Deactivate' : 'Activate'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.deleteButton]}
-                      onPress={() => handleDeleteLocation(location)}
-                    >
-                      <IconSymbol
-                        ios_icon_name="trash"
-                        android_material_icon_name="delete"
-                        size={16}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.actionButtonText}>Delete</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </React.Fragment>
-        )}
-      </ScrollView>
-
-      {/* Add/Edit Modal */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <ScrollView>
-              <Text style={styles.modalTitle}>
-                {editingLocation ? modalTitleEdit : modalTitleAdd}
-              </Text>
-
-              <Text style={styles.label}>Location ID (URL-friendly, e.g., "myrtle-beach")</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="myrtle-beach"
-                value={formId}
-                onChangeText={setFormId}
-                editable={!editingLocation}
-                autoCapitalize="none"
-              />
-
-              <Text style={styles.label}>Location Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Myrtle Beach"
-                value={formName}
-                onChangeText={setFormName}
-              />
-
-              <Text style={styles.label}>Display Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Myrtle Beach, SC"
-                value={formDisplayName}
-                onChangeText={setFormDisplayName}
-              />
-
-              <Text style={styles.label}>Latitude</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="33.6891"
-                value={formLatitude}
-                onChangeText={setFormLatitude}
-                keyboardType="numeric"
-              />
-
-              <Text style={styles.label}>Longitude</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="-78.8867"
-                value={formLongitude}
-                onChangeText={setFormLongitude}
-                keyboardType="numeric"
-              />
-
-              <Text style={styles.label}>NOAA Buoy ID</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="41004"
-                value={formBuoyId}
-                onChangeText={setFormBuoyId}
-              />
-
-              <Text style={styles.label}>NOAA Tide Station ID</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="8661070"
-                value={formTideStationId}
-                onChangeText={setFormTideStationId}
-              />
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={closeModal}
-                >
-                  <Text style={styles.buttonText}>{cancelButtonText}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.button, styles.saveButton]}
-                  onPress={handleSaveLocation}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.buttonText}>{saveButtonText}</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 120, // Increased padding to ensure all fields are accessible
+  },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 12,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingRight: 8,
+    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    marginBottom: 20,
   },
   backButtonText: {
     fontSize: 16,
+    color: colors.primary,
+    marginLeft: 8,
     fontWeight: '600',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 60,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 100,
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginTop: 16,
-  },
-  infoCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 16,
   },
   addButton: {
     backgroundColor: colors.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  buttonText: {
+  addButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
@@ -639,77 +79,61 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   locationHeader: {
-    marginBottom: 12,
-  },
-  locationTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   locationName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: colors.text,
     flex: 1,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  locationId: {
-    fontSize: 13,
+  locationInfo: {
+    fontSize: 14,
     color: colors.textSecondary,
-    fontFamily: 'monospace',
-  },
-  locationDetails: {
-    marginBottom: 12,
-    gap: 4,
-  },
-  detailText: {
-    fontSize: 13,
-    color: colors.textSecondary,
+    marginBottom: 4,
   },
   locationActions: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
     gap: 8,
   },
   actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    paddingHorizontal: 12,
     borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  editButton: {
+    backgroundColor: colors.primary,
+  },
+  deleteButton: {
+    backgroundColor: '#FF3B30',
+  },
+  toggleButton: {
+    backgroundColor: colors.textSecondary,
   },
   actionButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
-  editButton: {
-    backgroundColor: '#3B82F6',
+  activeIndicator: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: 8,
   },
-  activateButton: {
-    backgroundColor: '#10B981',
-  },
-  deactivateButton: {
-    backgroundColor: '#F59E0B',
-  },
-  deleteButton: {
-    backgroundColor: '#EF4444',
+  activeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -722,15 +146,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
     width: '90%',
-    maxHeight: '80%',
+    maxHeight: '90%',
   },
-  modalTitle: {
-    fontSize: 20,
+  modalHeader: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: 20,
+    textAlign: 'center',
   },
-  label: {
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  inputLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
@@ -748,15 +176,492 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
+    justifyContent: 'space-between',
     marginTop: 24,
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   cancelButton: {
-    flex: 1,
     backgroundColor: colors.textSecondary,
   },
   saveButton: {
-    flex: 1,
     backgroundColor: colors.primary,
   },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 40,
+  },
 });
+
+export default function AdminLocationsScreen() {
+  const { refreshLocations } = useLocation();
+  const router = useRouter();
+  const { profile } = useAuth();
+
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<LocationItem | null>(null);
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    display_name: '',
+    latitude: '',
+    longitude: '',
+    buoy_id: '',
+    tide_station_id: '',
+    is_active: true,
+  });
+
+  useEffect(() => {
+    console.log('AdminLocationsScreen: Component mounted, profile:', profile);
+    if (profile) {
+      loadLocations();
+    }
+  }, [profile]);
+
+  const loadLocations = async () => {
+    console.log('AdminLocationsScreen: Loading locations');
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('locations')
+        .select('*')
+        .order('name');
+
+      if (error) {
+        console.error('AdminLocationsScreen: Error loading locations:', error);
+        Alert.alert('Error', `Failed to load locations: ${error.message}`);
+        return;
+      }
+
+      console.log('AdminLocationsScreen: Loaded locations:', data);
+      setLocations(data || []);
+    } catch (err) {
+      console.error('AdminLocationsScreen: Unexpected error:', err);
+      Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      id: '',
+      name: '',
+      display_name: '',
+      latitude: '',
+      longitude: '',
+      buoy_id: '',
+      tide_station_id: '',
+      is_active: true,
+    });
+    setEditingLocation(null);
+  };
+
+  const openAddModal = () => {
+    console.log('AdminLocationsScreen: Opening add modal');
+    resetForm();
+    setModalVisible(true);
+  };
+
+  const openEditModal = (location: LocationItem) => {
+    console.log('AdminLocationsScreen: Opening edit modal for:', location);
+    setEditingLocation(location);
+    setFormData({
+      id: location.id,
+      name: location.name,
+      display_name: location.display_name,
+      latitude: location.latitude.toString(),
+      longitude: location.longitude.toString(),
+      buoy_id: location.buoy_id,
+      tide_station_id: location.tide_station_id,
+      is_active: location.is_active,
+    });
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    console.log('AdminLocationsScreen: Closing modal');
+    setModalVisible(false);
+    resetForm();
+  };
+
+  const validateForm = (): boolean => {
+    if (!formData.id.trim()) {
+      Alert.alert('Validation Error', 'Location ID is required');
+      return false;
+    }
+    if (!formData.name.trim()) {
+      Alert.alert('Validation Error', 'Location Name is required');
+      return false;
+    }
+    if (!formData.display_name.trim()) {
+      Alert.alert('Validation Error', 'Display Name is required');
+      return false;
+    }
+    if (!formData.latitude.trim() || isNaN(parseFloat(formData.latitude))) {
+      Alert.alert('Validation Error', 'Valid Latitude is required');
+      return false;
+    }
+    if (!formData.longitude.trim() || isNaN(parseFloat(formData.longitude))) {
+      Alert.alert('Validation Error', 'Valid Longitude is required');
+      return false;
+    }
+    if (!formData.buoy_id.trim()) {
+      Alert.alert('Validation Error', 'NOAA Buoy ID is required');
+      return false;
+    }
+    if (!formData.tide_station_id.trim()) {
+      Alert.alert('Validation Error', 'NOAA Tide Station ID is required');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveLocation = async () => {
+    console.log('AdminLocationsScreen: Saving location:', formData);
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const locationData = {
+        id: formData.id.toLowerCase().replace(/\s+/g, '-'),
+        name: formData.name,
+        display_name: formData.display_name,
+        latitude: parseFloat(formData.latitude),
+        longitude: parseFloat(formData.longitude),
+        buoy_id: formData.buoy_id,
+        tide_station_id: formData.tide_station_id,
+        is_active: formData.is_active,
+      };
+
+      let error;
+      if (editingLocation) {
+        console.log('AdminLocationsScreen: Updating location:', locationData);
+        const { error: updateError } = await supabase
+          .from('locations')
+          .update(locationData)
+          .eq('id', editingLocation.id);
+        error = updateError;
+      } else {
+        console.log('AdminLocationsScreen: Inserting new location:', locationData);
+        const { error: insertError } = await supabase
+          .from('locations')
+          .insert(locationData);
+        error = insertError;
+      }
+
+      if (error) {
+        console.error('AdminLocationsScreen: Error saving location:', error);
+        Alert.alert('Error', `Failed to save location: ${error.message}`);
+        return;
+      }
+
+      console.log('AdminLocationsScreen: Location saved successfully');
+      Alert.alert('Success', 'Location saved successfully!');
+      closeModal();
+      await loadLocations();
+      await refreshLocations();
+    } catch (err) {
+      console.error('AdminLocationsScreen: Unexpected error saving location:', err);
+      Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleActive = async (location: LocationItem) => {
+    console.log('AdminLocationsScreen: Toggling active status for:', location);
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('locations')
+        .update({ is_active: !location.is_active })
+        .eq('id', location.id);
+
+      if (error) {
+        console.error('AdminLocationsScreen: Error toggling active status:', error);
+        Alert.alert('Error', `Failed to update location: ${error.message}`);
+        return;
+      }
+
+      console.log('AdminLocationsScreen: Active status toggled successfully');
+      await loadLocations();
+      await refreshLocations();
+    } catch (err) {
+      console.error('AdminLocationsScreen: Unexpected error toggling active:', err);
+      Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteLocation = (location: LocationItem) => {
+    console.log('AdminLocationsScreen: Delete requested for:', location);
+    Alert.alert(
+      'Confirm Delete',
+      `Are you sure you want to delete "${location.display_name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('AdminLocationsScreen: Deleting location:', location);
+            try {
+              setLoading(true);
+              const { error } = await supabase
+                .from('locations')
+                .delete()
+                .eq('id', location.id);
+
+              if (error) {
+                console.error('AdminLocationsScreen: Error deleting location:', error);
+                Alert.alert('Error', `Failed to delete location: ${error.message}`);
+                return;
+              }
+
+              console.log('AdminLocationsScreen: Location deleted successfully');
+              Alert.alert('Success', 'Location deleted successfully!');
+              await loadLocations();
+              await refreshLocations();
+            } catch (err) {
+              console.error('AdminLocationsScreen: Unexpected error deleting:', err);
+              Alert.alert('Error', 'An unexpected error occurred');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleGoBack = () => {
+    console.log('AdminLocationsScreen: Navigating back');
+    router.back();
+  };
+
+  if (loading && locations.length === 0) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  const activeText = 'Active';
+  const inactiveText = 'Inactive';
+
+  return (
+    <View style={styles.container}>
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={true}
+      >
+        <Text style={styles.header}>Manage Locations</Text>
+
+        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
+          <IconSymbol
+            ios_icon_name="arrow.left"
+            android_material_icon_name="arrow-back"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={styles.backButtonText}>Back to Admin</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+          <Text style={styles.addButtonText}>+ Add New Location</Text>
+        </TouchableOpacity>
+
+        {locations.length === 0 ? (
+          <Text style={styles.emptyText}>No locations yet. Add your first location!</Text>
+        ) : (
+          locations.map((location) => {
+            const statusText = location.is_active ? activeText : inactiveText;
+            return (
+              <View key={location.id} style={styles.locationCard}>
+                <View style={styles.locationHeader}>
+                  <Text style={styles.locationName}>{location.display_name}</Text>
+                </View>
+                <Text style={styles.locationInfo}>ID: {location.id}</Text>
+                <Text style={styles.locationInfo}>Name: {location.name}</Text>
+                <Text style={styles.locationInfo}>
+                  Coordinates: {location.latitude}, {location.longitude}
+                </Text>
+                <Text style={styles.locationInfo}>Buoy: {location.buoy_id}</Text>
+                <Text style={styles.locationInfo}>Tide Station: {location.tide_station_id}</Text>
+                <View
+                  style={[
+                    styles.activeIndicator,
+                    { backgroundColor: location.is_active ? '#34C759' : '#8E8E93' },
+                  ]}
+                >
+                  <Text style={[styles.activeText, { color: '#FFFFFF' }]}>
+                    {statusText}
+                  </Text>
+                </View>
+                <View style={styles.locationActions}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.toggleButton]}
+                    onPress={() => handleToggleActive(location)}
+                  >
+                    <Text style={styles.actionButtonText}>
+                      {location.is_active ? 'Deactivate' : 'Activate'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.editButton]}
+                    onPress={() => openEditModal(location)}
+                  >
+                    <Text style={styles.actionButtonText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.deleteButton]}
+                    onPress={() => handleDeleteLocation(location)}
+                  >
+                    <Text style={styles.actionButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalHeader}>
+              {editingLocation ? 'Edit Location' : 'Add New Location'}
+            </Text>
+
+            <ScrollView 
+              style={{ maxHeight: '70%' }}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={styles.inputLabel}>Location ID (URL-friendly, e.g., "myrtle-beach")</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.id}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, id: text.toLowerCase().replace(/\s+/g, '-') })
+                }
+                placeholder="e.g., holden-beach"
+                placeholderTextColor={colors.textSecondary}
+                editable={!editingLocation}
+              />
+
+              <Text style={styles.inputLabel}>Location Name</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.name}
+                onChangeText={(text) => setFormData({ ...formData, name: text })}
+                placeholder="e.g., Holden Beach"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={styles.inputLabel}>Display Name</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.display_name}
+                onChangeText={(text) => setFormData({ ...formData, display_name: text })}
+                placeholder="e.g., Holden Beach, NC"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={styles.inputLabel}>Latitude</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.latitude}
+                onChangeText={(text) => setFormData({ ...formData, latitude: text })}
+                placeholder="e.g., 33.9176"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.inputLabel}>Longitude</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.longitude}
+                onChangeText={(text) => setFormData({ ...formData, longitude: text })}
+                placeholder="e.g., -78.3086"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.inputLabel}>NOAA Buoy ID</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.buoy_id}
+                onChangeText={(text) => setFormData({ ...formData, buoy_id: text })}
+                placeholder="e.g., 41013"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={styles.inputLabel}>NOAA Tide Station ID</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.tide_station_id}
+                onChangeText={(text) => setFormData({ ...formData, tide_station_id: text })}
+                placeholder="e.g., 8658163"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={closeModal}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleSaveLocation}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
