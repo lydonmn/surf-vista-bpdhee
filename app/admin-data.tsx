@@ -38,7 +38,9 @@ interface LocationReport {
   hasNarrative: boolean;
   narrativeLength: number;
   waveHeight: string;
+  waveSensorsOnline: boolean;
   lastUpdated: string;
+  buoyId: string;
 }
 
 export default function AdminDataScreen() {
@@ -67,12 +69,22 @@ export default function AdminDataScreen() {
       const reports: LocationReport[] = [];
 
       for (const loc of locations) {
+        // Get the location config to show buoy ID
+        const { data: locConfig } = await supabase
+          .from('locations')
+          .select('buoy_id')
+          .eq('id', loc.id)
+          .single();
+
         const { data: report } = await supabase
           .from('surf_reports')
           .select('*')
           .eq('date', today)
           .eq('location', loc.id)
           .maybeSingle();
+
+        // Check if wave sensors are online by looking at wave_height
+        const waveSensorsOnline = report?.wave_height && report.wave_height !== 'N/A' && report.wave_height !== '';
 
         reports.push({
           location: loc.displayName,
@@ -82,7 +94,9 @@ export default function AdminDataScreen() {
           hasNarrative: !!(report?.conditions && report.conditions.length > 100),
           narrativeLength: report?.conditions?.length || 0,
           waveHeight: report?.wave_height || 'N/A',
+          waveSensorsOnline: waveSensorsOnline,
           lastUpdated: report?.updated_at || 'Never',
+          buoyId: locConfig?.buoy_id || 'Unknown',
         });
       }
 
@@ -126,7 +140,7 @@ export default function AdminDataScreen() {
 
       addLog(`Data counts loaded for ${locationData.displayName}: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
       
-      // Also load report status for both locations
+      // Also load report status for all locations
       await loadLocationReports(today);
     } catch (error) {
       console.error('Error loading data counts:', error);
@@ -141,9 +155,9 @@ export default function AdminDataScreen() {
 
   const handleTriggerDailyUpdate = async () => {
     setIsLoading(true);
-    addLog(`Manually triggering 5 AM daily report for BOTH locations...`);
+    addLog(`Manually triggering 5 AM daily report for ALL active locations...`);
     addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
-    addLog(`📍 Processing: Folly Beach, SC AND Pawleys Island, SC`, 'info');
+    addLog(`📍 Processing: ${locations.map(l => l.displayName).join(', ')}`, 'info');
 
     try {
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
@@ -176,20 +190,34 @@ export default function AdminDataScreen() {
         
         addLog(`✅ Daily 5 AM report completed: ${successCount}/${totalCount} locations successful`, 'success');
         
-        // Log each location result
+        // Log each location result with detailed info
         results.forEach((result: any) => {
           if (result.success) {
             if (result.skipped) {
               addLog(`  ✅ ${result.location}: Report already exists`, 'info');
             } else {
-              addLog(`  ✅ ${result.location}: Report generated successfully`, 'success');
+              const waveStatus = result.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+              addLog(`  ✅ ${result.location}: Report generated (${waveStatus})`, 'success');
             }
           } else {
             addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
           }
         });
         
-        Alert.alert('Success', `Daily reports generated for ${successCount}/${totalCount} locations!\n\n${results.map((r: any) => `${r.location}: ${r.success ? '✅' : '❌'}`).join('\\n')}`);
+        // Show detailed alert
+        const resultDetails = results.map((r: any) => {
+          if (r.success) {
+            const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
+            return `${r.location}: ✅ ${waveIcon}`;
+          }
+          return `${r.location}: ❌`;
+        }).join('\n');
+        
+        Alert.alert(
+          'Daily Reports Generated',
+          `Success: ${successCount}/${totalCount} locations\n\n${resultDetails}\n\n⚠️ = Wave sensors offline (wind/temp data only)`,
+          [{ text: 'OK' }]
+        );
         
         // Wait for database to update, then reload counts
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -479,11 +507,21 @@ export default function AdminDataScreen() {
           );
         } else {
           addLog(`❌ Surf error: ${errorMsg}`, 'error');
-          Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+          Alert.alert('Error', errorMsg);
         }
       } else if (response.data?.success) {
-        addLog(`✅ Surf fetch successful for ${locationData.displayName}: Found ${response.data.data?.wave_height || 'N/A'}`, 'success');
-        Alert.alert('Success', response.data.message || `Surf data fetched successfully for ${locationData.displayName}`);
+        const dataQuality = response.data.dataQuality || {};
+        const waveStatus = dataQuality.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+        
+        addLog(`✅ Surf fetch successful for ${locationData.displayName}: ${waveStatus}`, 'success');
+        addLog(`  Wave Height: ${response.data.data?.wave_height || 'N/A'}`, 'info');
+        addLog(`  Buoy ID: ${response.data.buoyId}`, 'info');
+        
+        Alert.alert(
+          'Success',
+          `${response.data.message}\n\nBuoy: ${response.data.buoyId}\n${waveStatus}`,
+          [{ text: 'OK' }]
+        );
         
         // Wait for database to update, then reload counts
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -503,7 +541,7 @@ export default function AdminDataScreen() {
           );
         } else {
           addLog(`❌ Surf failed: ${errorMsg}${details}`, 'error');
-          Alert.alert('Error', `Edge Function returned a non-2xx status code\n\n${errorMsg}${details}`);
+          Alert.alert('Error', `${errorMsg}${details}`);
         }
       }
     } catch (error) {
@@ -521,7 +559,7 @@ export default function AdminDataScreen() {
         );
       } else {
         addLog(`❌ Surf exception: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Edge Function returned a non-2xx status code: ${errorMsg}`);
+        Alert.alert('Error', `Failed to fetch surf data: ${errorMsg}`);
       }
     } finally {
       setIsLoading(false);
@@ -545,7 +583,7 @@ export default function AdminDataScreen() {
   };
 
   const backIconName = 'chevron.left';
-  const backMaterialIconName = 'arrow_back';
+  const backMaterialIconName = 'arrow-back';
   const backButtonTextContent = 'Back';
   const headerTitleText = 'Data Sources';
   const sectionTitleText1 = `Current Data (Today)`;
@@ -574,7 +612,7 @@ The system automatically generates separate reports for each location every morn
   const sectionTitleText3 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
-  const locationStatusTitle = '📍 Today\'s Report Status (Both Locations)';
+  const locationStatusTitle = '📍 Today\'s Report Status (All Locations)';
 
   return (
     <View style={styles.container}>
@@ -655,7 +693,7 @@ The system automatically generates separate reports for each location every morn
           </View>
         </View>
 
-        {/* Location Report Status */}
+        {/* Location Report Status - IMPROVED with sensor status */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
           {locationReports.map((report) => {
@@ -668,6 +706,7 @@ The system automatically generates separate reports for each location every morn
             const lastUpdatedText = report.lastUpdated !== 'Never' 
               ? new Date(report.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
               : 'Never';
+            const sensorStatus = report.waveSensorsOnline ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
             
             return (
               <View style={styles.locationCard} key={report.locationId}>
@@ -677,10 +716,24 @@ The system automatically generates separate reports for each location every morn
                 </View>
                 <View style={styles.locationDetails}>
                   <Text style={styles.locationDetailText}>Status: {statusText}</Text>
+                  <Text style={styles.locationDetailText}>Buoy: {report.buoyId}</Text>
+                  <Text style={[
+                    styles.locationDetailText,
+                    !report.waveSensorsOnline && styles.locationDetailWarning
+                  ]}>
+                    {sensorStatus}
+                  </Text>
                   <Text style={styles.locationDetailText}>Wave Height: {report.waveHeight}</Text>
                   <Text style={styles.locationDetailText}>Narrative: {report.narrativeLength} chars</Text>
                   <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
                 </View>
+                {!report.waveSensorsOnline && (
+                  <View style={styles.warningBanner}>
+                    <Text style={styles.warningText}>
+                      ⚠️ NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online.
+                    </Text>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -1016,6 +1069,23 @@ const styles = StyleSheet.create({
   locationDetailText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  locationDetailWarning: {
+    color: '#ffaa00',
+    fontWeight: '600',
+  },
+  warningBanner: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ffaa00',
+  },
+  warningText: {
+    fontSize: 12,
+    color: '#856404',
+    lineHeight: 18,
   },
   locationSelectorCard: {
     backgroundColor: colors.card,
