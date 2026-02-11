@@ -1,817 +1,364 @@
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType } from "react-native";
-import { useTheme } from "@react-navigation/native";
-import { useAuth } from "@/contexts/AuthContext";
-import { router } from "expo-router";
-import { colors } from "@/styles/commonStyles";
-import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
-import { SurfReport } from "@/types";
-import { useSurfData } from "@/hooks/useSurfData";
-import { CurrentConditions } from "@/components/CurrentConditions";
-import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { ReportTextDisplay } from "@/components/ReportTextDisplay";
-import { presentPaywall } from "@/utils/superwallConfig";
-import { useVideos } from "@/hooks/useVideos";
 import { LocationSelector } from "@/components/LocationSelector";
-import { useLocation } from "@/contexts/LocationContext";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { SurfReport } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@react-navigation/native";
+import { IconSymbol } from "@/components/IconSymbol";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType } from "react-native";
+import { CurrentConditions } from "@/components/CurrentConditions";
+import { useSurfData } from "@/hooks/useSurfData";
+import { WeeklyForecast } from "@/components/WeeklyForecast";
+import { useVideos } from "@/hooks/useVideos";
+import { colors } from "@/styles/commonStyles";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
+import { router } from "expo-router";
+import { presentPaywall } from "@/utils/superwallConfig";
 
-// Helper to resolve image sources (handles both local require() and remote URLs)
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  header: {
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: colors.primary,
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  section: {
+    padding: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  videoCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  videoThumbnail: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoInfo: {
+    padding: 16,
+  },
+  videoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  videoDate: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  subscribeButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  subscribeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
   if (typeof source === 'string') return { uri: source };
   return source as ImageSourcePropType;
 }
 
-// Get today's date in EST timezone - FIXED to use toLocaleDateString
 function getESTDate(): string {
   const now = new Date();
-  
-  // Get the date in EST timezone using toLocaleDateString (more reliable)
-  const estDateString = now.toLocaleDateString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  
-  // Parse the date string (format: "MM/DD/YYYY")
-  const [month, day, year] = estDateString.split('/');
-  
-  const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  
-  console.log('[getESTDate] Raw EST date string:', estDateString);
-  console.log('[getESTDate] Parsed components:', { month, day, year });
-  console.log('[getESTDate] Current EST date:', estDate);
-  
-  return estDate;
+  const estOffset = -5 * 60;
+  const localOffset = now.getTimezoneOffset();
+  const estTime = new Date(now.getTime() + (estOffset - localOffset) * 60 * 1000);
+  return estTime.toISOString().split('T')[0];
 }
 
 export default function HomeScreen() {
+  const { user, profile, hasSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
   const theme = useTheme();
-  const { user, session, checkSubscription, isLoading, isInitialized, profile, refreshProfile } = useAuth();
-  const [todayReport, setTodayReport] = useState<SurfReport | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
+  const { videos, loading: videosLoading, error: videosError, fetchVideos } = useVideos();
+  const { surfConditions, loading: surfLoading, error: surfError, fetchSurfConditions } = useSurfData();
   
-  // Use the surf data hook for weather and forecast
-  const { weatherData, weatherForecast, refreshData, lastUpdated, error } = useSurfData();
-  
-  // Use the videos hook to get the latest video with preloaded URL
-  const { videos, isLoading: isLoadingVideos, refreshVideos } = useVideos();
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Memoize subscription status to prevent recalculation
-  const hasSubscription = useMemo(() => {
-    if (!profile) return false;
-    return checkSubscription();
-  }, [profile, checkSubscription]);
-  
-  // Get the latest video with preloaded signed URL
-  const latestVideo = useMemo(() => {
-    console.log('[HomeScreen] Videos data:', {
-      count: videos.length,
-      isLoading: isLoadingVideos,
-      firstVideo: videos[0] ? {
-        id: videos[0].id,
-        title: videos[0].title,
-        hasThumbnail: !!videos[0].thumbnail_url,
-        thumbnailUrl: videos[0].thumbnail_url,
-        hasVideoUrl: !!videos[0].video_url,
-        videoUrl: videos[0].video_url,
-        hasSignedUrl: !!videos[0].signed_url
-      } : null
-    });
-    
-    if (videos.length === 0) return null;
-    return videos[0];
-  }, [videos, isLoadingVideos]);
+  const isLoading = useMemo(() => {
+    return authLoading || !isInitialized;
+  }, [authLoading, isInitialized]);
 
-  // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
-    if (isLoadingData) {
-      console.log('[HomeScreen] Already loading data, skipping...');
+    console.log('[HomeScreen] Loading data...');
+    console.log('[HomeScreen] User:', user?.id);
+    console.log('[HomeScreen] Has subscription:', hasSubscription);
+    
+    if (!user) {
+      console.log('[HomeScreen] No user, skipping data load');
       return;
     }
 
     try {
-      setIsLoadingData(true);
-      console.log('[HomeScreen] Fetching reports...');
-
-      // Load today's surf report
-      const today = getESTDate();
-      const { data: reportData, error: reportError } = await supabase
-        .from('surf_reports')
-        .select('*')
-        .eq('date', today)
-        .maybeSingle();
-
-      if (reportError) {
-        console.log('[HomeScreen] Report fetch error:', reportError.message);
-      } else if (reportData) {
-        console.log('[HomeScreen] Report loaded for:', today, 'Rating:', reportData.rating);
-        setTodayReport(reportData);
-      } else {
-        console.log('[HomeScreen] No report found for today');
-        setTodayReport(null);
-      }
+      await Promise.all([
+        fetchVideos(),
+        fetchSurfConditions()
+      ]);
+      console.log('[HomeScreen] Data loaded successfully');
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
-    } finally {
-      setIsLoadingData(false);
     }
-  }, [isLoadingData]);
+  }, [user, fetchVideos, fetchSurfConditions]);
 
-  // Only load data when conditions are met - use separate effect
   useEffect(() => {
-    console.log('[HomeScreen] State update:', {
-      isInitialized,
-      isLoading,
-      hasUser: !!user,
-      hasSession: !!session,
-      hasProfile: !!profile,
-      hasSubscription
-    });
-
-    // Only load data when fully initialized, not loading, has user, profile, and subscription
-    if (isInitialized && !isLoading && user && profile && hasSubscription) {
-      console.log('[HomeScreen] Conditions met, loading content data...');
+    if (isInitialized && !isLoading && user && profile && hasSubscription && session) {
+      console.log('[HomeScreen] Auth ready, loading data...');
       loadData();
-    } else {
-      console.log('[HomeScreen] Not loading data - conditions not met');
     }
   }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData]);
 
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    await Promise.all([loadData(), refreshData(), refreshVideos()]);
-    setIsRefreshing(false);
-  }, [loadData, refreshData, refreshVideos]);
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
-  const formatLastUpdated = useCallback((date: Date | null) => {
-    if (!date) return 'Never';
-    
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    
-    return date.toLocaleDateString();
+  const handleVideoPress = useCallback((videoId: string) => {
+    console.log('[HomeScreen] Video pressed:', videoId);
+    router.push(`/video-player?videoId=${videoId}`);
   }, []);
 
-  const handleSubscribeNow = useCallback(async () => {
-    console.log('[HomeScreen] Subscribe Now button tapped');
-    
-    setIsSubscribing(true);
-
+  const handleSubscribe = useCallback(async () => {
+    console.log('[HomeScreen] Subscribe button pressed');
     try {
-      console.log('[HomeScreen] Opening subscription paywall...');
-      
-      // ⚠️ CRITICAL FIX: Automatic retry mechanism
-      // If the payment system is still initializing, wait and retry
-      let retryCount = 0;
-      const maxRetries = 10; // 10 retries = 10 seconds max wait
-      let result: any = null;
-      
-      while (retryCount < maxRetries) {
-        // Present the RevenueCat Paywall
-        result = await presentPaywall(user?.id, user?.email || undefined);
-        
-        // If payment system is still initializing, wait 1 second and retry
-        if (result.state === 'initializing') {
-          console.log(`[HomeScreen] ⏳ Payment system initializing, retry ${retryCount + 1}/${maxRetries}...`);
-          retryCount++;
-          
-          // Wait 1 second before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
-        
-        // If we got a result other than 'initializing', break the loop
-        break;
-      }
-      
-      // If we exhausted all retries and still initializing, show error
-      if (result.state === 'initializing') {
-        console.log('[HomeScreen] ❌ Payment system failed to initialize after 10 seconds');
-        
-        Alert.alert(
-          'Payment System Not Ready',
-          'The payment system is taking longer than expected to initialize. Please try again in a few moments.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-      
-      console.log('[HomeScreen] Paywall result:', result);
-      
-      // Refresh profile to get updated subscription status
-      await refreshProfile();
-      
-      if (result.state === 'purchased' || result.state === 'restored') {
-        Alert.alert(
-          'Success!',
-          result.message || 'Subscription activated successfully!',
-          [{ text: 'OK' }]
-        );
-      } else if (result.state === 'error') {
-        Alert.alert(
-          'Subscribe',
-          result.message || 'Unable to complete purchase. Please try again.',
-          [{ text: 'OK' }]
-        );
-      }
-      // If declined, do nothing (user cancelled)
-      
-    } catch (error: any) {
-      console.error('[HomeScreen] Subscribe error:', error);
-      Alert.alert(
-        'Subscribe Failed',
-        error.message || 'Unable to open subscription page. Please try again later.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsSubscribing(false);
+      await presentPaywall();
+    } catch (error) {
+      console.error('[HomeScreen] Error presenting paywall:', error);
+      Alert.alert('Error', 'Failed to open subscription page. Please try again.');
     }
-  }, [user, refreshProfile]);
-  
-  const handleVideoThumbnailPress = useCallback(() => {
-    if (!latestVideo) return;
-    
-    console.log('[HomeScreen] Video thumbnail tapped, navigating to video player');
-    console.log('[HomeScreen] Preloaded URL available:', !!latestVideo.signed_url);
-    
-    // Pass the preloaded signed URL if available for instant playback
-    router.push({
-      pathname: '/video-player',
-      params: {
-        videoId: latestVideo.id,
-        preloadedUrl: latestVideo.signed_url || '',
-      }
-    });
-  }, [latestVideo]);
+  }, []);
 
-  // Show loading state while auth is initializing
-  if (!isInitialized) {
-    console.log('[HomeScreen] Rendering: Not initialized');
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Initializing...
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Show loading state while profile is being loaded
   if (isLoading) {
-    console.log('[HomeScreen] Rendering: Loading profile');
     return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading your profile...
-          </Text>
-        </View>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
-  // Not logged in - show sign in prompt
-  if (!user || !session) {
-    console.log('[HomeScreen] Rendering: Not logged in');
+  if (!user) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Exclusive Surf Reports from South Carolina
-          </Text>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={80}
-            color={colors.primary}
-          />
-          <Text style={[styles.description, { color: theme.colors.text }]}>
-            Get access to daily 6K drone footage and exclusive surf reports
-          </Text>
-          <TouchableOpacity
-            style={[styles.ctaButton, { backgroundColor: colors.primary }]}
-            onPress={() => {
-              console.log('[HomeScreen] Navigating to login...');
-              router.push('/login');
-            }}
-          >
-            <Text style={styles.ctaButtonText}>Sign In / Subscribe</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // Wait for profile to load
-  if (!profile) {
-    console.log('[HomeScreen] Rendering: Waiting for profile');
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading your profile...
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Logged in but no subscription - show subscribe prompt
-  if (!hasSubscription) {
-    console.log('[HomeScreen] Rendering: No subscription');
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={80}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscription Required
-          </Text>
-          <Text style={[styles.description, { color: colors.textSecondary }]}>
-            Subscribe to access exclusive drone footage and daily surf reports for just $12.99/month
-          </Text>
-          <TouchableOpacity
-            style={[styles.ctaButton, { backgroundColor: colors.accent }]}
-            onPress={handleSubscribeNow}
-            disabled={isSubscribing}
-          >
-            {isSubscribing ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.ctaButtonText}>Subscribe Now</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // Subscribed - show content
-  console.log('[HomeScreen] Rendering: Subscribed content');
-  
-  // CRITICAL FIX: Always show today's report text and rating
-  // Use today's report for both text and rating to ensure consistency with report page
-  const reportTextDisplay = todayReport?.report_text || todayReport?.conditions || '';
-  const isCustomReport = !!todayReport?.report_text;
-  
-  // CRITICAL FIX: Use today's actual rating, not a default
-  // This ensures consistency between home page and report page
-  const todayRating = todayReport?.rating ?? null;
-  
-  console.log('[HomeScreen] Today\'s report:', {
-    hasReport: !!todayReport,
-    rating: todayRating,
-    hasText: !!reportTextDisplay,
-    date: todayReport?.date
-  });
-  
-  console.log('[HomeScreen] Latest video:', {
-    hasVideo: !!latestVideo,
-    videoId: latestVideo?.id,
-    hasThumbnail: !!latestVideo?.thumbnail_url,
-    thumbnailUrl: latestVideo?.thumbnail_url,
-    hasSignedUrl: !!latestVideo?.signed_url,
-    videosCount: videos.length,
-    isLoadingVideos
-  });
-  
-  // Check if we have a video with thumbnail
-  const hasVideoThumbnail = latestVideo && latestVideo.thumbnail_url;
-  const videoTitleText = latestVideo?.title || 'Latest Video';
-  const instantPlaybackBadge = latestVideo?.signed_url ? '⚡ Instant Playback' : 'Tap to watch';
-  
-  return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.primary}
+      <View style={styles.errorContainer}>
+        <IconSymbol
+          ios_icon_name="person.crop.circle.badge.exclamationmark"
+          android_material_icon_name="error"
+          size={64}
+          color={colors.error}
         />
-      }
-    >
+        <Text style={styles.errorText}>Please log in to view content</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.retryButtonText}>Go to Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!hasSubscription) {
+    return (
+      <View style={styles.errorContainer}>
+        <IconSymbol
+          ios_icon_name="lock.circle"
+          android_material_icon_name="lock"
+          size={64}
+          color={colors.primary}
+        />
+        <Text style={styles.errorText}>Subscribe to access exclusive surf reports and videos</Text>
+        <TouchableOpacity
+          style={styles.subscribeButton}
+          onPress={handleSubscribe}
+        >
+          <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const latestVideo = videos && videos.length > 0 ? videos[0] : null;
+  const todayDate = getESTDate();
+  const todayReport = surfConditions?.find((report: SurfReport) => report.date === todayDate);
+
+  return (
+    <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
-          Welcome to
-        </Text>
-        
-        {/* Video Thumbnail behind SurfVista - OPTIMIZED with preloaded URL */}
-        {latestVideo ? (
-          hasVideoThumbnail ? (
-            <TouchableOpacity 
-              onPress={handleVideoThumbnailPress}
-              activeOpacity={0.8}
-              style={styles.thumbnailContainer}
+        <Text style={styles.headerTitle}>SurfVista</Text>
+        <Text style={styles.headerSubtitle}>Folly Beach, SC</Text>
+      </View>
+
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <View style={styles.section}>
+          <LocationSelector />
+        </View>
+
+        {latestVideo && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Latest Report</Text>
+            <TouchableOpacity
+              style={styles.videoCard}
+              onPress={() => handleVideoPress(latestVideo.id)}
             >
               <ImageBackground
                 source={resolveImageSource(latestVideo.thumbnail_url)}
-                style={styles.thumbnailBackground}
-                imageStyle={styles.thumbnailImage}
+                style={styles.videoThumbnail}
+                resizeMode="cover"
               >
-                <View style={styles.thumbnailOverlay}>
-                  <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-                  <View style={styles.playIconContainer}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play-circle"
-                      size={40}
-                      color={colors.primary}
-                    />
-                  </View>
-                  <Text style={[styles.videoTitle, { color: '#FFFFFF' }]}>
-                    {videoTitleText}
-                  </Text>
-                  {latestVideo.signed_url && (
-                    <View style={styles.instantBadge}>
-                      <Text style={styles.instantBadgeText}>{instantPlaybackBadge}</Text>
-                    </View>
-                  )}
+                <View style={styles.playButton}>
+                  <IconSymbol
+                    ios_icon_name="play.fill"
+                    android_material_icon_name="play-arrow"
+                    size={32}
+                    color={colors.primary}
+                  />
                 </View>
               </ImageBackground>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity 
-              onPress={handleVideoThumbnailPress}
-              activeOpacity={0.8}
-              style={styles.thumbnailContainer}
-            >
-              <View style={[styles.thumbnailBackground, styles.thumbnailFallback, { backgroundColor: colors.cardBackground }]}>
-                <View style={styles.thumbnailOverlay}>
-                  <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-                  <View style={styles.playIconContainer}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play-circle"
-                      size={60}
-                      color={colors.primary}
-                    />
-                  </View>
-                  <Text style={[styles.videoTitle, { color: colors.text }]}>
-                    {videoTitleText}
-                  </Text>
-                  <Text style={[styles.videoSubtitle, { color: colors.textSecondary }]}>
-                    Tap to watch latest drone footage
-                  </Text>
-                </View>
+              <View style={styles.videoInfo}>
+                <Text style={styles.videoTitle}>{latestVideo.title}</Text>
+                <Text style={styles.videoDate}>
+                  {new Date(latestVideo.created_at).toLocaleDateString()}
+                </Text>
               </View>
             </TouchableOpacity>
-          )
-        ) : (
-          <Text style={[styles.appTitle, { color: colors.primary }]}>SurfVista</Text>
-        )}
-        
-        {/* Location Selector */}
-        <View style={styles.locationContainer}>
-          <LocationSelector />
-        </View>
-        
-        {/* Last Updated Info */}
-        <View style={styles.updateInfo}>
-          <IconSymbol
-            ios_icon_name="clock.fill"
-            android_material_icon_name="schedule"
-            size={14}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.updateText, { color: colors.textSecondary }]}>
-            Updated {formatLastUpdated(lastUpdated)}
-          </Text>
-          <TouchableOpacity 
-            onPress={handleRefresh}
-            style={styles.refreshButton}
-            disabled={isRefreshing}
-          >
-            <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
-              size={16}
-              color={colors.primary}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Error Message */}
-        {error && (
-          <View style={[styles.errorBanner, { backgroundColor: 'rgba(255, 59, 48, 0.1)' }]}>
-            <IconSymbol
-              ios_icon_name="exclamationmark.triangle.fill"
-              android_material_icon_name="warning"
-              size={16}
-              color="#FF3B30"
-            />
-            <Text style={[styles.errorText, { color: '#FF3B30' }]}>
-              {error}
-            </Text>
           </View>
         )}
-      </View>
 
-      {/* Current Conditions - Pass today's rating explicitly */}
-      <CurrentConditions 
-        weather={weatherData} 
-        surfReport={todayReport}
-      />
+        {todayReport && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Current Conditions</Text>
+            <CurrentConditions report={todayReport} />
+          </View>
+        )}
 
-      {/* Today's Report Text - ALWAYS show if we have today's report */}
-      {todayReport && reportTextDisplay && (
-        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.reportHeader}>
-            <IconSymbol
-              ios_icon_name="doc.text.fill"
-              android_material_icon_name="description"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={[styles.reportTitle, { color: theme.colors.text }]}>
-              Today&apos;s Surf Report
-            </Text>
+        {todayReport && todayReport.narrative && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today's Report</Text>
+            <View style={styles.card}>
+              <ReportTextDisplay text={todayReport.narrative} />
+            </View>
           </View>
-          <View style={[styles.reportTextContainer, { backgroundColor: colors.reportBackground }]}>
-            <ReportTextDisplay 
-              text={reportTextDisplay}
-              isCustom={isCustomReport}
-            />
-          </View>
-          {todayReport.report_text && todayReport.edited_at && (
-            <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-              Edited {new Date(todayReport.edited_at).toLocaleDateString()}
-            </Text>
-          )}
+        )}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>7-Day Forecast</Text>
+          <WeeklyForecast />
         </View>
-      )}
-
-      {/* 7-Day Forecast */}
-      {weatherForecast.length > 0 && (
-        <WeeklyForecast forecast={weatherForecast} />
-      )}
-
-      {/* Quick Links */}
-      <View style={styles.quickLinks}>
-        <TouchableOpacity
-          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/(tabs)/videos')}
-        >
-          <IconSymbol
-            ios_icon_name="film.stack"
-            android_material_icon_name="movie"
-            size={32}
-            color={colors.primary}
-          />
-          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Video Library
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/(tabs)/report')}
-        >
-          <IconSymbol
-            ios_icon_name="doc.text.fill"
-            android_material_icon_name="description"
-            size={32}
-            color={colors.primary}
-          />
-          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Full Reports
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.quickLinkCard, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/(tabs)/forecast')}
-        >
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={32}
-            color={colors.primary}
-          />
-          <Text style={[styles.quickLinkText, { color: theme.colors.text }]}>
-            Forecast
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 100,
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  loadingText: {
-    fontSize: 16,
-    marginTop: 16,
-  },
-  header: {
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 24,
-    paddingHorizontal: 16,
-  },
-  welcomeText: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  appTitle: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  thumbnailContainer: {
-    width: '100%',
-    marginVertical: 8,
-  },
-  thumbnailBackground: {
-    width: '100%',
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  thumbnailImage: {
-    borderRadius: 16,
-  },
-  thumbnailFallback: {
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  thumbnailOverlay: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 16,
-    padding: 16,
-  },
-  playIconContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  videoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  videoSubtitle: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  instantBadge: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  instantBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  locationContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  updateInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  updateText: {
-    fontSize: 12,
-  },
-  refreshButton: {
-    padding: 4,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  errorText: {
-    fontSize: 12,
-    flex: 1,
-  },
-  subtitle: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-  },
-  ctaButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  ctaButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  reportCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  reportTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  reportTextContainer: {
-    padding: 12,
-    borderRadius: 8,
-  },
-  editedNote: {
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-  quickLinks: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 16,
-    flexWrap: 'wrap',
-  },
-  quickLinkCard: {
-    flex: 1,
-    minWidth: 80,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    gap: 8,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  quickLinkText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-});
