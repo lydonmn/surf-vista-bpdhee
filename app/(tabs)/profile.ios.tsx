@@ -10,7 +10,8 @@ import {
   restorePurchases, 
   presentCustomerCenter,
   presentPaywall,
-  forceRefreshOfferings
+  forceRefreshOfferings,
+  isPaymentSystemAvailable
 } from '@/utils/superwallConfig';
 
 export default function ProfileScreen() {
