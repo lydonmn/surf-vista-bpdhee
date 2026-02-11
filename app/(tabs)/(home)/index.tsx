@@ -1,10 +1,8 @@
 
-import { supabase } from "@/app/integrations/supabase/client";
 import { LocationSelector } from "@/components/LocationSelector";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { useTheme } from "@react-navigation/native";
 import { IconSymbol } from "@/components/IconSymbol";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType } from "react-native";
 import { CurrentConditions } from "@/components/CurrentConditions";
@@ -173,9 +171,8 @@ function getESTDate(): string {
 
 export default function HomeScreen() {
   const { user, profile, hasSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
-  const theme = useTheme();
-  const { videos, loading: videosLoading, error: videosError, fetchVideos } = useVideos();
-  const { surfConditions, loading: surfLoading, error: surfError, fetchSurfConditions } = useSurfData();
+  const { videos, fetchVideos } = useVideos();
+  const { surfConditions, fetchSurfConditions } = useSurfData();
   
   const [refreshing, setRefreshing] = useState(false);
 
@@ -202,7 +199,7 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
     }
-  }, [user, fetchVideos, fetchSurfConditions]);
+  }, [user, fetchVideos, fetchSurfConditions, hasSubscription]);
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && hasSubscription && session) {

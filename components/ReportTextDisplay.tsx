@@ -1,7 +1,5 @@
 
-import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useTheme } from '@react-navigation/native';
 import { colors } from '@/styles/commonStyles';
 
 interface ReportTextDisplayProps {
@@ -10,9 +8,6 @@ interface ReportTextDisplayProps {
 }
 
 export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayProps) {
-  const theme = useTheme();
-
-  // Parse text to handle markdown-style bold (**text**)
   const parseTextWithBold = (inputText: string) => {
     const parts: { text: string; bold: boolean }[] = [];
     const regex = /\*\*([^*]+)\*\*/g;
@@ -20,14 +15,12 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     let match;
 
     while ((match = regex.exec(inputText)) !== null) {
-      // Add text before the bold part
       if (match.index > lastIndex) {
         parts.push({
           text: inputText.substring(lastIndex, match.index),
           bold: false,
         });
       }
-      // Add the bold part
       parts.push({
         text: match[1],
         bold: true,
@@ -35,7 +28,6 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
       lastIndex = regex.lastIndex;
     }
 
-    // Add remaining text
     if (lastIndex < inputText.length) {
       parts.push({
         text: inputText.substring(lastIndex),
@@ -46,17 +38,13 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     return parts.length > 0 ? parts : [{ text: inputText, bold: false }];
   };
 
-  // Make the report more concise by focusing on key rideability information
   const getCondensedReport = (fullText: string): string => {
-    // If it's a custom report (edited by admin), don't condense it
     if (isCustom) {
       return fullText;
     }
 
-    // Extract key sentences about wave rideability
     const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
     
-    // Filter to keep only the most relevant sentences about rideability
     const relevantKeywords = [
       'rideable', 'ride', 'surfable', 'surf',
       'wave', 'swell', 'conditions',
@@ -71,12 +59,10 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
       return relevantKeywords.some(keyword => lowerSentence.includes(keyword));
     });
 
-    // If we filtered out too much, keep the first 3 sentences
     if (relevantSentences.length === 0) {
       return sentences.slice(0, 3).join(' ').trim();
     }
 
-    // Return the most relevant sentences (max 4)
     return relevantSentences.slice(0, 4).join(' ').trim();
   };
 
@@ -89,29 +75,27 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
         const parts = parseTextWithBold(sentence.trim());
         
         return (
-          <React.Fragment key={`sentence-${sentenceIndex}-${sentence.substring(0, 20)}`}>
-            <View>
-              <Text
-                style={[
-                  styles.sentence,
-                  { color: colors.reportText },
-                  isCustom && styles.customSentence
-                ]}
-              >
-                {parts.map((part, partIndex) => (
-                  <Text
-                    key={`part-${sentenceIndex}-${partIndex}-${part.text.substring(0, 10)}`}
-                    style={[
-                      part.bold && styles.boldText,
-                      part.bold && { color: colors.reportBoldText }
-                    ]}
-                  >
-                    {part.text}
-                  </Text>
-                ))}
-              </Text>
-            </View>
-          </React.Fragment>
+          <View key={`sentence-${sentenceIndex}-${sentence.substring(0, 20)}`}>
+            <Text
+              style={[
+                styles.sentence,
+                { color: colors.reportText },
+                isCustom && styles.customSentence
+              ]}
+            >
+              {parts.map((part, partIndex) => (
+                <Text
+                  key={`part-${sentenceIndex}-${partIndex}-${part.text.substring(0, 10)}`}
+                  style={[
+                    part.bold && styles.boldText,
+                    part.bold && { color: colors.reportBoldText }
+                  ]}
+                >
+                  {part.text}
+                </Text>
+              ))}
+            </Text>
+          </View>
         );
       })}
     </View>

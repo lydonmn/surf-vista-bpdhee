@@ -1,24 +1,22 @@
 
-import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 export const colors = {
-  background: '#F0F8FF',        // AliceBlue - a light, airy blue
-  text: '#2F4F4F',              // DarkSlateGray - a deep, sophisticated gray
-  textSecondary: '#8B9DA8',     // Lighter gray-blue for better contrast on dark backgrounds
-  primary: '#4682B4',           // SteelBlue - a classic, reliable blue
-  secondary: '#B0C4DE',         // LightSteelBlue - a softer shade of blue for accents
-  accent: '#FFA07A',            // LightSalmon - a warm, inviting coral
-  card: '#FFFFFF',              // White - clean and crisp for content cards
-  highlight: '#ADD8E6',         // LightBlue - a subtle highlight color
-  
-  // Enhanced colors for report readability
-  reportBackground: '#E8F4F8',  // Very light blue-gray for report text background
-  reportText: '#1A3A4A',        // Darker blue-gray for better contrast
-  reportBoldText: '#E8F4F8',    // Light blue-gray for bold text on dark backgrounds
-  reportLabel: '#B8D4E0',       // Light blue-gray for labels on dark backgrounds
-  errorBackground: '#FF6B6B',   // Bright red for errors
-  success: '#4CAF50',           // Green for success states
-  error: '#F44336',             // Red for error states
+  background: '#F0F8FF',
+  text: '#2F4F4F',
+  textSecondary: '#8B9DA8',
+  primary: '#4682B4',
+  secondary: '#B0C4DE',
+  accent: '#FFA07A',
+  card: '#FFFFFF',
+  highlight: '#ADD8E6',
+  reportBackground: '#E8F4F8',
+  reportText: '#1A3A4A',
+  reportBoldText: '#E8F4F8',
+  reportLabel: '#B8D4E0',
+  errorBackground: '#FF6B6B',
+  success: '#4CAF50',
+  error: '#F44336',
 };
 
 export const buttonStyles = StyleSheet.create({

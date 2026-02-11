@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,7 +19,7 @@ export default function ReportScreen() {
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
+  const { surfReports, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -173,7 +173,7 @@ export default function ReportScreen() {
     return null;
   }, [todaysReport, lastValidReport]);
 
-  const fetchSurfConditions = React.useCallback(async () => {
+  const fetchSurfConditions = useCallback(async () => {
     try {
       console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, 'date:', todayDate);
       
@@ -198,7 +198,7 @@ export default function ReportScreen() {
     }
   }, [todayDate, currentLocation]);
 
-  const loadLatestVideo = React.useCallback(async () => {
+  const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
       setVideoReady(false);
@@ -334,7 +334,7 @@ export default function ReportScreen() {
     }
   };
 
-  const handleVideoPress = React.useCallback(() => {
+  const handleVideoPress = useCallback(() => {
     if (latestVideo) {
       console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
       console.log('[ReportScreen] ✅ Passing preloaded URL for instant playback');
@@ -353,7 +353,7 @@ export default function ReportScreen() {
   }, [latestVideo]);
 
   // ✅ Update video player source when latest video changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
       console.log('[ReportScreen] Loading video preview with caching enabled');
       videoPlayer.replace(latestVideo.video_url);

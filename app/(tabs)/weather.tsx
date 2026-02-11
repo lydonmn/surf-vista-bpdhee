@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,13 +8,14 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { WeatherCard } from '@/components/WeatherCard';
 import { TideCard } from '@/components/TideCard';
 import { useSurfData } from '@/hooks/useSurfData';
+import { useState } from 'react';
 
 export default function WeatherScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { weatherData, tideData, isLoading, error, refreshData } = useSurfData();
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -106,7 +106,7 @@ export default function WeatherScreen() {
           </Text>
         </View>
       ) : (
-        <React.Fragment>
+        <>
           {weatherData ? (
             <WeatherCard weather={weatherData} />
           ) : (
@@ -144,7 +144,7 @@ export default function WeatherScreen() {
               </Text>
             </View>
           </View>
-        </React.Fragment>
+        </>
       )}
     </ScrollView>
   );

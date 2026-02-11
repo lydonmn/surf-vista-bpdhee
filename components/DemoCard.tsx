@@ -1,4 +1,4 @@
-import React from "react";
+
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, View, Text } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";

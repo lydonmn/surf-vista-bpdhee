@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 
@@ -30,7 +30,6 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const STORAGE_KEY = '@surfvista_location';
 
-// Default fallback locations (in case database is unavailable)
 const DEFAULT_LOCATIONS: LocationData[] = [
   {
     id: 'folly-beach',
@@ -61,7 +60,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch locations from database
   const fetchLocations = useCallback(async () => {
     try {
       console.log('[LocationContext] Fetching locations from database...');
@@ -74,7 +72,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('[LocationContext] Error fetching locations:', error);
-        // Use default locations on error
         return;
       }
 
@@ -96,18 +93,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('[LocationContext] Exception fetching locations:', error);
-      // Keep using default locations
     }
   }, []);
 
-  // Load saved location and fetch locations on mount
   useEffect(() => {
     const initialize = async () => {
       try {
-        // Fetch locations from database
         await fetchLocations();
 
-        // Load saved location preference
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) {
           console.log('[LocationContext] Loaded saved location:', saved);
@@ -138,7 +131,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     await fetchLocations();
   }, [fetchLocations]);
 
-  // Get current location data
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
 
   const value: LocationContextType = {
@@ -165,7 +157,6 @@ export function useLocation() {
   return context;
 }
 
-// Export for backward compatibility
 export const LOCATIONS: Record<string, LocationData> = DEFAULT_LOCATIONS.reduce((acc, loc) => {
   acc[loc.id] = loc;
   return acc;

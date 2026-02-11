@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from './IconSymbol';
@@ -15,9 +14,6 @@ interface CurrentConditionsProps {
 export function CurrentConditions({ weather, surfReport }: CurrentConditionsProps) {
   const theme = useTheme();
 
-  // CRITICAL FIX: Always prioritize surf_height (rideable face size) over wave_height (actual wave height)
-  // surf_height is calculated from wave_height using a multiplier based on wave period
-  // This is what surfers actually care about - the rideable face of the wave
   const surfHeightDisplay = surfReport?.surf_height;
   
   console.log('[CurrentConditions] Wave data:', {
@@ -29,10 +25,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     rating: surfReport?.rating,
   });
 
-  // Format water temperature
   const waterTempFormatted = formatWaterTemp(surfReport?.water_temp);
 
-  // Check if data is from today
   const isDataCurrent = () => {
     if (!surfReport?.date) return true;
     
@@ -79,14 +73,12 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     );
   }
 
-  // Prepare display values
   const temperatureDisplay = weather?.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--';
   const weatherConditionsDisplay = weather?.conditions || '';
   const windSpeedDisplay = weather?.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--';
   const windDirectionDisplay = weather?.wind_direction || '';
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
-  // Use today's report rating to match the report page
   const stokeRatingDisplay = surfReport?.rating ?? null;
   
   const wavePeriodDisplay = surfReport?.wave_period;
@@ -208,7 +200,6 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
               )}
             </View>
 
-            {/* Additional surf details */}
             {(wavePeriodDisplay || swellDirectionDisplay) && (
               <View style={styles.additionalDetails}>
                 {wavePeriodDisplay && (

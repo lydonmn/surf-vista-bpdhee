@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform, Image } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Video } from 'expo-av';
 import { useTheme } from '@react-navigation/native';
@@ -26,9 +26,9 @@ interface VideoMetadata {
   size: number;
 }
 
-const MAX_DURATION_SECONDS = 600; // 10 minutes
-const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB
-const TUS_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
+const MAX_DURATION_SECONDS = 600;
+const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024;
+const TUS_CHUNK_SIZE = 10 * 1024 * 1024;
 
 export default function AdminScreen() {
   const videoRef = useRef<Video>(null);
@@ -39,11 +39,9 @@ export default function AdminScreen() {
   const [selectedLocation, setSelectedLocation] = useState<string>('folly-beach');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const { user, profile } = useAuth();
   const { refreshVideos } = useVideos();
-  const { currentLocation, locations } = useLocation();
+  const { locations } = useLocation();
 
   useEffect(() => {
     if (profile && !profile.is_admin) {
@@ -52,210 +50,6 @@ export default function AdminScreen() {
       router.back();
     }
   }, [profile]);
-
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  const loadUsers = async () => {
-    try {
-      setIsLoadingUsers(true);
-      console.log('[AdminScreen] Loading users...');
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('[AdminScreen] Error loading users:', error);
-        throw error;
-      }
-
-      console.log('[AdminScreen] Loaded', data?.length || 0, 'users');
-      setUsers(data || []);
-    } catch (error: any) {
-      console.error('[AdminScreen] Error loading users:', error);
-      Alert.alert('Error', `Failed to load users: ${error.message}`);
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  };
-
-  const toggleSubscription = async (userId: string, currentStatus: boolean) => {
-    try {
-      console.log('[AdminScreen] Toggling subscription for user:', userId);
-
-      const newStatus = !currentStatus;
-      const subscriptionEndDate = newStatus 
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days from now
-        : null;
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: newStatus,
-          subscription_end_date: subscriptionEndDate,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('[AdminScreen] Error updating subscription:', error);
-        throw error;
-      }
-
-      console.log('[AdminScreen] Subscription updated successfully');
-      Alert.alert('Success', `Subscription ${newStatus ? 'enabled' : 'disabled'} successfully`);
-      await loadUsers();
-    } catch (error: any) {
-      console.error('[AdminScreen] Error toggling subscription:', error);
-      Alert.alert('Error', `Failed to update subscription: ${error.message}`);
-    }
-  };
-
-  const toggleAdmin = async (userId: string, currentStatus: boolean) => {
-    try {
-      console.log('[AdminScreen] Toggling admin status for user:', userId);
-
-      const newStatus = !currentStatus;
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_admin: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('[AdminScreen] Error updating admin status:', error);
-        throw error;
-      }
-
-      console.log('[AdminScreen] Admin status updated successfully');
-      Alert.alert('Success', `Admin status ${newStatus ? 'enabled' : 'disabled'} successfully`);
-      await loadUsers();
-    } catch (error: any) {
-      console.error('[AdminScreen] Error toggling admin status:', error);
-      Alert.alert('Error', `Failed to update admin status: ${error.message}`);
-    }
-  };
-
-  const handleDeleteVideo = async (videoId: string, videoTitle: string, videoUrl: string) => {
-    Alert.alert(
-      'Delete Video',
-      `Are you sure you want to delete "${videoTitle}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[AdminScreen] Deleting video:', videoId);
-
-              // Extract filename from URL
-              const urlParts = videoUrl.split('/videos/');
-              if (urlParts.length === 2) {
-                const fileName = urlParts[1];
-                console.log('[AdminScreen] Deleting file from storage:', fileName);
-
-                const { error: storageError } = await supabase.storage
-                  .from('videos')
-                  .remove([fileName]);
-
-                if (storageError) {
-                  console.error('[AdminScreen] Error deleting from storage:', storageError);
-                }
-              }
-
-              // Delete from database
-              const { error: dbError } = await supabase
-                .from('videos')
-                .delete()
-                .eq('id', videoId);
-
-              if (dbError) {
-                console.error('[AdminScreen] Error deleting from database:', dbError);
-                throw dbError;
-              }
-
-              console.log('[AdminScreen] Video deleted successfully');
-              Alert.alert('Success', 'Video deleted successfully');
-              await refreshVideos();
-            } catch (error: any) {
-              console.error('[AdminScreen] Error deleting video:', error);
-              Alert.alert('Error', `Failed to delete video: ${error.message}`);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleDiagnoseVideo = async (videoId: string, videoTitle: string, videoUrl: string) => {
-    console.log('[AdminScreen] Diagnosing video:', videoId);
-    console.log('[AdminScreen] Video URL:', videoUrl);
-
-    try {
-      // Test if URL is accessible
-      const response = await fetch(videoUrl, { method: 'HEAD' });
-      console.log('[AdminScreen] URL test response:', response.status, response.statusText);
-
-      Alert.alert(
-        'Video Diagnosis',
-        `Video: ${videoTitle}\n\nURL Status: ${response.status} ${response.statusText}\n\nURL: ${videoUrl}`,
-        [{ text: 'OK' }]
-      );
-    } catch (error: any) {
-      console.error('[AdminScreen] Error diagnosing video:', error);
-      Alert.alert(
-        'Video Diagnosis',
-        `Video: ${videoTitle}\n\nError: ${error.message}\n\nURL: ${videoUrl}`,
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleTestPublicUrl = async (videoId: string, videoTitle: string, videoUrl: string) => {
-    console.log('[AdminScreen] Testing public URL for video:', videoId);
-
-    try {
-      // Extract filename from URL
-      const urlParts = videoUrl.split('/videos/');
-      if (urlParts.length !== 2) {
-        throw new Error('Invalid video URL format');
-      }
-
-      const fileName = urlParts[1];
-      console.log('[AdminScreen] Getting public URL for:', fileName);
-
-      // Get public URL
-      const { data } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-
-      console.log('[AdminScreen] Public URL:', data.publicUrl);
-
-      // Test if URL is accessible
-      const response = await fetch(data.publicUrl, { method: 'HEAD' });
-      console.log('[AdminScreen] Public URL test response:', response.status, response.statusText);
-
-      Alert.alert(
-        'Public URL Test',
-        `Video: ${videoTitle}\n\nStatus: ${response.status} ${response.statusText}\n\nPublic URL: ${data.publicUrl}`,
-        [{ text: 'OK' }]
-      );
-    } catch (error: any) {
-      console.error('[AdminScreen] Error testing public URL:', error);
-      Alert.alert(
-        'Public URL Test',
-        `Video: ${videoTitle}\n\nError: ${error.message}`,
-        [{ text: 'OK' }]
-      );
-    }
-  };
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -283,7 +77,6 @@ export default function AdminScreen() {
     try {
       console.log('[AdminScreen] Validating video metadata...');
 
-      // Get file info
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (!fileInfo.exists) {
         throw new Error('Video file not found');
@@ -291,12 +84,10 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] File size:', formatFileSize(fileInfo.size));
 
-      // For now, we'll use a simplified validation
-      // In production, you might want to use expo-av to get actual video metadata
       const metadata: VideoMetadata = {
-        width: 3840, // Assume 4K for now
+        width: 3840,
         height: 2160,
-        duration: 0, // Will be set by video player
+        duration: 0,
         size: fileInfo.size,
       };
 
@@ -310,12 +101,10 @@ export default function AdminScreen() {
   const checkVideoRequirements = (metadata: VideoMetadata): { valid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
-    // Check file size
     if (metadata.size > MAX_FILE_SIZE) {
       errors.push(`File size (${formatFileSize(metadata.size)}) exceeds maximum (${formatFileSize(MAX_FILE_SIZE)})`);
     }
 
-    // Check duration (if available)
     if (metadata.duration > 0 && metadata.duration > MAX_DURATION_SECONDS) {
       errors.push(`Duration (${formatDuration(metadata.duration)}) exceeds maximum (${formatDuration(MAX_DURATION_SECONDS)})`);
     }
@@ -353,19 +142,16 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video duration:', videoAsset.duration, 'seconds');
       console.log('[AdminScreen] Video dimensions:', videoAsset.width, 'x', videoAsset.height);
 
-      // Validate video metadata
       const metadata = await validateVideoMetadata(videoAsset.uri);
       if (!metadata) {
         Alert.alert('Error', 'Failed to read video metadata');
         return;
       }
 
-      // Update metadata with actual values from picker
       metadata.duration = videoAsset.duration || 0;
       metadata.width = videoAsset.width || 3840;
       metadata.height = videoAsset.height || 2160;
 
-      // Check requirements
       const validation = checkVideoRequirements(metadata);
       if (!validation.valid) {
         Alert.alert(
@@ -376,7 +162,6 @@ export default function AdminScreen() {
         return;
       }
 
-      // Show video info
       const resolution = formatResolution(metadata.width, metadata.height);
       const fileSize = formatFileSize(metadata.size);
       const duration = formatDuration(metadata.duration);
@@ -407,7 +192,6 @@ export default function AdminScreen() {
       setUploadProgress(0);
       console.log('[AdminScreen] Starting video upload...');
 
-      // Get file info
       const fileInfo = await FileSystem.getInfoAsync(videoUri);
       if (!fileInfo.exists) {
         throw new Error('Video file not found');
@@ -415,12 +199,10 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] File size:', formatFileSize(fileInfo.size));
 
-      // Generate unique filename
       const timestamp = Date.now();
       const fileName = `video_${timestamp}.mp4`;
       console.log('[AdminScreen] Uploading as:', fileName);
 
-      // Get upload URL from Supabase
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
         .createSignedUploadUrl(fileName);
@@ -432,7 +214,6 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Got upload URL, starting TUS upload...');
 
-      // Upload using TUS protocol
       await new Promise<void>((resolve, reject) => {
         const upload = new tus.Upload(
           { uri: videoUri, name: fileName, type: 'video/mp4' } as any,
@@ -465,24 +246,21 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Upload completed, getting public URL...');
 
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
       console.log('[AdminScreen] Public URL:', urlData.publicUrl);
 
-      // Generate thumbnail
       console.log('[AdminScreen] Generating thumbnail...');
       let thumbnailUrl: string | null = null;
       try {
         const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
-          time: 1000, // 1 second into video
+          time: 1000,
         });
 
         console.log('[AdminScreen] Thumbnail generated:', thumbnailUri);
 
-        // Upload thumbnail
         const thumbnailFileName = `thumbnail_${timestamp}.jpg`;
         const thumbnailFile = await FileSystem.readAsStringAsync(thumbnailUri, {
           encoding: FileSystem.EncodingType.Base64,
@@ -507,7 +285,6 @@ export default function AdminScreen() {
         console.error('[AdminScreen] Error generating thumbnail:', thumbnailError);
       }
 
-      // Get video metadata
       const metadata = await validateVideoMetadata(videoUri);
       const duration = metadata ? formatDuration(metadata.duration) : null;
       const durationSeconds = metadata?.duration || null;
@@ -515,7 +292,6 @@ export default function AdminScreen() {
       const resolutionHeight = metadata?.height || null;
       const fileSizeBytes = metadata?.size || null;
 
-      // Save to database with location
       console.log('[AdminScreen] Saving to database with location:', selectedLocation);
       const { error: dbError } = await supabase
         .from('videos')
@@ -540,14 +316,12 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Video uploaded successfully');
       
-      // ✅ CRITICAL: Trigger immediate video preparation for instant playback
       console.log('[AdminScreen] ⚡ Triggering immediate video preparation...');
       try {
-        // Warm up CDN immediately after upload
         const response = await fetch(urlData.publicUrl, {
           method: 'GET',
           headers: {
-            'Range': 'bytes=0-5242879', // First 5MB
+            'Range': 'bytes=0-5242879',
           },
         });
         
@@ -560,14 +334,12 @@ export default function AdminScreen() {
       
       Alert.alert('Success', 'Video uploaded and prepared for instant playback!');
 
-      // Reset form
       setVideoUri(null);
       setVideoTitle('');
       setVideoDescription('');
       setUploadProgress(0);
       setSelectedLocation('folly-beach');
 
-      // Refresh videos
       await refreshVideos();
     } catch (error: any) {
       console.error('[AdminScreen] Error uploading video:', error);
@@ -577,7 +349,6 @@ export default function AdminScreen() {
     }
   };
 
-  // Helper function to decode base64
   const decode = (base64: string): Uint8Array => {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
@@ -605,7 +376,6 @@ export default function AdminScreen() {
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Admin Panel</Text>
 
-        {/* Video Upload Section */}
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Upload Video</Text>
 
@@ -657,7 +427,6 @@ export default function AdminScreen() {
             editable={!isUploading}
           />
 
-          {/* Location Selector */}
           <View style={styles.locationSection}>
             <Text style={[styles.label, { color: theme.colors.text }]}>Location:</Text>
             <View style={styles.locationButtons}>
@@ -712,7 +481,7 @@ export default function AdminScreen() {
             {isUploading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <React.Fragment>
+              <>
                 <IconSymbol
                   ios_icon_name="arrow.up.circle.fill"
                   android_material_icon_name="cloud_upload"
@@ -720,12 +489,11 @@ export default function AdminScreen() {
                   color="#FFFFFF"
                 />
                 <Text style={styles.buttonText}>Upload Video</Text>
-              </React.Fragment>
+              </>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* Quick Actions */}
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Quick Actions</Text>
           
@@ -892,7 +660,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   locationButtonActive: {
-    // Active state styling handled by backgroundColor
   },
   locationButtonText: {
     fontSize: 14,

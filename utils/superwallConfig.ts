@@ -1,6 +1,5 @@
 
 import Purchases, { 
-  PurchasesPackage, 
   CustomerInfo,
   PurchasesOffering,
   LOG_LEVEL
@@ -9,22 +8,16 @@ import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { Platform, Alert } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔧 REVENUECAT CONFIGURATION - SURFVISTA
-// ═══════════════════════════════════════════════════════════════════════════
-
-// RevenueCat API Keys
-const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda'; // ✅ PRODUCTION KEY
+const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda';
 const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE';
 
-// Product Configuration
 export const PAYMENT_CONFIG = {
   PRODUCTS: {
     MONTHLY_SUBSCRIPTION: 'surfvista_Monthly',
     ANNUAL_SUBSCRIPTION: 'surfvista_Annual',
   },
   ENTITLEMENT_ID: 'SurfVista',
-  OFFERING_ID: 'ofrngf25b3975f3', // From your RevenueCat dashboard
+  OFFERING_ID: 'ofrngf25b3975f3',
   PACKAGE_IDS: {
     MONTHLY: '$rc_monthly',
     ANNUAL: '$rc_annual',
@@ -39,10 +32,6 @@ let isPaymentSystemInitialized = false;
 let currentOffering: PurchasesOffering | null = null;
 let initializationError: string | null = null;
 
-/**
- * Initialize RevenueCat SDK
- * This now gracefully handles configuration errors and allows the app to continue
- */
 export const initializeRevenueCat = async (): Promise<boolean> => {
   try {
     console.log('[RevenueCat] 🚀 Initializing SDK...');
@@ -66,7 +55,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       return false;
     }
     
-    // Configure SDK
     try {
       Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
       console.log('[RevenueCat] 🔑 Configuring with API key...');
@@ -74,8 +62,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
       console.log('[RevenueCat] ✅ SDK configured successfully');
       
-      // Mark as initialized even if offerings fail
-      // This allows restore purchases and other features to work
       isPaymentSystemInitialized = true;
       
     } catch (configError: any) {
@@ -85,7 +71,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       return false;
     }
     
-    // Try to fetch offerings, but don't fail if this doesn't work
     try {
       console.log('[RevenueCat] 📦 Fetching offerings...');
       const offerings = await Purchases.getOfferings();
@@ -106,7 +91,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         initializationError = 'No offerings configured in RevenueCat dashboard.';
         console.warn('[RevenueCat] ⚠️ NO OFFERINGS FOUND');
         console.warn('[RevenueCat] ⚠️ This is expected if you haven\'t set up products yet');
-        // Still return true - SDK is initialized, just no offerings yet
         return true;
       }
       
@@ -115,7 +99,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         currentOffering.availablePackages.forEach((pkg, index) => {
           console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
         });
-        initializationError = null; // Clear error if we have packages
+        initializationError = null;
       } else {
         console.warn('[RevenueCat] ⚠️ Offering has NO packages');
         console.warn('[RevenueCat] ⚠️ This means products are not linked to the offering in RevenueCat dashboard');
@@ -123,7 +107,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       }
       
     } catch (offeringError: any) {
-      // Log the error but don't fail initialization
       initializationError = `Error fetching offerings: ${offeringError.message}`;
       console.warn('[RevenueCat] ⚠️ Error fetching offerings:', offeringError.message);
       console.warn('[RevenueCat] ⚠️ This is expected if products aren\'t set up in App Store Connect yet');
@@ -154,10 +137,6 @@ export const getInitializationError = (): string | null => {
   return initializationError;
 };
 
-/**
- * Force refresh offerings from RevenueCat
- * Call this when you've just updated products in RevenueCat dashboard
- */
 export const forceRefreshOfferings = async (): Promise<{ success: boolean; message: string }> => {
   try {
     console.log('[RevenueCat] 🔄 Force refreshing offerings...');
@@ -176,7 +155,6 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
       };
     }
     
-    // Force a fresh fetch from RevenueCat servers
     const offerings = await Purchases.getOfferings();
     
     console.log('[RevenueCat] 📊 Refreshed offerings:');
@@ -184,14 +162,9 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
     console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
     console.log('[RevenueCat]    - All offering IDs:', Object.keys(offerings.all).join(', '));
     
-    // Update cached offering
-    if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
-      currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
-      console.log('[RevenueCat] ✅ Updated cached offering:', PAYMENT_CONFIG.OFFERING_ID);
-    } else if (offerings.current) {
-      currentOffering = offerings.current;
-      console.log('[RevenueCat] ⚠️ Using current offering:', offerings.current.identifier);
-    } else {
+    const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current;
+    
+    if (!offeringToUse) {
       currentOffering = null;
       console.warn('[RevenueCat] ⚠️ No offerings found after refresh');
       initializationError = 'No offerings configured in RevenueCat dashboard.';
@@ -201,9 +174,11 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
       };
     }
     
-    if (currentOffering && currentOffering.availablePackages.length > 0) {
-      console.log('[RevenueCat] ✅ Packages found:', currentOffering.availablePackages.length);
-      currentOffering.availablePackages.forEach((pkg, index) => {
+    currentOffering = offeringToUse;
+    
+    if (offeringToUse.availablePackages.length > 0) {
+      console.log('[RevenueCat] ✅ Packages found:', offeringToUse.availablePackages.length);
+      offeringToUse.availablePackages.forEach((pkg, index) => {
         console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
       });
       
@@ -211,7 +186,7 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
       
       return {
         success: true,
-        message: `✅ Found ${currentOffering.availablePackages.length} product(s)!\n\nYou can now subscribe.`
+        message: `✅ Found ${offeringToUse.availablePackages.length} product(s)!\n\nYou can now subscribe.`
       };
     } else {
       console.warn('[RevenueCat] ⚠️ Offering has NO packages after refresh');
@@ -226,7 +201,6 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Error refreshing offerings:', error);
     
-    // Provide helpful error messages based on the error type
     let userMessage = 'Failed to refresh products.';
     
     if (error.message?.includes('configuration')) {
@@ -330,9 +304,19 @@ export const checkPaymentConfiguration = (): boolean => {
   }
 };
 
-/**
- * Present the RevenueCat Paywall
- */
+export const initializePaymentSystem = initializeRevenueCat;
+
+export const isPaymentSystemAvailable = (): boolean => {
+  if (Platform.OS === 'web') {
+    return false;
+  }
+  return isPaymentSystemInitialized;
+};
+
+export const getInitializationError = (): string | null => {
+  return initializationError;
+};
+
 export const presentPaywall = async (
   userId?: string,
   userEmail?: string
@@ -355,13 +339,12 @@ export const presentPaywall = async (
       };
     }
 
-    // Identify user
     if (userId) {
       try {
         await Purchases.logIn(userId);
         console.log('[RevenueCat] ✅ User logged in:', userId);
-      } catch (loginError: any) {
-        console.error('[RevenueCat] ⚠️ Error logging in user:', loginError.message);
+      } catch {
+        console.error('[RevenueCat] ⚠️ Error logging in user');
       }
     }
 
@@ -369,12 +352,11 @@ export const presentPaywall = async (
       try {
         await Purchases.setEmail(userEmail);
         console.log('[RevenueCat] ✅ Email set:', userEmail);
-      } catch (emailError: any) {
-        console.error('[RevenueCat] ⚠️ Error setting email:', emailError.message);
+      } catch {
+        console.error('[RevenueCat] ⚠️ Error setting email');
       }
     }
 
-    // Fetch latest offerings
     console.log('[RevenueCat] 📦 Fetching latest offerings...');
     let offerings;
     
@@ -383,7 +365,6 @@ export const presentPaywall = async (
     } catch (fetchError: any) {
       console.error('[RevenueCat] ❌ Error fetching offerings:', fetchError);
       
-      // Provide helpful error message based on error type
       let errorMessage = 'Unable to load subscription options.';
       
       if (fetchError.message?.includes('configuration')) {
@@ -394,7 +375,7 @@ export const presentPaywall = async (
         errorMessage = '⚠️ Setup Required\n\n' + fetchError.message + '\n\nPlease complete the setup in:\n1. App Store Connect\n2. RevenueCat dashboard';
       }
       
-      checkPaymentConfiguration(); // Log diagnostics
+      checkPaymentConfiguration();
       
       return {
         state: 'not_configured',
@@ -405,9 +386,9 @@ export const presentPaywall = async (
     console.log('[RevenueCat] 📊 Latest offerings fetched:');
     console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
     console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
-    
-    let offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current;
 
+    const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current;
+    
     if (!offeringToUse) {
       console.error('[RevenueCat] ❌ No offering found');
       checkPaymentConfiguration();
@@ -416,7 +397,7 @@ export const presentPaywall = async (
         message: '⚠️ No Offerings Found\n\nPlease create an offering in RevenueCat dashboard:\n\n1. Go to app.revenuecat.com\n2. Offerings tab\n3. Create offering: ' + PAYMENT_CONFIG.OFFERING_ID
       };
     }
-
+    
     console.log('[RevenueCat] 📋 Using offering:', offeringToUse.identifier);
     console.log('[RevenueCat] 📋 Available packages:', offeringToUse.availablePackages.length);
 
@@ -443,7 +424,6 @@ export const presentPaywall = async (
       };
     }
 
-    // Present paywall
     console.log('[RevenueCat] 🎨 Presenting paywall UI...');
     console.log('[RevenueCat] 📦 Products in paywall:');
     offeringToUse.availablePackages.forEach((pkg, index) => {
@@ -517,9 +497,6 @@ export const presentPaywall = async (
   }
 };
 
-/**
- * Present the RevenueCat Customer Center
- */
 export const presentCustomerCenter = async (): Promise<void> => {
   try {
     console.log('[RevenueCat] 🏢 Presenting Customer Center...');
@@ -554,9 +531,6 @@ export const presentCustomerCenter = async (): Promise<void> => {
   }
 };
 
-/**
- * Restore previous purchases
- */
 export const restorePurchases = async (): Promise<{ 
   success: boolean; 
   state?: 'restored' | 'none';
@@ -610,9 +584,6 @@ export const restorePurchases = async (): Promise<{
   }
 };
 
-/**
- * Get customer info
- */
 export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
   try {
     if (!isPaymentSystemAvailable()) {
@@ -626,9 +597,6 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
   }
 };
 
-/**
- * Check if user has active entitlement
- */
 export const checkEntitlements = async (): Promise<boolean> => {
   try {
     if (!isPaymentSystemAvailable()) {
@@ -644,9 +612,6 @@ export const checkEntitlements = async (): Promise<boolean> => {
   }
 };
 
-/**
- * Check subscription status
- */
 export const checkSubscriptionStatus = async (userId: string): Promise<{
   isActive: boolean;
   endDate: string | null;
@@ -676,9 +641,6 @@ export const checkSubscriptionStatus = async (userId: string): Promise<{
   }
 };
 
-/**
- * Update subscription status in Supabase
- */
 export const updateSubscriptionInSupabase = async (userId: string, customerInfo: CustomerInfo): Promise<void> => {
   try {
     const hasActiveSubscription = customerInfo.entitlements.active[PAYMENT_CONFIG.ENTITLEMENT_ID] !== undefined;
@@ -702,14 +664,11 @@ export const updateSubscriptionInSupabase = async (userId: string, customerInfo:
     } else {
       console.log('[RevenueCat] ✅ Supabase profile updated');
     }
-  } catch (error: any) {
-    console.error('[RevenueCat] ❌ Exception updating Supabase:', error);
+  } catch {
+    console.error('[RevenueCat] ❌ Exception updating Supabase');
   }
 };
 
-/**
- * Check subscription in Supabase (fallback)
- */
 export const checkSubscriptionInSupabase = async (userId: string): Promise<{
   isActive: boolean;
   endDate: string | null;
@@ -732,15 +691,12 @@ export const checkSubscriptionInSupabase = async (userId: string): Promise<{
     }
     
     return { isActive: false, endDate: null };
-  } catch (error: any) {
-    console.error('[RevenueCat] ❌ Exception checking Supabase subscription:', error);
+  } catch {
+    console.error('[RevenueCat] ❌ Exception checking Supabase subscription');
     return { isActive: false, endDate: null };
   }
 };
 
-/**
- * Identify user in RevenueCat
- */
 export const identifyUser = async (userId: string, email?: string): Promise<void> => {
   try {
     console.log('[RevenueCat] Identifying user:', userId);
@@ -753,26 +709,23 @@ export const identifyUser = async (userId: string, email?: string): Promise<void
     try {
       await Purchases.logIn(userId);
       console.log('[RevenueCat] ✅ User identified:', userId);
-    } catch (loginError: any) {
-      console.error('[RevenueCat] ⚠️ Error logging in user:', loginError?.message);
+    } catch {
+      console.error('[RevenueCat] ⚠️ Error logging in user');
     }
     
     if (email) {
       try {
         await Purchases.setEmail(email);
         console.log('[RevenueCat] ✅ Email set:', email);
-      } catch (emailError: any) {
-        console.error('[RevenueCat] ⚠️ Error setting email:', emailError?.message);
+      } catch {
+        console.error('[RevenueCat] ⚠️ Error setting email');
       }
     }
-  } catch (error: any) {
-    console.error('[RevenueCat] ❌ Error identifying user:', error?.message);
+  } catch {
+    console.error('[RevenueCat] ❌ Error identifying user');
   }
 };
 
-/**
- * Logout user from RevenueCat
- */
 export const logoutUser = async (): Promise<void> => {
   try {
     console.log('[RevenueCat] Logging out user...');
@@ -785,10 +738,10 @@ export const logoutUser = async (): Promise<void> => {
     try {
       await Purchases.logOut();
       console.log('[RevenueCat] ✅ User logged out');
-    } catch (logoutError: any) {
-      console.error('[RevenueCat] ⚠️ Error logging out user:', logoutError?.message);
+    } catch {
+      console.error('[RevenueCat] ⚠️ Error logging out user');
     }
-  } catch (error: any) {
-    console.error('[RevenueCat] ❌ Error in logout process:', error?.message);
+  } catch {
+    console.error('[RevenueCat] ❌ Error in logout process');
   }
 };

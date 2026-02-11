@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

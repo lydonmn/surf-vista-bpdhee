@@ -2,9 +2,8 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { colors } from '@/styles/commonStyles';
 import { useAuth } from '@/contexts/AuthContext';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
-import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from '@/components/IconSymbol';
 import { router } from 'expo-router';
 
@@ -140,7 +139,6 @@ interface BuoyStatus {
 }
 
 export default function AdminCronLogsScreen() {
-  const { colors: themeColors } = useTheme();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [reportStatus, setReportStatus] = useState<ReportStatus | null>(null);

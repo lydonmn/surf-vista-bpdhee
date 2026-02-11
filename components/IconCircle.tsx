@@ -1,4 +1,4 @@
-import React from "react";
+
 import { View, ViewStyle, Text } from "react-native";
 
 interface IconCircleProps {

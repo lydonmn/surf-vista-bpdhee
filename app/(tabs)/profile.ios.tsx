@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,8 +37,8 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
               await signOut();
               router.replace('/login');
-            } catch (error) {
-              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
+            } catch {
+              console.error('[ProfileScreen iOS] ❌ Error during sign out');
               router.replace('/login');
             }
           }
@@ -87,9 +87,9 @@ export default function ProfileScreen() {
                       } else {
                         Alert.alert('Error', result.message);
                       }
-                    } catch (error: any) {
+                    } catch (err: any) {
                       setIsDeleting(false);
-                      Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
+                      Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
                     }
                   }
                 }
@@ -129,10 +129,10 @@ export default function ProfileScreen() {
         result.message,
         [{ text: 'OK' }]
       );
-    } catch (error: any) {
+    } catch {
       Alert.alert(
         'Refresh Failed',
-        error.message || 'Unable to refresh products. Please try again later.',
+        'Unable to refresh products. Please try again later.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -161,10 +161,10 @@ export default function ProfileScreen() {
         result.message || 'Unable to restore purchases.',
         [{ text: 'OK' }]
       );
-    } catch (error: any) {
+    } catch {
       Alert.alert(
         'Restore Failed',
-        error.message || 'Unable to restore purchases at this time.',
+        'Unable to restore purchases at this time.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -187,7 +187,7 @@ export default function ProfileScreen() {
     try {
       await presentCustomerCenter();
       await refreshProfile();
-    } catch (error: any) {
+    } catch {
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription:\n\n' +
@@ -225,7 +225,6 @@ export default function ProfileScreen() {
           [{ text: 'OK' }]
         );
       } else if (result.state === 'not_configured') {
-        // Products not set up yet
         Alert.alert(
           'Setup Required',
           result.message || 'Subscriptions are not configured yet.',
@@ -244,13 +243,12 @@ export default function ProfileScreen() {
           [{ text: 'OK' }]
         );
       }
-      // If declined, do nothing (user cancelled)
       
-    } catch (error: any) {
-      console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
+    } catch {
+      console.error('[ProfileScreen iOS] ❌ Subscribe error');
       Alert.alert(
         'Subscribe Failed',
-        error.message || 'Unable to open subscription page. Please try again later.',
+        'Unable to open subscription page. Please try again later.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -320,7 +318,6 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* Subscription Status */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <View style={styles.cardHeader}>
           <IconSymbol
@@ -366,7 +363,7 @@ export default function ProfileScreen() {
             {isSubscribing ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <React.Fragment>
+              <>
                 <IconSymbol
                   ios_icon_name="star.fill"
                   android_material_icon_name="star"
@@ -374,7 +371,7 @@ export default function ProfileScreen() {
                   color="#FFFFFF"
                 />
                 <Text style={styles.subscribeButtonText}>Subscribe Now - $12.99/month</Text>
-              </React.Fragment>
+              </>
             )}
           </TouchableOpacity>
         )}
@@ -388,7 +385,7 @@ export default function ProfileScreen() {
             {isLoadingCustomerCenter ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <React.Fragment>
+              <>
                 <IconSymbol
                   ios_icon_name="gearshape.fill"
                   android_material_icon_name="settings"
@@ -398,12 +395,11 @@ export default function ProfileScreen() {
                 <Text style={[styles.manageButtonText, { color: colors.primary }]}>
                   Manage Subscription
                 </Text>
-              </React.Fragment>
+              </>
             )}
           </TouchableOpacity>
         )}
 
-        {/* Refresh Products Button */}
         <TouchableOpacity
           style={[styles.refreshProductsButton, { borderColor: colors.accent }]}
           onPress={handleRefreshProducts}
@@ -412,7 +408,7 @@ export default function ProfileScreen() {
           {isRefreshingProducts ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol
                 ios_icon_name="arrow.triangle.2.circlepath"
                 android_material_icon_name="sync"
@@ -422,11 +418,10 @@ export default function ProfileScreen() {
               <Text style={[styles.refreshProductsButtonText, { color: colors.accent }]}>
                 Refresh Products
               </Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
 
-        {/* Restore Purchases Button */}
         <TouchableOpacity
           style={[styles.restoreButton, { borderColor: colors.textSecondary }]}
           onPress={handleRestorePurchases}
@@ -435,7 +430,7 @@ export default function ProfileScreen() {
           {isRestoring ? (
             <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol
                 ios_icon_name="arrow.clockwise"
                 android_material_icon_name="refresh"
@@ -445,7 +440,7 @@ export default function ProfileScreen() {
               <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
                 Restore Purchases
               </Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
 
@@ -465,7 +460,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Admin Panel Access */}
       {isAdmin() && (
         <TouchableOpacity
           style={[styles.card, { backgroundColor: theme.colors.card }]}
@@ -494,7 +488,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Legal & Support */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <TouchableOpacity
           style={styles.actionItem}
@@ -541,7 +534,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Account Actions */}
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <TouchableOpacity
           style={styles.actionItem}
@@ -568,7 +560,7 @@ export default function ProfileScreen() {
           {isDeleting ? (
             <ActivityIndicator size="small" color="#FF3B30" />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol
                 ios_icon_name="trash.fill"
                 android_material_icon_name="delete"
@@ -578,12 +570,11 @@ export default function ProfileScreen() {
               <Text style={[styles.actionText, { color: '#FF3B30' }]}>
                 Delete Account
               </Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* Debug Info */}
       {__DEV__ && (
         <View style={[styles.debugCard, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.debugTitle, { color: theme.colors.text }]}>
@@ -607,7 +598,6 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* Info */}
       <View style={styles.infoContainer}>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
           SurfVista - Folly Beach, SC

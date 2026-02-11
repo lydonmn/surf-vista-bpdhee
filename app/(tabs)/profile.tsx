@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,8 +38,8 @@ export default function ProfileScreen() {
               console.log('[ProfileScreen] ===== SIGN OUT BUTTON PRESSED =====');
               await signOut();
               router.replace('/login');
-            } catch (error) {
-              console.error('[ProfileScreen] ❌ Error during sign out:', error);
+            } catch {
+              console.error('[ProfileScreen] ❌ Error during sign out');
               router.replace('/login');
             }
           }
@@ -83,9 +83,9 @@ export default function ProfileScreen() {
                       } else {
                         Alert.alert('Error', result.message);
                       }
-                    } catch (error: any) {
+                    } catch (err: any) {
                       setIsDeleting(false);
-                      Alert.alert('Error', error.message || 'Failed to delete account. Please try again.');
+                      Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
                     }
                   }
                 }
@@ -145,10 +145,10 @@ export default function ProfileScreen() {
           ]
         );
       }
-    } catch (error: any) {
+    } catch {
       Alert.alert(
         'Refresh Failed',
-        error.message || 'Unable to refresh products. Please try again later.',
+        'Unable to refresh products. Please try again later.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -178,8 +178,8 @@ export default function ProfileScreen() {
       } else {
         Alert.alert('No Purchases Found', 'We couldn\'t find any previous purchases to restore.', [{ text: 'OK' }]);
       }
-    } catch (error: any) {
-      Alert.alert('Restore Failed', error.message || 'Unable to restore purchases.', [{ text: 'OK' }]);
+    } catch {
+      Alert.alert('Restore Failed', 'Unable to restore purchases.', [{ text: 'OK' }]);
     } finally {
       setIsRestoring(false);
     }
@@ -197,7 +197,7 @@ export default function ProfileScreen() {
     try {
       await presentCustomerCenter();
       await refreshProfile();
-    } catch (error: any) {
+    } catch {
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription:\n\n• Android: Open Play Store > Menu > Subscriptions\n• iOS: Go to Settings > [Your Name] > Subscriptions',
@@ -254,8 +254,8 @@ export default function ProfileScreen() {
         );
       }
       
-    } catch (error: any) {
-      Alert.alert('Subscribe Failed', error.message || 'Unable to open subscription page.', [{ text: 'OK' }]);
+    } catch {
+      Alert.alert('Subscribe Failed', 'Unable to open subscription page.', [{ text: 'OK' }]);
     } finally {
       setIsSubscribing(false);
     }
@@ -334,10 +334,10 @@ export default function ProfileScreen() {
             {isSubscribing ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <React.Fragment>
+              <>
                 <IconSymbol ios_icon_name="star.fill" android_material_icon_name="star" size={20} color="#FFFFFF" />
                 <Text style={styles.subscribeButtonText}>Subscribe Now - $12.99/month</Text>
-              </React.Fragment>
+              </>
             )}
           </TouchableOpacity>
         )}
@@ -347,10 +347,10 @@ export default function ProfileScreen() {
             {isLoadingCustomerCenter ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <React.Fragment>
+              <>
                 <IconSymbol ios_icon_name="gearshape.fill" android_material_icon_name="settings" size={20} color={colors.primary} />
                 <Text style={[styles.manageButtonText, { color: colors.primary }]}>Manage Subscription</Text>
-              </React.Fragment>
+              </>
             )}
           </TouchableOpacity>
         )}
@@ -359,10 +359,10 @@ export default function ProfileScreen() {
           {isRefreshingProducts ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol ios_icon_name="arrow.triangle.2.circlepath" android_material_icon_name="sync" size={20} color={colors.accent} />
               <Text style={[styles.refreshProductsButtonText, { color: colors.accent }]}>Refresh Products</Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
 
@@ -370,10 +370,10 @@ export default function ProfileScreen() {
           {isRestoring ? (
             <ActivityIndicator size="small" color={colors.textSecondary} />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol ios_icon_name="arrow.clockwise" android_material_icon_name="refresh" size={20} color={colors.textSecondary} />
               <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>Restore Purchases</Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
 
@@ -418,10 +418,10 @@ export default function ProfileScreen() {
           {isDeleting ? (
             <ActivityIndicator size="small" color="#FF3B30" />
           ) : (
-            <React.Fragment>
+            <>
               <IconSymbol ios_icon_name="trash.fill" android_material_icon_name="delete" size={24} color="#FF3B30" />
               <Text style={[styles.actionText, { color: '#FF3B30' }]}>Delete Account</Text>
-            </React.Fragment>
+            </>
           )}
         </TouchableOpacity>
       </View>

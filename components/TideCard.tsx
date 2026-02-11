@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { IconSymbol } from './IconSymbol';
@@ -80,14 +79,12 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
         {tides.map((tide, index) => {
           console.log('[TideCard] Rendering tide:', tide);
           
-          // Parse the time string
           const time = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
             hour12: true
           });
 
-          // Determine icon based on tide type
           const isHighTide = tide.type === 'high';
           const iosIconName = isHighTide ? 'arrow.up' : 'arrow.down';
           const androidIconName = isHighTide ? 'north' : 'south';
