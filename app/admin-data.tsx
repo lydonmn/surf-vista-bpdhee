@@ -14,6 +14,7 @@ import { supabase } from './integrations/supabase/client';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useLocation } from '@/contexts/LocationContext';
+import { PushNotificationTester } from '@/components/PushNotificationTester';
 
 interface DataCounts {
   tides: number;
@@ -405,6 +406,9 @@ The system automatically generates separate reports for each location every morn
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Push Notification Tester */}
+        <PushNotificationTester />
+
         {/* Location Selector */}
         <View style={styles.locationSelectorCard}>
           <Text style={styles.locationSelectorTitle}>📍 Select Location</Text>

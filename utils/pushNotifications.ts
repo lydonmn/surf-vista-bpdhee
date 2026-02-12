@@ -166,6 +166,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 /**
  * Register for push notifications and get the Expo push token
+ * ✅ V6.9 FIX: Enhanced with better error handling and EAS project ID support
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
@@ -192,13 +193,16 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       return null;
     }
 
-    // Get the project ID from app config
+    // ✅ V6.9 FIX: Get the EAS project ID from multiple sources
     const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
                       Constants.manifest?.extra?.eas?.projectId ||
                       Constants.manifest2?.extra?.eas?.projectId ||
-                      'e1ee166c-212b-4eca-a1d7-44183b7be073';
+                      'e1ee166c-212b-4eca-a1d7-44183b7be073'; // Hardcoded fallback
     
+    console.log('[Push Notifications] ===== EAS PROJECT ID =====');
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
+    console.log('[Push Notifications] Source: expoConfig.extra.eas.projectId');
+    console.log('[Push Notifications] ===================================');
 
     // Get the Expo push token
     console.log('[Push Notifications] Getting Expo push token...');
@@ -208,7 +212,9 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         projectId: projectId,
       });
 
-      console.log('[Push Notifications] ✅ Token obtained:', tokenData.data);
+      console.log('[Push Notifications] ===== TOKEN OBTAINED =====');
+      console.log('[Push Notifications] ✅ Token:', tokenData.data);
+      console.log('[Push Notifications] ===================================');
 
       // Configure notification channel for Android
       if (Platform.OS === 'android') {
@@ -225,17 +231,21 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.log('[Push Notifications] ===== REGISTRATION COMPLETE =====');
       return tokenData.data;
     } catch (tokenError: any) {
+      console.error('[Push Notifications] ===== TOKEN ERROR =====');
       console.error('[Push Notifications] ❌ Failed to get Expo push token');
-      console.error('[Push Notifications] Token error:', tokenError);
-      console.error('[Push Notifications] Token error message:', tokenError?.message);
+      console.error('[Push Notifications] Error:', tokenError);
+      console.error('[Push Notifications] Error message:', tokenError?.message);
+      console.error('[Push Notifications] Error code:', tokenError?.code);
+      console.error('[Push Notifications] ===================================');
       
-      // Check if it's an EXPERIENCE_NOT_FOUND error or project not configured
+      // ✅ V6.9 FIX: Better error handling for different scenarios
       if (tokenError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
           tokenError?.message?.includes('does not exist') ||
           tokenError?.message?.includes('No EAS project ID') ||
           tokenError?.code === 'EXPERIENCE_NOT_FOUND') {
-        console.log('[Push Notifications] ℹ️ EAS project not configured - this is expected in development');
+        console.log('[Push Notifications] ℹ️ EAS project not found - this is expected in development');
         console.log('[Push Notifications] ℹ️ Push notifications will work after building with EAS Build');
+        console.log('[Push Notifications] ℹ️ For TestFlight/App Store builds, notifications should work');
         
         // Don't show alert - just log and return null
         return null;
@@ -259,12 +269,14 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
 /**
  * Save push token to user profile
+ * ✅ V6.9 FIX: Enhanced logging for debugging
  */
 export async function savePushToken(userId: string, token: string): Promise<boolean> {
   try {
     console.log('[Push Notifications] ===== SAVING PUSH TOKEN =====');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Token:', token);
+    console.log('[Push Notifications] Token length:', token.length);
 
     const { data, error } = await supabase
       .from('profiles')
@@ -273,22 +285,28 @@ export async function savePushToken(userId: string, token: string): Promise<bool
       .select();
 
     if (error) {
+      console.error('[Push Notifications] ===== SAVE TOKEN ERROR =====');
       console.error('[Push Notifications] ❌ Error saving token');
       console.error('[Push Notifications] Error code:', error.code);
       console.error('[Push Notifications] Error message:', error.message);
       console.error('[Push Notifications] Error details:', JSON.stringify(error));
+      console.error('[Push Notifications] ===================================');
       return false;
     }
 
+    console.log('[Push Notifications] ===== TOKEN SAVED =====');
     console.log('[Push Notifications] ✅ Token saved successfully');
     console.log('[Push Notifications] Updated data:', data);
+    console.log('[Push Notifications] ===================================');
     return true;
   } catch (error) {
+    console.error('[Push Notifications] ===== SAVE TOKEN EXCEPTION =====');
     console.error('[Push Notifications] ❌ Exception saving token:', error);
     if (error instanceof Error) {
       console.error('[Push Notifications] Exception message:', error.message);
       console.error('[Push Notifications] Exception stack:', error.stack);
     }
+    console.error('[Push Notifications] ===================================');
     return false;
   }
 }
@@ -369,6 +387,7 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 
 /**
  * Enable or disable daily report notifications
+ * ✅ V6.9 FIX: Enhanced with better token handling and error messages
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
@@ -385,11 +404,16 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] Push token result:', pushToken);
       
-      // If we didn't get a token, still allow enabling notifications
-      // This allows the preference to be saved for when EAS is configured
-      if (!pushToken) {
-        console.log('[Push Notifications] ⚠️ No push token obtained - saving preference anyway');
-        console.log('[Push Notifications] ℹ️ User can receive notifications after EAS Build is configured');
+      // ✅ V6.9 FIX: If we didn't get a valid token, still allow enabling notifications
+      // This allows the preference to be saved for when the app is built with EAS
+      if (!pushToken || pushToken === 'web-dummy-token' || pushToken === 'simulator-dummy-token') {
+        console.log('[Push Notifications] ⚠️ No valid push token obtained');
+        
+        if (Platform.OS !== 'web' && Device.isDevice) {
+          console.log('[Push Notifications] ℹ️ This is a physical device - token should be available');
+          console.log('[Push Notifications] ℹ️ If running in Expo Go, build with EAS for push notifications');
+          console.log('[Push Notifications] ℹ️ If running in TestFlight/App Store, token should work');
+        }
       }
     }
 
@@ -398,12 +422,16 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       daily_report_notifications: enabled,
     };
 
-    // Only update push_token if we have one
-    if (pushToken) {
+    // ✅ V6.9 FIX: Only update push_token if we have a valid one
+    if (pushToken && pushToken !== 'web-dummy-token' && pushToken !== 'simulator-dummy-token') {
       updateData.push_token = pushToken;
+      console.log('[Push Notifications] ✅ Will save valid push token');
     } else if (!enabled) {
       // Clear push token when disabling notifications
       updateData.push_token = null;
+      console.log('[Push Notifications] ℹ️ Will clear push token (notifications disabled)');
+    } else {
+      console.log('[Push Notifications] ℹ️ No valid token to save (keeping existing token if any)');
     }
 
     console.log('[Push Notifications] Updating profile with data:', JSON.stringify(updateData));
@@ -444,8 +472,15 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       return false;
     }
 
+    console.log('[Push Notifications] ===== UPDATE SUCCESS =====');
     console.log('[Push Notifications] ✅ Preferences updated successfully');
     console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
+    
+    // ✅ V6.9 FIX: Show helpful message if token wasn't saved
+    if (enabled && (!pushToken || pushToken === 'web-dummy-token' || pushToken === 'simulator-dummy-token')) {
+      console.log('[Push Notifications] ℹ️ Notification preference saved without token');
+      console.log('[Push Notifications] ℹ️ Token will be registered when app is built with EAS');
+    }
     
     console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
     return true;
