@@ -325,6 +325,12 @@ export default function ReportScreen() {
     }
   }, [latestVideo]);
 
+  const handleEditReport = useCallback(() => {
+    console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);
+    // Don't pass an ID - the edit screen will automatically load today's report for current location
+    router.push('/edit-report');
+  }, [locationData.displayName]);
+
   // ✅ Update video player source when latest video changes
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
@@ -691,7 +697,7 @@ export default function ReportScreen() {
             {profile?.is_admin && (
               <TouchableOpacity
                 style={styles.editButton}
-                onPress={() => router.push(`/edit-report?id=${report.id}`)}
+                onPress={handleEditReport}
               >
                 <IconSymbol
                   ios_icon_name="pencil"
@@ -803,21 +809,40 @@ export default function ReportScreen() {
       </View>
 
       {profile?.is_admin && (
-        <TouchableOpacity
-          style={[styles.updateButton, { backgroundColor: colors.primary }]}
-          onPress={handleUpdateData}
-          disabled={isRefreshing}
-        >
-          <IconSymbol
-            ios_icon_name="arrow.clockwise"
-            android_material_icon_name="refresh"
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={styles.updateButtonText}>
-            Update All Data from NOAA
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.adminButtonsRow}>
+          <TouchableOpacity
+            style={[styles.updateButton, { backgroundColor: colors.primary }]}
+            onPress={handleUpdateData}
+            disabled={isRefreshing}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.updateButtonText}>
+              Update Data
+            </Text>
+          </TouchableOpacity>
+          
+          {todaysReport && (
+            <TouchableOpacity
+              style={[styles.editReportButton, { backgroundColor: colors.accent }]}
+              onPress={handleEditReport}
+            >
+              <IconSymbol
+                ios_icon_name="pencil"
+                android_material_icon_name="edit"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.updateButtonText}>
+                Edit Report
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {error && (
@@ -1059,19 +1084,34 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  adminButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
   updateButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    marginBottom: 16,
+    gap: 8,
+  },
+  editReportButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
     gap: 8,
   },
   updateButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   errorCard: {

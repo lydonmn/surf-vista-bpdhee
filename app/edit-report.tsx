@@ -9,12 +9,22 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Database } from '@/app/integrations/supabase/types';
 import { ReportTextDisplay } from '@/components/ReportTextDisplay';
+import { useLocation } from '@/contexts/LocationContext';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
+
+function getESTDate(): string {
+  const now = new Date();
+  const estOffset = -5 * 60;
+  const localOffset = now.getTimezoneOffset();
+  const estTime = new Date(now.getTime() + (estOffset - localOffset) * 60 * 1000);
+  return estTime.toISOString().split('T')[0];
+}
 
 export default function EditReportScreen() {
   const theme = useTheme();
   const { profile, user } = useAuth();
+  const { currentLocation, locationData } = useLocation();
   const params = useLocalSearchParams();
   const reportId = params.id as string;
 
@@ -28,43 +38,125 @@ export default function EditReportScreen() {
   const loadReport = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('[EditReportScreen] Loading report:', reportId);
+      console.log('[EditReportScreen] ===== LOADING REPORT =====');
+      console.log('[EditReportScreen] Current location:', currentLocation, locationData.displayName);
+      console.log('[EditReportScreen] Today\'s date (EST):', getESTDate());
       
-      const { data, error } = await supabase
-        .from('surf_reports')
-        .select('*')
-        .eq('id', reportId)
-        .single();
+      let reportToEdit: SurfReport | null = null;
 
-      if (error) {
-        console.error('[EditReportScreen] Error loading report:', error);
-        Alert.alert('Error', 'Failed to load report');
-        router.back();
-        return;
+      // If reportId is provided, try to load that specific report
+      if (reportId) {
+        console.log('[EditReportScreen] Loading specific report by ID:', reportId);
+        
+        const { data, error } = await supabase
+          .from('surf_reports')
+          .select('*')
+          .eq('id', reportId)
+          .single();
+
+        if (error) {
+          console.error('[EditReportScreen] Error loading report by ID:', error);
+        } else {
+          console.log('[EditReportScreen] Report loaded by ID:', {
+            id: data.id,
+            date: data.date,
+            location: data.location,
+            hasReportText: !!data.report_text,
+            hasConditions: !!data.conditions,
+          });
+          reportToEdit = data;
+        }
       }
 
-      console.log('[EditReportScreen] Report loaded:', {
-        id: data.id,
-        hasReportText: !!data.report_text,
-        reportTextLength: data.report_text?.length || 0,
-        hasConditions: !!data.conditions,
-        conditionsLength: data.conditions?.length || 0,
-        rating: data.rating,
-        reportTextPreview: data.report_text ? data.report_text.substring(0, 100) + '...' : 'none',
-        conditionsPreview: data.conditions ? data.conditions.substring(0, 100) + '...' : 'none'
-      });
+      // If no report loaded yet, try to load today's report for current location
+      if (!reportToEdit) {
+        console.log('[EditReportScreen] Loading today\'s report for current location:', currentLocation);
+        
+        const todayDate = getESTDate();
+        const { data, error } = await supabase
+          .from('surf_reports')
+          .select('*')
+          .eq('date', todayDate)
+          .eq('location', currentLocation)
+          .maybeSingle();
 
-      setReport(data);
-      // ALWAYS use report_text if available (custom edit), otherwise use conditions (auto-generated)
+        if (error) {
+          console.error('[EditReportScreen] Error loading today\'s report:', error);
+          Alert.alert('Error', 'Failed to load report');
+          router.back();
+          return;
+        }
+
+        if (!data) {
+          console.log('[EditReportScreen] No report found for today at', locationData.displayName);
+          Alert.alert(
+            'No Report Found',
+            `No surf report exists for today at ${locationData.displayName}. Please generate a report first from the Admin Data screen.`,
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+          return;
+        }
+
+        console.log('[EditReportScreen] Today\'s report loaded:', {
+          id: data.id,
+          date: data.date,
+          location: data.location,
+          hasReportText: !!data.report_text,
+          hasConditions: !!data.conditions,
+        });
+        reportToEdit = data;
+      }
+
+      // Verify the report is for the current location
+      if (reportToEdit.location !== currentLocation) {
+        console.warn('[EditReportScreen] Report location mismatch:', {
+          reportLocation: reportToEdit.location,
+          currentLocation: currentLocation,
+        });
+        Alert.alert(
+          'Location Mismatch',
+          `This report is for a different location. Switching to today's report for ${locationData.displayName}.`,
+        );
+        
+        // Load today's report for current location instead
+        const todayDate = getESTDate();
+        const { data, error } = await supabase
+          .from('surf_reports')
+          .select('*')
+          .eq('date', todayDate)
+          .eq('location', currentLocation)
+          .maybeSingle();
+
+        if (error || !data) {
+          Alert.alert('Error', 'Failed to load report for current location');
+          router.back();
+          return;
+        }
+
+        reportToEdit = data;
+      }
+
+      console.log('[EditReportScreen] ===== REPORT LOADED =====');
+      console.log('[EditReportScreen] Report ID:', reportToEdit.id);
+      console.log('[EditReportScreen] Report date:', reportToEdit.date);
+      console.log('[EditReportScreen] Report location:', reportToEdit.location, locationData.displayName);
+      console.log('[EditReportScreen] Has report_text (edited):', !!reportToEdit.report_text);
+      console.log('[EditReportScreen] Has conditions (auto):', !!reportToEdit.conditions);
+      console.log('[EditReportScreen] report_text length:', reportToEdit.report_text?.length || 0);
+      console.log('[EditReportScreen] conditions length:', reportToEdit.conditions?.length || 0);
+
+      setReport(reportToEdit);
+      
+      // CRITICAL: Use report_text if available (custom edit), otherwise use conditions (auto-generated)
       // This ensures we're editing the custom text, not the auto-generated one
-      const textToEdit = data.report_text || data.conditions || '';
+      const textToEdit = reportToEdit.report_text || reportToEdit.conditions || '';
       console.log('[EditReportScreen] Setting text to edit:', {
         length: textToEdit.length,
-        source: data.report_text ? 'report_text (custom)' : 'conditions (auto-generated)',
+        source: reportToEdit.report_text ? 'report_text (custom)' : 'conditions (auto-generated)',
         preview: textToEdit.substring(0, 100) + '...'
       });
       setReportText(textToEdit);
-      setRating(String(data.rating || 5));
+      setRating(String(reportToEdit.rating || 5));
     } catch (error) {
       console.error('[EditReportScreen] Exception loading report:', error);
       Alert.alert('Error', 'Failed to load report');
@@ -72,7 +164,7 @@ export default function EditReportScreen() {
     } finally {
       setLoading(false);
     }
-  }, [reportId]);
+  }, [reportId, currentLocation, locationData.displayName]);
 
   useEffect(() => {
     loadReport();
@@ -97,12 +189,12 @@ export default function EditReportScreen() {
       return;
     }
 
-    console.log('[EditReportScreen] Saving report:', {
-      reportId: report.id,
-      textLength: trimmedText.length,
-      rating: ratingValue,
-      textPreview: trimmedText.substring(0, 100) + '...'
-    });
+    console.log('[EditReportScreen] ===== SAVING REPORT =====');
+    console.log('[EditReportScreen] Report ID:', report.id);
+    console.log('[EditReportScreen] Report location:', report.location, locationData.displayName);
+    console.log('[EditReportScreen] Text length:', trimmedText.length);
+    console.log('[EditReportScreen] Rating:', ratingValue);
+    console.log('[EditReportScreen] Text preview:', trimmedText.substring(0, 100) + '...');
 
     try {
       setSaving(true);
@@ -125,31 +217,30 @@ export default function EditReportScreen() {
         return;
       }
 
-      console.log('[EditReportScreen] Report saved successfully:', {
-        id: data.id,
-        reportTextLength: data.report_text?.length || 0,
-        rating: data.rating,
-        savedTextPreview: data.report_text ? data.report_text.substring(0, 100) + '...' : 'none'
-      });
+      console.log('[EditReportScreen] ===== REPORT SAVED =====');
+      console.log('[EditReportScreen] Saved report ID:', data.id);
+      console.log('[EditReportScreen] Saved report_text length:', data.report_text?.length || 0);
+      console.log('[EditReportScreen] Saved rating:', data.rating);
+      console.log('[EditReportScreen] Saved text preview:', data.report_text ? data.report_text.substring(0, 100) + '...' : 'none');
 
       // Verify the save by reading it back
       const { data: verifyData, error: verifyError } = await supabase
         .from('surf_reports')
-        .select('report_text, rating')
+        .select('report_text, rating, conditions')
         .eq('id', report.id)
         .single();
 
       if (verifyError) {
         console.error('[EditReportScreen] Error verifying save:', verifyError);
       } else {
-        console.log('[EditReportScreen] Verification read:', {
-          reportTextLength: verifyData.report_text?.length || 0,
-          rating: verifyData.rating,
-          verifyTextPreview: verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none'
-        });
+        console.log('[EditReportScreen] ===== VERIFICATION READ =====');
+        console.log('[EditReportScreen] report_text length:', verifyData.report_text?.length || 0);
+        console.log('[EditReportScreen] conditions length:', verifyData.conditions?.length || 0);
+        console.log('[EditReportScreen] rating:', verifyData.rating);
+        console.log('[EditReportScreen] Verify text preview:', verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none');
       }
 
-      Alert.alert('Success', 'Report updated successfully!', [
+      Alert.alert('Success', 'Report updated successfully! The updated narrative will now appear on both the home page and report page.', [
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
@@ -165,7 +256,7 @@ export default function EditReportScreen() {
 
     Alert.alert(
       'Reset to Auto-Generated',
-      'This will remove your custom text and rating, and use the auto-generated report. Continue?',
+      'This will remove your custom text and rating, and use the auto-generated report. The auto-generated narrative will then appear on both the home page and report page. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -174,6 +265,10 @@ export default function EditReportScreen() {
           onPress: async () => {
             try {
               setSaving(true);
+
+              console.log('[EditReportScreen] ===== RESETTING TO AUTO =====');
+              console.log('[EditReportScreen] Report ID:', report.id);
+              console.log('[EditReportScreen] Report location:', report.location, locationData.displayName);
 
               const { error } = await supabase
                 .from('surf_reports')
@@ -186,16 +281,18 @@ export default function EditReportScreen() {
                 .eq('id', report.id);
 
               if (error) {
-                console.error('Error resetting report:', error);
+                console.error('[EditReportScreen] Error resetting report:', error);
                 Alert.alert('Error', 'Failed to reset report');
                 return;
               }
 
-              Alert.alert('Success', 'Report reset to auto-generated text!', [
+              console.log('[EditReportScreen] ✅ Report reset to auto-generated successfully');
+
+              Alert.alert('Success', 'Report reset to auto-generated text! The auto-generated narrative will now appear on both pages.', [
                 { text: 'OK', onPress: () => router.back() }
               ]);
             } catch (error) {
-              console.error('Exception resetting report:', error);
+              console.error('[EditReportScreen] Exception resetting report:', error);
               Alert.alert('Error', 'Failed to reset report');
             } finally {
               setSaving(false);
@@ -246,7 +343,7 @@ export default function EditReportScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading report...
+            Loading today&apos;s report for {locationData.displayName}...
           </Text>
         </View>
       </View>
@@ -257,8 +354,17 @@ export default function EditReportScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle"
+            android_material_icon_name="warning"
+            size={64}
+            color={colors.textSecondary}
+          />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Report not found
+            No report found for today at {locationData.displayName}
+          </Text>
+          <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+            Please generate a report first from the Admin Data screen.
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
@@ -270,6 +376,12 @@ export default function EditReportScreen() {
       </View>
     );
   }
+
+  const reportDateFormatted = new Date(report.date).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric'
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -291,13 +403,24 @@ export default function EditReportScreen() {
               Edit Surf Report
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              {new Date(report.date).toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric'
-              })}
+              {reportDateFormatted}
+            </Text>
+            <Text style={[styles.locationText, { color: colors.primary }]}>
+              {locationData.displayName}
             </Text>
           </View>
+        </View>
+
+        <View style={[styles.infoCard, { backgroundColor: colors.primary + '20' }]}>
+          <IconSymbol
+            ios_icon_name="info.circle.fill"
+            android_material_icon_name="info"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.infoText, { color: theme.colors.text }]}>
+            Your edited narrative will appear on both the home page and report page for {locationData.displayName}.
+          </Text>
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -305,6 +428,14 @@ export default function EditReportScreen() {
             Report Data
           </Text>
           <View style={styles.dataGrid}>
+            <View style={styles.dataRow}>
+              <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
+                Location:
+              </Text>
+              <Text style={[styles.dataValue, { color: theme.colors.text }]}>
+                {locationData.displayName}
+              </Text>
+            </View>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
                 Wave Height:
@@ -450,8 +581,7 @@ export default function EditReportScreen() {
           </View>
           
           <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-            Write a detailed description of the surf conditions. Include wave quality, 
-            swell direction, wind conditions, and recommendations for surfers.
+            Write a detailed description of the surf conditions. This narrative will be displayed on both the home page and report page for {locationData.displayName}.
           </Text>
 
           {showPreview ? (
@@ -487,9 +617,14 @@ export default function EditReportScreen() {
 
         {report.conditions && (
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-              Auto-Generated Text
-            </Text>
+            <View style={styles.autoGeneratedHeader}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Auto-Generated Text
+              </Text>
+              <Text style={[styles.autoGeneratedNote, { color: colors.textSecondary }]}>
+                (Reference only - not displayed if you save custom text)
+              </Text>
+            </View>
             <Text style={[styles.autoGeneratedText, { color: colors.textSecondary }]}>
               {report.conditions}
             </Text>
@@ -584,14 +719,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 4,
   },
+  locationText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   loadingText: {
     fontSize: 16,
     marginTop: 16,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 18,
     marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
     marginBottom: 24,
+    textAlign: 'center',
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   card: {
     borderRadius: 12,
@@ -726,6 +886,14 @@ const styles = StyleSheet.create({
   },
   characterCountText: {
     fontSize: 12,
+  },
+  autoGeneratedHeader: {
+    marginBottom: 8,
+  },
+  autoGeneratedNote: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   autoGeneratedText: {
     fontSize: 14,
