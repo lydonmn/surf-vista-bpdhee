@@ -83,20 +83,14 @@ export default function ProfileScreen() {
     }
   }, [dailyNotificationsEnabled]);
 
-  // ✅ V8.0 AUTOMATIC FLOW: When screen loads, automatically check and register push token
-  // This ensures users who opt in will receive notifications when the 5AM report is generated
+  // Load notification status and locations when screen loads
   useEffect(() => {
     if (user?.id) {
-      console.log('[ProfileScreen] 📲 Screen loaded - automatic push token check...');
-      console.log('[ProfileScreen] ℹ️ AUTOMATIC FLOW: No manual retry needed - token registration happens automatically');
-      
-      // Load notification status and locations
+      console.log('[ProfileScreen] 📲 Screen loaded - loading notification data...');
       loadNotificationStatus();
       loadNotificationLocations();
       
-      // ✅ V8.0 AUTOMATIC: Ensure push token is registered (silent, no user interaction needed)
-      // When user opts in, token is registered automatically
-      // When 5AM report is generated, notifications are sent automatically to opted-in users
+      // Check push token registration (silent, automatic)
       ensurePushTokenRegistered(user.id).catch(error => {
         console.error('[ProfileScreen] ⚠️ Push token check error (non-critical):', error);
       });
@@ -174,8 +168,7 @@ export default function ProfileScreen() {
     }
   };
 
-  // ✅ V8.0 AUTOMATIC FLOW: When user toggles notifications ON, push token is registered automatically
-  // No manual retry button needed - the system handles everything automatically
+  // ✅ V9.0 CRITICAL FIX: Enhanced toggle handler with better state management
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
       console.error('[ProfileScreen] ❌ No user ID available');
@@ -187,12 +180,15 @@ export default function ProfileScreen() {
       return;
     }
 
-    console.log('[ProfileScreen] 🔔 Toggle notifications:', value);
-    console.log('[ProfileScreen] ℹ️ AUTOMATIC FLOW: Token registration happens automatically when enabling');
+    console.log('[ProfileScreen] ═══════════════════════════════════════');
+    console.log('[ProfileScreen] 🔔 V9.0 CRITICAL FIX: TOGGLE PRESSED');
+    console.log('[ProfileScreen] ═══════════════════════════════════════');
+    console.log('[ProfileScreen] User toggled notifications to:', value);
+    console.log('[ProfileScreen] Current state:', dailyNotificationsEnabled);
 
     // If enabling, check permissions first
     if (value) {
-      console.log('[ProfileScreen] 🔐 Checking permissions before enabling...');
+      console.log('[ProfileScreen] 🔐 User is ENABLING - checking permissions...');
       const permStatus = await checkNotificationPermissions();
       console.log('[ProfileScreen] 🔐 Permission check result:', permStatus);
 
@@ -203,6 +199,8 @@ export default function ProfileScreen() {
       }
     }
 
+    // ✅ V9.0 CRITICAL FIX: Set loading state IMMEDIATELY
+    console.log('[ProfileScreen] ⏳ Setting loading state...');
     setIsTogglingNotifications(true);
 
     try {
@@ -211,19 +209,16 @@ export default function ProfileScreen() {
       await refreshSession();
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // ✅ V8.0 AUTOMATIC: This function handles EVERYTHING automatically:
-      // 1. Registers push token if enabling
-      // 2. Saves token to database
-      // 3. Updates notification preference
-      // 4. Clears token if disabling
-      // User doesn't need to do anything else - notifications will be sent at 5AM automatically
-      console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications (automatic token registration)...');
+      // ✅ V9.0 CRITICAL FIX: Call the main function that handles everything
+      console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications...');
+      console.log('[ProfileScreen] 📝 This will register token and update database...');
       const success = await setDailyReportNotifications(user.id, value);
-      console.log('[ProfileScreen] 📝 Result:', success);
+      console.log('[ProfileScreen] 📝 Result:', success ? 'SUCCESS ✓' : 'FAILED ✗');
       
       if (success) {
         console.log('[ProfileScreen] ✅ Notifications updated successfully');
-        console.log('[ProfileScreen] ℹ️ AUTOMATIC: User will receive notifications at 5AM when reports are generated');
+        
+        // ✅ V9.0 CRITICAL FIX: Update local state IMMEDIATELY
         setDailyNotificationsEnabled(value);
         
         const statusText = value ? 'Enabled' : 'Disabled';
@@ -245,26 +240,12 @@ export default function ProfileScreen() {
       } else {
         console.error('[ProfileScreen] ❌ Failed to update notifications');
         
-        // Revert the toggle
-        setDailyNotificationsEnabled(!value);
-        
-        Alert.alert(
-          'Error',
-          'Failed to update notification preferences. Please make sure you have granted notification permissions in your device settings and try again.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Open Settings',
-              onPress: openNotificationSettings
-            }
-          ]
-        );
+        // ✅ V9.0 CRITICAL FIX: DO NOT revert toggle - keep it in sync with what user clicked
+        // The setDailyReportNotifications function already showed an error alert
+        console.log('[ProfileScreen] ℹ️ Keeping toggle state as-is (error already shown to user)');
       }
     } catch (error) {
       console.error('[ProfileScreen] ❌ Exception toggling notifications:', error);
-      
-      // Revert the toggle
-      setDailyNotificationsEnabled(!value);
       
       Alert.alert(
         'Error',
@@ -272,6 +253,8 @@ export default function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } finally {
+      // ✅ V9.0 CRITICAL FIX: ALWAYS clear loading state
+      console.log('[ProfileScreen] ✅ Clearing loading state');
       setIsTogglingNotifications(false);
     }
   };
@@ -339,7 +322,7 @@ export default function ProfileScreen() {
     await loadNotificationLocations();
     await checkPermissions();
     
-    // ✅ V8.0 AUTOMATIC: Also check push token registration (silent, automatic)
+    // Also check push token registration (silent, automatic)
     if (user?.id) {
       await ensurePushTokenRegistered(user.id);
     }
@@ -815,6 +798,7 @@ export default function ProfileScreen() {
               trackColor={{ false: '#767577', true: colors.primary }}
               thumbColor={dailyNotificationsEnabled ? '#FFFFFF' : '#f4f3f4'}
               ios_backgroundColor="#3e3e3e"
+              disabled={isTogglingNotifications}
             />
           )}
         </View>
@@ -988,7 +972,7 @@ export default function ProfileScreen() {
             Notification Locations: {selectedNotificationLocations.join(', ')}
           </Text>
           <Text style={[styles.debugText, { color: colors.primary, fontWeight: 'bold' }]}>
-            ℹ️ AUTOMATIC: No manual retry needed
+            ℹ️ V9.0: Enhanced error handling
           </Text>
         </View>
       )}
