@@ -20,12 +20,18 @@ export function useVideos() {
   const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const isFetchingRef = useRef(false);
+  const currentLocationRef = useRef(currentLocation);
 
   // ✅ CRITICAL: Cache signed URLs with 1-hour expiry
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour in milliseconds
   const PRELOAD_SIZE = 15 * 1024 * 1024; // 15MB preload for instant playback
-  const KEEP_ALIVE_INTERVAL = 60000; // ✅ CRITICAL FIX: Increased to 60 seconds (was 30s)
-  const REFRESH_INTERVAL = 10 * 60 * 1000; // ✅ CRITICAL FIX: Increased to 10 minutes (was 2 minutes)
+  const KEEP_ALIVE_INTERVAL = 60000; // 60 seconds
+  const REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+  // ✅ CRITICAL FIX: Update currentLocationRef when location changes
+  useEffect(() => {
+    currentLocationRef.current = currentLocation;
+  }, [currentLocation]);
 
   // Generate signed URL for a video with caching
   const generateSignedUrl = useCallback(async (videoUrl: string, videoId: string): Promise<string | null> => {
@@ -76,16 +82,18 @@ export function useVideos() {
       console.error('[useVideos] Exception generating signed URL:', error);
       return null;
     }
-  }, []);
+  }, [SIGNED_URL_CACHE_DURATION]);
 
   // ✅ CRITICAL FIX: Simplified keep-alive mechanism
   const keepConnectionsAlive = useCallback(async () => {
     const now = Date.now();
     const timeSinceLastActivity = now - lastActivityRef.current;
     
+    console.log('[useVideos] ⏰ Keep-alive check triggered');
+    
     // Only refresh if app has been idle for more than 2 minutes
     if (timeSinceLastActivity > 120000) {
-      console.log('[useVideos] ⚡ App idle detected - refreshing connections');
+      console.log('[useVideos] ⚡ App idle detected - refreshing connections for instant playback');
       
       // Ping only the first video to keep connection warm
       const firstVideo = Array.from(preloadedUrlsRef.current.entries())[0];
@@ -97,8 +105,9 @@ export function useVideos() {
             method: 'HEAD',
             cache: 'no-cache',
           });
+          console.log('[useVideos] ✅ Connection kept alive for video:', videoId);
         } catch (error) {
-          console.warn('[useVideos] Keep-alive failed:', error);
+          console.warn('[useVideos] ⚠️ Keep-alive failed:', error);
         }
       }
       
@@ -158,8 +167,10 @@ export function useVideos() {
     }
   }, [PRELOAD_SIZE]);
 
-  // ✅ CRITICAL FIX: Fetch videos with debouncing to prevent reload loops
-  const fetchVideos = useCallback(async () => {
+  // ✅ CRITICAL FIX: Stable fetchVideos function with no circular dependencies
+  const fetchVideosRef = useRef<() => Promise<void>>();
+  
+  fetchVideosRef.current = async () => {
     if (!isMountedRef.current || isFetchingRef.current) {
       console.log('[useVideos] Fetch already in progress, skipping...');
       return;
@@ -169,13 +180,14 @@ export function useVideos() {
       isFetchingRef.current = true;
       setIsLoading(true);
       setError(null);
-      console.log('[useVideos] ⚡ Fetching videos for location:', currentLocation);
+      const location = currentLocationRef.current;
+      console.log('[useVideos] ⚡ Fetching videos for location:', location);
 
       // Fetch videos from database with location filter
       const { data, error: fetchError } = await supabase
         .from('videos')
         .select('*')
-        .eq('location', currentLocation)
+        .eq('location', location)
         .order('created_at', { ascending: false });
 
       if (fetchError) {
@@ -184,7 +196,7 @@ export function useVideos() {
       }
 
       if (!data || data.length === 0) {
-        console.log('[useVideos] No videos found for location:', currentLocation);
+        console.log('[useVideos] No videos found for location:', location);
         if (isMountedRef.current) {
           setVideos([]);
           setIsLoading(false);
@@ -192,7 +204,7 @@ export function useVideos() {
         return;
       }
 
-      console.log('[useVideos] ✅ Fetched', data.length, 'videos for location:', currentLocation);
+      console.log('[useVideos] ✅ Fetched', data.length, 'videos for location:', location);
 
       // ✅ INSTANT PLAYBACK: Generate ALL signed URLs in parallel
       const videosWithSignedUrls = await Promise.all(
@@ -235,7 +247,12 @@ export function useVideos() {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [generateSignedUrl, preloadVideo, currentLocation]);
+  };
+
+  // ✅ CRITICAL FIX: Stable wrapper function
+  const fetchVideos = useCallback(() => {
+    fetchVideosRef.current?.();
+  }, []);
 
   // ✅ CRITICAL FIX: Simplified background refresh
   const backgroundRefresh = useCallback(async () => {
@@ -243,14 +260,17 @@ export function useVideos() {
       return;
     }
 
-    console.log('[useVideos] 🔄 Background refresh triggered');
+    console.log('[useVideos] ⏰ Periodic refresh triggered');
+    console.log('[useVideos] 🔄 Background refresh - keeping videos preloaded');
     
     try {
+      const location = currentLocationRef.current;
+      
       // Fetch latest videos without showing loading state
       const { data, error: fetchError } = await supabase
         .from('videos')
         .select('*')
-        .eq('location', currentLocation)
+        .eq('location', location)
         .order('created_at', { ascending: false });
 
       if (fetchError || !data) {
@@ -261,7 +281,9 @@ export function useVideos() {
       const refreshPromises = data.map(async (video) => {
         const signedUrl = await generateSignedUrl(video.video_url, video.id);
         if (signedUrl) {
-          preloadVideo(signedUrl, video.id).catch(() => {});
+          preloadVideo(signedUrl, video.id).catch(() => {
+            console.log('[useVideos] Preload failed for video:', video.id);
+          });
         }
       });
 
@@ -269,7 +291,7 @@ export function useVideos() {
     } catch (error) {
       console.error('[useVideos] Background refresh error:', error);
     }
-  }, [generateSignedUrl, preloadVideo, currentLocation]);
+  }, [generateSignedUrl, preloadVideo]);
 
   // Refetch videos when location changes
   useEffect(() => {

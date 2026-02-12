@@ -32,49 +32,19 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user, profile, checkSubscription, session, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
   const { surfReports, weatherData, weatherForecast, refreshData } = useSurfData();
   const { currentLocation, locationData } = useLocation();
   
   const [refreshing, setRefreshing] = useState(false);
-  const hasInitialLoadedRef = useRef(false);
-  const previousLocationRef = useRef(currentLocation);
 
   const hasSubscription = useMemo(() => {
     return checkSubscription();
   }, [checkSubscription]);
 
-  const isLoading = useMemo(() => {
-    return authLoading || !isInitialized;
-  }, [authLoading, isInitialized]);
-
-  // ✅ CRITICAL FIX: Only load data on initial mount when auth is ready
-  useEffect(() => {
-    if (isInitialized && !isLoading && user && profile && session && !hasInitialLoadedRef.current) {
-      console.log('[HomeScreen] Initial auth ready, loading data for location:', currentLocation);
-      hasInitialLoadedRef.current = true;
-      
-      // Load data without creating new callbacks
-      Promise.all([
-        refreshVideos(),
-        refreshData()
-      ]).catch(error => {
-        console.error('[HomeScreen] Error loading initial data:', error);
-      });
-    }
-  }, [isInitialized, isLoading, user, profile, session]);
-
-  // ✅ CRITICAL FIX: Handle location changes separately without triggering full reload
-  useEffect(() => {
-    if (previousLocationRef.current !== currentLocation && hasInitialLoadedRef.current) {
-      console.log('[HomeScreen] Location changed from', previousLocationRef.current, 'to', currentLocation);
-      previousLocationRef.current = currentLocation;
-      
-      // useSurfData and useVideos will automatically refresh when location changes
-      // No need to manually trigger refresh here
-    }
-  }, [currentLocation]);
+  // ✅ CRITICAL FIX: Simplified loading check - only check if initialized
+  const isLoading = !isInitialized;
 
   const handleRefresh = useCallback(async () => {
     console.log('[HomeScreen] Manual refresh triggered');
@@ -358,7 +328,9 @@ export default function HomeScreen() {
     },
   });
 
+  // ✅ CRITICAL FIX: Show loading only during initial auth check
   if (isLoading) {
+    console.log('[HomeScreen] Showing loading state - isInitialized:', isInitialized);
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -369,6 +341,7 @@ export default function HomeScreen() {
 
   // Show welcome screen with sign-in buttons if not authenticated
   if (!user) {
+    console.log('[HomeScreen] No user, showing welcome screen');
     return (
       <View style={styles.welcomeContainer}>
         <View style={styles.logoContainer}>
@@ -400,6 +373,7 @@ export default function HomeScreen() {
   }
 
   if (!hasSubscription) {
+    console.log('[HomeScreen] User not subscribed, showing subscribe screen');
     return (
       <View style={styles.errorContainer}>
         <IconSymbol
@@ -418,6 +392,8 @@ export default function HomeScreen() {
       </View>
     );
   }
+
+  console.log('[HomeScreen] Rendering main content');
 
   const latestVideo = videos && videos.length > 0 ? videos[0] : null;
   const todayDate = getESTDate();

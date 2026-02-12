@@ -37,21 +37,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const loadUserProfile = useCallback(async (authUser: SupabaseUser, mounted: boolean = true) => {
+  const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
-      
-      if (mounted) {
-        setIsLoading(true);
-      }
       
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
-
-      if (!mounted) return;
 
       if (profileData) {
         console.log('[AuthContext] Profile loaded successfully:', {
@@ -62,7 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
-        setIsLoading(false);
         return;
       }
 
@@ -79,11 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .select()
           .single();
         
-        if (newProfile && mounted) {
+        if (newProfile) {
           console.log('[AuthContext] Profile created successfully');
           setProfile(newProfile);
           setUser({ ...authUser, profile: newProfile });
-          setIsLoading(false);
           return;
         } else {
           console.error('[AuthContext] Error creating profile:', createError?.message);
@@ -92,18 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('[AuthContext] Error loading profile:', error?.message);
       }
 
-      if (mounted) {
-        setProfile(null);
-        setUser({ ...authUser });
-        setIsLoading(false);
-      }
+      // ✅ CRITICAL FIX: Always set user even if profile fails
+      setProfile(null);
+      setUser({ ...authUser });
     } catch (error) {
       console.error('[AuthContext] Exception loading user profile:', error);
-      if (mounted) {
-        setProfile(null);
-        setUser({ ...authUser });
-        setIsLoading(false);
-      }
+      // ✅ CRITICAL FIX: Always set user even if exception occurs
+      setProfile(null);
+      setUser({ ...authUser });
     }
   }, []);
 
@@ -128,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         
         if (newSession.user) {
-          await loadUserProfile(newSession.user, true);
+          await loadUserProfile(newSession.user);
         }
       }
     } catch (error) {
@@ -179,7 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // Get session first - this is critical and should not be delayed
+        // ✅ CRITICAL FIX: Always set isLoading to false after initialization
+        console.log('[AuthContext] Getting initial session...');
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
@@ -188,11 +177,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // If refresh token is invalid, clear everything
           if (sessionError.message.includes('Invalid Refresh Token') || sessionError.message.includes('Refresh Token Not Found')) {
             console.log('[AuthContext] Invalid refresh token on init - clearing session');
-            setUser(null);
-            setProfile(null);
-            setSession(null);
-            setIsLoading(false);
-            setIsInitialized(true);
+            if (mounted) {
+              setUser(null);
+              setProfile(null);
+              setSession(null);
+              setIsLoading(false);
+              setIsInitialized(true);
+            }
             return;
           }
         }
@@ -204,13 +195,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (initialSession?.user) {
           setSession(initialSession);
           console.log('[AuthContext] Loading initial profile...');
-          await loadUserProfile(initialSession.user, mounted);
-        } else {
-          console.log('[AuthContext] No session, setting loading to false');
-          setIsLoading(false);
+          await loadUserProfile(initialSession.user);
         }
         
+        // ✅ CRITICAL FIX: Always set loading to false and initialized to true
         if (mounted) {
+          console.log('[AuthContext] ✅ Setting isLoading=false, isInitialized=true');
+          setIsLoading(false);
           setIsInitialized(true);
           console.log('[AuthContext] ✅ Auth initialization complete');
         }
@@ -251,6 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
       } catch (error) {
         console.error('[AuthContext] ❌ Initialization error:', error);
+        // ✅ CRITICAL FIX: Always set loading to false even on error
         if (mounted) {
           setIsLoading(false);
           setIsInitialized(true);
@@ -283,7 +275,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (event === 'SIGNED_IN' && newSession?.user) {
         console.log('[AuthContext] SIGNED_IN event detected, loading profile...');
         setSession(newSession);
-        await loadUserProfile(newSession.user, mounted);
+        await loadUserProfile(newSession.user);
+        // ✅ CRITICAL FIX: Ensure loading is set to false after profile loads
+        setIsLoading(false);
         
         // Identify user in RevenueCat immediately
         if (Platform.OS !== 'web') {
@@ -303,7 +297,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (event === 'USER_UPDATED' && newSession?.user) {
         console.log('[AuthContext] USER_UPDATED event detected');
         setSession(newSession);
-        await loadUserProfile(newSession.user, mounted);
+        await loadUserProfile(newSession.user);
+        // ✅ CRITICAL FIX: Ensure loading is set to false
+        setIsLoading(false);
       } else if (!newSession) {
         console.log('[AuthContext] No session in auth change, clearing user data');
         setUser(null);
@@ -326,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
-      await loadUserProfile(session.user, true);
+      await loadUserProfile(session.user);
     }
   }, [session, loadUserProfile]);
 
@@ -509,6 +505,169 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('[AuthContext] Admin status:', adminStatus);
     return adminStatus;
   }, [profile]);
+
+  useEffect(() => {
+    console.log('[AuthContext] 🚀 Initializing...');
+    
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // ✅ CRITICAL FIX: Always set isLoading to false after initialization
+        console.log('[AuthContext] Getting initial session...');
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('[AuthContext] Session error:', sessionError);
+          
+          // If refresh token is invalid, clear everything
+          if (sessionError.message.includes('Invalid Refresh Token') || sessionError.message.includes('Refresh Token Not Found')) {
+            console.log('[AuthContext] Invalid refresh token on init - clearing session');
+            if (mounted) {
+              setUser(null);
+              setProfile(null);
+              setSession(null);
+              setIsLoading(false);
+              setIsInitialized(true);
+            }
+            return;
+          }
+        }
+        
+        if (!mounted) {
+          console.log('[AuthContext] Component unmounted during init');
+          return;
+        }
+
+        console.log('[AuthContext] Initial session check:', initialSession?.user?.email || 'No session');
+        
+        if (initialSession?.user) {
+          setSession(initialSession);
+          console.log('[AuthContext] Loading initial profile...');
+          await loadUserProfile(initialSession.user);
+        }
+        
+        // ✅ CRITICAL FIX: Always set loading to false and initialized to true
+        if (mounted) {
+          console.log('[AuthContext] ✅ Setting isLoading=false, isInitialized=true');
+          setIsLoading(false);
+          setIsInitialized(true);
+          console.log('[AuthContext] ✅ Auth initialization complete');
+        }
+
+        // Initialize RevenueCat IMMEDIATELY after auth is ready (not delayed)
+        // This ensures the payment system is ready when users navigate to profile
+        if (mounted && Platform.OS !== 'web') {
+          console.log('[AuthContext] 💳 Starting RevenueCat initialization...');
+          
+          // Run in background but start immediately
+          (async () => {
+            try {
+              const revenueCatInitialized = await initializeRevenueCat();
+              
+              if (revenueCatInitialized) {
+                console.log('[AuthContext] ✅ RevenueCat initialized successfully');
+                
+                // If user is logged in, identify them in RevenueCat
+                if (initialSession?.user) {
+                  try {
+                    console.log('[AuthContext] 👤 Identifying user in RevenueCat...');
+                    await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+                    console.log('[AuthContext] ✅ User identified in RevenueCat');
+                  } catch (identifyError) {
+                    console.warn('[AuthContext] ⚠️ Error identifying user (non-critical):', identifyError);
+                  }
+                }
+              } else {
+                console.warn('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical)');
+                console.log('[AuthContext] ℹ️ App continues normally without subscription features');
+              }
+            } catch (revenueCatError) {
+              console.error('[AuthContext] ❌ RevenueCat initialization error (non-critical):', revenueCatError);
+              console.log('[AuthContext] ℹ️ App continues normally without subscription features');
+            }
+          })();
+        }
+        
+      } catch (error) {
+        console.error('[AuthContext] ❌ Initialization error:', error);
+        // ✅ CRITICAL FIX: Always set loading to false even on error
+        if (mounted) {
+          console.log('[AuthContext] ✅ Setting isLoading=false after error');
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted) return;
+
+      console.log('[AuthContext] Auth state changed:', event, newSession?.user?.email || 'No session');
+      
+      if (event === 'SIGNED_OUT') {
+        console.log('[AuthContext] SIGNED_OUT event detected, clearing all user data');
+        
+        try {
+          await logoutUser();
+        } catch (error) {
+          console.error('[AuthContext] Error logging out from RevenueCat:', error);
+        }
+        
+        setUser(null);
+        setProfile(null);
+        setSession(null);
+        setIsLoading(false);
+      } else if (event === 'SIGNED_IN' && newSession?.user) {
+        console.log('[AuthContext] SIGNED_IN event detected, loading profile...');
+        setSession(newSession);
+        await loadUserProfile(newSession.user);
+        // ✅ CRITICAL FIX: Ensure loading is set to false after profile loads
+        setIsLoading(false);
+        
+        // Identify user in RevenueCat immediately
+        if (Platform.OS !== 'web') {
+          (async () => {
+            try {
+              console.log('[AuthContext] 👤 Identifying user in RevenueCat...');
+              await identifyUser(newSession.user.id, newSession.user.email || undefined);
+              console.log('[AuthContext] ✅ User identified in RevenueCat');
+            } catch (error) {
+              console.warn('[AuthContext] ⚠️ Error identifying user in RevenueCat (non-critical):', error);
+            }
+          })();
+        }
+      } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+        console.log('[AuthContext] TOKEN_REFRESHED event detected');
+        setSession(newSession);
+      } else if (event === 'USER_UPDATED' && newSession?.user) {
+        console.log('[AuthContext] USER_UPDATED event detected');
+        setSession(newSession);
+        await loadUserProfile(newSession.user);
+        // ✅ CRITICAL FIX: Ensure loading is set to false
+        setIsLoading(false);
+      } else if (!newSession) {
+        console.log('[AuthContext] No session in auth change, clearing user data');
+        setUser(null);
+        setProfile(null);
+        setSession(null);
+        setIsLoading(false);
+      }
+      
+      if (!isInitialized && mounted) {
+        setIsInitialized(true);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [loadUserProfile, isInitialized, signOut]);
 
   return (
     <AuthContext.Provider value={{ 
