@@ -359,7 +359,7 @@ export default function AdminDataScreen() {
   };
 
   const backIconName = 'chevron.left';
-  const backMaterialIconName = 'arrow-back';
+  const backMaterialIconName = 'chevron-left';
   const backButtonTextContent = 'Back';
   const headerTitleText = 'Admin Data Manager';
   const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;

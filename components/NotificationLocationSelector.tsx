@@ -87,7 +87,7 @@ export function NotificationLocationSelector({
         <View style={styles.selectorContent}>
           <IconSymbol
             ios_icon_name="location.fill"
-            android_material_icon_name="location_on"
+            android_material_icon_name="place"
             size={20}
             color={disabled ? colors.textSecondary : colors.primary}
           />
@@ -109,7 +109,7 @@ export function NotificationLocationSelector({
         {!disabled && (
           <IconSymbol
             ios_icon_name="chevron.right"
-            android_material_icon_name="chevron_right"
+            android_material_icon_name="chevron-right"
             size={20}
             color={colors.textSecondary}
           />

@@ -393,7 +393,7 @@ export default function EditReportScreen() {
           >
             <IconSymbol
               ios_icon_name="chevron.left"
-              android_material_icon_name="arrow_back"
+              android_material_icon_name="chevron-left"
               size={24}
               color={colors.primary}
             />
@@ -647,7 +647,7 @@ export default function EditReportScreen() {
               <React.Fragment>
                 <IconSymbol
                   ios_icon_name="checkmark.circle.fill"
-                  android_material_icon_name="check_circle"
+                  android_material_icon_name="check-circle"
                   size={20}
                   color="#FFFFFF"
                 />
