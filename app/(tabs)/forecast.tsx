@@ -206,7 +206,7 @@ export default function ForecastScreen() {
           >
             <IconSymbol
               ios_icon_name="chevron.left"
-              android_material_icon_name="arrow_back"
+              android_material_icon_name="arrow-back"
               size={24}
               color={colors.primary}
             />
@@ -434,7 +434,7 @@ export default function ForecastScreen() {
                     )}
                     <IconSymbol
                       ios_icon_name={isExpanded ? 'chevron.up' : 'chevron.down'}
-                      android_material_icon_name={isExpanded ? 'expand_less' : 'expand_more'}
+                      android_material_icon_name={isExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
                       size={24}
                       color={colors.textSecondary}
                     />
