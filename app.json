@@ -79,7 +79,7 @@
         }
       ]
     ],
-    "scheme": "surfvista",
+    "scheme": "SurfVista",
     "experiments": {
       "typedRoutes": true
     },

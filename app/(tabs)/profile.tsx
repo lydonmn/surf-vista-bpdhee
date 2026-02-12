@@ -21,7 +21,8 @@ import {
   checkNotificationPermissions,
   openNotificationSettings,
   getNotificationLocations,
-  setNotificationLocations
+  setNotificationLocations,
+  ensurePushTokenRegistered
 } from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
@@ -82,10 +83,19 @@ export default function ProfileScreen() {
     }
   }, [dailyNotificationsEnabled]);
 
+  // ✅ V7.0 FIX: Check and register push token when screen loads
   useEffect(() => {
     if (user?.id) {
+      console.log('[ProfileScreen] 📲 Screen loaded - checking push token registration...');
+      
+      // Load notification status and locations
       loadNotificationStatus();
       loadNotificationLocations();
+      
+      // ✅ V7.0 CRITICAL FIX: Ensure push token is registered
+      ensurePushTokenRegistered(user.id).catch(error => {
+        console.error('[ProfileScreen] ⚠️ Push token check error (non-critical):', error);
+      });
     }
   }, [user?.id, loadNotificationStatus, loadNotificationLocations]);
 
@@ -214,6 +224,12 @@ export default function ProfileScreen() {
           messageText,
           [{ text: 'OK' }]
         );
+        
+        // ✅ V7.0 FIX: Reload profile to verify token was saved
+        if (value) {
+          console.log('[ProfileScreen] 🔄 Reloading profile to verify token...');
+          await refreshProfile();
+        }
       } else {
         console.error('[ProfileScreen] ❌ Failed to update notifications');
         
@@ -310,6 +326,12 @@ export default function ProfileScreen() {
     await loadNotificationStatus();
     await loadNotificationLocations();
     await checkPermissions();
+    
+    // ✅ V7.0 FIX: Also check push token registration
+    if (user?.id) {
+      await ensurePushTokenRegistered(user.id);
+    }
+    
     Alert.alert('Success', 'Profile data refreshed');
   };
 
@@ -948,6 +970,9 @@ export default function ProfileScreen() {
             Permission Status: {permissionStatusText}
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Push Token: {profile.push_token ? 'Present ✓' : 'Missing ✗'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Notification Locations: {selectedNotificationLocations.join(', ')}
           </Text>
         </View>
@@ -958,7 +983,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 6.0.2
+          Version 7.0
         </Text>
       </View>
 

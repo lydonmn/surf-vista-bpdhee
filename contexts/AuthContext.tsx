@@ -5,7 +5,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
 import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
-import { registerForPushNotificationsAsync, savePushToken } from '@/utils/pushNotifications';
+import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -41,40 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ✅ V6.0.2 FIX: Prevent multiple simultaneous initializations
   const isInitializingRef = useRef(false);
 
-  // ✅ V6.9 FIX: Register push token automatically when user signs in
+  // ✅ V7.0 FIX: Enhanced push token registration with better error handling
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
-      console.log('[AuthContext] 📲 Checking if push token registration needed...');
+      console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
+      console.log('[AuthContext] 📲 User ID:', userId);
       
-      // Check if user already has a valid push token
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('push_token, daily_report_notifications')
-        .eq('id', userId)
-        .single();
-
-      // If user has notifications enabled but no valid token, register one
-      if (existingProfile?.daily_report_notifications && 
-          (!existingProfile.push_token || 
-           existingProfile.push_token === 'web-dummy-token' || 
-           existingProfile.push_token === 'simulator-dummy-token')) {
-        
-        console.log('[AuthContext] 📲 User has notifications enabled but no valid token - registering...');
-        
-        const pushToken = await registerForPushNotificationsAsync();
-        
-        if (pushToken && pushToken !== 'web-dummy-token' && pushToken !== 'simulator-dummy-token') {
-          console.log('[AuthContext] 📲 Saving new push token...');
-          await savePushToken(userId, pushToken);
-          console.log('[AuthContext] ✅ Push token registered successfully');
-        } else {
-          console.log('[AuthContext] ℹ️ No valid push token obtained (development/simulator)');
-        }
-      } else if (existingProfile?.push_token) {
-        console.log('[AuthContext] ✅ User already has valid push token');
-      } else {
-        console.log('[AuthContext] ℹ️ User has notifications disabled - no token needed');
-      }
+      // Use the new ensurePushTokenRegistered function
+      await ensurePushTokenRegistered(userId);
+      
+      console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
     } catch (error) {
       console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
     }
@@ -106,8 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        // ✅ V6.9 FIX: Register push token if needed
-        await registerPushTokenIfNeeded(authUser.id);
+        // ✅ V7.0 FIX: Register push token if needed (runs in background)
+        registerPushTokenIfNeeded(authUser.id);
         return;
       }
 
@@ -353,8 +329,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
+      
+      // ✅ V7.0 FIX: Also check push token when refreshing profile
+      await registerPushTokenIfNeeded(session.user.id);
     }
-  }, [session, loadUserProfile]);
+  }, [session, loadUserProfile, registerPushTokenIfNeeded]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {

@@ -166,7 +166,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 /**
  * Register for push notifications and get the Expo push token
- * ✅ V6.9 FIX: Enhanced with better error handling and EAS project ID support
+ * ✅ V7.0 FIX: Enhanced with retry logic and better error handling
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
@@ -193,7 +193,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       return null;
     }
 
-    // ✅ V6.9 FIX: Get the EAS project ID from multiple sources
+    // ✅ V7.0 FIX: Get the EAS project ID from multiple sources
     const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
                       Constants.manifest?.extra?.eas?.projectId ||
                       Constants.manifest2?.extra?.eas?.projectId ||
@@ -201,48 +201,56 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     
     console.log('[Push Notifications] ===== EAS PROJECT ID =====');
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
-    console.log('[Push Notifications] Source: expoConfig.extra.eas.projectId');
     console.log('[Push Notifications] ===================================');
 
-    // Get the Expo push token
-    console.log('[Push Notifications] Getting Expo push token...');
+    // ✅ V7.0 FIX: Retry logic for token registration
+    let tokenData = null;
+    let lastError = null;
+    const maxRetries = 3;
     
-    try {
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: projectId,
-      });
-
-      console.log('[Push Notifications] ===== TOKEN OBTAINED =====');
-      console.log('[Push Notifications] ✅ Token:', tokenData.data);
-      console.log('[Push Notifications] ===================================');
-
-      // Configure notification channel for Android
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('daily-reports', {
-          name: 'Daily Surf Reports',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#0EA5E9',
-          description: 'Receive your daily surf report at 5 AM',
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Push Notifications] 🔄 Token registration attempt ${attempt}/${maxRetries}...`);
+        
+        tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: projectId,
         });
-        console.log('[Push Notifications] Android notification channel configured');
-      }
 
-      console.log('[Push Notifications] ===== REGISTRATION COMPLETE =====');
-      return tokenData.data;
-    } catch (tokenError: any) {
-      console.error('[Push Notifications] ===== TOKEN ERROR =====');
-      console.error('[Push Notifications] ❌ Failed to get Expo push token');
-      console.error('[Push Notifications] Error:', tokenError);
-      console.error('[Push Notifications] Error message:', tokenError?.message);
-      console.error('[Push Notifications] Error code:', tokenError?.code);
+        console.log('[Push Notifications] ===== TOKEN OBTAINED =====');
+        console.log('[Push Notifications] ✅ Token:', tokenData.data);
+        console.log('[Push Notifications] Token length:', tokenData.data.length);
+        console.log('[Push Notifications] ===================================');
+        
+        // Success! Break out of retry loop
+        break;
+      } catch (tokenError: any) {
+        lastError = tokenError;
+        console.error(`[Push Notifications] ❌ Attempt ${attempt} failed:`, tokenError?.message);
+        
+        // If this is the last attempt, we'll handle the error below
+        if (attempt < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const waitTime = attempt * 1000;
+          console.log(`[Push Notifications] ⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    // If we still don't have a token after retries, handle the error
+    if (!tokenData) {
+      console.error('[Push Notifications] ===== TOKEN ERROR (ALL RETRIES FAILED) =====');
+      console.error('[Push Notifications] ❌ Failed to get Expo push token after', maxRetries, 'attempts');
+      console.error('[Push Notifications] Last error:', lastError);
+      console.error('[Push Notifications] Error message:', lastError?.message);
+      console.error('[Push Notifications] Error code:', lastError?.code);
       console.error('[Push Notifications] ===================================');
       
-      // ✅ V6.9 FIX: Better error handling for different scenarios
-      if (tokenError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
-          tokenError?.message?.includes('does not exist') ||
-          tokenError?.message?.includes('No EAS project ID') ||
-          tokenError?.code === 'EXPERIENCE_NOT_FOUND') {
+      // ✅ V7.0 FIX: Better error handling for different scenarios
+      if (lastError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
+          lastError?.message?.includes('does not exist') ||
+          lastError?.message?.includes('No EAS project ID') ||
+          lastError?.code === 'EXPERIENCE_NOT_FOUND') {
         console.log('[Push Notifications] ℹ️ EAS project not found - this is expected in development');
         console.log('[Push Notifications] ℹ️ Push notifications will work after building with EAS Build');
         console.log('[Push Notifications] ℹ️ For TestFlight/App Store builds, notifications should work');
@@ -255,6 +263,21 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] ❌ Token registration failed - continuing without token');
       return null;
     }
+
+    // Configure notification channel for Android
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('daily-reports', {
+        name: 'Daily Surf Reports',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#0EA5E9',
+        description: 'Receive your daily surf report at 5 AM',
+      });
+      console.log('[Push Notifications] Android notification channel configured');
+    }
+
+    console.log('[Push Notifications] ===== REGISTRATION COMPLETE =====');
+    return tokenData.data;
   } catch (error) {
     console.error('[Push Notifications] ===== REGISTRATION ERROR =====');
     console.error('[Push Notifications] Error:', error);
@@ -269,7 +292,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
 /**
  * Save push token to user profile
- * ✅ V6.9 FIX: Enhanced logging for debugging
+ * ✅ V7.0 FIX: Enhanced with retry logic and better error handling
  */
 export async function savePushToken(userId: string, token: string): Promise<boolean> {
   try {
@@ -278,27 +301,57 @@ export async function savePushToken(userId: string, token: string): Promise<bool
     console.log('[Push Notifications] Token:', token);
     console.log('[Push Notifications] Token length:', token.length);
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ push_token: token })
-      .eq('id', userId)
-      .select();
+    // ✅ V7.0 FIX: Retry logic for saving token
+    let lastError = null;
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Push Notifications] 💾 Save attempt ${attempt}/${maxRetries}...`);
+        
+        const { data, error } = await supabase
+          .from('profiles')
+          .update({ push_token: token })
+          .eq('id', userId)
+          .select();
 
-    if (error) {
-      console.error('[Push Notifications] ===== SAVE TOKEN ERROR =====');
-      console.error('[Push Notifications] ❌ Error saving token');
-      console.error('[Push Notifications] Error code:', error.code);
-      console.error('[Push Notifications] Error message:', error.message);
-      console.error('[Push Notifications] Error details:', JSON.stringify(error));
-      console.error('[Push Notifications] ===================================');
-      return false;
+        if (error) {
+          lastError = error;
+          console.error(`[Push Notifications] ❌ Attempt ${attempt} failed:`, error.message);
+          
+          // If this is the last attempt, we'll handle the error below
+          if (attempt < maxRetries) {
+            // Wait before retrying
+            const waitTime = attempt * 500;
+            console.log(`[Push Notifications] ⏳ Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+        } else {
+          // Success!
+          console.log('[Push Notifications] ===== TOKEN SAVED =====');
+          console.log('[Push Notifications] ✅ Token saved successfully on attempt', attempt);
+          console.log('[Push Notifications] Updated data:', data);
+          console.log('[Push Notifications] ===================================');
+          return true;
+        }
+      } catch (attemptError) {
+        lastError = attemptError;
+        console.error(`[Push Notifications] ❌ Exception on attempt ${attempt}:`, attemptError);
+        
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 500;
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
 
-    console.log('[Push Notifications] ===== TOKEN SAVED =====');
-    console.log('[Push Notifications] ✅ Token saved successfully');
-    console.log('[Push Notifications] Updated data:', data);
-    console.log('[Push Notifications] ===================================');
-    return true;
+    // If we get here, all retries failed
+    console.error('[Push Notifications] ===== SAVE TOKEN ERROR (ALL RETRIES FAILED) =====');
+    console.error('[Push Notifications] ❌ Error saving token after', maxRetries, 'attempts');
+    console.error('[Push Notifications] Last error:', lastError);
+    console.error('[Push Notifications] ===================================');
+    return false;
   } catch (error) {
     console.error('[Push Notifications] ===== SAVE TOKEN EXCEPTION =====');
     console.error('[Push Notifications] ❌ Exception saving token:', error);
@@ -387,7 +440,7 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 
 /**
  * Enable or disable daily report notifications
- * ✅ V6.9 FIX: Enhanced with better token handling and error messages
+ * ✅ V7.0 FIX: Enhanced with better token handling, retry logic, and immediate token registration
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
@@ -397,93 +450,125 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
 
-    // If enabling, register for push notifications first
+    // ✅ V7.0 CRITICAL FIX: If enabling, ALWAYS try to register token first
     let pushToken = null;
     if (enabled) {
-      console.log('[Push Notifications] Registering for push notifications...');
+      console.log('[Push Notifications] 📲 Registering for push notifications...');
       pushToken = await registerForPushNotificationsAsync();
-      console.log('[Push Notifications] Push token result:', pushToken);
+      console.log('[Push Notifications] 📲 Push token result:', pushToken);
       
-      // ✅ V6.9 FIX: If we didn't get a valid token, still allow enabling notifications
-      // This allows the preference to be saved for when the app is built with EAS
-      if (!pushToken || pushToken === 'web-dummy-token' || pushToken === 'simulator-dummy-token') {
-        console.log('[Push Notifications] ⚠️ No valid push token obtained');
+      // ✅ V7.0 CRITICAL FIX: If we're on a physical device and didn't get a token, fail
+      if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
+        console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
         
-        if (Platform.OS !== 'web' && Device.isDevice) {
-          console.log('[Push Notifications] ℹ️ This is a physical device - token should be available');
-          console.log('[Push Notifications] ℹ️ If running in Expo Go, build with EAS for push notifications');
-          console.log('[Push Notifications] ℹ️ If running in TestFlight/App Store, token should work');
-        }
+        Alert.alert(
+          'Token Registration Failed',
+          'Unable to register for push notifications. This may be due to:\n\n' +
+          '• Network connectivity issues\n' +
+          '• Expo push notification service temporarily unavailable\n\n' +
+          'Please try again in a moment. If the problem persists, try:\n' +
+          '1. Restart the app\n' +
+          '2. Check your internet connection\n' +
+          '3. Contact support if issue continues',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+      
+      // If we got a dummy token (web/simulator), warn but allow
+      if (pushToken === 'web-dummy-token' || pushToken === 'simulator-dummy-token') {
+        console.log('[Push Notifications] ⚠️ Using dummy token (development environment)');
       }
     }
 
-    // Update profile with notification preference and token
+    // ✅ V7.0 FIX: Build update data object
     const updateData: any = {
       daily_report_notifications: enabled,
     };
 
-    // ✅ V6.9 FIX: Only update push_token if we have a valid one
-    if (pushToken && pushToken !== 'web-dummy-token' && pushToken !== 'simulator-dummy-token') {
+    // ✅ V7.0 CRITICAL FIX: ALWAYS update push_token field
+    if (enabled && pushToken) {
+      // Save the token when enabling
       updateData.push_token = pushToken;
-      console.log('[Push Notifications] ✅ Will save valid push token');
+      console.log('[Push Notifications] ✅ Will save push token:', pushToken.substring(0, 20) + '...');
     } else if (!enabled) {
-      // Clear push token when disabling notifications
+      // Clear the token when disabling
       updateData.push_token = null;
       console.log('[Push Notifications] ℹ️ Will clear push token (notifications disabled)');
     } else {
-      console.log('[Push Notifications] ℹ️ No valid token to save (keeping existing token if any)');
+      // Enabling but no token - this should only happen in dev
+      console.log('[Push Notifications] ⚠️ Enabling without token (development only)');
     }
 
-    console.log('[Push Notifications] Updating profile with data:', JSON.stringify(updateData));
-    console.log('[Push Notifications] Attempting database update...');
+    console.log('[Push Notifications] 💾 Updating profile with data:', JSON.stringify(updateData));
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', userId)
-      .select();
-
-    if (error) {
-      console.error('[Push Notifications] ===== UPDATE ERROR =====');
-      console.error('[Push Notifications] Error code:', error.code);
-      console.error('[Push Notifications] Error message:', error.message);
-      console.error('[Push Notifications] Error hint:', error.hint);
-      console.error('[Push Notifications] Error details:', JSON.stringify(error, null, 2));
-      console.error('[Push Notifications] ===== END ERROR =====');
-      
-      // Show specific error message to user
-      Alert.alert(
-        'Update Failed',
-        `Failed to update notification preferences:\n\n${error.message}\n\nPlease try refreshing your profile data or signing out and back in.`,
-        [{ text: 'OK' }]
-      );
-      return false;
-    }
-
-    if (!data || data.length === 0) {
-      console.error('[Push Notifications] ❌ No data returned from update - possible RLS issue');
-      console.error('[Push Notifications] This usually means the user does not have permission to update their profile');
-      
-      Alert.alert(
-        'Update Failed',
-        'Unable to update notification preferences. This may be a permissions issue. Please try refreshing your profile data.',
-        [{ text: 'OK' }]
-      );
-      return false;
-    }
-
-    console.log('[Push Notifications] ===== UPDATE SUCCESS =====');
-    console.log('[Push Notifications] ✅ Preferences updated successfully');
-    console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
+    // ✅ V7.0 FIX: Retry logic for database update
+    let lastError = null;
+    const maxRetries = 3;
     
-    // ✅ V6.9 FIX: Show helpful message if token wasn't saved
-    if (enabled && (!pushToken || pushToken === 'web-dummy-token' || pushToken === 'simulator-dummy-token')) {
-      console.log('[Push Notifications] ℹ️ Notification preference saved without token');
-      console.log('[Push Notifications] ℹ️ Token will be registered when app is built with EAS');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Push Notifications] 💾 Database update attempt ${attempt}/${maxRetries}...`);
+        
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', userId)
+          .select();
+
+        if (error) {
+          lastError = error;
+          console.error(`[Push Notifications] ❌ Attempt ${attempt} failed:`, error.message);
+          
+          // If this is the last attempt, we'll handle the error below
+          if (attempt < maxRetries) {
+            const waitTime = attempt * 500;
+            console.log(`[Push Notifications] ⏳ Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+        } else if (!data || data.length === 0) {
+          lastError = new Error('No data returned from update');
+          console.error(`[Push Notifications] ❌ Attempt ${attempt}: No data returned`);
+          
+          if (attempt < maxRetries) {
+            const waitTime = attempt * 500;
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+        } else {
+          // Success!
+          console.log('[Push Notifications] ===== UPDATE SUCCESS =====');
+          console.log('[Push Notifications] ✅ Preferences updated successfully on attempt', attempt);
+          console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
+          console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
+          return true;
+        }
+      } catch (attemptError) {
+        lastError = attemptError;
+        console.error(`[Push Notifications] ❌ Exception on attempt ${attempt}:`, attemptError);
+        
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 500;
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
+
+    // If we get here, all retries failed
+    console.error('[Push Notifications] ===== UPDATE FAILED (ALL RETRIES) =====');
+    console.error('[Push Notifications] Last error:', lastError);
     
-    console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
-    return true;
+    Alert.alert(
+      'Update Failed',
+      'Failed to update notification preferences after multiple attempts. Please try:\n\n' +
+      '1. Check your internet connection\n' +
+      '2. Refresh your profile data\n' +
+      '3. Sign out and sign back in\n' +
+      '4. Contact support if issue persists',
+      [{ text: 'OK' }]
+    );
+    return false;
   } catch (error) {
     console.error('[Push Notifications] ===== EXCEPTION IN SET DAILY REPORT NOTIFICATIONS =====');
     console.error('[Push Notifications] Exception:', error);
@@ -548,5 +633,82 @@ export async function openNotificationSettings(): Promise<void> {
       'Please manually open your device settings and enable notifications for SurfVista.',
       [{ text: 'OK' }]
     );
+  }
+}
+
+/**
+ * ✅ V7.0 NEW: Force re-register push token for existing users
+ * This function should be called when a user who has notifications enabled but no token
+ * opens the app or refreshes their profile
+ */
+export async function ensurePushTokenRegistered(userId: string): Promise<void> {
+  try {
+    console.log('[Push Notifications] ===== ENSURE PUSH TOKEN REGISTERED =====');
+    console.log('[Push Notifications] User ID:', userId);
+
+    // Skip for web and simulators
+    if (Platform.OS === 'web' || !Device.isDevice) {
+      console.log('[Push Notifications] Skipping token check (web/simulator)');
+      return;
+    }
+
+    // Check if user has notifications enabled
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('daily_report_notifications, push_token')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      console.error('[Push Notifications] Error fetching profile:', profileError);
+      return;
+    }
+
+    console.log('[Push Notifications] Profile check:');
+    console.log('[Push Notifications] - Notifications enabled:', profile.daily_report_notifications);
+    console.log('[Push Notifications] - Has token:', !!profile.push_token);
+    console.log('[Push Notifications] - Token value:', profile.push_token?.substring(0, 20) + '...' || 'null');
+
+    // If notifications are enabled but no valid token, register one
+    if (profile.daily_report_notifications && 
+        (!profile.push_token || 
+         profile.push_token === 'web-dummy-token' || 
+         profile.push_token === 'simulator-dummy-token')) {
+      
+      console.log('[Push Notifications] 🔧 User has notifications enabled but no valid token - registering now...');
+      
+      // Check permissions first
+      const { granted } = await checkNotificationPermissions();
+      if (!granted) {
+        console.log('[Push Notifications] ⚠️ Permissions not granted - cannot register token');
+        return;
+      }
+
+      // Register token
+      const token = await registerForPushNotificationsAsync();
+      
+      if (token && token !== 'web-dummy-token' && token !== 'simulator-dummy-token') {
+        console.log('[Push Notifications] 📲 Got valid token, saving...');
+        const saved = await savePushToken(userId, token);
+        
+        if (saved) {
+          console.log('[Push Notifications] ✅ Token registered and saved successfully');
+        } else {
+          console.error('[Push Notifications] ❌ Failed to save token');
+        }
+      } else {
+        console.log('[Push Notifications] ⚠️ No valid token obtained');
+      }
+    } else if (profile.push_token && 
+               profile.push_token !== 'web-dummy-token' && 
+               profile.push_token !== 'simulator-dummy-token') {
+      console.log('[Push Notifications] ✅ User already has valid push token');
+    } else {
+      console.log('[Push Notifications] ℹ️ Notifications disabled or no token needed');
+    }
+
+    console.log('[Push Notifications] ===== ENSURE PUSH TOKEN COMPLETE =====');
+  } catch (error) {
+    console.error('[Push Notifications] Exception in ensurePushTokenRegistered:', error);
   }
 }

@@ -21,7 +21,8 @@ import {
   checkNotificationPermissions,
   openNotificationSettings,
   getNotificationLocations,
-  setNotificationLocations
+  setNotificationLocations,
+  ensurePushTokenRegistered
 } from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
@@ -51,9 +52,9 @@ export default function ProfileScreen() {
     if (!user?.id) {
       return;
     }
-    console.log('[ProfileScreen iOS] 🔍 Loading notification status...');
+    console.log('[ProfileScreen] 🔍 Loading notification status...');
     const status = await getDailyReportNotificationStatus(user.id);
-    console.log('[ProfileScreen iOS] ✅ Notification status loaded:', status);
+    console.log('[ProfileScreen] ✅ Notification status loaded:', status);
     setDailyNotificationsEnabled(status);
   }, [user?.id]);
 
@@ -61,31 +62,40 @@ export default function ProfileScreen() {
     if (!user?.id) {
       return;
     }
-    console.log('[ProfileScreen iOS] 📍 Loading notification locations...');
+    console.log('[ProfileScreen] 📍 Loading notification locations...');
     setIsLoadingLocations(true);
     const locations = await getNotificationLocations(user.id);
-    console.log('[ProfileScreen iOS] 📍 Notification locations loaded:', locations);
+    console.log('[ProfileScreen] 📍 Notification locations loaded:', locations);
     setSelectedNotificationLocations(locations);
     setIsLoadingLocations(false);
   }, [user?.id]);
 
   const checkPermissions = useCallback(async () => {
-    console.log('[ProfileScreen iOS] 🔐 Checking notification permissions...');
+    console.log('[ProfileScreen] 🔐 Checking notification permissions...');
     const permStatus = await checkNotificationPermissions();
-    console.log('[ProfileScreen iOS] 🔐 Permission status:', permStatus);
+    console.log('[ProfileScreen] 🔐 Permission status:', permStatus);
     setNotificationPermissionStatus(permStatus);
 
     // If notifications are enabled in profile but permissions are denied, show prompt
     if (dailyNotificationsEnabled && !permStatus.granted && permStatus.status !== 'simulator') {
-      console.log('[ProfileScreen iOS] ⚠️ Notifications enabled but permissions denied - showing prompt');
+      console.log('[ProfileScreen] ⚠️ Notifications enabled but permissions denied - showing prompt');
       setShowPermissionPrompt(true);
     }
   }, [dailyNotificationsEnabled]);
 
+  // ✅ V7.0 FIX: Check and register push token when screen loads
   useEffect(() => {
     if (user?.id) {
+      console.log('[ProfileScreen] 📲 Screen loaded - checking push token registration...');
+      
+      // Load notification status and locations
       loadNotificationStatus();
       loadNotificationLocations();
+      
+      // ✅ V7.0 CRITICAL FIX: Ensure push token is registered
+      ensurePushTokenRegistered(user.id).catch(error => {
+        console.error('[ProfileScreen] ⚠️ Push token check error (non-critical):', error);
+      });
     }
   }, [user?.id, loadNotificationStatus, loadNotificationLocations]);
 
@@ -96,15 +106,15 @@ export default function ProfileScreen() {
   // Check payment system status on mount
   useEffect(() => {
     const checkPaymentSystem = async () => {
-      console.log('[ProfileScreen iOS] 💳 Checking payment system status...');
+      console.log('[ProfileScreen] 💳 Checking payment system status...');
       
       const isAvailable = isPaymentSystemAvailable();
-      console.log('[ProfileScreen iOS] 💳 Payment system available:', isAvailable);
+      console.log('[ProfileScreen] 💳 Payment system available:', isAvailable);
       
       if (!isAvailable) {
-        console.log('[ProfileScreen iOS] ⚠️ Payment system not ready, attempting initialization...');
+        console.log('[ProfileScreen] ⚠️ Payment system not ready, attempting initialization...');
         const initialized = await initializeRevenueCat();
-        console.log('[ProfileScreen iOS] 💳 Initialization result:', initialized);
+        console.log('[ProfileScreen] 💳 Initialization result:', initialized);
         setPaymentSystemReady(initialized);
       } else {
         setPaymentSystemReady(true);
@@ -116,11 +126,11 @@ export default function ProfileScreen() {
 
   const handleLocationsChange = async (newLocations: string[]) => {
     if (!user?.id) {
-      console.error('[ProfileScreen iOS] ❌ No user ID available');
+      console.error('[ProfileScreen] ❌ No user ID available');
       return;
     }
 
-    console.log('[ProfileScreen iOS] 📍 Updating notification locations:', newLocations);
+    console.log('[ProfileScreen] 📍 Updating notification locations:', newLocations);
     
     try {
       // Refresh session first
@@ -130,7 +140,7 @@ export default function ProfileScreen() {
       const success = await setNotificationLocations(user.id, newLocations);
       
       if (success) {
-        console.log('[ProfileScreen iOS] ✅ Locations updated successfully');
+        console.log('[ProfileScreen] ✅ Locations updated successfully');
         setSelectedNotificationLocations(newLocations);
         
         const locationText = newLocations.length === 1 
@@ -143,7 +153,7 @@ export default function ProfileScreen() {
           [{ text: 'OK' }]
         );
       } else {
-        console.error('[ProfileScreen iOS] ❌ Failed to update locations');
+        console.error('[ProfileScreen] ❌ Failed to update locations');
         Alert.alert(
           'Update Failed',
           'Failed to update notification locations. Please try again.',
@@ -151,7 +161,7 @@ export default function ProfileScreen() {
         );
       }
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Exception updating locations:', error);
+      console.error('[ProfileScreen] ❌ Exception updating locations:', error);
       Alert.alert(
         'Error',
         'An error occurred while updating locations. Please try again.',
@@ -162,7 +172,7 @@ export default function ProfileScreen() {
 
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
-      console.error('[ProfileScreen iOS] ❌ No user ID available');
+      console.error('[ProfileScreen] ❌ No user ID available');
       Alert.alert(
         'Error',
         'Unable to update notifications. Please try signing out and back in.',
@@ -171,16 +181,16 @@ export default function ProfileScreen() {
       return;
     }
 
-    console.log('[ProfileScreen iOS] 🔔 Toggle notifications button pressed:', value);
+    console.log('[ProfileScreen] 🔔 Toggle notifications button pressed:', value);
 
     // If enabling, check permissions first
     if (value) {
-      console.log('[ProfileScreen iOS] 🔐 Checking permissions before enabling...');
+      console.log('[ProfileScreen] 🔐 Checking permissions before enabling...');
       const permStatus = await checkNotificationPermissions();
-      console.log('[ProfileScreen iOS] 🔐 Permission check result:', permStatus);
+      console.log('[ProfileScreen] 🔐 Permission check result:', permStatus);
 
       if (!permStatus.granted && permStatus.status !== 'simulator') {
-        console.log('[ProfileScreen iOS] ⚠️ Permissions not granted - showing prompt');
+        console.log('[ProfileScreen] ⚠️ Permissions not granted - showing prompt');
         setShowPermissionPrompt(true);
         return;
       }
@@ -190,16 +200,18 @@ export default function ProfileScreen() {
 
     try {
       // First, try to refresh the session to ensure we have a valid token
-      console.log('[ProfileScreen iOS] 🔄 Refreshing session before updating notifications...');
+      console.log('[ProfileScreen] 🔄 Refreshing session before updating notifications...');
       await refreshSession();
       
       // Small delay to ensure session is refreshed
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications...');
       const success = await setDailyReportNotifications(user.id, value);
+      console.log('[ProfileScreen] 📝 setDailyReportNotifications result:', success);
       
       if (success) {
-        console.log('[ProfileScreen iOS] ✅ Notifications updated successfully');
+        console.log('[ProfileScreen] ✅ Notifications updated successfully');
         setDailyNotificationsEnabled(value);
         
         const statusText = value ? 'Enabled' : 'Disabled';
@@ -212,8 +224,14 @@ export default function ProfileScreen() {
           messageText,
           [{ text: 'OK' }]
         );
+        
+        // ✅ V7.0 FIX: Reload profile to verify token was saved
+        if (value) {
+          console.log('[ProfileScreen] 🔄 Reloading profile to verify token...');
+          await refreshProfile();
+        }
       } else {
-        console.error('[ProfileScreen iOS] ❌ Failed to update notifications');
+        console.error('[ProfileScreen] ❌ Failed to update notifications');
         
         // Revert the toggle
         setDailyNotificationsEnabled(!value);
@@ -231,7 +249,7 @@ export default function ProfileScreen() {
         );
       }
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Exception toggling notifications:', error);
+      console.error('[ProfileScreen] ❌ Exception toggling notifications:', error);
       
       // Revert the toggle
       setDailyNotificationsEnabled(!value);
@@ -247,24 +265,24 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = () => {
-    console.log('[ProfileScreen iOS] Sign out button pressed');
+    console.log('[ProfileScreen] Sign out button pressed');
     setShowSignOutModal(true);
   };
 
   const confirmSignOut = async () => {
     try {
-      console.log('[ProfileScreen iOS] ===== SIGN OUT CONFIRMED =====');
+      console.log('[ProfileScreen] ===== SIGN OUT CONFIRMED =====');
       setShowSignOutModal(false);
       await signOut();
       router.replace('/login');
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
+      console.error('[ProfileScreen] ❌ Error during sign out:', error);
       router.replace('/login');
     }
   };
 
   const handleDeleteAccount = () => {
-    console.log('[ProfileScreen iOS] Delete account button pressed');
+    console.log('[ProfileScreen] Delete account button pressed');
     setShowDeleteModal(true);
   };
 
@@ -275,7 +293,7 @@ export default function ProfileScreen() {
 
   const finalDeleteAccount = async () => {
     try {
-      console.log('[ProfileScreen iOS] ===== FINAL DELETE CONFIRMED =====');
+      console.log('[ProfileScreen] ===== FINAL DELETE CONFIRMED =====');
       setShowDeleteConfirmModal(false);
       setIsDeleting(true);
       
@@ -303,23 +321,29 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
-    console.log('[ProfileScreen iOS] 🔄 Refreshing profile data...');
+    console.log('[ProfileScreen] 🔄 Refreshing profile data...');
     await refreshProfile();
     await loadNotificationStatus();
     await loadNotificationLocations();
     await checkPermissions();
+    
+    // ✅ V7.0 FIX: Also check push token registration
+    if (user?.id) {
+      await ensurePushTokenRegistered(user.id);
+    }
+    
     Alert.alert('Success', 'Profile data refreshed');
   };
 
   const handleRefreshProducts = async () => {
-    console.log('[ProfileScreen iOS] 🔄 ===== REFRESH PRODUCTS BUTTON PRESSED =====');
+    console.log('[ProfileScreen] 🔄 ===== REFRESH PRODUCTS BUTTON PRESSED =====');
     
     setIsRefreshingProducts(true);
     
     try {
       // Ensure RevenueCat is initialized first
       if (!isPaymentSystemAvailable()) {
-        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
         const initialized = await initializeRevenueCat();
         
         if (!initialized) {
@@ -342,7 +366,7 @@ export default function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Refresh products error:', error);
+      console.error('[ProfileScreen] ❌ Refresh products error:', error);
       Alert.alert(
         'Refresh Failed',
         'Unable to refresh products. Please try again later.',
@@ -354,14 +378,14 @@ export default function ProfileScreen() {
   };
 
   const handleRestorePurchases = async () => {
-    console.log('[ProfileScreen iOS] 🔄 ===== RESTORE PURCHASES BUTTON PRESSED =====');
+    console.log('[ProfileScreen] 🔄 ===== RESTORE PURCHASES BUTTON PRESSED =====');
     
     setIsRestoring(true);
     
     try {
       // Ensure RevenueCat is initialized first
       if (!isPaymentSystemAvailable()) {
-        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
         const initialized = await initializeRevenueCat();
         
         if (!initialized) {
@@ -385,7 +409,7 @@ export default function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Restore error:', error);
+      console.error('[ProfileScreen] ❌ Restore error:', error);
       Alert.alert(
         'Restore Failed',
         'Unable to restore purchases at this time.',
@@ -397,14 +421,14 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
-    console.log('[ProfileScreen iOS] ⚙️ ===== MANAGE SUBSCRIPTION BUTTON PRESSED =====');
+    console.log('[ProfileScreen] ⚙️ ===== MANAGE SUBSCRIPTION BUTTON PRESSED =====');
     
     setIsLoadingCustomerCenter(true);
     
     try {
       // Ensure RevenueCat is initialized first
       if (!isPaymentSystemAvailable()) {
-        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
         const initialized = await initializeRevenueCat();
         
         if (!initialized) {
@@ -422,7 +446,7 @@ export default function ProfileScreen() {
       await presentCustomerCenter();
       await refreshProfile();
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Customer center error:', error);
+      console.error('[ProfileScreen] ❌ Customer center error:', error);
       Alert.alert(
         'Manage Subscription',
         'To manage your subscription:\n\n' +
@@ -442,14 +466,14 @@ export default function ProfileScreen() {
   };
 
   const handleSubscribeNow = async () => {
-    console.log('[ProfileScreen iOS] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
+    console.log('[ProfileScreen] 🔘 ===== SUBSCRIBE NOW BUTTON PRESSED =====');
     
     setIsSubscribing(true);
 
     try {
       // Ensure RevenueCat is initialized first
       if (!isPaymentSystemAvailable()) {
-        console.log('[ProfileScreen iOS] ⚠️ Payment system not available, initializing...');
+        console.log('[ProfileScreen] ⚠️ Payment system not available, initializing...');
         const initialized = await initializeRevenueCat();
         
         if (!initialized) {
@@ -466,7 +490,7 @@ export default function ProfileScreen() {
       
       const result = await presentPaywall(user?.id, user?.email || undefined);
       
-      console.log('[ProfileScreen iOS] 📊 Paywall result:', result);
+      console.log('[ProfileScreen] 📊 Paywall result:', result);
       
       await refreshProfile();
       
@@ -497,7 +521,7 @@ export default function ProfileScreen() {
       }
       
     } catch (error) {
-      console.error('[ProfileScreen iOS] ❌ Subscribe error:', error);
+      console.error('[ProfileScreen] ❌ Subscribe error:', error);
       Alert.alert(
         'Subscribe Failed',
         'Unable to open subscription page. Please try again later.',
@@ -946,6 +970,9 @@ export default function ProfileScreen() {
             Permission Status: {permissionStatusText}
           </Text>
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Push Token: {profile.push_token ? 'Present ✓' : 'Missing ✗'}
+          </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Notification Locations: {selectedNotificationLocations.join(', ')}
           </Text>
         </View>
@@ -956,7 +983,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 6.0.2
+          Version 7.0
         </Text>
       </View>
 
