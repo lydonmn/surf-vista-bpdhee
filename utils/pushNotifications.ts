@@ -1,7 +1,7 @@
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, Linking } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import Constants from 'expo-constants';
 
@@ -13,6 +13,156 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
+/**
+ * Check current notification permission status
+ */
+export async function checkNotificationPermissions(): Promise<{
+  granted: boolean;
+  canAskAgain: boolean;
+  status: string;
+}> {
+  try {
+    console.log('[Push Notifications] Checking notification permissions...');
+    
+    // For web, always return granted
+    if (Platform.OS === 'web') {
+      console.log('[Push Notifications] Web platform - permissions not applicable');
+      return { granted: true, canAskAgain: false, status: 'granted' };
+    }
+
+    // For simulators, return a special status
+    if (!Device.isDevice) {
+      console.log('[Push Notifications] Simulator detected - permissions not applicable');
+      return { granted: false, canAskAgain: false, status: 'simulator' };
+    }
+
+    const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+    console.log('[Push Notifications] Permission status:', status);
+    console.log('[Push Notifications] Can ask again:', canAskAgain);
+
+    return {
+      granted: status === 'granted',
+      canAskAgain: canAskAgain ?? true,
+      status: status,
+    };
+  } catch (error) {
+    console.error('[Push Notifications] Error checking permissions:', error);
+    return { granted: false, canAskAgain: true, status: 'undetermined' };
+  }
+}
+
+/**
+ * Request notification permissions with user-friendly prompts
+ */
+export async function requestNotificationPermissions(): Promise<boolean> {
+  try {
+    console.log('[Push Notifications] ===== REQUESTING NOTIFICATION PERMISSIONS =====');
+    console.log('[Push Notifications] Platform:', Platform.OS);
+    console.log('[Push Notifications] Is Device:', Device.isDevice);
+
+    // For web, return true
+    if (Platform.OS === 'web') {
+      console.log('[Push Notifications] Web platform - permissions granted by default');
+      return true;
+    }
+
+    // For simulators, show info and return false
+    if (!Device.isDevice) {
+      console.warn('[Push Notifications] Simulator detected - notifications not available');
+      Alert.alert(
+        'Physical Device Required',
+        'Push notifications only work on physical devices, not simulators. Please test on a real device to enable notifications.',
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+
+    // Check current status
+    const { status: existingStatus, canAskAgain } = await Notifications.getPermissionsAsync();
+    console.log('[Push Notifications] Current status:', existingStatus);
+    console.log('[Push Notifications] Can ask again:', canAskAgain);
+
+    // If already granted, return true
+    if (existingStatus === 'granted') {
+      console.log('[Push Notifications] ✅ Permissions already granted');
+      return true;
+    }
+
+    // If we can't ask again (user denied previously), show settings prompt
+    if (!canAskAgain || existingStatus === 'denied') {
+      console.log('[Push Notifications] ⚠️ Cannot ask again - user must enable in settings');
+      
+      return new Promise((resolve) => {
+        Alert.alert(
+          'Notification Permission Required',
+          'To receive daily surf reports, you need to enable notifications in your device settings.\n\nWould you like to open settings now?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                console.log('[Push Notifications] User cancelled settings navigation');
+                resolve(false);
+              }
+            },
+            {
+              text: 'Open Settings',
+              onPress: async () => {
+                console.log('[Push Notifications] Opening device settings...');
+                try {
+                  await Linking.openSettings();
+                  resolve(false); // Still return false since we can't verify if they enabled it
+                } catch (error) {
+                  console.error('[Push Notifications] Error opening settings:', error);
+                  resolve(false);
+                }
+              }
+            }
+          ]
+        );
+      });
+    }
+
+    // Request permissions
+    console.log('[Push Notifications] Requesting permissions from user...');
+    const { status: newStatus } = await Notifications.requestPermissionsAsync();
+    console.log('[Push Notifications] Permission request result:', newStatus);
+
+    if (newStatus !== 'granted') {
+      console.warn('[Push Notifications] ❌ Permission denied by user');
+      Alert.alert(
+        'Permission Denied',
+        'You have denied notification permissions. To receive daily surf reports, please enable notifications in your device settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => Linking.openSettings()
+          }
+        ]
+      );
+      return false;
+    }
+
+    console.log('[Push Notifications] ✅ Permissions granted successfully');
+    return true;
+  } catch (error) {
+    console.error('[Push Notifications] ===== PERMISSION REQUEST ERROR =====');
+    console.error('[Push Notifications] Error:', error);
+    if (error instanceof Error) {
+      console.error('[Push Notifications] Error message:', error.message);
+      console.error('[Push Notifications] Error stack:', error.stack);
+    }
+    
+    Alert.alert(
+      'Permission Error',
+      'Failed to request notification permissions. Please try again or enable notifications manually in your device settings.',
+      [{ text: 'OK' }]
+    );
+    return false;
+  }
+}
 
 /**
  * Register for push notifications and get the Expo push token
@@ -31,35 +181,14 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
     // Check if running on a physical device
     if (!Device.isDevice) {
-      console.warn('[Push Notifications] Must use physical device for push notifications');
-      Alert.alert(
-        'Physical Device Required',
-        'Push notifications only work on physical devices, not simulators. The setting will be saved, but you won\'t receive notifications until you use a real device.',
-        [{ text: 'OK' }]
-      );
+      console.warn('[Push Notifications] Simulator detected - using dummy token');
       return 'simulator-dummy-token';
     }
 
-    // Check existing permissions
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    console.log('[Push Notifications] Existing permission status:', existingStatus);
-
-    // Request permissions if not granted
-    if (existingStatus !== 'granted') {
-      console.log('[Push Notifications] Requesting permissions...');
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-      console.log('[Push Notifications] Permission request result:', status);
-    }
-
-    if (finalStatus !== 'granted') {
-      console.warn('[Push Notifications] Permission not granted:', finalStatus);
-      Alert.alert(
-        'Permission Required',
-        'Push notifications require permission. Please enable notifications in your device settings to receive daily surf reports.',
-        [{ text: 'OK' }]
-      );
+    // First, ensure we have permissions
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      console.error('[Push Notifications] ❌ No notification permission - cannot register');
       return null;
     }
 
@@ -246,5 +375,22 @@ export async function getDailyReportNotificationStatus(userId: string): Promise<
       console.error('[Push Notifications] Exception details:', error.message);
     }
     return false;
+  }
+}
+
+/**
+ * Open device notification settings
+ */
+export async function openNotificationSettings(): Promise<void> {
+  try {
+    console.log('[Push Notifications] Opening notification settings...');
+    await Linking.openSettings();
+  } catch (error) {
+    console.error('[Push Notifications] Error opening settings:', error);
+    Alert.alert(
+      'Cannot Open Settings',
+      'Please manually open your device settings and enable notifications for SurfVista.',
+      [{ text: 'OK' }]
+    );
   }
 }

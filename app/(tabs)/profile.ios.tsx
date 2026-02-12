@@ -16,7 +16,9 @@ import {
 } from '@/utils/superwallConfig';
 import { 
   setDailyReportNotifications, 
-  getDailyReportNotificationStatus 
+  getDailyReportNotificationStatus,
+  checkNotificationPermissions,
+  openNotificationSettings
 } from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
@@ -33,6 +35,12 @@ export default function ProfileScreen() {
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [notificationPermissionStatus, setNotificationPermissionStatus] = useState<{
+    granted: boolean;
+    canAskAgain: boolean;
+    status: string;
+  } | null>(null);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
@@ -44,11 +52,28 @@ export default function ProfileScreen() {
     setDailyNotificationsEnabled(status);
   }, [user?.id]);
 
+  const checkPermissions = useCallback(async () => {
+    console.log('[ProfileScreen iOS] 🔐 Checking notification permissions...');
+    const permStatus = await checkNotificationPermissions();
+    console.log('[ProfileScreen iOS] 🔐 Permission status:', permStatus);
+    setNotificationPermissionStatus(permStatus);
+
+    // If notifications are enabled in profile but permissions are denied, show prompt
+    if (dailyNotificationsEnabled && !permStatus.granted && permStatus.status !== 'simulator') {
+      console.log('[ProfileScreen iOS] ⚠️ Notifications enabled but permissions denied - showing prompt');
+      setShowPermissionPrompt(true);
+    }
+  }, [dailyNotificationsEnabled]);
+
   useEffect(() => {
     if (user?.id) {
       loadNotificationStatus();
     }
   }, [user?.id, loadNotificationStatus]);
+
+  useEffect(() => {
+    checkPermissions();
+  }, [checkPermissions]);
 
   // Check payment system status on mount
   useEffect(() => {
@@ -83,6 +108,20 @@ export default function ProfileScreen() {
     }
 
     console.log('[ProfileScreen iOS] 🔔 Toggle notifications button pressed:', value);
+
+    // If enabling, check permissions first
+    if (value) {
+      console.log('[ProfileScreen iOS] 🔐 Checking permissions before enabling...');
+      const permStatus = await checkNotificationPermissions();
+      console.log('[ProfileScreen iOS] 🔐 Permission check result:', permStatus);
+
+      if (!permStatus.granted && permStatus.status !== 'simulator') {
+        console.log('[ProfileScreen iOS] ⚠️ Permissions not granted - showing prompt');
+        setShowPermissionPrompt(true);
+        return;
+      }
+    }
+
     setIsTogglingNotifications(true);
 
     try {
@@ -118,7 +157,13 @@ export default function ProfileScreen() {
         Alert.alert(
           'Error',
           'Failed to update notification preferences. Please make sure you have granted notification permissions in your device settings and try again.',
-          [{ text: 'OK' }]
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: openNotificationSettings
+            }
+          ]
         );
       }
     } catch (error) {
@@ -197,6 +242,7 @@ export default function ProfileScreen() {
     console.log('[ProfileScreen iOS] 🔄 Refreshing profile data...');
     await refreshProfile();
     await loadNotificationStatus();
+    await checkPermissions();
     Alert.alert('Success', 'Profile data refreshed');
   };
 
@@ -429,6 +475,14 @@ export default function ProfileScreen() {
     ? new Date(profile.subscription_end_date).toLocaleDateString()
     : null;
 
+  const permissionStatusText = notificationPermissionStatus?.status === 'simulator' 
+    ? 'Simulator (Not Available)'
+    : notificationPermissionStatus?.granted 
+      ? 'Granted ✓' 
+      : notificationPermissionStatus?.canAskAgain 
+        ? 'Not Requested' 
+        : 'Denied';
+
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -614,6 +668,27 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
+        {notificationPermissionStatus && !notificationPermissionStatus.granted && notificationPermissionStatus.status !== 'simulator' && (
+          <View style={[styles.permissionWarning, { backgroundColor: 'rgba(255, 149, 0, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={20}
+              color="#FF9500"
+            />
+            <View style={styles.permissionWarningTextContainer}>
+              <Text style={[styles.permissionWarningText, { color: '#FF9500' }]}>
+                Notification permissions are {notificationPermissionStatus.canAskAgain ? 'not enabled' : 'denied'}
+              </Text>
+              <TouchableOpacity onPress={openNotificationSettings}>
+                <Text style={[styles.permissionWarningLink, { color: colors.primary }]}>
+                  Open Settings →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={styles.notificationRow}>
           <View style={styles.notificationInfo}>
             <Text style={[styles.notificationTitle, { color: theme.colors.text }]}>
@@ -622,6 +697,13 @@ export default function ProfileScreen() {
             <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
               Get a push notification at 5 AM EST with your daily surf report summary
             </Text>
+            {notificationPermissionStatus && (
+              <Text style={[styles.permissionStatus, { 
+                color: notificationPermissionStatus.granted ? colors.primary : colors.textSecondary 
+              }]}>
+                Permission: {permissionStatusText}
+              </Text>
+            )}
           </View>
           {isTogglingNotifications ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -775,6 +857,9 @@ export default function ProfileScreen() {
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Daily Notifications: {dailyNotificationsEnabled ? 'Enabled' : 'Disabled'}
           </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Permission Status: {permissionStatusText}
+          </Text>
         </View>
       )}
 
@@ -786,6 +871,56 @@ export default function ProfileScreen() {
           Version 6.0.2
         </Text>
       </View>
+
+      {/* Permission Prompt Modal */}
+      <Modal
+        visible={showPermissionPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPermissionPrompt(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.modalIconContainer}>
+              <IconSymbol
+                ios_icon_name="bell.badge.fill"
+                android_material_icon_name="notifications-active"
+                size={48}
+                color={colors.primary}
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Enable Notifications
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              To receive daily surf reports at 5 AM EST, you need to enable notifications for SurfVista.
+              {'\n\n'}
+              Please tap "Open Settings" below and enable notifications.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setShowPermissionPrompt(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>
+                  Not Now
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton, { backgroundColor: colors.primary }]}
+                onPress={async () => {
+                  setShowPermissionPrompt(false);
+                  await openNotificationSettings();
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
+                  Open Settings
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal
@@ -1084,6 +1219,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  permissionWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  permissionWarningTextContainer: {
+    flex: 1,
+  },
+  permissionWarningText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  permissionWarningLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   notificationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1102,6 +1258,12 @@ const styles = StyleSheet.create({
   notificationDescription: {
     fontSize: 13,
     lineHeight: 18,
+    marginBottom: 4,
+  },
+  permissionStatus: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
   },
   actionItem: {
     flexDirection: 'row',
@@ -1158,6 +1320,10 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
     elevation: 5,
+  },
+  modalIconContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
