@@ -30,6 +30,7 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const STORAGE_KEY = '@surfvista_location';
 
+// ✅ CRITICAL: Updated DEFAULT_LOCATIONS to include all existing locations as fallback
 const DEFAULT_LOCATIONS: LocationData[] = [
   {
     id: 'folly-beach',
@@ -52,6 +53,17 @@ const DEFAULT_LOCATIONS: LocationData[] = [
     },
     buoyId: '41004',
     tideStationId: '8662245'
+  },
+  {
+    id: 'holden-beach-nc',
+    name: 'Holden Beach',
+    displayName: 'Holden Beach, NC',
+    coordinates: {
+      lat: 33.9140,
+      lon: -78.3070
+    },
+    buoyId: '41013',
+    tideStationId: '8659414'
   }
 ];
 
@@ -72,6 +84,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('[LocationContext] Error fetching locations:', error);
+        console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
         return;
       }
 
@@ -88,23 +101,32 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           tideStationId: loc.tide_station_id
         }));
 
-        console.log('[LocationContext] Loaded', formattedLocations.length, 'locations');
+        console.log('[LocationContext] ✅ Loaded', formattedLocations.length, 'active locations from database');
         setLocations(formattedLocations);
+      } else {
+        console.log('[LocationContext] No active locations in database, using DEFAULT_LOCATIONS');
       }
     } catch (error) {
       console.error('[LocationContext] Exception fetching locations:', error);
+      console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
     }
   }, []);
 
   useEffect(() => {
     const initialize = async () => {
       try {
+        console.log('[LocationContext] Initializing...');
+        
+        // Fetch locations from database first
         await fetchLocations();
 
+        // Load saved location preference
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         if (saved) {
-          console.log('[LocationContext] Loaded saved location:', saved);
+          console.log('[LocationContext] Loaded saved location preference:', saved);
           setCurrentLocation(saved);
+        } else {
+          console.log('[LocationContext] No saved location, using default: folly-beach');
         }
       } catch (error) {
         console.error('[LocationContext] Error initializing:', error);
@@ -127,10 +149,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshLocations = useCallback(async () => {
-    console.log('[LocationContext] Refreshing locations...');
+    console.log('[LocationContext] ⚡ Refreshing locations from database...');
     await fetchLocations();
   }, [fetchLocations]);
 
+  // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
 
   const value: LocationContextType = {
@@ -157,6 +180,7 @@ export function useLocation() {
   return context;
 }
 
+// ✅ Export LOCATIONS for backward compatibility
 export const LOCATIONS: Record<string, LocationData> = DEFAULT_LOCATIONS.reduce((acc, loc) => {
   acc[loc.id] = loc;
   return acc;

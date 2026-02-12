@@ -187,7 +187,7 @@ export default function AdminScreen() {
     try {
       setIsUploading(true);
       setUploadProgress(0);
-      console.log('[AdminScreen] Starting video upload...');
+      console.log('[AdminScreen] Starting video upload for location:', selectedLocation);
 
       const fileInfo = await FileSystem.getInfoAsync(videoUri);
       if (!fileInfo.exists) {
@@ -289,7 +289,7 @@ export default function AdminScreen() {
       const resolutionHeight = metadata?.height || null;
       const fileSizeBytes = metadata?.size || null;
 
-      console.log('[AdminScreen] Saving to database with location:', selectedLocation);
+      console.log('[AdminScreen] ✅ Saving to database with location:', selectedLocation);
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
@@ -311,7 +311,7 @@ export default function AdminScreen() {
         throw dbError;
       }
 
-      console.log('[AdminScreen] Video uploaded successfully');
+      console.log('[AdminScreen] ✅ Video uploaded successfully');
       
       console.log('[AdminScreen] ⚡ Triggering immediate video preparation...');
       try {
@@ -329,7 +329,13 @@ export default function AdminScreen() {
         console.warn('[AdminScreen] Video preparation failed (non-critical):', prepError);
       }
       
-      Alert.alert('Success', 'Video uploaded and prepared for instant playback!');
+      const selectedLocationData = locations.find(loc => loc.id === selectedLocation);
+      const locationName = selectedLocationData?.displayName || selectedLocation;
+      
+      Alert.alert(
+        'Success!', 
+        `Video uploaded and prepared for instant playback!\n\n✅ Video tagged to: ${locationName}\n✅ Will appear on homepage when ${locationName} is selected\n✅ Added to video library for ${locationName}`
+      );
 
       setVideoUri(null);
       setVideoTitle('');
@@ -368,6 +374,8 @@ export default function AdminScreen() {
     );
   }
 
+  const locationInfoText = `Videos are automatically tagged to locations. When users select a location on the homepage, they'll see the latest video for that location in the large video card.`;
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content}>
@@ -375,6 +383,22 @@ export default function AdminScreen() {
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Upload Video</Text>
+
+          {/* ✅ NEW: Location-aware video upload info */}
+          <View style={styles.infoCard}>
+            <View style={styles.infoHeader}>
+              <IconSymbol
+                ios_icon_name="info.circle.fill"
+                android_material_icon_name="info"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.infoTitle}>Location-Specific Videos</Text>
+            </View>
+            <Text style={styles.infoText}>
+              {locationInfoText}
+            </Text>
+          </View>
 
           {videoUri && (
             <View style={styles.videoPreview}>
@@ -425,27 +449,30 @@ export default function AdminScreen() {
           />
 
           <View style={styles.locationSection}>
-            <Text style={[styles.label, { color: theme.colors.text }]}>Location:</Text>
+            <Text style={[styles.label, { color: theme.colors.text }]}>📍 Select Location for This Video:</Text>
             <View style={styles.locationButtons}>
-              {locations.map((location) => (
-                <TouchableOpacity
-                  key={location.id}
-                  style={[
-                    styles.locationButton,
-                    selectedLocation === location.id && styles.locationButtonActive,
-                    { backgroundColor: selectedLocation === location.id ? colors.primary : theme.colors.background }
-                  ]}
-                  onPress={() => setSelectedLocation(location.id)}
-                  disabled={isUploading}
-                >
-                  <Text style={[
-                    styles.locationButtonText,
-                    { color: selectedLocation === location.id ? '#FFFFFF' : theme.colors.text }
-                  ]}>
-                    {location.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {locations.map((location) => {
+                const isSelected = selectedLocation === location.id;
+                return (
+                  <TouchableOpacity
+                    key={location.id}
+                    style={[
+                      styles.locationButton,
+                      isSelected && styles.locationButtonActive,
+                      { backgroundColor: isSelected ? colors.primary : theme.colors.background }
+                    ]}
+                    onPress={() => setSelectedLocation(location.id)}
+                    disabled={isUploading}
+                  >
+                    <Text style={[
+                      styles.locationButtonText,
+                      { color: isSelected ? '#FFFFFF' : theme.colors.text }
+                    ]}>
+                      {location.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
@@ -600,6 +627,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
+  infoCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1976D2',
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#424242',
+    lineHeight: 20,
+  },
   videoPreview: {
     width: '100%',
     height: 200,
@@ -655,8 +706,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.border,
   },
   locationButtonActive: {
+    borderColor: colors.primary,
   },
   locationButtonText: {
     fontSize: 14,

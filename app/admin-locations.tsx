@@ -305,6 +305,31 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
   },
+  featureCard: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0EA5E9',
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0369A1',
+    marginBottom: 8,
+  },
+  featureText: {
+    fontSize: 14,
+    color: '#424242',
+    lineHeight: 22,
+  },
+  featureBullet: {
+    fontSize: 14,
+    color: '#424242',
+    lineHeight: 22,
+    marginLeft: 8,
+  },
 });
 
 export default function AdminLocationsScreen() {
@@ -476,11 +501,18 @@ export default function AdminLocationsScreen() {
         return;
       }
 
-      console.log('AdminLocationsScreen: Location saved successfully');
-      Alert.alert('Success', 'Location saved successfully!');
+      console.log('AdminLocationsScreen: ✅ Location saved successfully');
+      
+      // ✅ CRITICAL: Refresh the LocationContext so the new location appears everywhere
+      await refreshLocations();
+      
+      Alert.alert(
+        'Success!', 
+        `Location "${formData.display_name}" saved successfully!\n\n✅ Location will now appear in:\n  • Location selector\n  • Homepage video card\n  • Admin data manager\n  • All reports and forecasts\n\nNext steps:\n1. Click "Test Data" to verify NOAA sources\n2. Upload videos for this location\n3. Generate daily reports`
+      );
+      
       closeModal();
       await loadLocations();
-      await refreshLocations();
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error saving location:', err);
       Alert.alert('Error', 'An unexpected error occurred');
@@ -505,8 +537,10 @@ export default function AdminLocationsScreen() {
       }
 
       console.log('AdminLocationsScreen: Active status toggled successfully');
-      await loadLocations();
+      
+      // ✅ CRITICAL: Refresh LocationContext when toggling active status
       await refreshLocations();
+      await loadLocations();
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error toggling active:', err);
       Alert.alert('Error', 'An unexpected error occurred');
@@ -583,7 +617,7 @@ export default function AdminLocationsScreen() {
         addLog(`🎉 All data sources working for ${location.display_name}!`, 'success');
         Alert.alert(
           'Test Successful!',
-          `All data sources are working correctly for ${location.display_name}:\n\n✅ Buoy ${location.buoy_id}\n✅ Weather (${location.latitude}, ${location.longitude})\n✅ Tide Station ${location.tide_station_id}\n\nThis location is ready to generate reports!`
+          `All data sources are working correctly for ${location.display_name}:\n\n✅ Buoy ${location.buoy_id}\n✅ Weather (${location.latitude}, ${location.longitude})\n✅ Tide Station ${location.tide_station_id}\n\nThis location is ready to:\n  • Generate daily reports\n  • Display on homepage\n  • Show in location selector\n  • Accept video uploads`
         );
       } else {
         Alert.alert(
@@ -627,9 +661,12 @@ export default function AdminLocationsScreen() {
               }
 
               console.log('AdminLocationsScreen: Location deleted successfully');
+              
+              // ✅ CRITICAL: Refresh LocationContext when deleting
+              await refreshLocations();
+              
               Alert.alert('Success', 'Location deleted successfully!');
               await loadLocations();
-              await refreshLocations();
             } catch (err) {
               console.error('AdminLocationsScreen: Unexpected error deleting:', err);
               Alert.alert('Error', 'An unexpected error occurred');
@@ -682,6 +719,35 @@ export default function AdminLocationsScreen() {
           <Text style={styles.addButtonText}>+ Add New Location</Text>
         </TouchableOpacity>
 
+        {/* ✅ NEW: What Happens When You Add a Location */}
+        <View style={styles.featureCard}>
+          <Text style={styles.featureTitle}>✨ What Happens When You Add a Location</Text>
+          <Text style={styles.featureText}>
+            When you add a new location, it will automatically:
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Appear in the location selector dropdown
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Show its own homepage video card (latest video for that location)
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Display location-specific surf reports and forecasts
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Accept video uploads tagged to that location
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Generate daily 5 AM reports with NOAA data
+          </Text>
+          <Text style={styles.featureBullet}>
+            • Send push notifications to subscribers
+          </Text>
+          <Text style={styles.featureText}>
+            The system is fully dynamic - no code changes needed!
+          </Text>
+        </View>
+
         {/* Help Guide */}
         <View style={styles.helpCard}>
           <Text style={styles.helpTitle}>📚 How to Add a New Location</Text>
@@ -690,13 +756,18 @@ export default function AdminLocationsScreen() {
             2. Find Tide Station ID at: tidesandcurrents.noaa.gov{'\n'}
             3. Get coordinates from Google Maps{'\n'}
             4. Add location and click "Test Data" to verify{'\n'}
-            5. If test passes, activate the location!
+            5. If test passes, activate the location!{'\n'}
+            6. Upload videos for the new location{'\n'}
+            7. Generate daily reports in Admin Data Manager
           </Text>
           <Text style={styles.helpExample}>
             Example (Holden Beach, NC):{'\n'}
+            • ID: holden-beach-nc{'\n'}
+            • Name: Holden Beach{'\n'}
+            • Display: Holden Beach, NC{'\n'}
             • Buoy: 41013 (Frying Pan Shoals){'\n'}
-            • Tide Station: 8658163 (Wrightsville Beach){'\n'}
-            • Coordinates: 33.9176, -78.3086
+            • Tide Station: 8659414{'\n'}
+            • Coordinates: 33.9140, -78.3070
           </Text>
         </View>
 
@@ -819,7 +890,7 @@ export default function AdminLocationsScreen() {
                 onChangeText={(text) =>
                   setFormData({ ...formData, id: text.toLowerCase().replace(/\s+/g, '-') })
                 }
-                placeholder="e.g., holden-beach"
+                placeholder="e.g., holden-beach-nc"
                 placeholderTextColor={colors.textSecondary}
                 editable={!editingLocation}
               />
@@ -847,7 +918,7 @@ export default function AdminLocationsScreen() {
                 style={styles.input}
                 value={formData.latitude}
                 onChangeText={(text) => setFormData({ ...formData, latitude: text })}
-                placeholder="e.g., 33.9176"
+                placeholder="e.g., 33.9140"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
               />
@@ -857,7 +928,7 @@ export default function AdminLocationsScreen() {
                 style={styles.input}
                 value={formData.longitude}
                 onChangeText={(text) => setFormData({ ...formData, longitude: text })}
-                placeholder="e.g., -78.3086"
+                placeholder="e.g., -78.3070"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
               />
@@ -878,7 +949,7 @@ export default function AdminLocationsScreen() {
                 style={styles.input}
                 value={formData.tide_station_id}
                 onChangeText={(text) => setFormData({ ...formData, tide_station_id: text })}
-                placeholder="e.g., 8658163"
+                placeholder="e.g., 8659414"
                 placeholderTextColor={colors.textSecondary}
               />
             </ScrollView>

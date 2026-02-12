@@ -1,7 +1,7 @@
 
 import { LocationSelector } from "@/components/LocationSelector";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -32,10 +32,10 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, refreshVideos } = useVideos();
   const { surfReports, weatherData, weatherForecast, refreshData } = useSurfData();
-  const { currentLocation, locationData } = useLocation();
+  const { currentLocation } = useLocation();
   
   const [refreshing, setRefreshing] = useState(false);
 

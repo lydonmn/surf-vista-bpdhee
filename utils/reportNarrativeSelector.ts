@@ -46,7 +46,6 @@ export function selectNarrativeText(report: SurfReport | null | undefined): stri
       if (unit) return match;
       
       // Check context to determine appropriate unit
-      const lowerMatch = match.toLowerCase();
       const beforeMatch = narrativeText!.substring(Math.max(0, narrativeText!.indexOf(match) - 50), narrativeText!.indexOf(match)).toLowerCase();
       
       // Wave/surf height context
