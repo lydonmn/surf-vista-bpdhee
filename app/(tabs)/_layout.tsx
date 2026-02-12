@@ -23,6 +23,12 @@ export default function TabLayout() {
       label: 'Report',
     },
     {
+      name: 'forecast',
+      route: '/(tabs)/forecast',
+      icon: 'calendar-today',
+      label: 'Forecast',
+    },
+    {
       name: 'profile',
       route: '/(tabs)/profile',
       icon: 'person',
