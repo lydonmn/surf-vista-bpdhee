@@ -1,7 +1,7 @@
 
 import { LocationSelector } from "@/components/LocationSelector";
 import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { SurfReport } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -38,6 +38,7 @@ export default function HomeScreen() {
   const { currentLocation, locationData } = useLocation();
   
   const [refreshing, setRefreshing] = useState(false);
+  const hasLoadedRef = useRef(false);
 
   const hasSubscription = useMemo(() => {
     return checkSubscription();
@@ -47,10 +48,10 @@ export default function HomeScreen() {
     return authLoading || !isInitialized;
   }, [authLoading, isInitialized]);
 
+  // ✅ CRITICAL FIX: Remove hasSubscription from dependencies to prevent reload loop
   const loadData = useCallback(async () => {
     console.log('[HomeScreen] Loading data for location:', currentLocation);
     console.log('[HomeScreen] User:', user?.id);
-    console.log('[HomeScreen] Has subscription:', hasSubscription);
     
     if (!user) {
       console.log('[HomeScreen] No user, skipping data load');
@@ -66,14 +67,22 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('[HomeScreen] Error loading data:', error);
     }
-  }, [user, refreshVideos, refreshData, hasSubscription, currentLocation]);
+  }, [user, refreshVideos, refreshData, currentLocation]);
 
+  // ✅ CRITICAL FIX: Only load data once when component mounts and auth is ready
   useEffect(() => {
-    if (isInitialized && !isLoading && user && profile && hasSubscription && session) {
-      console.log('[HomeScreen] Auth ready, loading data for location:', currentLocation);
+    if (isInitialized && !isLoading && user && profile && session && !hasLoadedRef.current) {
+      console.log('[HomeScreen] Initial auth ready, loading data for location:', currentLocation);
+      hasLoadedRef.current = true;
       loadData();
     }
-  }, [isInitialized, isLoading, user, profile, hasSubscription, session, loadData, currentLocation]);
+  }, [isInitialized, isLoading, user, profile, session, currentLocation, loadData]);
+
+  // ✅ CRITICAL FIX: Reset hasLoadedRef when location changes to allow reload
+  useEffect(() => {
+    console.log('[HomeScreen] Location changed to:', currentLocation);
+    hasLoadedRef.current = false;
+  }, [currentLocation]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

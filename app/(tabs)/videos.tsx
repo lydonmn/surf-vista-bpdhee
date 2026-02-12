@@ -10,11 +10,13 @@ import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
+import { useLocation } from "@/contexts/LocationContext";
 
 export default function VideosScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
+  const { locationData } = useLocation();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
   const isSubscribed = checkSubscription();
@@ -126,6 +128,9 @@ export default function VideosScreen() {
     });
   }, []);
 
+  // ✅ ATOMIC JSX: Extract location-specific subtitle text
+  const videoLibrarySubtitle = `Exclusive drone footage from ${locationData.displayName}`;
+
   // Show loading state while auth is initializing or profile is being loaded
   if (!isInitialized || authLoading) {
     return (
@@ -175,7 +180,7 @@ export default function VideosScreen() {
     );
   }
 
-  console.log('VideosScreen - Showing video library');
+  console.log('VideosScreen - Showing video library for location:', locationData.displayName);
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -193,7 +198,7 @@ export default function VideosScreen() {
           Video Library
         </Text>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-          Exclusive drone footage from Folly Beach
+          {videoLibrarySubtitle}
         </Text>
       </View>
 
