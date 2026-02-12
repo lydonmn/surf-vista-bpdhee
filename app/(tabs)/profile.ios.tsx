@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Switch } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Switch, Modal } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -30,6 +30,9 @@ export default function ProfileScreen() {
   const [dailyNotificationsEnabled, setDailyNotificationsEnabled] = useState(false);
   const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
   const [paymentSystemReady, setPaymentSystemReady] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
@@ -71,6 +74,11 @@ export default function ProfileScreen() {
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
       console.error('[ProfileScreen iOS] ❌ No user ID available');
+      Alert.alert(
+        'Error',
+        'Unable to update notifications. Please try signing out and back in.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -86,7 +94,7 @@ export default function ProfileScreen() {
         
         const statusText = value ? 'Enabled' : 'Disabled';
         const messageText = value 
-          ? 'You will receive a push notification each morning at 5 AM with your daily surf report summary!'
+          ? 'You will receive a push notification each morning at 5 AM EST with your daily surf report summary!'
           : 'Daily surf report notifications have been disabled.';
         
         Alert.alert(
@@ -96,17 +104,25 @@ export default function ProfileScreen() {
         );
       } else {
         console.error('[ProfileScreen iOS] ❌ Failed to update notifications');
+        
+        // Revert the toggle
+        setDailyNotificationsEnabled(!value);
+        
         Alert.alert(
           'Error',
-          'Failed to update notification preferences. Please try again.',
+          'Failed to update notification preferences. Please make sure you have granted notification permissions in your device settings and try again.',
           [{ text: 'OK' }]
         );
       }
     } catch (error) {
       console.error('[ProfileScreen iOS] ❌ Exception toggling notifications:', error);
+      
+      // Revert the toggle
+      setDailyNotificationsEnabled(!value);
+      
       Alert.alert(
         'Error',
-        'An error occurred while updating notifications.',
+        'An error occurred while updating notifications. Please try again.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -115,81 +131,59 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[ProfileScreen iOS] ===== SIGN OUT BUTTON PRESSED =====');
-              await signOut();
-              router.replace('/login');
-            } catch (error) {
-              console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
-              router.replace('/login');
-            }
-          }
-        }
-      ]
-    );
+    console.log('[ProfileScreen iOS] Sign out button pressed');
+    setShowSignOutModal(true);
+  };
+
+  const confirmSignOut = async () => {
+    try {
+      console.log('[ProfileScreen iOS] ===== SIGN OUT CONFIRMED =====');
+      setShowSignOutModal(false);
+      await signOut();
+      router.replace('/login');
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Error during sign out:', error);
+      router.replace('/login');
+    }
   };
 
   const handleDeleteAccount = () => {
-    const userEmail = user?.email || 'your account';
-    
-    Alert.alert(
-      'Delete Account',
-      `Are you sure you want to permanently delete ${userEmail}?\n\nThis action cannot be undone. All your data will be permanently deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Final Confirmation',
-              'This is your last chance. Are you absolutely sure you want to delete your account?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Yes, Delete Forever',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      setIsDeleting(true);
-                      const result = await deleteAccount();
-                      setIsDeleting(false);
-                      
-                      if (result.success) {
-                        Alert.alert(
-                          'Account Deleted',
-                          result.message,
-                          [
-                            {
-                              text: 'OK',
-                              onPress: () => router.replace('/login')
-                            }
-                          ]
-                        );
-                      } else {
-                        Alert.alert('Error', result.message);
-                      }
-                    } catch (err: any) {
-                      setIsDeleting(false);
-                      Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
-                    }
-                  }
-                }
-              ]
-            );
-          }
-        }
-      ]
-    );
+    console.log('[ProfileScreen iOS] Delete account button pressed');
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteAccount = () => {
+    setShowDeleteModal(false);
+    setShowDeleteConfirmModal(true);
+  };
+
+  const finalDeleteAccount = async () => {
+    try {
+      console.log('[ProfileScreen iOS] ===== FINAL DELETE CONFIRMED =====');
+      setShowDeleteConfirmModal(false);
+      setIsDeleting(true);
+      
+      const result = await deleteAccount();
+      setIsDeleting(false);
+      
+      if (result.success) {
+        Alert.alert(
+          'Account Deleted',
+          result.message,
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/login')
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.message);
+      }
+    } catch (err: any) {
+      setIsDeleting(false);
+      Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
+    }
   };
 
   const handleRefreshProfile = async () => {
@@ -619,7 +613,7 @@ export default function ProfileScreen() {
               Daily Surf Report
             </Text>
             <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
-              Get a push notification at 5 AM with your daily surf report summary
+              Get a push notification at 5 AM EST with your daily surf report summary
             </Text>
           </View>
           {isTogglingNotifications ? (
@@ -785,6 +779,127 @@ export default function ProfileScreen() {
           Version 6.0.2
         </Text>
       </View>
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal
+        visible={showSignOutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSignOutModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Sign Out
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              Are you sure you want to sign out?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setShowSignOutModal(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton, { backgroundColor: '#FF3B30' }]}
+                onPress={confirmSignOut}
+              >
+                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
+                  Sign Out
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account First Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Delete Account
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              Are you sure you want to permanently delete {user.email}?
+              {'\n\n'}
+              This action cannot be undone. All your data will be permanently deleted.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setShowDeleteModal(false)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton, { backgroundColor: '#FF3B30' }]}
+                onPress={confirmDeleteAccount}
+              >
+                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
+                  Delete Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Final Confirmation Modal */}
+      <Modal
+        visible={showDeleteConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirmModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: '#FF3B30' }]}>
+              Final Confirmation
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              This is your last chance. Are you absolutely sure you want to delete your account?
+              {'\n\n'}
+              This action is PERMANENT and CANNOT be undone.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setShowDeleteConfirmModal(false)}
+                disabled={isDeleting}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton, { backgroundColor: '#FF3B30' }]}
+                onPress={finalDeleteAccount}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
+                    Yes, Delete Forever
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -1021,5 +1136,53 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  modalConfirmButton: {
+    // backgroundColor set inline
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

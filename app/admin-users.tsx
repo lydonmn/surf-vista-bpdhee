@@ -15,6 +15,8 @@ interface UserProfile {
   is_subscribed: boolean;
   subscription_end_date: string | null;
   created_at: string;
+  daily_report_notifications: boolean;
+  push_token: string | null;
 }
 
 interface SubscriptionAction {
@@ -44,19 +46,24 @@ export default function AdminUsersScreen() {
 
   const loadUsers = async () => {
     try {
-      console.log('[AdminUsers] Loading users...');
+      console.log('[AdminUsers] ===== LOADING USERS =====');
       setLoading(true);
+      
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, is_admin, is_subscribed, subscription_end_date, created_at, daily_report_notifications, push_token')
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('[AdminUsers] Error loading users:', error);
+        console.error('[AdminUsers] Error details:', JSON.stringify(error));
         throw error;
       }
 
-      console.log('[AdminUsers] Loaded', data?.length || 0, 'users');
+      console.log('[AdminUsers] ✅ Loaded', data?.length || 0, 'users');
+      console.log('[AdminUsers] Subscribed users:', data?.filter(u => u.is_subscribed).length || 0);
+      console.log('[AdminUsers] Users with notifications enabled:', data?.filter(u => u.daily_report_notifications).length || 0);
+      
       setUsers(data || []);
     } catch (error: any) {
       console.error('[AdminUsers] Exception loading users:', error);
@@ -127,7 +134,7 @@ export default function AdminUsersScreen() {
         throw error;
       }
 
-      console.log('[AdminUsers] Successfully granted free months');
+      console.log('[AdminUsers] ✅ Successfully granted free months');
       Alert.alert(
         'Success',
         `Granted ${months} free month${months > 1 ? 's' : ''} to ${selectedAction.userEmail}\n\nNew end date: ${newEndDate.toLocaleDateString()}`
@@ -146,47 +153,34 @@ export default function AdminUsersScreen() {
   const handleCancelSubscription = async () => {
     if (!selectedAction) return;
 
-    Alert.alert(
-      'Confirm Cancellation',
-      `Are you sure you want to cancel the subscription for ${selectedAction.userEmail}?\n\nThis will immediately revoke their access.`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[AdminUsers] Cancelling subscription for user:', selectedAction.userEmail);
-              setActionLoading(true);
+    try {
+      console.log('[AdminUsers] Cancelling subscription for user:', selectedAction.userEmail);
+      setActionLoading(true);
 
-              const { error } = await supabase
-                .from('profiles')
-                .update({
-                  is_subscribed: false,
-                  subscription_end_date: null
-                })
-                .eq('id', selectedAction.userId);
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_subscribed: false,
+          subscription_end_date: null
+        })
+        .eq('id', selectedAction.userId);
 
-              if (error) {
-                console.error('[AdminUsers] Error cancelling subscription:', error);
-                throw error;
-              }
+      if (error) {
+        console.error('[AdminUsers] Error cancelling subscription:', error);
+        throw error;
+      }
 
-              console.log('[AdminUsers] Successfully cancelled subscription');
-              Alert.alert('Success', `Subscription cancelled for ${selectedAction.userEmail}`);
-              
-              await loadUsers();
-              closeModal();
-            } catch (error: any) {
-              console.error('[AdminUsers] Exception cancelling subscription:', error);
-              Alert.alert('Error', 'Failed to cancel subscription: ' + error.message);
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
+      console.log('[AdminUsers] ✅ Successfully cancelled subscription');
+      Alert.alert('Success', `Subscription cancelled for ${selectedAction.userEmail}`);
+      
+      await loadUsers();
+      closeModal();
+    } catch (error: any) {
+      console.error('[AdminUsers] Exception cancelling subscription:', error);
+      Alert.alert('Error', 'Failed to cancel subscription: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handlePauseSubscription = async () => {
@@ -228,7 +222,7 @@ export default function AdminUsersScreen() {
         throw error;
       }
 
-      console.log('[AdminUsers] Successfully paused subscription');
+      console.log('[AdminUsers] ✅ Successfully paused subscription');
       Alert.alert(
         'Success',
         `Subscription paused for ${days} day${days > 1 ? 's' : ''}\n\nOriginal end date: ${currentEndDate.toLocaleDateString()}\nNew end date: ${newEndDate.toLocaleDateString()}`
@@ -253,50 +247,37 @@ export default function AdminUsersScreen() {
       return;
     }
 
-    Alert.alert(
-      'Confirm Refund',
-      `Issue a refund of $${amount.toFixed(2)} to ${selectedAction.userEmail}?\n\nNote: This will mark the refund in the system. You must process the actual refund through your payment provider (RevenueCat/Stripe).`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Issue Refund',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('[AdminUsers] Issuing refund of $', amount, 'to user:', selectedAction.userEmail);
-              setActionLoading(true);
+    try {
+      console.log('[AdminUsers] Issuing refund of $', amount, 'to user:', selectedAction.userEmail);
+      setActionLoading(true);
 
-              const { error } = await supabase
-                .from('profiles')
-                .update({
-                  is_subscribed: false,
-                  subscription_end_date: null
-                })
-                .eq('id', selectedAction.userId);
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_subscribed: false,
+          subscription_end_date: null
+        })
+        .eq('id', selectedAction.userId);
 
-              if (error) {
-                console.error('[AdminUsers] Error issuing refund:', error);
-                throw error;
-              }
+      if (error) {
+        console.error('[AdminUsers] Error issuing refund:', error);
+        throw error;
+      }
 
-              console.log('[AdminUsers] Successfully issued refund');
-              Alert.alert(
-                'Refund Issued',
-                `Refund of $${amount.toFixed(2)} marked for ${selectedAction.userEmail}\n\nSubscription has been cancelled.\n\nIMPORTANT: Process the actual refund through RevenueCat dashboard or your payment provider.`
-              );
-              
-              await loadUsers();
-              closeModal();
-            } catch (error: any) {
-              console.error('[AdminUsers] Exception issuing refund:', error);
-              Alert.alert('Error', 'Failed to issue refund: ' + error.message);
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
+      console.log('[AdminUsers] ✅ Successfully issued refund');
+      Alert.alert(
+        'Refund Issued',
+        `Refund of $${amount.toFixed(2)} marked for ${selectedAction.userEmail}\n\nSubscription has been cancelled.\n\nIMPORTANT: Process the actual refund through RevenueCat dashboard or your payment provider.`
+      );
+      
+      await loadUsers();
+      closeModal();
+    } catch (error: any) {
+      console.error('[AdminUsers] Exception issuing refund:', error);
+      Alert.alert('Error', 'Failed to issue refund: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const getSubscriptionStatus = (user: UserProfile): { text: string; color: string } => {
@@ -382,12 +363,16 @@ export default function AdminUsersScreen() {
           onPress={loadUsers}
           disabled={loading}
         >
-          <IconSymbol
-            ios_icon_name="arrow.clockwise"
-            android_material_icon_name="refresh"
-            size={24}
-            color={colors.primary}
-          />
+          {loading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={24}
+              color={colors.primary}
+            />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -461,6 +446,8 @@ export default function AdminUsersScreen() {
             <React.Fragment>
               {filteredUsers.map((user, index) => {
                 const status = getSubscriptionStatus(user);
+                const hasNotifications = user.daily_report_notifications;
+                const hasPushToken = user.push_token && user.push_token !== 'null';
                 
                 return (
                   <React.Fragment key={`user-${user.id || index}`}>
@@ -503,6 +490,38 @@ export default function AdminUsersScreen() {
                           </Text>
                         </View>
                       )}
+
+                      {/* Notification Status */}
+                      <View style={styles.notificationStatusContainer}>
+                        <View style={styles.notificationStatusRow}>
+                          <IconSymbol
+                            ios_icon_name="bell.fill"
+                            android_material_icon_name="notifications"
+                            size={16}
+                            color={hasNotifications ? colors.primary : colors.textSecondary}
+                          />
+                          <Text style={[styles.notificationStatusText, { 
+                            color: hasNotifications ? colors.primary : colors.textSecondary 
+                          }]}>
+                            Notifications: {hasNotifications ? 'Enabled' : 'Disabled'}
+                          </Text>
+                        </View>
+                        {hasNotifications && (
+                          <View style={styles.notificationStatusRow}>
+                            <IconSymbol
+                              ios_icon_name="checkmark.circle.fill"
+                              android_material_icon_name="check-circle"
+                              size={16}
+                              color={hasPushToken ? '#4CAF50' : '#FF9800'}
+                            />
+                            <Text style={[styles.notificationStatusText, { 
+                              color: hasPushToken ? '#4CAF50' : '#FF9800'
+                            }]}>
+                              Push Token: {hasPushToken ? 'Registered' : 'Missing'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
 
                       <View style={styles.actionsContainer}>
                         <TouchableOpacity
@@ -578,6 +597,7 @@ export default function AdminUsersScreen() {
         </ScrollView>
       )}
 
+      {/* Action Modal */}
       <Modal
         visible={modalVisible}
         transparent
@@ -672,7 +692,7 @@ export default function AdminUsersScreen() {
                     color: theme.colors.text,
                     borderColor: colors.textSecondary
                   }]}
-                  placeholder="5.00"
+                  placeholder="12.99"
                   placeholderTextColor={colors.textSecondary}
                   value={refundAmount}
                   onChangeText={setRefundAmount}
@@ -751,6 +771,8 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     padding: 8,
+    minWidth: 40,
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
@@ -850,7 +872,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 6,
     alignSelf: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   statusText: {
     fontSize: 13,
@@ -860,10 +882,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   endDateText: {
     fontSize: 13,
+  },
+  notificationStatusContainer: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  notificationStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  notificationStatusText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   actionsContainer: {
     flexDirection: 'row',

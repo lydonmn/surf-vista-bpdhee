@@ -1,7 +1,7 @@
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import Constants from 'expo-constants';
 
@@ -19,19 +19,25 @@ Notifications.setNotificationHandler({
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
-    console.log('[Push Notifications] Registering for push notifications...');
+    console.log('[Push Notifications] ===== REGISTERING FOR PUSH NOTIFICATIONS =====');
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
+
+    // For web, return a dummy token so the toggle still works
+    if (Platform.OS === 'web') {
+      console.log('[Push Notifications] Web platform - using dummy token');
+      return 'web-dummy-token';
+    }
 
     // Check if running on a physical device
     if (!Device.isDevice) {
       console.warn('[Push Notifications] Must use physical device for push notifications');
-      // For web/simulator, return a dummy token so the toggle still works
-      if (Platform.OS === 'web') {
-        console.log('[Push Notifications] Web platform - using dummy token');
-        return 'web-dummy-token';
-      }
-      return null;
+      Alert.alert(
+        'Physical Device Required',
+        'Push notifications only work on physical devices, not simulators. The setting will be saved, but you won\'t receive notifications until you use a real device.',
+        [{ text: 'OK' }]
+      );
+      return 'simulator-dummy-token';
     }
 
     // Check existing permissions
@@ -49,6 +55,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
     if (finalStatus !== 'granted') {
       console.warn('[Push Notifications] Permission not granted:', finalStatus);
+      Alert.alert(
+        'Permission Required',
+        'Push notifications require permission. Please enable notifications in your device settings to receive daily surf reports.',
+        [{ text: 'OK' }]
+      );
       return null;
     }
 
@@ -56,12 +67,23 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     console.log('[Push Notifications] EAS Project ID:', projectId);
 
+    if (!projectId) {
+      console.error('[Push Notifications] No EAS project ID found in config');
+      Alert.alert(
+        'Configuration Error',
+        'Push notifications are not properly configured. Please contact support.',
+        [{ text: 'OK' }]
+      );
+      return null;
+    }
+
     // Get the Expo push token
+    console.log('[Push Notifications] Getting Expo push token...');
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: projectId || undefined,
+      projectId: projectId,
     });
 
-    console.log('[Push Notifications] Token obtained:', tokenData.data);
+    console.log('[Push Notifications] ✅ Token obtained:', tokenData.data);
 
     // Configure notification channel for Android
     if (Platform.OS === 'android') {
@@ -70,17 +92,26 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#0EA5E9',
+        description: 'Receive your daily surf report at 5 AM',
       });
       console.log('[Push Notifications] Android notification channel configured');
     }
 
+    console.log('[Push Notifications] ===== REGISTRATION COMPLETE =====');
     return tokenData.data;
   } catch (error) {
-    console.error('[Push Notifications] Error registering:', error);
+    console.error('[Push Notifications] ===== REGISTRATION ERROR =====');
+    console.error('[Push Notifications] Error:', error);
     if (error instanceof Error) {
-      console.error('[Push Notifications] Error details:', error.message);
+      console.error('[Push Notifications] Error message:', error.message);
       console.error('[Push Notifications] Error stack:', error.stack);
     }
+    
+    Alert.alert(
+      'Registration Failed',
+      'Failed to register for push notifications. Please try again or contact support if the problem persists.',
+      [{ text: 'OK' }]
+    );
     return null;
   }
 }
@@ -105,7 +136,7 @@ export async function savePushToken(userId: string, token: string): Promise<bool
       return false;
     }
 
-    console.log('[Push Notifications] Token saved successfully:', data);
+    console.log('[Push Notifications] ✅ Token saved successfully');
     return true;
   } catch (error) {
     console.error('[Push Notifications] Exception saving token:', error);
@@ -133,13 +164,10 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] Push token result:', pushToken);
       
-      if (!pushToken) {
-        console.error('[Push Notifications] Failed to get push token');
-        // Still allow the toggle to work even without a token (for web/simulator)
-        if (Platform.OS !== 'web') {
-          return false;
-        }
-        console.log('[Push Notifications] Web platform - continuing without token');
+      // If we didn't get a token and we're not on web/simulator, fail
+      if (!pushToken && Platform.OS !== 'web' && Device.isDevice) {
+        console.error('[Push Notifications] Failed to get push token on physical device');
+        return false;
       }
     }
 
@@ -148,8 +176,12 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       daily_report_notifications: enabled,
     };
 
+    // Only update push_token if we have one
     if (pushToken) {
       updateData.push_token = pushToken;
+    } else if (!enabled) {
+      // Clear push token when disabling notifications
+      updateData.push_token = null;
     }
 
     console.log('[Push Notifications] Updating profile with data:', updateData);
@@ -161,24 +193,26 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       .select();
 
     if (error) {
-      console.error('[Push Notifications] Error updating preferences:', error);
+      console.error('[Push Notifications] ===== UPDATE ERROR =====');
       console.error('[Push Notifications] Error code:', error.code);
       console.error('[Push Notifications] Error message:', error.message);
       console.error('[Push Notifications] Error details:', JSON.stringify(error));
+      console.error('[Push Notifications] ===== END ERROR =====');
       return false;
     }
 
-    console.log('[Push Notifications] Preferences updated successfully');
+    console.log('[Push Notifications] ✅ Preferences updated successfully');
     console.log('[Push Notifications] Updated data:', data);
     console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
     return true;
   } catch (error) {
     console.error('[Push Notifications] ===== EXCEPTION IN SET DAILY REPORT NOTIFICATIONS =====');
-    console.error('[Push Notifications] Exception updating preferences:', error);
+    console.error('[Push Notifications] Exception:', error);
     if (error instanceof Error) {
       console.error('[Push Notifications] Exception message:', error.message);
       console.error('[Push Notifications] Exception stack:', error.stack);
     }
+    console.error('[Push Notifications] ===== END EXCEPTION =====');
     return false;
   }
 }
