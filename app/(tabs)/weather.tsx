@@ -23,6 +23,7 @@ export default function WeatherScreen() {
     setIsRefreshing(false);
   };
 
+  // ✅ V6.0.2 FIX: Show loading only during initial auth check
   if (!isInitialized || authLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -36,6 +37,7 @@ export default function WeatherScreen() {
     );
   }
 
+  // ✅ V6.0.2 FIX: Check subscription status
   if (!user || !isSubscribed) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

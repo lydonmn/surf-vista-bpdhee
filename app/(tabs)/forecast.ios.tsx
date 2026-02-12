@@ -2,6 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useTheme } from '@react-navigation/native';
+import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -51,6 +52,8 @@ function formatDate(dateStr: string): string {
 
 export default function ForecastScreen() {
   const theme = useTheme();
+  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const isSubscribed = checkSubscription();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
@@ -191,6 +194,84 @@ export default function ForecastScreen() {
     
     return { color: badgeColor, text: badgeText };
   };
+
+  // ✅ V6.0.2 FIX: Show loading only during initial auth check
+  if (!isInitialized || authLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <IconSymbol
+              ios_icon_name="chevron.left"
+              android_material_icon_name="arrow_back"
+              size={24}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            7-Day Forecast
+          </Text>
+          <View style={styles.backButton} />
+        </View>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ✅ V6.0.2 FIX: Check subscription status
+  if (!user || !isSubscribed) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <IconSymbol
+              ios_icon_name="chevron.left"
+              android_material_icon_name="arrow_back"
+              size={24}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            7-Day Forecast
+          </Text>
+          <View style={styles.backButton} />
+        </View>
+        <View style={styles.centerContent}>
+          <IconSymbol
+            ios_icon_name="lock.fill"
+            android_material_icon_name="lock"
+            size={64}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyText, { color: theme.colors.text }]}>
+            Subscriber Only Content
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+            Subscribe to access 7-day surf forecasts
+          </Text>
+          <TouchableOpacity
+            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.subscribeButtonText}>
+              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (isLoading && combinedForecast.length === 0) {
     return (
@@ -652,6 +733,17 @@ const styles = StyleSheet.create({
   },
   emptySubtext: {
     fontSize: 14,
+  },
+  subscribeButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  subscribeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   dayCard: {
     borderRadius: 12,
