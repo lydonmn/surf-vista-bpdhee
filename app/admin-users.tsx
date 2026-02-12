@@ -46,32 +46,50 @@ export default function AdminUsersScreen() {
 
   const loadUsers = async () => {
     try {
-      console.log('[AdminUsers] ===== LOADING USERS =====');
+      console.log('[AdminUsers] ===== LOADING ALL USERS =====');
+      console.log('[AdminUsers] Current admin user:', profile?.email);
       setLoading(true);
       
-      // Use service role key to fetch all users (bypassing RLS)
+      // Fetch ALL users from profiles table
       const { data, error } = await supabase
         .from('profiles')
         .select('id, email, is_admin, is_subscribed, subscription_end_date, created_at, daily_report_notifications, push_token')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[AdminUsers] Error loading users:', error);
+        console.error('[AdminUsers] ❌ Error loading users:', error);
         console.error('[AdminUsers] Error code:', error.code);
         console.error('[AdminUsers] Error message:', error.message);
         console.error('[AdminUsers] Error details:', JSON.stringify(error));
         throw error;
       }
 
-      console.log('[AdminUsers] ✅ Loaded', data?.length || 0, 'users');
-      console.log('[AdminUsers] Users data:', JSON.stringify(data, null, 2));
+      console.log('[AdminUsers] ✅ Successfully loaded users');
+      console.log('[AdminUsers] Total users fetched:', data?.length || 0);
+      console.log('[AdminUsers] Admin users:', data?.filter(u => u.is_admin).length || 0);
+      console.log('[AdminUsers] Regular users:', data?.filter(u => !u.is_admin).length || 0);
       console.log('[AdminUsers] Subscribed users:', data?.filter(u => u.is_subscribed).length || 0);
       console.log('[AdminUsers] Users with notifications enabled:', data?.filter(u => u.daily_report_notifications).length || 0);
       console.log('[AdminUsers] Users with push tokens:', data?.filter(u => u.push_token && u.push_token !== 'null').length || 0);
       
+      // Log first few users for verification
+      if (data && data.length > 0) {
+        console.log('[AdminUsers] Sample users (first 3):');
+        data.slice(0, 3).forEach((user, index) => {
+          console.log(`  ${index + 1}. ${user.email} - Admin: ${user.is_admin}, Subscribed: ${user.is_subscribed}`);
+        });
+      }
+      
       setUsers(data || []);
+      
+      // Show success message if we have users
+      if (data && data.length > 0) {
+        console.log('[AdminUsers] 🎉 User list updated successfully!');
+      } else {
+        console.log('[AdminUsers] ⚠️ No users found in database');
+      }
     } catch (error: any) {
-      console.error('[AdminUsers] Exception loading users:', error);
+      console.error('[AdminUsers] ❌ Exception loading users:', error);
       Alert.alert('Error', 'Failed to load users: ' + error.message);
     } finally {
       setLoading(false);
@@ -430,7 +448,7 @@ export default function AdminUsersScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading users...
+            Loading all users...
           </Text>
         </View>
       ) : (
