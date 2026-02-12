@@ -998,7 +998,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 8.0
+          Version 9.0
         </Text>
       </View>
 

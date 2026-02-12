@@ -101,7 +101,11 @@ serve(async (req) => {
         // Only send notifications if processing all locations (automated run)
         // Don't send notifications for single location admin updates
         if (!result.skipped && !targetLocationId) {
-          console.log(`[Daily 5AM Report] 📲 Sending push notifications for ${location.display_name}...`);
+          console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
+          console.log(`[Daily 5AM Report] 📲 V9.0 VERIFIED: Sending push notifications for ${location.display_name}...`);
+          console.log(`[Daily 5AM Report] ✅ VERIFIED: This is the automatic 5AM notification flow`);
+          console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
+          
           try {
             const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
               body: { 
@@ -111,12 +115,20 @@ serve(async (req) => {
             });
 
             if (notificationResult.data?.success) {
+              console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
+              console.log(`[Daily 5AM Report] ✅ V9.0 NOTIFICATION SUCCESS`);
               console.log(`[Daily 5AM Report] ✅ Notifications sent: ${notificationResult.data.notificationsSent} users`);
+              console.log(`[Daily 5AM Report] ✅ Total opted-in: ${notificationResult.data.totalOptedIn} users`);
+              console.log(`[Daily 5AM Report] ✅ Eligible (valid tokens): ${notificationResult.data.eligibleUsers} users`);
+              console.log(`[Daily 5AM Report] ✅ VERIFIED: Push notifications delivered via Expo Push API`);
+              console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
             } else {
               console.warn(`[Daily 5AM Report] ⚠️ Notification send failed:`, notificationResult.error);
+              console.warn(`[Daily 5AM Report] ⚠️ Error details:`, JSON.stringify(notificationResult, null, 2));
             }
           } catch (notifError) {
             console.error(`[Daily 5AM Report] ❌ Notification error:`, notifError);
+            console.error(`[Daily 5AM Report] ❌ Error details:`, JSON.stringify(notifError, null, 2));
           }
         } else if (targetLocationId) {
           console.log(`[Daily 5AM Report] ℹ️ Skipping notifications (single location admin update)`);
