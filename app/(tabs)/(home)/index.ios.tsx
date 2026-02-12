@@ -38,7 +38,8 @@ export default function HomeScreen() {
   const { currentLocation, locationData } = useLocation();
   
   const [refreshing, setRefreshing] = useState(false);
-  const hasLoadedRef = useRef(false);
+  const hasInitialLoadedRef = useRef(false);
+  const previousLocationRef = useRef(currentLocation);
 
   const hasSubscription = useMemo(() => {
     return checkSubscription();
@@ -48,47 +49,47 @@ export default function HomeScreen() {
     return authLoading || !isInitialized;
   }, [authLoading, isInitialized]);
 
-  // ✅ CRITICAL FIX: Remove hasSubscription from dependencies to prevent reload loop
-  const loadData = useCallback(async () => {
-    console.log('[HomeScreen] Loading data for location:', currentLocation);
-    console.log('[HomeScreen] User:', user?.id);
-    
-    if (!user) {
-      console.log('[HomeScreen] No user, skipping data load');
-      return;
+  // ✅ CRITICAL FIX: Only load data on initial mount when auth is ready
+  useEffect(() => {
+    if (isInitialized && !isLoading && user && profile && session && !hasInitialLoadedRef.current) {
+      console.log('[HomeScreen] Initial auth ready, loading data for location:', currentLocation);
+      hasInitialLoadedRef.current = true;
+      
+      // Load data without creating new callbacks
+      Promise.all([
+        refreshVideos(),
+        refreshData()
+      ]).catch(error => {
+        console.error('[HomeScreen] Error loading initial data:', error);
+      });
     }
+  }, [isInitialized, isLoading, user, profile, session]);
 
+  // ✅ CRITICAL FIX: Handle location changes separately without triggering full reload
+  useEffect(() => {
+    if (previousLocationRef.current !== currentLocation && hasInitialLoadedRef.current) {
+      console.log('[HomeScreen] Location changed from', previousLocationRef.current, 'to', currentLocation);
+      previousLocationRef.current = currentLocation;
+      
+      // useSurfData and useVideos will automatically refresh when location changes
+      // No need to manually trigger refresh here
+    }
+  }, [currentLocation]);
+
+  const handleRefresh = useCallback(async () => {
+    console.log('[HomeScreen] Manual refresh triggered');
+    setRefreshing(true);
     try {
       await Promise.all([
         refreshVideos(),
         refreshData()
       ]);
-      console.log('[HomeScreen] Data loaded successfully for location:', currentLocation);
     } catch (error) {
-      console.error('[HomeScreen] Error loading data:', error);
+      console.error('[HomeScreen] Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
     }
-  }, [user, refreshVideos, refreshData, currentLocation]);
-
-  // ✅ CRITICAL FIX: Only load data once when component mounts and auth is ready
-  useEffect(() => {
-    if (isInitialized && !isLoading && user && profile && session && !hasLoadedRef.current) {
-      console.log('[HomeScreen] Initial auth ready, loading data for location:', currentLocation);
-      hasLoadedRef.current = true;
-      loadData();
-    }
-  }, [isInitialized, isLoading, user, profile, session, currentLocation, loadData]);
-
-  // ✅ CRITICAL FIX: Reset hasLoadedRef when location changes to allow reload
-  useEffect(() => {
-    console.log('[HomeScreen] Location changed to:', currentLocation);
-    hasLoadedRef.current = false;
-  }, [currentLocation]);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  }, [loadData]);
+  }, [refreshVideos, refreshData]);
 
   const handleVideoPress = useCallback((videoId: string) => {
     console.log('[HomeScreen] Video pressed:', videoId);
@@ -426,41 +427,11 @@ export default function HomeScreen() {
   const todayReport = locationSurfReports.find((report: SurfReport) => report.date === todayDate);
   const todayWeatherForecast = weatherForecast?.find((w) => w.date === todayDate);
 
-  console.log('[HomeScreen] Display data for location:', currentLocation, locationData.displayName);
-  console.log('[HomeScreen] Data:', {
-    todayDate,
-    totalReports: surfReports?.length || 0,
-    locationReports: locationSurfReports.length,
-    hasTodayReport: !!todayReport,
-    todayReportLocation: todayReport?.location,
-    hasWeatherData: !!weatherData,
-    weatherDataLocation: weatherData?.location,
-    hasWeatherForecast: !!todayWeatherForecast,
-    weatherDataTemp: weatherData?.temperature,
-    forecastTemp: todayWeatherForecast?.temperature,
-    forecastHighTemp: todayWeatherForecast?.high_temp,
-    waterTemp: todayReport?.water_temp,
-    windSpeed: todayReport?.wind_speed,
-    hasReportText: !!todayReport?.report_text,
-    hasConditions: !!todayReport?.conditions,
-    reportTextLength: todayReport?.report_text?.length || 0,
-    conditionsLength: todayReport?.conditions?.length || 0
-  });
-
   // Get air temperature from weather_data (current conditions) or weather_forecast
   // CRITICAL: Try multiple sources to ensure we always show temperature
   const airTempFromData = weatherData?.temperature ? parseFloat(String(weatherData.temperature)) : null;
   const airTempFromForecast = todayWeatherForecast?.temperature || todayWeatherForecast?.high_temp;
   const airTemp = airTempFromData || airTempFromForecast;
-  
-  console.log('[HomeScreen] Temperature sources:', {
-    weatherDataTemp: weatherData?.temperature,
-    airTempFromData,
-    forecastTemp: todayWeatherForecast?.temperature,
-    forecastHighTemp: todayWeatherForecast?.high_temp,
-    airTempFromForecast,
-    finalAirTemp: airTemp
-  });
   
   const temperatureText = airTemp ? `${Math.round(airTemp)}°F` : '--°F';
   
@@ -488,18 +459,6 @@ export default function HomeScreen() {
   
   // ✅ USE SHARED UTILITY - Ensures identical narrative selection as report page
   const narrativeText = selectNarrativeText(todayReport);
-  
-  console.log('[HomeScreen] Computed display values for', locationData.displayName, ':', {
-    temperatureText,
-    waterTempText,
-    weatherCondition,
-    windSpeed,
-    windDirection,
-    humidity,
-    stokeRating,
-    narrativeLength: narrativeText?.length || 0,
-    narrativeSource: todayReport?.report_text ? 'report_text (edited)' : todayReport?.conditions ? 'conditions (auto)' : 'none'
-  });
 
   return (
     <ScrollView

@@ -19,11 +19,13 @@ export function useVideos() {
   const preloadingQueueRef = useRef<Set<string>>(new Set());
   const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  const isFetchingRef = useRef(false);
 
   // ✅ CRITICAL: Cache signed URLs with 1-hour expiry
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour in milliseconds
-  const PRELOAD_SIZE = 15 * 1024 * 1024; // 15MB preload for instant playback (increased for smoother start)
-  const KEEP_ALIVE_INTERVAL = 30000; // 30 seconds - keep connections alive
+  const PRELOAD_SIZE = 15 * 1024 * 1024; // 15MB preload for instant playback
+  const KEEP_ALIVE_INTERVAL = 60000; // ✅ CRITICAL FIX: Increased to 60 seconds (was 30s)
+  const REFRESH_INTERVAL = 10 * 60 * 1000; // ✅ CRITICAL FIX: Increased to 10 minutes (was 2 minutes)
 
   // Generate signed URL for a video with caching
   const generateSignedUrl = useCallback(async (videoUrl: string, videoId: string): Promise<string | null> => {
@@ -33,10 +35,8 @@ export function useVideos() {
       if (cached) {
         const age = Date.now() - cached.timestamp;
         if (age < SIGNED_URL_CACHE_DURATION) {
-          console.log('[useVideos] ✅ Using cached signed URL for video:', videoId, '(age:', Math.floor(age / 1000), 'seconds)');
           return cached.url;
         } else {
-          console.log('[useVideos] ⚠️ Cached URL expired, regenerating...');
           preloadedUrlsRef.current.delete(videoId);
         }
       }
@@ -49,7 +49,6 @@ export function useVideos() {
       }
 
       const filePath = urlParts[1].split('?')[0];
-      console.log('[useVideos] Generating signed URL for:', filePath);
 
       // Generate signed URL with 2 hour expiry (longer than cache to prevent edge cases)
       const { data, error } = await supabase.storage
@@ -65,8 +64,6 @@ export function useVideos() {
         console.error('[useVideos] No signed URL returned');
         return null;
       }
-
-      console.log('[useVideos] ✅ Signed URL generated successfully');
       
       // Cache the signed URL
       preloadedUrlsRef.current.set(videoId, {
@@ -81,28 +78,27 @@ export function useVideos() {
     }
   }, []);
 
-  // ✅ CRITICAL: Keep-alive mechanism to maintain warm connections
+  // ✅ CRITICAL FIX: Simplified keep-alive mechanism
   const keepConnectionsAlive = useCallback(async () => {
     const now = Date.now();
     const timeSinceLastActivity = now - lastActivityRef.current;
     
-    // If app has been idle for more than 1 minute, refresh connections
-    if (timeSinceLastActivity > 60000) {
-      console.log('[useVideos] ⚡ App idle detected - refreshing connections for instant playback');
+    // Only refresh if app has been idle for more than 2 minutes
+    if (timeSinceLastActivity > 120000) {
+      console.log('[useVideos] ⚡ App idle detected - refreshing connections');
       
-      // Ping the first 3 videos to keep connections warm
-      const videosToKeepWarm = Array.from(preloadedUrlsRef.current.entries()).slice(0, 3);
+      // Ping only the first video to keep connection warm
+      const firstVideo = Array.from(preloadedUrlsRef.current.entries())[0];
       
-      for (const [videoId, { url }] of videosToKeepWarm) {
+      if (firstVideo) {
+        const [videoId, { url }] = firstVideo;
         try {
-          // Send a lightweight HEAD request to keep connection alive
           await fetch(url, {
             method: 'HEAD',
             cache: 'no-cache',
           });
-          console.log('[useVideos] ✅ Connection kept alive for video:', videoId);
         } catch (error) {
-          console.warn('[useVideos] Keep-alive failed for video:', videoId, error);
+          console.warn('[useVideos] Keep-alive failed:', error);
         }
       }
       
@@ -114,13 +110,11 @@ export function useVideos() {
   const preloadVideo = useCallback(async (signedUrl: string, videoId: string): Promise<void> => {
     // Prevent duplicate preloading
     if (preloadingQueueRef.current.has(videoId)) {
-      console.log('[useVideos] ⏭️ Already preloading video:', videoId);
       return;
     }
 
     try {
       preloadingQueueRef.current.add(videoId);
-      console.log('[useVideos] ⚡ Starting aggressive preload for instant playback:', videoId);
       
       // Update last activity timestamp
       lastActivityRef.current = Date.now();
@@ -129,14 +123,12 @@ export function useVideos() {
       const response = await fetch(signedUrl, {
         method: 'GET',
         headers: {
-          'Range': `bytes=0-${PRELOAD_SIZE - 1}`, // First 15MB
-          'Cache-Control': 'no-cache', // Ensure fresh data
+          'Range': `bytes=0-${PRELOAD_SIZE - 1}`,
+          'Cache-Control': 'no-cache',
         },
       });
 
       if (response.ok || response.status === 206) {
-        console.log('[useVideos] ✅ CDN warmed with 15MB preload for:', videoId);
-        
         // Strategy 2: Cache the preloaded data locally for instant access
         try {
           const cacheDir = `${FileSystem.cacheDirectory}video_cache/`;
@@ -155,28 +147,26 @@ export function useVideos() {
               'Cache-Control': 'no-cache',
             },
           });
-          
-          console.log('[useVideos] ✅ Video chunk cached locally for instant playback:', videoId);
         } catch (cacheError) {
           console.warn('[useVideos] Local caching failed (non-critical):', cacheError);
-          // Continue - CDN warming is still effective
         }
-      } else {
-        console.warn('[useVideos] Preload returned status:', response.status, 'for:', videoId);
       }
     } catch (error) {
       console.error('[useVideos] Error preloading video:', videoId, error);
-      // Don't throw - preloading is optional optimization
     } finally {
       preloadingQueueRef.current.delete(videoId);
     }
   }, [PRELOAD_SIZE]);
 
-  // ✅ CRITICAL: Fetch videos with aggressive preloading and caching
+  // ✅ CRITICAL FIX: Fetch videos with debouncing to prevent reload loops
   const fetchVideos = useCallback(async () => {
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current || isFetchingRef.current) {
+      console.log('[useVideos] Fetch already in progress, skipping...');
+      return;
+    }
 
     try {
+      isFetchingRef.current = true;
       setIsLoading(true);
       setError(null);
       console.log('[useVideos] ⚡ Fetching videos for location:', currentLocation);
@@ -205,7 +195,6 @@ export function useVideos() {
       console.log('[useVideos] ✅ Fetched', data.length, 'videos for location:', currentLocation);
 
       // ✅ INSTANT PLAYBACK: Generate ALL signed URLs in parallel
-      console.log('[useVideos] ⚡ Starting aggressive preloading of all videos...');
       const videosWithSignedUrls = await Promise.all(
         data.map(async (video) => {
           const signedUrl = await generateSignedUrl(video.video_url, video.id);
@@ -218,11 +207,7 @@ export function useVideos() {
         })
       );
 
-      console.log('[useVideos] ✅ All signed URLs generated');
-
       // ✅ CRITICAL: Preload ALL videos in parallel for instant playback
-      // This runs in background and doesn't block UI
-      console.log('[useVideos] ⚡ Starting parallel preloading of all videos...');
       const preloadPromises = videosWithSignedUrls
         .filter(video => video.signed_url)
         .map(video => 
@@ -232,7 +217,7 @@ export function useVideos() {
 
       // Don't await - let preloading happen in background
       Promise.all(preloadPromises)
-        .then(() => console.log('[useVideos] ✅ All videos preloaded for instant playback'))
+        .then(() => console.log('[useVideos] ✅ All videos preloaded'))
         .catch(err => console.warn('[useVideos] Some preloads failed:', err));
 
       if (isMountedRef.current) {
@@ -247,19 +232,18 @@ export function useVideos() {
         setError(errorMessage);
         setIsLoading(false);
       }
+    } finally {
+      isFetchingRef.current = false;
     }
   }, [generateSignedUrl, preloadVideo, currentLocation]);
 
-  // Refetch videos when location changes
-  useEffect(() => {
-    console.log('[useVideos] Location changed to:', currentLocation);
-    // Don't clear cache - URLs are still valid for other locations
-    fetchVideos();
-  }, [currentLocation, fetchVideos]);
-
-  // ✅ CRITICAL: Background refresh to keep videos preloaded
+  // ✅ CRITICAL FIX: Simplified background refresh
   const backgroundRefresh = useCallback(async () => {
-    console.log('[useVideos] 🔄 Background refresh - keeping videos preloaded');
+    if (isFetchingRef.current) {
+      return;
+    }
+
+    console.log('[useVideos] 🔄 Background refresh triggered');
     
     try {
       // Fetch latest videos without showing loading state
@@ -270,7 +254,6 @@ export function useVideos() {
         .order('created_at', { ascending: false });
 
       if (fetchError || !data) {
-        console.warn('[useVideos] Background refresh failed:', fetchError);
         return;
       }
 
@@ -278,19 +261,21 @@ export function useVideos() {
       const refreshPromises = data.map(async (video) => {
         const signedUrl = await generateSignedUrl(video.video_url, video.id);
         if (signedUrl) {
-          // Preload in background
-          preloadVideo(signedUrl, video.id).catch(err => 
-            console.warn('[useVideos] Background preload failed:', video.id, err)
-          );
+          preloadVideo(signedUrl, video.id).catch(() => {});
         }
       });
 
       await Promise.all(refreshPromises);
-      console.log('[useVideos] ✅ Background refresh complete - videos ready for instant playback');
     } catch (error) {
       console.error('[useVideos] Background refresh error:', error);
     }
   }, [generateSignedUrl, preloadVideo, currentLocation]);
+
+  // Refetch videos when location changes
+  useEffect(() => {
+    console.log('[useVideos] Location changed to:', currentLocation);
+    fetchVideos();
+  }, [currentLocation, fetchVideos]);
 
   useEffect(() => {
     console.log('[useVideos] Initializing...');
@@ -299,25 +284,19 @@ export function useVideos() {
     
     fetchVideos();
 
-    // ✅ CRITICAL: Set up keep-alive mechanism to maintain warm connections
-    // This prevents connection timeouts after 1 minute of inactivity
+    // ✅ CRITICAL FIX: Keep-alive mechanism with longer interval
     keepAliveIntervalRef.current = setInterval(() => {
-      console.log('[useVideos] ⏰ Keep-alive check triggered');
       keepConnectionsAlive();
-    }, KEEP_ALIVE_INTERVAL); // Every 30 seconds
+    }, KEEP_ALIVE_INTERVAL);
 
-    // ✅ CRITICAL: Set up aggressive periodic background refresh every 2 minutes
-    // This keeps videos preloaded even when app is in background
-    // More frequent refreshes ensure videos are always ready for instant playback
+    // ✅ CRITICAL FIX: Periodic background refresh with longer interval
     const refreshInterval = setInterval(() => {
-      console.log('[useVideos] ⏰ Periodic refresh triggered');
       backgroundRefresh();
-    }, 2 * 60 * 1000); // 2 minutes (more frequent for better UX)
+    }, REFRESH_INTERVAL);
 
     // ✅ CRITICAL: Set up real-time subscription for instant updates
-    // When admin uploads a new video, it's immediately preloaded
     const subscription = supabase
-      .channel('videos_changes')
+      .channel(`videos_changes_${currentLocation}`)
       .on(
         'postgres_changes',
         {
@@ -328,7 +307,6 @@ export function useVideos() {
         },
         (payload) => {
           console.log('[useVideos] ⚡ Video updated in real-time:', payload);
-          // Update last activity timestamp
           lastActivityRef.current = Date.now();
           
           // Clear cache for the affected video
@@ -338,9 +316,11 @@ export function useVideos() {
           if (payload.new && 'id' in payload.new) {
             preloadedUrlsRef.current.delete(payload.new.id as string);
           }
-          // Immediately fetch and preload the new video
-          console.log('[useVideos] ⚡ Fetching and preloading new video...');
-          fetchVideos();
+          
+          // Only fetch if not already fetching
+          if (!isFetchingRef.current) {
+            fetchVideos();
+          }
         }
       )
       .subscribe();
@@ -357,7 +337,7 @@ export function useVideos() {
       clearInterval(refreshInterval);
       subscription.unsubscribe();
     };
-  }, [fetchVideos, backgroundRefresh, currentLocation, keepConnectionsAlive, KEEP_ALIVE_INTERVAL]);
+  }, [fetchVideos, backgroundRefresh, currentLocation, keepConnectionsAlive, KEEP_ALIVE_INTERVAL, REFRESH_INTERVAL]);
 
   return {
     videos,

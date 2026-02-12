@@ -20,7 +20,7 @@ interface SurfDataState {
   lastUpdated: Date | null;
 }
 
-const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const REFRESH_INTERVAL = 30 * 60 * 1000; // ✅ CRITICAL FIX: Increased to 30 minutes to reduce reload frequency
 const RETRY_DELAY = 5000; // 5 seconds
 const FUNCTION_TIMEOUT = 60000; // 60 seconds
 
@@ -40,10 +40,6 @@ function getESTDate(): string {
   const [month, day, year] = estDateString.split('/');
   
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  
-  console.log('[useSurfData getESTDate] Raw EST date string:', estDateString);
-  console.log('[useSurfData getESTDate] Parsed components:', { month, day, year });
-  console.log('[useSurfData getESTDate] Current EST date:', estDate);
   
   return estDate;
 }
@@ -65,17 +61,28 @@ export function useSurfData() {
   const appStateRef = useRef(AppState.currentState);
   const isMountedRef = useRef(true);
   const isUpdatingRef = useRef(false);
-  const isFetchingRef = useRef(false); // ✅ CRITICAL FIX: Prevent concurrent fetches
+  const isFetchingRef = useRef(false);
+  const lastFetchTimeRef = useRef<number>(0);
 
-  // ✅ CRITICAL FIX: Stable fetchData function that doesn't cause re-renders
+  // ✅ CRITICAL FIX: Stable fetchData function with debouncing
   const fetchData = useCallback(async () => {
-    // ✅ CRITICAL: Prevent concurrent fetches that cause reload loops
+    // ✅ CRITICAL: Prevent concurrent fetches and debounce rapid calls
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+    
     if (!isMountedRef.current || isFetchingRef.current) {
       console.log('[useSurfData] Fetch already in progress or component unmounted, skipping...');
       return;
     }
 
+    // ✅ CRITICAL: Debounce - don't fetch if we just fetched within last 5 seconds
+    if (timeSinceLastFetch < 5000) {
+      console.log('[useSurfData] Fetch called too soon after last fetch (', timeSinceLastFetch, 'ms), skipping...');
+      return;
+    }
+
     isFetchingRef.current = true;
+    lastFetchTimeRef.current = now;
 
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -85,7 +92,6 @@ export function useSurfData() {
       
       console.log('[useSurfData] Fetching data for location:', currentLocation);
       console.log('[useSurfData] Fetching data for EST date:', today);
-      console.log('[useSurfData] Current UTC time:', new Date().toISOString());
 
       // Fetch all data in parallel with location filter
       const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
@@ -122,35 +128,6 @@ export function useSurfData() {
         isFetchingRef.current = false;
         return;
       }
-
-      // Log detailed results
-      console.log('[useSurfData] Surf reports result:', {
-        error: surfReportsResult.error,
-        count: surfReportsResult.data?.length || 0,
-        dates: surfReportsResult.data?.map(r => r.date) || [],
-      });
-
-      console.log('[useSurfData] Weather result:', {
-        error: weatherResult.error,
-        hasData: !!weatherResult.data,
-        date: weatherResult.data?.date,
-        updated_at: weatherResult.data?.updated_at,
-        temperature: weatherResult.data?.temperature,
-        conditions: weatherResult.data?.conditions,
-        humidity: weatherResult.data?.humidity,
-        location: weatherResult.data?.location,
-      });
-
-      console.log('[useSurfData] Forecast result:', {
-        error: forecastResult.error,
-        count: forecastResult.data?.length || 0,
-        dates: forecastResult.data?.map(f => f.date) || [],
-      });
-
-      console.log('[useSurfData] Tide result:', {
-        error: tideResult.error,
-        count: tideResult.data?.length || 0,
-      });
 
       if (surfReportsResult.error) {
         console.error('[useSurfData] Surf reports error:', surfReportsResult.error);
@@ -211,7 +188,8 @@ export function useSurfData() {
         console.log('[useSurfData] Scheduling retry in 5 seconds...');
         retryTimeoutRef.current = setTimeout(() => {
           console.log('[useSurfData] Retrying data fetch...');
-          isFetchingRef.current = false; // Reset flag before retry
+          isFetchingRef.current = false;
+          lastFetchTimeRef.current = 0; // Reset debounce for retry
           fetchData();
         }, RETRY_DELAY);
       }
@@ -308,7 +286,8 @@ export function useSurfData() {
 
         // Refresh data from database
         console.log('[useSurfData] Refreshing data from database...');
-        isFetchingRef.current = false; // Reset flag before refresh
+        isFetchingRef.current = false;
+        lastFetchTimeRef.current = 0; // Reset debounce for manual update
         await fetchData();
       } catch (error) {
         clearTimeout(timeoutId);
@@ -346,9 +325,9 @@ export function useSurfData() {
     }
   }, [fetchData, currentLocation]);
 
-  // ✅ CRITICAL FIX: Stable periodic refresh setup
+  // ✅ CRITICAL FIX: Stable periodic refresh setup with longer interval
   useEffect(() => {
-    console.log('[useSurfData] Setting up periodic refresh (every 15 minutes)...');
+    console.log('[useSurfData] Setting up periodic refresh (every 30 minutes)...');
     
     // Clear existing interval
     if (refreshIntervalRef.current) {
@@ -397,6 +376,7 @@ export function useSurfData() {
   useEffect(() => {
     console.log('[useSurfData] Location changed to:', currentLocation);
     if (!isFetchingRef.current) {
+      lastFetchTimeRef.current = 0; // Reset debounce for location change
       fetchData();
     }
   }, [currentLocation, fetchData]);
@@ -419,6 +399,7 @@ export function useSurfData() {
         (payload) => {
           console.log('[useSurfData] Surf report updated for current location, refreshing data...');
           if (!isFetchingRef.current) {
+            lastFetchTimeRef.current = 0; // Reset debounce for real-time update
             fetchData();
           }
         }
@@ -439,6 +420,7 @@ export function useSurfData() {
         (payload) => {
           console.log('[useSurfData] Weather data updated for current location, refreshing data...');
           if (!isFetchingRef.current) {
+            lastFetchTimeRef.current = 0; // Reset debounce for real-time update
             fetchData();
           }
         }
@@ -459,6 +441,7 @@ export function useSurfData() {
         (payload) => {
           console.log('[useSurfData] Weather forecast updated for current location, refreshing data...');
           if (!isFetchingRef.current) {
+            lastFetchTimeRef.current = 0; // Reset debounce for real-time update
             fetchData();
           }
         }
@@ -479,6 +462,7 @@ export function useSurfData() {
         (payload) => {
           console.log('[useSurfData] Tide data updated for current location, refreshing data...');
           if (!isFetchingRef.current) {
+            lastFetchTimeRef.current = 0; // Reset debounce for real-time update
             fetchData();
           }
         }
