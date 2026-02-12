@@ -79,13 +79,12 @@
         }
       ]
     ],
-    "scheme": "SurfVista",
+    "scheme": "surfvista",
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {}
     }
-  },
-  "scheme": "SurfVista"
+  }
 }

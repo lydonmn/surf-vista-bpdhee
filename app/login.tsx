@@ -16,6 +16,7 @@ export default function LoginScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showResendEmail, setShowResendEmail] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resendEmail, setResendEmail] = useState('');
   const [justSignedUp, setJustSignedUp] = useState(false);
 
@@ -72,6 +73,55 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.error('[LoginScreen] Resend exception:', error);
       Alert.alert('Error', error.message || 'Failed to resend confirmation email');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const emailToReset = resendEmail || email;
+    
+    if (!emailToReset) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailToReset)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('[LoginScreen] Sending password reset email to:', emailToReset);
+      
+      const { data, error } = await supabase.auth.resetPasswordForEmail(emailToReset, {
+        redirectTo: 'surfvista://reset-password',
+      });
+
+      if (error) {
+        console.error('[LoginScreen] Password reset error:', error);
+        Alert.alert('Error', error.message || 'Failed to send password reset email');
+      } else {
+        console.log('[LoginScreen] Password reset email sent:', data);
+        Alert.alert(
+          'Password Reset Email Sent! ✅',
+          `We've sent a password reset link to ${emailToReset}.\n\n📧 Check your inbox and spam/junk folder.\n\n🔗 Click the link in the email to reset your password.\n\n⏱️ The email should arrive within 1-2 minutes.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setShowForgotPassword(false);
+                setResendEmail('');
+              }
+            }
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('[LoginScreen] Password reset exception:', error);
+      Alert.alert('Error', error.message || 'Failed to send password reset email');
     } finally {
       setIsLoading(false);
     }
@@ -173,10 +223,8 @@ export default function LoginScreen() {
                 {
                   text: 'Forgot Password?',
                   onPress: () => {
-                    Alert.alert(
-                      'Password Reset',
-                      'Contact support at lydonmn@gmail.com for password reset assistance.'
-                    );
+                    setResendEmail(email);
+                    setShowForgotPassword(true);
                   }
                 },
                 {
@@ -202,6 +250,7 @@ export default function LoginScreen() {
     setIsSignUp(!isSignUp);
     setPassword('');
     setShowResendEmail(false);
+    setShowForgotPassword(false);
     setJustSignedUp(false);
   };
 
@@ -210,6 +259,105 @@ export default function LoginScreen() {
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
+    );
+  }
+
+  // Forgot password view
+  if (showForgotPassword) {
+    return (
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
+                <IconSymbol
+                  ios_icon_name="lock.rotation"
+                  android_material_icon_name="lock_reset"
+                  size={64}
+                  color="#FFFFFF"
+                />
+              </View>
+              <Text style={[styles.title, { color: theme.colors.text }]}>
+                Reset Password
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                Enter your email to receive a password reset link
+              </Text>
+            </View>
+
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <IconSymbol
+                  ios_icon_name="envelope.fill"
+                  android_material_icon_name="email"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.input, { color: theme.colors.text }]}
+                  placeholder="Email"
+                  placeholderTextColor={colors.textSecondary}
+                  value={resendEmail}
+                  onChangeText={setResendEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!isLoading}
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: colors.primary },
+                  isLoading && styles.submitButtonDisabled
+                ]}
+                onPress={handleForgotPassword}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>
+                    Send Reset Link
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.toggleButton}
+                onPress={() => {
+                  setShowForgotPassword(false);
+                  setResendEmail('');
+                }}
+                disabled={isLoading}
+              >
+                <Text style={[styles.toggleButtonText, { color: colors.primary }]}>
+                  Back to Sign In
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
+              <IconSymbol
+                ios_icon_name="info.circle.fill"
+                android_material_icon_name="info"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={[styles.noticeText, { color: theme.colors.text }]}>
+                💡 Tip: Password reset emails sometimes end up in spam/junk folders. Make sure to check there if you don&apos;t see it in your inbox within 2 minutes.
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -417,6 +565,27 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
 
+            {!isSignUp && (
+              <TouchableOpacity
+                style={[styles.forgotPasswordButton]}
+                onPress={() => {
+                  setResendEmail(email);
+                  setShowForgotPassword(true);
+                }}
+                disabled={isLoading}
+              >
+                <IconSymbol
+                  ios_icon_name="lock.rotation"
+                  android_material_icon_name="lock_reset"
+                  size={16}
+                  color={colors.textSecondary}
+                />
+                <Text style={[styles.forgotPasswordText, { color: colors.textSecondary }]}>
+                  Forgot your password?
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {(!isSignUp || justSignedUp) && (
               <TouchableOpacity
                 style={[styles.resendButton, { marginTop: 12 }]}
@@ -557,6 +726,18 @@ const styles = StyleSheet.create({
   toggleButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  forgotPasswordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 13,
+    textDecorationLine: 'underline',
   },
   resendButton: {
     flexDirection: 'row',

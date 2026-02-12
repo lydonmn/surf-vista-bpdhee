@@ -60,12 +60,12 @@ serve(async (req) => {
 
     const locationName = location?.display_name || 'Folly Beach, SC';
 
-    // Fetch all users who have opted in for daily notifications
-    const { data: users, error: usersError } = await supabase
+    // Fetch ALL users who have opted in for daily notifications
+    // We'll check their notification_locations and push_token separately
+    const { data: allOptedInUsers, error: usersError } = await supabase
       .from('profiles')
-      .select('id, push_token, email')
-      .eq('daily_report_notifications', true)
-      .not('push_token', 'is', null);
+      .select('id, push_token, email, notification_locations, is_admin')
+      .eq('daily_report_notifications', true);
 
     if (usersError) {
       console.error('[Send Daily Notifications] Error fetching users:', usersError);
@@ -81,7 +81,7 @@ serve(async (req) => {
       );
     }
 
-    if (!users || users.length === 0) {
+    if (!allOptedInUsers || allOptedInUsers.length === 0) {
       console.log('[Send Daily Notifications] No users opted in for notifications');
       return new Response(
         JSON.stringify({
@@ -93,7 +93,49 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[Send Daily Notifications] Found ${users.length} users to notify`);
+    console.log(`[Send Daily Notifications] Found ${allOptedInUsers.length} users with notifications enabled`);
+
+    // Filter users who:
+    // 1. Have a valid push token
+    // 2. Have this location in their notification_locations array (or have no locations set, defaulting to all)
+    const eligibleUsers = allOptedInUsers.filter(user => {
+      // Check if user has a push token
+      if (!user.push_token || user.push_token === 'web-dummy-token' || user.push_token === 'simulator-dummy-token') {
+        console.log(`[Send Daily Notifications] ⚠️ User ${user.email} has no valid push token - skipping`);
+        return false;
+      }
+
+      // Check if user wants notifications for this location
+      const userLocations = user.notification_locations || ['folly-beach'];
+      const wantsThisLocation = userLocations.includes(locationId);
+      
+      if (!wantsThisLocation) {
+        console.log(`[Send Daily Notifications] ℹ️ User ${user.email} not subscribed to ${locationId} - skipping`);
+        return false;
+      }
+
+      console.log(`[Send Daily Notifications] ✅ User ${user.email} eligible for ${locationId} notification`);
+      return true;
+    });
+
+    if (eligibleUsers.length === 0) {
+      console.log('[Send Daily Notifications] ⚠️ No eligible users with valid push tokens for this location');
+      console.log('[Send Daily Notifications] Users without tokens:', 
+        allOptedInUsers.filter(u => !u.push_token || u.push_token === 'web-dummy-token' || u.push_token === 'simulator-dummy-token')
+          .map(u => u.email).join(', ')
+      );
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'No eligible users with valid push tokens',
+          notificationsSent: 0,
+          usersWithoutTokens: allOptedInUsers.filter(u => !u.push_token || u.push_token === 'web-dummy-token' || u.push_token === 'simulator-dummy-token').length,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[Send Daily Notifications] Sending to ${eligibleUsers.length} eligible users`);
 
     // Create notification summary from report
     const waveHeight = report.wave_height || 'N/A';
@@ -111,7 +153,7 @@ serve(async (req) => {
 
     // Send push notifications using Expo Push API
     const expoPushUrl = 'https://exp.host/--/api/v2/push/send';
-    const messages = users.map(user => ({
+    const messages = eligibleUsers.map(user => ({
       to: user.push_token,
       sound: 'default',
       title: notificationTitle,
@@ -170,6 +212,9 @@ serve(async (req) => {
     console.log('[Send Daily Notifications] ═══════════════════════════════════════');
     console.log(`[Send Daily Notifications] ✅ Sent: ${successCount}`);
     console.log(`[Send Daily Notifications] ❌ Failed: ${failureCount}`);
+    console.log(`[Send Daily Notifications] 📊 Total opted-in users: ${allOptedInUsers.length}`);
+    console.log(`[Send Daily Notifications] 📊 Eligible users (with tokens): ${eligibleUsers.length}`);
+    console.log(`[Send Daily Notifications] 📊 Users without tokens: ${allOptedInUsers.length - eligibleUsers.length}`);
     console.log('[Send Daily Notifications] ═══════════════════════════════════════');
 
     return new Response(
@@ -178,7 +223,9 @@ serve(async (req) => {
         message: `Notifications sent to ${successCount} users`,
         notificationsSent: successCount,
         notificationsFailed: failureCount,
-        totalUsers: users.length,
+        totalOptedIn: allOptedInUsers.length,
+        eligibleUsers: eligibleUsers.length,
+        usersWithoutTokens: allOptedInUsers.length - eligibleUsers.length,
         location: locationName,
         date: reportDate,
       }),
