@@ -165,12 +165,14 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * Register for push notifications and get the Expo push token
- * ✅ V8.0 FIX: Enhanced with better error handling and no user-facing alerts for expected failures
+ * ✅ V8.0 AUTOMATIC: Register for push notifications and get the Expo push token
+ * This is called AUTOMATICALLY when user opts in - no manual retry button needed
+ * Enhanced with better error handling and no user-facing alerts for expected failures
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
-    console.log('[Push Notifications] ===== REGISTERING FOR PUSH NOTIFICATIONS =====');
+    console.log('[Push Notifications] ===== AUTOMATIC TOKEN REGISTRATION =====');
+    console.log('[Push Notifications] ℹ️ This happens automatically when user opts in');
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
     console.log('[Push Notifications] Constants.expoConfig:', JSON.stringify(Constants.expoConfig?.extra, null, 2));
@@ -291,7 +293,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.log('[Push Notifications] Android notification channel configured');
     }
 
-    console.log('[Push Notifications] ===== REGISTRATION COMPLETE =====');
+    console.log('[Push Notifications] ===== AUTOMATIC REGISTRATION COMPLETE =====');
+    console.log('[Push Notifications] ℹ️ User will receive notifications at 5AM when reports are generated');
     return tokenData.data;
   } catch (error) {
     console.error('[Push Notifications] ===== REGISTRATION ERROR =====');
@@ -308,7 +311,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
 /**
  * Save push token to user profile
- * ✅ V7.0 FIX: Enhanced with retry logic and better error handling
+ * ✅ V8.0 FIX: Enhanced with retry logic and better error handling
  */
 export async function savePushToken(userId: string, token: string): Promise<boolean> {
   try {
@@ -317,7 +320,7 @@ export async function savePushToken(userId: string, token: string): Promise<bool
     console.log('[Push Notifications] Token:', token);
     console.log('[Push Notifications] Token length:', token.length);
 
-    // ✅ V7.0 FIX: Retry logic for saving token
+    // ✅ V8.0 FIX: Retry logic for saving token
     let lastError = null;
     const maxRetries = 3;
     
@@ -455,25 +458,33 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 }
 
 /**
- * Enable or disable daily report notifications
- * ✅ V8.0 FIX: Enhanced with better token handling and user-friendly error messages
+ * ✅ V8.0 AUTOMATIC FLOW: Enable or disable daily report notifications
+ * When enabling, this function AUTOMATICALLY:
+ * 1. Registers push token
+ * 2. Saves token to database
+ * 3. Updates notification preference
+ * 
+ * When the 5AM report is generated, notifications are sent AUTOMATICALLY to all opted-in users
+ * NO MANUAL RETRY BUTTON NEEDED - everything happens automatically
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
-    console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS =====');
+    console.log('[Push Notifications] ===== AUTOMATIC NOTIFICATION SETUP =====');
+    console.log('[Push Notifications] ℹ️ AUTOMATIC FLOW: Token registration happens automatically');
+    console.log('[Push Notifications] ℹ️ AUTOMATIC FLOW: Notifications sent at 5AM when reports are generated');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
 
-    // ✅ V8.0 CRITICAL FIX: If enabling, ALWAYS try to register token first
+    // ✅ V8.0 AUTOMATIC: If enabling, ALWAYS try to register token first
     let pushToken = null;
     if (enabled) {
-      console.log('[Push Notifications] 📲 Registering for push notifications...');
+      console.log('[Push Notifications] 📲 AUTOMATIC: Registering for push notifications...');
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Push token result:', pushToken);
       
-      // ✅ V8.0 CRITICAL FIX: Better handling when token registration fails
+      // ✅ V8.0 AUTOMATIC: Better handling when token registration fails
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
         console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
         
@@ -503,7 +514,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       daily_report_notifications: enabled,
     };
 
-    // ✅ V8.0 CRITICAL FIX: ALWAYS update push_token field
+    // ✅ V8.0 AUTOMATIC: ALWAYS update push_token field
     if (enabled && pushToken) {
       // Save the token when enabling
       updateData.push_token = pushToken;
@@ -560,7 +571,8 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
           console.log('[Push Notifications] ✅ Preferences updated successfully on attempt', attempt);
           console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
           console.log('[Push Notifications] Push token in DB:', data[0]?.push_token ? 'Present ✓' : 'Missing ✗');
-          console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
+          console.log('[Push Notifications] ℹ️ AUTOMATIC: User will receive notifications at 5AM when reports are generated');
+          console.log('[Push Notifications] ===== AUTOMATIC NOTIFICATION SETUP COMPLETE =====');
           return true;
         }
       } catch (attemptError) {
@@ -656,13 +668,18 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
- * ✅ V8.0 ENHANCED: Force re-register push token for existing users
- * This function should be called when a user who has notifications enabled but no token
- * opens the app or refreshes their profile
+ * ✅ V8.0 AUTOMATIC: Force re-register push token for existing users
+ * This function is called AUTOMATICALLY when:
+ * - User opens the profile screen
+ * - User refreshes profile data
+ * - App initializes and user has notifications enabled
+ * 
+ * NO MANUAL RETRY BUTTON NEEDED - this ensures tokens are always up-to-date
  */
 export async function ensurePushTokenRegistered(userId: string): Promise<void> {
   try {
-    console.log('[Push Notifications] ===== ENSURE PUSH TOKEN REGISTERED =====');
+    console.log('[Push Notifications] ===== AUTOMATIC TOKEN CHECK =====');
+    console.log('[Push Notifications] ℹ️ This runs automatically - no user action needed');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
@@ -720,13 +737,14 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
     console.log('[Push Notifications] - Has token:', !!profile.push_token);
     console.log('[Push Notifications] - Token value:', profile.push_token?.substring(0, 20) + '...' || 'null');
 
-    // If notifications are enabled but no valid token, register one
+    // ✅ V8.0 AUTOMATIC: If notifications are enabled but no valid token, register one
     if (profile.daily_report_notifications && 
         (!profile.push_token || 
          profile.push_token === 'web-dummy-token' || 
          profile.push_token === 'simulator-dummy-token')) {
       
-      console.log('[Push Notifications] 🔧 User has notifications enabled but no valid token - registering now...');
+      console.log('[Push Notifications] 🔧 AUTOMATIC: User has notifications enabled but no valid token - registering now...');
+      console.log('[Push Notifications] ℹ️ This ensures user receives notifications at 5AM when reports are generated');
       
       // Check permissions first
       const { granted } = await checkNotificationPermissions();
@@ -741,7 +759,7 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Register token
-      console.log('[Push Notifications] 📲 Attempting to register push token...');
+      console.log('[Push Notifications] 📲 AUTOMATIC: Attempting to register push token...');
       const token = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Token registration result:', token ? 'Success' : 'Failed');
       
@@ -750,8 +768,9 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
         const saved = await savePushToken(userId, token);
         
         if (saved) {
-          console.log('[Push Notifications] ✅ Token registered and saved successfully');
-          console.log('[Push Notifications] ✅ Push notifications are now active for this user');
+          console.log('[Push Notifications] ✅ AUTOMATIC: Token registered and saved successfully');
+          console.log('[Push Notifications] ✅ AUTOMATIC: Push notifications are now active for this user');
+          console.log('[Push Notifications] ℹ️ User will receive notifications at 5AM when reports are generated');
         } else {
           console.error('[Push Notifications] ❌ Failed to save token to database');
         }
@@ -765,11 +784,12 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
                profile.push_token !== 'simulator-dummy-token') {
       console.log('[Push Notifications] ✅ User already has valid push token');
       console.log('[Push Notifications] Token preview:', profile.push_token.substring(0, 30) + '...');
+      console.log('[Push Notifications] ℹ️ User will receive notifications at 5AM when reports are generated');
     } else {
       console.log('[Push Notifications] ℹ️ Notifications disabled or no token needed');
     }
 
-    console.log('[Push Notifications] ===== ENSURE PUSH TOKEN COMPLETE =====');
+    console.log('[Push Notifications] ===== AUTOMATIC TOKEN CHECK COMPLETE =====');
   } catch (error) {
     console.error('[Push Notifications] ===== EXCEPTION IN ENSURE PUSH TOKEN =====');
     console.error('[Push Notifications] Exception:', error);
