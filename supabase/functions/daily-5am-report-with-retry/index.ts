@@ -17,23 +17,41 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Parse request body to check for specific location
+    let targetLocationId: string | null = null;
+    try {
+      const body = await req.json();
+      if (body.location) {
+        targetLocationId = body.location;
+        console.log('[Daily 5AM Report] Single location mode - target:', targetLocationId);
+      }
+    } catch (e) {
+      console.log('[Daily 5AM Report] No location parameter - processing all locations');
+    }
+
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
-    console.log('[Daily 5AM Report] 🌅 AUTOMATED 5 AM REPORT GENERATION STARTED');
+    console.log('[Daily 5AM Report] 🌅 REPORT GENERATION STARTED');
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
     console.log('[Daily 5AM Report] 🔧 Features:');
     console.log('[Daily 5AM Report]   • Up to 5 retry attempts per location');
     console.log('[Daily 5AM Report]   • Progressive delays: 5s, 10s, 20s, 30s, 60s');
     console.log('[Daily 5AM Report]   • Dynamic location support');
     console.log('[Daily 5AM Report]   • Push notifications for opted-in users');
-    console.log('[Daily 5AM Report]   • Automatic for all current and future locations');
+    console.log('[Daily 5AM Report]   • Single location or bulk processing');
     console.log('[Daily 5AM Report]   • Handles buoy sensor failures gracefully');
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
 
-    const { data: locationsData, error: locationsError } = await supabase
+    // Fetch locations - either specific one or all active
+    let locationsQuery = supabase
       .from('locations')
       .select('id, name, display_name')
-      .eq('is_active', true)
-      .order('name');
+      .eq('is_active', true);
+    
+    if (targetLocationId) {
+      locationsQuery = locationsQuery.eq('id', targetLocationId);
+    }
+    
+    const { data: locationsData, error: locationsError } = await locationsQuery.order('name');
 
     if (locationsError) {
       console.error('[Daily 5AM Report] Error fetching locations:', locationsError);
@@ -41,11 +59,14 @@ serve(async (req) => {
     }
 
     if (!locationsData || locationsData.length === 0) {
-      console.warn('[Daily 5AM Report] No active locations found');
+      const errorMsg = targetLocationId 
+        ? `Location '${targetLocationId}' not found or inactive`
+        : 'No active locations found in database';
+      console.warn('[Daily 5AM Report]', errorMsg);
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'No active locations found in database',
+          error: errorMsg,
         }),
         { 
           status: 400,
@@ -54,7 +75,8 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[Daily 5AM Report] Found ${locationsData.length} active locations:`, locationsData.map(l => l.display_name).join(', '));
+    const modeText = targetLocationId ? 'single location' : `${locationsData.length} location(s)`;
+    console.log(`[Daily 5AM Report] Processing ${modeText}:`, locationsData.map(l => l.display_name).join(', '));
 
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -76,7 +98,9 @@ serve(async (req) => {
       if (result.success) {
         console.log(`[Daily 5AM Report] ✅ ${location.display_name}: SUCCESS`);
         
-        if (!result.skipped) {
+        // Only send notifications if processing all locations (automated run)
+        // Don't send notifications for single location admin updates
+        if (!result.skipped && !targetLocationId) {
           console.log(`[Daily 5AM Report] 📲 Sending push notifications for ${location.display_name}...`);
           try {
             const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
@@ -94,6 +118,8 @@ serve(async (req) => {
           } catch (notifError) {
             console.error(`[Daily 5AM Report] ❌ Notification error:`, notifError);
           }
+        } else if (targetLocationId) {
+          console.log(`[Daily 5AM Report] ℹ️ Skipping notifications (single location admin update)`);
         }
       } else {
         console.log(`[Daily 5AM Report] ❌ ${location.display_name}: FAILED - ${result.error}`);
@@ -112,10 +138,13 @@ serve(async (req) => {
 
     if (allSucceeded) {
       console.log('[Daily 5AM Report] ✅ All locations processed successfully!');
+      const message = targetLocationId 
+        ? `Report generated successfully for ${locationsData[0].display_name}`
+        : 'Daily reports generated and notifications sent successfully for all locations';
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Daily reports generated and notifications sent successfully for all locations',
+          message: message,
           date: dateStr,
           results: results,
         }),

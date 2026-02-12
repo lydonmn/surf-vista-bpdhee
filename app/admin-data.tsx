@@ -47,6 +47,7 @@ export default function AdminDataScreen() {
   const router = useRouter();
   const { currentLocation, locationData, locations } = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingLocationId, setLoadingLocationId] = useState<string | null>(null);
   const [dataCounts, setDataCounts] = useState<DataCounts>({
     tides: 0,
     weather: 0,
@@ -148,6 +149,82 @@ export default function AdminDataScreen() {
     console.log('[AdminDataScreen] Component mounted, loading data counts');
     loadDataCounts();
   }, [loadDataCounts]);
+
+  const handlePullDataForLocation = async (locationId: string, locationName: string) => {
+    console.log(`[AdminDataScreen] Pulling data for ${locationName}`);
+    setLoadingLocationId(locationId);
+    addLog(`🔄 Pulling fresh NOAA data for ${locationName}...`, 'info');
+
+    try {
+      const response = await supabase.functions.invoke('update-all-surf-data', {
+        body: { location: locationId }
+      });
+      
+      if (response.error) {
+        addLog(`❌ ${locationName}: ${response.error.message}`, 'error');
+        Alert.alert('Error', `Failed to pull data for ${locationName}: ${response.error.message}`);
+      } else if (response.data?.success) {
+        addLog(`✅ ${locationName}: Data pulled successfully`, 'success');
+        Alert.alert('Success', `Fresh data pulled for ${locationName}!`);
+        await loadDataCounts();
+      } else {
+        const errorMsg = response.data?.error || 'Unknown error';
+        addLog(`⚠️ ${locationName}: ${errorMsg}`, 'warning');
+        Alert.alert('Warning', `${locationName}: ${errorMsg}`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
+      Alert.alert('Error', `Failed to pull data: ${errorMsg}`);
+    } finally {
+      setLoadingLocationId(null);
+    }
+  };
+
+  const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
+    console.log(`[AdminDataScreen] Generating report for ${locationName}`);
+    setLoadingLocationId(locationId);
+    addLog(`📝 Generating conditions narrative for ${locationName}...`, 'info');
+
+    try {
+      const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
+        body: { location: locationId }
+      });
+      
+      console.log('Generate report response:', response);
+
+      if (response.error) {
+        const errorMsg = response.error.message || JSON.stringify(response.error);
+        addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
+        Alert.alert('Error', `Failed to generate report for ${locationName}: ${errorMsg}`);
+      } else if (response.data?.success) {
+        const results = response.data.results || [];
+        const locationResult = results.find((r: any) => r.locationId === locationId);
+        
+        if (locationResult?.success) {
+          const waveStatus = locationResult.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+          addLog(`✅ ${locationName}: Report generated (${waveStatus})`, 'success');
+          Alert.alert('Success', `Report generated for ${locationName}!\n\n${waveStatus}`);
+        } else {
+          const errorMsg = locationResult?.error || 'Unknown error';
+          addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
+          Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
+        }
+        
+        await loadDataCounts();
+      } else {
+        const errorMsg = response.data?.error || 'Report generation failed';
+        addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
+        Alert.alert('Error', errorMsg);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
+      Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
+    } finally {
+      setLoadingLocationId(null);
+    }
+  };
 
   const handlePullAndGenerateAllLocations = async () => {
     setIsLoading(true);
@@ -363,7 +440,7 @@ The system automatically generates separate reports for each location every morn
 
         {/* Main Action Button - Pull Data & Generate Reports for All Locations */}
         <View style={styles.mainActionCard}>
-          <Text style={styles.mainActionTitle}>🚀 Primary Action</Text>
+          <Text style={styles.mainActionTitle}>🚀 Bulk Actions</Text>
           <Text style={styles.mainActionDescription}>
             This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. This is the same process that runs automatically at 5 AM EST every day.
           </Text>
@@ -411,7 +488,7 @@ The system automatically generates separate reports for each location every morn
           </View>
         </View>
 
-        {/* Location Report Status */}
+        {/* Location Report Status with Individual Controls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
           {locationReports.map((report) => {
@@ -425,6 +502,7 @@ The system automatically generates separate reports for each location every morn
               ? new Date(report.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
               : 'Never';
             const sensorStatus = report.waveSensorsOnline ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+            const isLoadingThisLocation = loadingLocationId === report.locationId;
             
             return (
               <View style={styles.locationCard} key={report.locationId}>
@@ -445,6 +523,50 @@ The system automatically generates separate reports for each location every morn
                   <Text style={styles.locationDetailText}>Narrative: {report.narrativeLength} chars</Text>
                   <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
                 </View>
+                
+                {/* Individual Location Actions */}
+                <View style={styles.locationActions}>
+                  <TouchableOpacity
+                    style={[styles.locationActionButton, styles.pullDataButton, isLoadingThisLocation && styles.buttonDisabled]}
+                    onPress={() => handlePullDataForLocation(report.locationId, report.location)}
+                    disabled={isLoadingThisLocation || isLoading}
+                  >
+                    {isLoadingThisLocation ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <IconSymbol
+                          ios_icon_name="arrow.down.circle"
+                          android_material_icon_name="download"
+                          size={18}
+                          color="#fff"
+                        />
+                        <Text style={styles.locationActionText}>Pull Data</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.locationActionButton, styles.generateReportButton, isLoadingThisLocation && styles.buttonDisabled]}
+                    onPress={() => handleGenerateReportForLocation(report.locationId, report.location)}
+                    disabled={isLoadingThisLocation || isLoading}
+                  >
+                    {isLoadingThisLocation ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <IconSymbol
+                          ios_icon_name="doc.text"
+                          android_material_icon_name="description"
+                          size={18}
+                          color="#fff"
+                        />
+                        <Text style={styles.locationActionText}>Generate Report</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                
                 {!report.waveSensorsOnline && (
                   <View style={styles.warningBanner}>
                     <Text style={styles.warningText}>
@@ -709,6 +831,7 @@ const styles = StyleSheet.create({
   },
   locationDetails: {
     gap: 4,
+    marginBottom: 12,
   },
   locationDetailText: {
     fontSize: 13,
@@ -717,6 +840,32 @@ const styles = StyleSheet.create({
   locationDetailWarning: {
     color: '#ffaa00',
     fontWeight: '600',
+  },
+  locationActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  locationActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  pullDataButton: {
+    backgroundColor: '#3B82F6',
+  },
+  generateReportButton: {
+    backgroundColor: '#10B981',
+  },
+  locationActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   warningBanner: {
     marginTop: 12,
