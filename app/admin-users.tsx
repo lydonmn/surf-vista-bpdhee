@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -37,12 +37,6 @@ export default function AdminUsersScreen() {
   const [pauseDays, setPauseDays] = useState('30');
   const [refundAmount, setRefundAmount] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-
-  useEffect(() => {
-    if (profile?.is_admin) {
-      loadUsers();
-    }
-  }, [profile]);
 
   const loadUsers = async () => {
     try {
@@ -95,6 +89,12 @@ export default function AdminUsersScreen() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (profile?.is_admin) {
+      loadUsers();
+    }
+  }, [profile]);
 
   const filteredUsers = users.filter(user => 
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -466,156 +466,152 @@ export default function AdminUsersScreen() {
               </Text>
             </View>
           ) : (
-            <React.Fragment>
-              {filteredUsers.map((user, index) => {
-                const status = getSubscriptionStatus(user);
-                const hasNotifications = user.daily_report_notifications;
-                const hasPushToken = user.push_token && user.push_token !== 'null';
-                
-                return (
-                  <React.Fragment key={`user-${user.id || index}`}>
-                    <View style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
-                      <View style={styles.userHeader}>
-                        <View style={styles.userIconContainer}>
-                          <IconSymbol
-                            ios_icon_name="person.circle.fill"
-                            android_material_icon_name="account-circle"
-                            size={40}
-                            color={user.is_admin ? colors.accent : colors.primary}
-                          />
-                        </View>
-                        <View style={styles.userInfo}>
-                          <Text style={[styles.userEmail, { color: theme.colors.text }]}>
-                            {user.email}
-                          </Text>
-                          <Text style={[styles.userDate, { color: colors.textSecondary }]}>
-                            Joined {formatDate(user.created_at)}
-                          </Text>
-                        </View>
-                      </View>
+            filteredUsers.map((user, index) => {
+              const status = getSubscriptionStatus(user);
+              const hasNotifications = user.daily_report_notifications;
+              const hasPushToken = user.push_token && user.push_token !== 'null';
+              
+              return (
+                <View key={`user-${user.id || index}`} style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
+                  <View style={styles.userHeader}>
+                    <View style={styles.userIconContainer}>
+                      <IconSymbol
+                        ios_icon_name="person.circle.fill"
+                        android_material_icon_name="account-circle"
+                        size={40}
+                        color={user.is_admin ? colors.accent : colors.primary}
+                      />
+                    </View>
+                    <View style={styles.userInfo}>
+                      <Text style={[styles.userEmail, { color: theme.colors.text }]}>
+                        {user.email}
+                      </Text>
+                      <Text style={[styles.userDate, { color: colors.textSecondary }]}>
+                        Joined {formatDate(user.created_at)}
+                      </Text>
+                    </View>
+                  </View>
 
-                      <View style={[styles.statusBadge, { backgroundColor: status.color + '20' }]}>
-                        <Text style={[styles.statusText, { color: status.color }]}>
-                          {status.text}
+                  <View style={[styles.statusBadge, { backgroundColor: status.color + '20' }]}>
+                    <Text style={[styles.statusText, { color: status.color }]}>
+                      {status.text}
+                    </Text>
+                  </View>
+
+                  {user.subscription_end_date && (
+                    <View style={styles.endDateContainer}>
+                      <IconSymbol
+                        ios_icon_name="calendar"
+                        android_material_icon_name="calendar-today"
+                        size={16}
+                        color={colors.textSecondary}
+                      />
+                      <Text style={[styles.endDateText, { color: colors.textSecondary }]}>
+                        Ends: {formatDate(user.subscription_end_date)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Notification Status */}
+                  <View style={styles.notificationStatusContainer}>
+                    <View style={styles.notificationStatusRow}>
+                      <IconSymbol
+                        ios_icon_name="bell.fill"
+                        android_material_icon_name="notifications"
+                        size={16}
+                        color={hasNotifications ? colors.primary : colors.textSecondary}
+                      />
+                      <Text style={[styles.notificationStatusText, { 
+                        color: hasNotifications ? colors.primary : colors.textSecondary 
+                      }]}>
+                        Notifications: {hasNotifications ? 'Enabled' : 'Disabled'}
+                      </Text>
+                    </View>
+                    {hasNotifications && (
+                      <View style={styles.notificationStatusRow}>
+                        <IconSymbol
+                          ios_icon_name="checkmark.circle.fill"
+                          android_material_icon_name="check-circle"
+                          size={16}
+                          color={hasPushToken ? '#4CAF50' : '#FF9800'}
+                        />
+                        <Text style={[styles.notificationStatusText, { 
+                          color: hasPushToken ? '#4CAF50' : '#FF9800'
+                        }]}>
+                          Push Token: {hasPushToken ? 'Registered' : 'Missing'}
                         </Text>
                       </View>
+                    )}
+                  </View>
 
-                      {user.subscription_end_date && (
-                        <View style={styles.endDateContainer}>
-                          <IconSymbol
-                            ios_icon_name="calendar"
-                            android_material_icon_name="calendar-today"
-                            size={16}
-                            color={colors.textSecondary}
-                          />
-                          <Text style={[styles.endDateText, { color: colors.textSecondary }]}>
-                            Ends: {formatDate(user.subscription_end_date)}
-                          </Text>
-                        </View>
-                      )}
+                  <View style={styles.actionsContainer}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                      onPress={() => openActionModal(user.id, user.email, 'free_months')}
+                    >
+                      <IconSymbol
+                        ios_icon_name="gift.fill"
+                        android_material_icon_name="card-giftcard"
+                        size={18}
+                        color="#FFFFFF"
+                      />
+                      <Text style={styles.actionButtonText}>
+                        Free Months
+                      </Text>
+                    </TouchableOpacity>
 
-                      {/* Notification Status */}
-                      <View style={styles.notificationStatusContainer}>
-                        <View style={styles.notificationStatusRow}>
-                          <IconSymbol
-                            ios_icon_name="bell.fill"
-                            android_material_icon_name="notifications"
-                            size={16}
-                            color={hasNotifications ? colors.primary : colors.textSecondary}
-                          />
-                          <Text style={[styles.notificationStatusText, { 
-                            color: hasNotifications ? colors.primary : colors.textSecondary 
-                          }]}>
-                            Notifications: {hasNotifications ? 'Enabled' : 'Disabled'}
-                          </Text>
-                        </View>
-                        {hasNotifications && (
-                          <View style={styles.notificationStatusRow}>
-                            <IconSymbol
-                              ios_icon_name="checkmark.circle.fill"
-                              android_material_icon_name="check-circle"
-                              size={16}
-                              color={hasPushToken ? '#4CAF50' : '#FF9800'}
-                            />
-                            <Text style={[styles.notificationStatusText, { 
-                              color: hasPushToken ? '#4CAF50' : '#FF9800'
-                            }]}>
-                              Push Token: {hasPushToken ? 'Registered' : 'Missing'}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.actionsContainer}>
+                    {user.is_subscribed && (
+                      <>
                         <TouchableOpacity
-                          style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                          onPress={() => openActionModal(user.id, user.email, 'free_months')}
+                          style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
+                          onPress={() => openActionModal(user.id, user.email, 'pause')}
                         >
                           <IconSymbol
-                            ios_icon_name="gift.fill"
-                            android_material_icon_name="card-giftcard"
+                            ios_icon_name="pause.circle.fill"
+                            android_material_icon_name="pause-circle"
                             size={18}
                             color="#FFFFFF"
                           />
                           <Text style={styles.actionButtonText}>
-                            Free Months
+                            Pause
                           </Text>
                         </TouchableOpacity>
 
-                        {user.is_subscribed && (
-                          <React.Fragment>
-                            <TouchableOpacity
-                              style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
-                              onPress={() => openActionModal(user.id, user.email, 'pause')}
-                            >
-                              <IconSymbol
-                                ios_icon_name="pause.circle.fill"
-                                android_material_icon_name="pause-circle"
-                                size={18}
-                                color="#FFFFFF"
-                              />
-                              <Text style={styles.actionButtonText}>
-                                Pause
-                              </Text>
-                            </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: '#FF6B6B' }]}
+                          onPress={() => openActionModal(user.id, user.email, 'cancel')}
+                        >
+                          <IconSymbol
+                            ios_icon_name="xmark.circle.fill"
+                            android_material_icon_name="cancel"
+                            size={18}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Cancel
+                          </Text>
+                        </TouchableOpacity>
 
-                            <TouchableOpacity
-                              style={[styles.actionButton, { backgroundColor: '#FF6B6B' }]}
-                              onPress={() => openActionModal(user.id, user.email, 'cancel')}
-                            >
-                              <IconSymbol
-                                ios_icon_name="xmark.circle.fill"
-                                android_material_icon_name="cancel"
-                                size={18}
-                                color="#FFFFFF"
-                              />
-                              <Text style={styles.actionButtonText}>
-                                Cancel
-                              </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
-                              onPress={() => openActionModal(user.id, user.email, 'refund')}
-                            >
-                              <IconSymbol
-                                ios_icon_name="dollarsign.circle.fill"
-                                android_material_icon_name="payment"
-                                size={18}
-                                color="#FFFFFF"
-                              />
-                              <Text style={styles.actionButtonText}>
-                                Refund
-                              </Text>
-                            </TouchableOpacity>
-                          </React.Fragment>
-                        )}
-                      </View>
-                    </View>
-                  </React.Fragment>
-                );
-              })}
-            </React.Fragment>
+                        <TouchableOpacity
+                          style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
+                          onPress={() => openActionModal(user.id, user.email, 'refund')}
+                        >
+                          <IconSymbol
+                            ios_icon_name="dollarsign.circle.fill"
+                            android_material_icon_name="payment"
+                            size={18}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Refund
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </View>
+              );
+            })
           )}
         </ScrollView>
       )}

@@ -107,7 +107,7 @@ export default function ReportScreen() {
       console.error('[ReportScreen] Error filtering reports:', error);
       return null;
     }
-  }, [locationSurfReports, todayDate, currentLocation, locationData]);
+  }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
 
   const lastValidReport = useMemo(() => {
     const sortedReports = [...locationSurfReports].sort((a, b) => {
@@ -128,7 +128,7 @@ export default function ReportScreen() {
     });
     
     return validReport;
-  }, [locationSurfReports, hasValidSurfData, locationData]);
+  }, [locationSurfReports, hasValidSurfData, locationData.displayName]);
 
   const displayReport = useMemo(() => {
     if (todaysReport) {
@@ -143,7 +143,7 @@ export default function ReportScreen() {
     
     console.log('[ReportScreen] ❌ No report to display for', locationData.displayName);
     return null;
-  }, [todaysReport, lastValidReport, locationData]);
+  }, [todaysReport, lastValidReport, locationData.displayName]);
 
   const fetchSurfConditions = useCallback(async () => {
     try {
@@ -168,7 +168,7 @@ export default function ReportScreen() {
     } catch (error) {
       console.error('[ReportScreen] Error in fetchSurfConditions:', error);
     }
-  }, [todayDate, currentLocation, locationData]);
+  }, [todayDate, currentLocation, locationData.displayName]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -198,7 +198,7 @@ export default function ReportScreen() {
     } finally {
       setIsLoadingVideo(false);
     }
-  }, [currentLocation, locationData]);
+  }, [currentLocation, locationData.displayName]);
 
   useEffect(() => {
     console.log('[ReportScreen] Auth state:', {
@@ -216,7 +216,7 @@ export default function ReportScreen() {
       loadLatestVideo();
       fetchSurfConditions();
     }
-  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions, currentLocation]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions, currentLocation, locationData.displayName]);
 
   useEffect(() => {
     if (!isInitialized || authLoading || !user || !profile || !isSubscribed) {
@@ -252,7 +252,7 @@ export default function ReportScreen() {
       console.log('[ReportScreen] Cleaning up real-time subscription');
       subscription.unsubscribe();
     };
-  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation, locationData]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation, locationData.displayName]);
 
   const handleRefresh = async () => {
     console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);

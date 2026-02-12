@@ -4,7 +4,7 @@ import { supabase } from './integrations/supabase/client';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useRouter } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 120, // Increased padding to ensure all fields are accessible
+    paddingBottom: 120,
   },
   header: {
     fontSize: 28,
@@ -327,14 +327,7 @@ export default function AdminLocationsScreen() {
     is_active: true,
   });
 
-  useEffect(() => {
-    console.log('AdminLocationsScreen: Component mounted, profile:', profile);
-    if (profile) {
-      loadLocations();
-    }
-  }, [profile]);
-
-  const loadLocations = async () => {
+  const loadLocations = useCallback(async () => {
     console.log('AdminLocationsScreen: Loading locations');
     try {
       setLoading(true);
@@ -357,7 +350,14 @@ export default function AdminLocationsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    console.log('AdminLocationsScreen: Component mounted, profile:', profile);
+    if (profile) {
+      loadLocations();
+    }
+  }, [profile, loadLocations]);
 
   const resetForm = () => {
     setFormData({
@@ -515,6 +515,15 @@ export default function AdminLocationsScreen() {
     }
   };
 
+  const [testLog, setTestLog] = useState<ActivityLog[]>([]);
+  
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+    console.log(`[AdminLocationsScreen] ${type.toUpperCase()}: ${message}`);
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const id = `${Date.now()}-${Math.random()}`;
+    setTestLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 20));
+  }, []);
+
   const handleTestLocation = async (location: LocationItem) => {
     console.log('AdminLocationsScreen: Testing location data sources:', location);
     setLoading(true);
@@ -632,16 +641,6 @@ export default function AdminLocationsScreen() {
       ]
     );
   };
-
-  // Activity log state for test results
-  const [testLog, setTestLog] = useState<ActivityLog[]>([]);
-  
-  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
-    console.log(`[AdminLocationsScreen] ${type.toUpperCase()}: ${message}`);
-    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-    const id = `${Date.now()}-${Math.random()}`;
-    setTestLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 20));
-  }, []);
 
   const handleGoBack = () => {
     console.log('AdminLocationsScreen: Navigating back');

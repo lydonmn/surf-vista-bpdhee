@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
@@ -135,6 +135,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('[AuthContext] Exception refreshing session:', error);
     }
   }, [loadUserProfile]);
+
+  const signOut = useCallback(async () => {
+    console.log('[AuthContext] ===== SIGN OUT STARTED =====');
+    console.log('[AuthContext] Current session before sign out:', session?.user?.email);
+    console.log('[AuthContext] Current user state:', user?.email);
+    
+    try {
+      console.log('[AuthContext] Clearing local state immediately...');
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setIsLoading(false);
+      
+      logoutUser().catch(error => {
+        console.error('[AuthContext] Error logging out from RevenueCat (non-critical):', error);
+      });
+      
+      console.log('[AuthContext] Calling supabase.auth.signOut()...');
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('[AuthContext] ❌ Supabase signOut error:', error);
+      } else {
+        console.log('[AuthContext] ✅ Supabase signOut successful');
+      }
+      
+      console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
+    } catch (error) {
+      console.error('[AuthContext] ❌ Sign out exception:', error);
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setIsLoading(false);
+      console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
+    }
+  }, [session, user]);
 
   useEffect(() => {
     console.log('[AuthContext] 🚀 Initializing...');
@@ -285,7 +321,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile, isInitialized]);
+  }, [loadUserProfile, isInitialized, signOut]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
@@ -380,42 +416,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('[AuthContext] Sign in exception:', error);
       setIsLoading(false);
       return { success: false, message: error.message || 'An unexpected error occurred' };
-    }
-  };
-
-  const signOut = async () => {
-    console.log('[AuthContext] ===== SIGN OUT STARTED =====');
-    console.log('[AuthContext] Current session before sign out:', session?.user?.email);
-    console.log('[AuthContext] Current user state:', user?.email);
-    
-    try {
-      console.log('[AuthContext] Clearing local state immediately...');
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setIsLoading(false);
-      
-      logoutUser().catch(error => {
-        console.error('[AuthContext] Error logging out from RevenueCat (non-critical):', error);
-      });
-      
-      console.log('[AuthContext] Calling supabase.auth.signOut()...');
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('[AuthContext] ❌ Supabase signOut error:', error);
-      } else {
-        console.log('[AuthContext] ✅ Supabase signOut successful');
-      }
-      
-      console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
-    } catch (error) {
-      console.error('[AuthContext] ❌ Sign out exception:', error);
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setIsLoading(false);
-      console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   };
 

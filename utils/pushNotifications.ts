@@ -112,9 +112,9 @@ export async function requestNotificationPermissions(): Promise<boolean> {
                 console.log('[Push Notifications] Opening device settings...');
                 try {
                   await Linking.openSettings();
-                  resolve(false); // Still return false since we can't verify if they enabled it
-                } catch (error) {
-                  console.error('[Push Notifications] Error opening settings:', error);
+                  resolve(false);
+                } catch (settingsError) {
+                  console.error('[Push Notifications] Error opening settings:', settingsError);
                   resolve(false);
                 }
               }
@@ -193,28 +193,15 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     }
 
     // Get the project ID from app config
-    // Try multiple possible locations for the project ID
     const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
                       Constants.manifest?.extra?.eas?.projectId ||
-                      Constants.manifest2?.extra?.eas?.projectId;
+                      Constants.manifest2?.extra?.eas?.projectId ||
+                      'e1ee166c-212b-4eca-a1d7-44183b7be073';
     
-    console.log('[Push Notifications] EAS Project ID from config:', projectId);
-    console.log('[Push Notifications] expoConfig.extra:', Constants.expoConfig?.extra);
-
-    if (!projectId) {
-      console.error('[Push Notifications] ❌ No EAS project ID found in app.json');
-      console.error('[Push Notifications] Please add "extra.eas.projectId" to app.json');
-      
-      Alert.alert(
-        'Configuration Error',
-        'Push notifications are not properly configured. The EAS project ID is missing from app.json.\n\nPlease contact support or try again later.',
-        [{ text: 'OK' }]
-      );
-      return null;
-    }
+    console.log('[Push Notifications] Using EAS Project ID:', projectId);
 
     // Get the Expo push token
-    console.log('[Push Notifications] Getting Expo push token with projectId:', projectId);
+    console.log('[Push Notifications] Getting Expo push token...');
     
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync({
@@ -242,26 +229,20 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] Token error:', tokenError);
       console.error('[Push Notifications] Token error message:', tokenError?.message);
       
-      // Check if it's an EXPERIENCE_NOT_FOUND error
+      // Check if it's an EXPERIENCE_NOT_FOUND error or project not configured
       if (tokenError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
-          tokenError?.message?.includes('does not exist')) {
-        console.error('[Push Notifications] ❌ EAS project not found in Expo system');
-        console.error('[Push Notifications] This means the project ID in app.json is not linked to an EAS project');
+          tokenError?.message?.includes('does not exist') ||
+          tokenError?.message?.includes('No EAS project ID') ||
+          tokenError?.code === 'EXPERIENCE_NOT_FOUND') {
+        console.log('[Push Notifications] ℹ️ EAS project not configured - this is expected in development');
+        console.log('[Push Notifications] ℹ️ Push notifications will work after building with EAS Build');
         
-        Alert.alert(
-          'Setup Required',
-          'Push notifications require an EAS project to be set up.\n\nTo enable notifications:\n\n1. Run "eas build:configure" in your terminal\n2. This will create an EAS project and update app.json\n3. Then try enabling notifications again\n\nFor now, notifications will be disabled.',
-          [{ text: 'OK' }]
-        );
+        // Don't show alert - just log and return null
         return null;
       }
       
-      // Generic error
-      Alert.alert(
-        'Registration Failed',
-        'Failed to register for push notifications. Please try again later or contact support if the problem persists.',
-        [{ text: 'OK' }]
-      );
+      // For other errors, log but don't show alert
+      console.error('[Push Notifications] ❌ Token registration failed - continuing without token');
       return null;
     }
   } catch (error) {
@@ -269,14 +250,9 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     console.error('[Push Notifications] Error:', error);
     if (error instanceof Error) {
       console.error('[Push Notifications] Error message:', error.message);
-      console.error('[Push Notifications] Error stack:', error.stack);
     }
     
-    Alert.alert(
-      'Registration Failed',
-      'Failed to register for push notifications. Please try again or contact support if the problem persists.',
-      [{ text: 'OK' }]
-    );
+    // Don't show alert - just log and return null
     return null;
   }
 }
@@ -332,7 +308,7 @@ export async function getNotificationLocations(userId: string): Promise<string[]
 
     if (error) {
       console.error('[Push Notifications] Error fetching locations:', error);
-      return ['folly-beach']; // Default to Folly Beach
+      return ['folly-beach'];
     }
 
     console.log('[Push Notifications] Notification locations:', data?.notification_locations);
@@ -409,14 +385,11 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] Push token result:', pushToken);
       
-      // If we didn't get a token and we're not on web/simulator, fail gracefully
-      if (!pushToken && Platform.OS !== 'web' && Device.isDevice) {
-        console.error('[Push Notifications] ❌ Failed to get push token on physical device');
-        console.error('[Push Notifications] This likely means EAS project is not configured');
-        
-        // Still allow the user to enable notifications in the database
-        // They can try again later after EAS is configured
-        console.log('[Push Notifications] ⚠️ Continuing without push token - user can retry later');
+      // If we didn't get a token, still allow enabling notifications
+      // This allows the preference to be saved for when EAS is configured
+      if (!pushToken) {
+        console.log('[Push Notifications] ⚠️ No push token obtained - saving preference anyway');
+        console.log('[Push Notifications] ℹ️ User can receive notifications after EAS Build is configured');
       }
     }
 
@@ -473,16 +446,6 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
 
     console.log('[Push Notifications] ✅ Preferences updated successfully');
     console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
-    
-    // If we enabled notifications but didn't get a push token, warn the user
-    if (enabled && !pushToken && Platform.OS !== 'web' && Device.isDevice) {
-      console.log('[Push Notifications] ⚠️ Notifications enabled but no push token - showing warning');
-      Alert.alert(
-        'Setup Required',
-        'Notifications have been enabled in your profile, but push notification registration requires additional setup.\n\nTo receive push notifications:\n\n1. The app needs to be built with EAS Build\n2. Run "eas build:configure" to set up the project\n3. Then try toggling notifications again\n\nFor now, your preference has been saved.',
-        [{ text: 'OK' }]
-      );
-    }
     
     console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
     return true;
