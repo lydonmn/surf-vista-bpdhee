@@ -131,7 +131,7 @@ serve(async (req) => {
       console.log('[Daily 5AM Report] ⚠️ Some locations succeeded, some failed');
       return new Response(
         JSON.stringify({
-          success: true, // Changed to true so partial success is not treated as complete failure
+          success: true,
           message: 'Partial success - some locations failed',
           date: dateStr,
           results: results,
@@ -207,17 +207,75 @@ async function processLocation(supabase: any, locationId: string, locationName: 
 
     console.log(`[${locationName}] No existing report found or report is incomplete - generating new report`);
 
+    // ✅ CRITICAL FIX: Fetch weather and tide data FIRST (these are more reliable)
+    console.log(`[${locationName}] Step 1: Fetching weather data...`);
+    let weatherData = null;
+    try {
+      const { data: weatherResult, error: weatherError } = await supabase.functions.invoke('fetch-weather-data', {
+        body: { location: locationId },
+      });
+
+      if (weatherError) {
+        console.warn(`[${locationName}] Weather fetch warning:`, weatherError);
+      } else if (weatherResult?.success) {
+        console.log(`[${locationName}] ✅ Weather data fetched successfully`);
+        
+        // Fetch from database
+        const { data: weatherDbData } = await supabase
+          .from('weather_data')
+          .select('*')
+          .eq('date', dateStr)
+          .eq('location', locationId)
+          .maybeSingle();
+        
+        weatherData = weatherDbData;
+      }
+    } catch (weatherError) {
+      console.warn(`[${locationName}] Weather fetch failed (non-critical):`, weatherError);
+    }
+
+    console.log(`[${locationName}] Step 2: Fetching tide data...`);
+    let tideDataArray = [];
+    try {
+      const { data: tideResult, error: tideError } = await supabase.functions.invoke('fetch-tide-data', {
+        body: { location: locationId },
+      });
+
+      if (tideError) {
+        console.warn(`[${locationName}] Tide fetch warning:`, tideError);
+      } else if (tideResult?.success) {
+        console.log(`[${locationName}] ✅ Tide data fetched successfully`);
+        
+        // Fetch from database
+        const { data: tideDbData } = await supabase
+          .from('tide_data')
+          .select('*')
+          .eq('date', dateStr)
+          .eq('location', locationId)
+          .order('time');
+        
+        tideDataArray = tideDbData || [];
+      }
+    } catch (tideError) {
+      console.warn(`[${locationName}] Tide fetch failed (non-critical):`, tideError);
+    }
+
+    console.log(`[${locationName}] Weather data:`, weatherData ? 'Found' : 'Not found');
+    console.log(`[${locationName}] Tide data: ${tideDataArray.length} records`);
+
     // RETRY LOOP - Try up to MAX_RETRIES times with progressive delays
     let lastError = null;
     let surfConditions = null;
+    
+    console.log(`[${locationName}] Step 3: Fetching surf/buoy data with retry logic...`);
     
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching fresh buoy data...`);
         
-        // Step 1: Fetch fresh buoy data
+        // ✅ CRITICAL FIX: Pass location parameter to fetch-surf-reports
         const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
-          body: { location: locationId },
+          body: { location: locationId }, // ✅ CRITICAL: Pass location ID
         });
 
         if (buoyError) {
@@ -226,12 +284,16 @@ async function processLocation(supabase: any, locationId: string, locationName: 
 
         console.log(`[${locationName}] Attempt ${attempt}: Buoy data response:`, buoyData);
 
+        // ✅ CRITICAL FIX: Wait for database to update before querying
+        console.log(`[${locationName}] Waiting for database to update...`);
+        await delay(1000); // Wait 1 second for database write
+
         // Step 2: Check if we have valid wave data
         const { data: fetchedConditions, error: surfError } = await supabase
           .from('surf_conditions')
           .select('*')
           .eq('date', dateStr)
-          .eq('location', locationId)
+          .eq('location', locationId) // ✅ CRITICAL: Filter by location
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -243,7 +305,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         console.log(`[${locationName}] Attempt ${attempt}: Fetched conditions:`, fetchedConditions);
 
         // IMPROVED VALIDATION: Accept data even if wave sensors are down
-        // We can still generate a useful report with wind/water temp data
         const hasWaveData = fetchedConditions && (
           (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
           (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
@@ -265,7 +326,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
           surfConditions = fetchedConditions;
           break;
         } else if (hasBuoyData) {
-          // IMPROVED: Accept partial data on last attempt or if we have enough for a report
           console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online with wind/temp data`);
           console.log(`[${locationName}] Wind: ${fetchedConditions.wind_speed}, Water Temp: ${fetchedConditions.water_temp}`);
           
@@ -305,30 +365,8 @@ async function processLocation(supabase: any, locationId: string, locationName: 
       throw new Error(`Failed after ${MAX_RETRIES} attempts: ${lastError}`);
     }
 
-    // Step 3: Update weather data (non-blocking)
-    console.log(`[${locationName}] Fetching weather data...`);
-    try {
-      await supabase.functions.invoke('fetch-weather-data', {
-        body: { location: locationId },
-      });
-      console.log(`[${locationName}] ✅ Weather data fetched`);
-    } catch (weatherError) {
-      console.warn(`[${locationName}] Weather fetch failed (non-critical):`, weatherError);
-    }
-
-    // Step 4: Update tide data (non-blocking)
-    console.log(`[${locationName}] Fetching tide data...`);
-    try {
-      await supabase.functions.invoke('fetch-tide-data', {
-        body: { location: locationId },
-      });
-      console.log(`[${locationName}] ✅ Tide data fetched`);
-    } catch (tideError) {
-      console.warn(`[${locationName}] Tide fetch failed (non-critical):`, tideError);
-    }
-
-    // Step 5: Generate the daily report with comprehensive narrative
-    console.log(`[${locationName}] Generating daily report...`);
+    // Step 4: Generate the daily report with comprehensive narrative
+    console.log(`[${locationName}] Step 4: Generating daily report...`);
     
     const captureTime = surfConditions.updated_at 
       ? new Date(surfConditions.updated_at).toLocaleTimeString('en-US', { 
@@ -339,33 +377,13 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         })
       : '5:00 AM';
 
-    // Fetch weather data for comprehensive narrative
-    const { data: weatherData } = await supabase
-      .from('weather_data')
-      .select('*')
-      .eq('date', dateStr)
-      .eq('location', locationId)
-      .maybeSingle();
-
-    console.log(`[${locationName}] Weather data:`, weatherData ? 'Found' : 'Not found');
-
-    // Fetch tide data for comprehensive narrative
-    const { data: tideDataArray } = await supabase
-      .from('tide_data')
-      .select('*')
-      .eq('date', dateStr)
-      .eq('location', locationId)
-      .order('time');
-
-    console.log(`[${locationName}] Tide data: ${tideDataArray?.length || 0} records`);
-
     // Generate comprehensive narrative
     const narrative = generateWittyNarrative(
       surfConditions, 
       captureTime, 
       dateStr,
       weatherData,
-      tideDataArray || []
+      tideDataArray
     );
 
     console.log(`[${locationName}] Generated narrative (${narrative.length} characters)`);
@@ -377,7 +395,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
     // Insert or update the surf report
     const reportData = {
       date: dateStr,
-      location: locationId,
+      location: locationId, // ✅ CRITICAL: Store location ID
       wave_height: surfConditions.wave_height || 'N/A',
       surf_height: surfConditions.surf_height || surfConditions.wave_height || 'N/A',
       wave_period: surfConditions.wave_period || 'N/A',

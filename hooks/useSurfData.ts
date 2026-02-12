@@ -65,10 +65,17 @@ export function useSurfData() {
   const appStateRef = useRef(AppState.currentState);
   const isMountedRef = useRef(true);
   const isUpdatingRef = useRef(false);
+  const isFetchingRef = useRef(false); // ✅ CRITICAL FIX: Prevent concurrent fetches
 
-  // Memoize fetchData to prevent infinite loops
+  // ✅ CRITICAL FIX: Stable fetchData function that doesn't cause re-renders
   const fetchData = useCallback(async () => {
-    if (!isMountedRef.current) return;
+    // ✅ CRITICAL: Prevent concurrent fetches that cause reload loops
+    if (!isMountedRef.current || isFetchingRef.current) {
+      console.log('[useSurfData] Fetch already in progress or component unmounted, skipping...');
+      return;
+    }
+
+    isFetchingRef.current = true;
 
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -111,7 +118,10 @@ export function useSurfData() {
           .order('time', { ascending: true }),
       ]);
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) {
+        isFetchingRef.current = false;
+        return;
+      }
 
       // Log detailed results
       console.log('[useSurfData] Surf reports result:', {
@@ -201,11 +211,14 @@ export function useSurfData() {
         console.log('[useSurfData] Scheduling retry in 5 seconds...');
         retryTimeoutRef.current = setTimeout(() => {
           console.log('[useSurfData] Retrying data fetch...');
+          isFetchingRef.current = false; // Reset flag before retry
           fetchData();
         }, RETRY_DELAY);
       }
+    } finally {
+      isFetchingRef.current = false;
     }
-  }, [currentLocation]); // Add currentLocation as dependency
+  }, [currentLocation]);
 
   const updateAllData = useCallback(async () => {
     if (!isMountedRef.current || isUpdatingRef.current) {
@@ -289,8 +302,13 @@ export function useSurfData() {
           throw new Error(errorMessage);
         }
 
+        // ✅ CRITICAL FIX: Wait for database to update before refreshing
+        console.log('[useSurfData] Waiting for database to update...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         // Refresh data from database
         console.log('[useSurfData] Refreshing data from database...');
+        isFetchingRef.current = false; // Reset flag before refresh
         await fetchData();
       } catch (error) {
         clearTimeout(timeoutId);
@@ -328,8 +346,8 @@ export function useSurfData() {
     }
   }, [fetchData, currentLocation]);
 
-  // Setup periodic refresh - memoized
-  const setupPeriodicRefresh = useCallback(() => {
+  // ✅ CRITICAL FIX: Stable periodic refresh setup
+  useEffect(() => {
     console.log('[useSurfData] Setting up periodic refresh (every 15 minutes)...');
     
     // Clear existing interval
@@ -340,131 +358,127 @@ export function useSurfData() {
     // Set up new interval
     refreshIntervalRef.current = setInterval(() => {
       console.log('[useSurfData] Periodic refresh triggered');
-      fetchData();
+      if (!isFetchingRef.current) {
+        fetchData();
+      }
     }, REFRESH_INTERVAL);
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
   }, [fetchData]);
 
-  // Handle app state changes - memoized
-  const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
-    console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
-    
-    if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
-      console.log('[useSurfData] App came to foreground, refreshing data...');
-      fetchData();
-    }
-    
-    appStateRef.current = nextAppState;
-  }, [fetchData]);
-
-  // Refetch data when location changes
+  // ✅ CRITICAL FIX: Stable app state change handler
   useEffect(() => {
-    console.log('[useSurfData] Location changed to:', currentLocation);
-    fetchData();
-  }, [currentLocation, fetchData]);
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
+      
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('[useSurfData] App came to foreground, refreshing data...');
+        if (!isFetchingRef.current) {
+          fetchData();
+        }
+      }
+      
+      appStateRef.current = nextAppState;
+    };
 
-  useEffect(() => {
-    console.log('[useSurfData] Initializing...');
-    isMountedRef.current = true;
-    
-    // Initial data fetch
-    fetchData();
-
-    // Setup periodic refresh
-    setupPeriodicRefresh();
-
-    // Setup app state listener
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
-    // Set up real-time subscription for surf reports (no filter - we'll filter in the callback)
+    return () => {
+      appStateSubscription.remove();
+    };
+  }, [fetchData]);
+
+  // ✅ CRITICAL FIX: Fetch data when location changes (only once per location change)
+  useEffect(() => {
+    console.log('[useSurfData] Location changed to:', currentLocation);
+    if (!isFetchingRef.current) {
+      fetchData();
+    }
+  }, [currentLocation, fetchData]);
+
+  // ✅ CRITICAL FIX: Set up real-time subscriptions separately (no dependencies on fetchData)
+  useEffect(() => {
+    console.log('[useSurfData] Setting up real-time subscriptions for location:', currentLocation);
+
+    // Set up real-time subscription for surf reports
     const surfReportsSubscription = supabase
-      .channel('surf_reports_changes')
+      .channel(`surf_reports_${currentLocation}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'surf_reports',
+          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useSurfData] Surf report updated, payload:', payload);
-          // Only refresh if the change is for the current location
-          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[useSurfData] Surf report for current location updated, refreshing data...');
-            fetchData();
-          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[useSurfData] Surf report for current location deleted, refreshing data...');
+          console.log('[useSurfData] Surf report updated for current location, refreshing data...');
+          if (!isFetchingRef.current) {
             fetchData();
           }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for weather data (no filter - we'll filter in the callback)
+    // Set up real-time subscription for weather data
     const weatherSubscription = supabase
-      .channel('weather_data_changes')
+      .channel(`weather_data_${currentLocation}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'weather_data',
+          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useSurfData] Weather data updated, payload:', payload);
-          // Only refresh if the change is for the current location
-          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[useSurfData] Weather data for current location updated, refreshing data...');
-            fetchData();
-          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[useSurfData] Weather data for current location deleted, refreshing data...');
+          console.log('[useSurfData] Weather data updated for current location, refreshing data...');
+          if (!isFetchingRef.current) {
             fetchData();
           }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for weather forecast (no filter - we'll filter in the callback)
+    // Set up real-time subscription for weather forecast
     const forecastSubscription = supabase
-      .channel('weather_forecast_changes')
+      .channel(`weather_forecast_${currentLocation}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'weather_forecast',
+          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useSurfData] Weather forecast updated, payload:', payload);
-          // Only refresh if the change is for the current location
-          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[useSurfData] Weather forecast for current location updated, refreshing data...');
-            fetchData();
-          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[useSurfData] Weather forecast for current location deleted, refreshing data...');
+          console.log('[useSurfData] Weather forecast updated for current location, refreshing data...');
+          if (!isFetchingRef.current) {
             fetchData();
           }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for tide data (no filter - we'll filter in the callback)
+    // Set up real-time subscription for tide data
     const tideSubscription = supabase
-      .channel('tide_data_changes')
+      .channel(`tide_data_${currentLocation}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'tide_data',
+          filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useSurfData] Tide data updated, payload:', payload);
-          // Only refresh if the change is for the current location
-          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[useSurfData] Tide data for current location updated, refreshing data...');
-            fetchData();
-          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[useSurfData] Tide data for current location deleted, refreshing data...');
+          console.log('[useSurfData] Tide data updated for current location, refreshing data...');
+          if (!isFetchingRef.current) {
             fetchData();
           }
         }
@@ -472,27 +486,35 @@ export function useSurfData() {
       .subscribe();
 
     return () => {
-      console.log('[useSurfData] Cleaning up...');
-      isMountedRef.current = false;
-      
-      // Clear intervals and timeouts
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
-
-      // Remove app state listener
-      appStateSubscription.remove();
-
-      // Unsubscribe from real-time channels
+      console.log('[useSurfData] Cleaning up real-time subscriptions...');
       surfReportsSubscription.unsubscribe();
       weatherSubscription.unsubscribe();
       forecastSubscription.unsubscribe();
       tideSubscription.unsubscribe();
     };
-  }, [fetchData, handleAppStateChange, setupPeriodicRefresh, currentLocation]);
+  }, [currentLocation, fetchData]);
+
+  // ✅ CRITICAL FIX: Cleanup on unmount
+  useEffect(() => {
+    console.log('[useSurfData] Hook mounted');
+    isMountedRef.current = true;
+
+    return () => {
+      console.log('[useSurfData] Hook unmounting, cleaning up...');
+      isMountedRef.current = false;
+      isFetchingRef.current = false;
+      
+      // Clear intervals and timeouts
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     ...state,

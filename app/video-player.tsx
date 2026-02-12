@@ -56,6 +56,7 @@ export default function VideoPlayerScreen() {
   const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null); // ✅ NEW: Periodic audio reactivation
 
   // ✅ CRITICAL: Configure audio session for smooth playback on mount
   useEffect(() => {
@@ -75,6 +76,20 @@ export default function VideoPlayerScreen() {
         if (isActive) {
           // Activate audio session
           await activateAudioSession();
+          console.log('[VideoPlayer] ✅ Audio session activated');
+
+          // ✅ CRITICAL FIX: Periodically reactivate audio session to prevent 10-second cutoffs
+          // iOS sometimes deactivates audio sessions after periods of inactivity
+          audioReactivationIntervalRef.current = setInterval(async () => {
+            if (isActive) {
+              console.log('[VideoPlayer] 🔄 Reactivating audio session (preventive maintenance)');
+              try {
+                await activateAudioSession();
+              } catch (err) {
+                console.error('[VideoPlayer] Failed to reactivate audio:', err);
+              }
+            }
+          }, 8000); // Every 8 seconds (before the 10-second cutoff)
 
           // Set up interruption handling
           const cleanup = setupAudioInterruptionHandling(
@@ -105,6 +120,13 @@ export default function VideoPlayerScreen() {
     return () => {
       console.log('[VideoPlayer] Cleaning up audio session...');
       isActive = false;
+      
+      // Clear periodic audio reactivation
+      if (audioReactivationIntervalRef.current) {
+        clearInterval(audioReactivationIntervalRef.current);
+        audioReactivationIntervalRef.current = null;
+      }
+      
       if (audioInterruptionCleanupRef.current) {
         audioInterruptionCleanupRef.current();
       }
@@ -188,7 +210,7 @@ export default function VideoPlayerScreen() {
           console.warn('[VideoPlayer] Connection refresh failed:', err);
         });
     }
-  }, [player, videoUrl]);
+  }, [videoUrl]); // ✅ FIXED: Removed player from dependencies to prevent recreation
 
   // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
@@ -205,12 +227,6 @@ export default function VideoPlayerScreen() {
       lastPlaybackActivityRef.current = Date.now();
       
       // ✅ SMOOTH PLAYBACK: Configure player for optimal performance
-      // expo-video automatically handles:
-      // - Audio session management for uninterrupted playback
-      // - Adaptive bitrate streaming for smooth video
-      // - Buffer optimization to prevent stuttering
-      // - Preloading for instant start
-      // - Continuous audio playback without 10-second cutoffs
       if (__DEV__) {
         console.log('[VideoPlayer] ✅ Smooth playback settings applied');
         console.log('[VideoPlayer] - Audio session configured for uninterrupted playback');
@@ -221,7 +237,6 @@ export default function VideoPlayerScreen() {
       }
       
       // ✅ CRITICAL FIX: Ensure audio stays active throughout playback
-      // Re-activate audio session when player is ready
       activateAudioSession().catch(err => 
         console.error('[VideoPlayer] Failed to activate audio for player:', err)
       );
@@ -442,7 +457,6 @@ export default function VideoPlayerScreen() {
         }
         
         // ✅ SMOOTH PLAYBACK: Auto-recovery from errors with retry logic
-        // Try to recover from transient errors automatically
         const errorString = String(status.error).toLowerCase();
         const isRecoverableError = errorString.includes('network') || 
                                    errorString.includes('timeout') || 
@@ -457,20 +471,35 @@ export default function VideoPlayerScreen() {
           setRetryCount(prev => prev + 1);
           
           // Wait with exponential backoff and try to resume playback
-          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Max 5 seconds
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
           setTimeout(() => {
             if (player && videoUrl) {
               if (__DEV__) {
                 console.log('[VideoPlayer] ⚡ Reloading video source for recovery...');
               }
-              player.replace(videoUrl);
               
-              // Wait a bit for the source to load, then play
-              setTimeout(() => {
-                if (player) {
-                  player.play();
-                }
-              }, 100);
+              // ✅ CRITICAL: Reactivate audio before recovery
+              activateAudioSession()
+                .then(() => {
+                  player.replace(videoUrl);
+                  
+                  // Wait a bit for the source to load, then play
+                  setTimeout(() => {
+                    if (player) {
+                      player.play();
+                    }
+                  }, 100);
+                })
+                .catch(err => {
+                  console.error('[VideoPlayer] Failed to reactivate audio for recovery:', err);
+                  // Try recovery anyway
+                  player.replace(videoUrl);
+                  setTimeout(() => {
+                    if (player) {
+                      player.play();
+                    }
+                  }, 100);
+                });
             }
           }, backoffDelay);
         } else if (retryCount >= maxRetries) {
@@ -509,7 +538,6 @@ export default function VideoPlayerScreen() {
         }
         
         // ✅ CRITICAL FIX: Ensure audio session is active before playback
-        // This prevents audio from stopping at 10 seconds
         activateAudioSession()
           .then(() => {
             if (__DEV__) {
@@ -544,9 +572,8 @@ export default function VideoPlayerScreen() {
         }
         setIsBuffering(true);
         
-        // ✅ CRITICAL FIX: Adaptive buffering timeout based on preload status
-        // Preloaded videos should buffer faster
-        const bufferTimeout = preloadedUrl ? 1000 : 3000; // 1s for preloaded, 3s for non-preloaded
+        // ✅ CRITICAL FIX: Shorter buffering timeout (max 2 seconds)
+        const bufferTimeout = 2000;
         
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
@@ -587,18 +614,9 @@ export default function VideoPlayerScreen() {
         }
         
         // ✅ CRITICAL FIX: Re-activate audio session when playback starts
-        // This ensures audio stays active throughout the entire video
         activateAudioSession().catch(err => 
           console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
         );
-      } else {
-        // ✅ SMOOTH PLAYBACK: Handle audio interruptions gracefully
-        // When playback is paused unexpectedly (e.g., phone call, notification)
-        // the player will automatically resume when the interruption ends
-        if (__DEV__) {
-          console.log('[VideoPlayer] ⚠️ Playback paused - may be due to audio interruption');
-          console.log('[VideoPlayer] ✅ Player will auto-resume after interruption ends');
-        }
       }
     });
 
@@ -725,12 +743,26 @@ export default function VideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      // ✅ CRITICAL: Refresh connection before playing if idle
+      // ✅ CRITICAL: Refresh connection and reactivate audio before playing
       refreshConnectionIfNeeded();
       
-      player.play();
-      setIsPlaying(true);
-      resetControlsTimeout();
+      // ✅ CRITICAL FIX: Reactivate audio session before playing
+      activateAudioSession()
+        .then(() => {
+          if (__DEV__) {
+            console.log('[VideoPlayer] ✅ Audio reactivated before play');
+          }
+          player.play();
+          setIsPlaying(true);
+          resetControlsTimeout();
+        })
+        .catch(err => {
+          console.error('[VideoPlayer] Failed to reactivate audio before play:', err);
+          // Try to play anyway
+          player.play();
+          setIsPlaying(true);
+          resetControlsTimeout();
+        });
     }
   }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded]);
 
@@ -759,6 +791,11 @@ export default function VideoPlayerScreen() {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
+      
+      // ✅ CRITICAL: Reactivate audio after seeking
+      activateAudioSession().catch(err => 
+        console.error('[VideoPlayer] Failed to reactivate audio after seek:', err)
+      );
     }
     isSeekingRef.current = false;
     resetControlsTimeout();
