@@ -23,6 +23,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; message: string }>;
   refreshProfile: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   checkSubscription: () => boolean;
   isAdmin: () => boolean;
 }
@@ -106,6 +107,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    try {
+      console.log('[AuthContext] 🔄 Refreshing session...');
+      const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.error('[AuthContext] ❌ Session refresh error:', error);
+        
+        // If refresh token is invalid, sign out the user
+        if (error.message.includes('Invalid Refresh Token') || error.message.includes('Refresh Token Not Found')) {
+          console.log('[AuthContext] Invalid refresh token detected - signing out user');
+          await signOut();
+        }
+        return;
+      }
+      
+      if (newSession) {
+        console.log('[AuthContext] ✅ Session refreshed successfully');
+        setSession(newSession);
+        
+        if (newSession.user) {
+          await loadUserProfile(newSession.user, true);
+        }
+      }
+    } catch (error) {
+      console.error('[AuthContext] Exception refreshing session:', error);
+    }
+  }, [loadUserProfile]);
+
   useEffect(() => {
     console.log('[AuthContext] 🚀 Initializing...');
     
@@ -114,7 +144,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         // Get session first - this is critical and should not be delayed
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('[AuthContext] Session error:', sessionError);
+          
+          // If refresh token is invalid, clear everything
+          if (sessionError.message.includes('Invalid Refresh Token') || sessionError.message.includes('Refresh Token Not Found')) {
+            console.log('[AuthContext] Invalid refresh token on init - clearing session');
+            setUser(null);
+            setProfile(null);
+            setSession(null);
+            setIsLoading(false);
+            setIsInitialized(true);
+            return;
+          }
+        }
         
         if (!mounted) return;
 
@@ -477,6 +522,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       deleteAccount,
       refreshProfile,
+      refreshSession,
       checkSubscription,
       isAdmin 
     }}>

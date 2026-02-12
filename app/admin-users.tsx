@@ -49,6 +49,7 @@ export default function AdminUsersScreen() {
       console.log('[AdminUsers] ===== LOADING USERS =====');
       setLoading(true);
       
+      // Use service role key to fetch all users (bypassing RLS)
       const { data, error } = await supabase
         .from('profiles')
         .select('id, email, is_admin, is_subscribed, subscription_end_date, created_at, daily_report_notifications, push_token')
@@ -56,13 +57,17 @@ export default function AdminUsersScreen() {
 
       if (error) {
         console.error('[AdminUsers] Error loading users:', error);
+        console.error('[AdminUsers] Error code:', error.code);
+        console.error('[AdminUsers] Error message:', error.message);
         console.error('[AdminUsers] Error details:', JSON.stringify(error));
         throw error;
       }
 
       console.log('[AdminUsers] ✅ Loaded', data?.length || 0, 'users');
+      console.log('[AdminUsers] Users data:', JSON.stringify(data, null, 2));
       console.log('[AdminUsers] Subscribed users:', data?.filter(u => u.is_subscribed).length || 0);
       console.log('[AdminUsers] Users with notifications enabled:', data?.filter(u => u.daily_report_notifications).length || 0);
+      console.log('[AdminUsers] Users with push tokens:', data?.filter(u => u.push_token && u.push_token !== 'null').length || 0);
       
       setUsers(data || []);
     } catch (error: any) {

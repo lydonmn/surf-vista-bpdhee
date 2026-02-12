@@ -21,7 +21,7 @@ import {
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, profile, signOut, deleteAccount, refreshProfile, checkSubscription, isAdmin } = useAuth();
+  const { user, profile, signOut, deleteAccount, refreshProfile, refreshSession, checkSubscription, isAdmin } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
   const [isLoadingCustomerCenter, setIsLoadingCustomerCenter] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -86,6 +86,13 @@ export default function ProfileScreen() {
     setIsTogglingNotifications(true);
 
     try {
+      // First, try to refresh the session to ensure we have a valid token
+      console.log('[ProfileScreen iOS] 🔄 Refreshing session before updating notifications...');
+      await refreshSession();
+      
+      // Small delay to ensure session is refreshed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const success = await setDailyReportNotifications(user.id, value);
       
       if (success) {
