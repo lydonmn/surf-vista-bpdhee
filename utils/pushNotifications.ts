@@ -166,13 +166,15 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 /**
  * Register for push notifications and get the Expo push token
- * ✅ V7.0 FIX: Enhanced with retry logic and better error handling
+ * ✅ V8.0 FIX: Enhanced with better error handling and no user-facing alerts for expected failures
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
     console.log('[Push Notifications] ===== REGISTERING FOR PUSH NOTIFICATIONS =====');
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
+    console.log('[Push Notifications] Constants.expoConfig:', JSON.stringify(Constants.expoConfig?.extra, null, 2));
+    console.log('[Push Notifications] Constants.manifest:', JSON.stringify(Constants.manifest?.extra, null, 2));
 
     // For web, return a dummy token so the toggle still works
     if (Platform.OS === 'web') {
@@ -193,24 +195,47 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       return null;
     }
 
-    // ✅ V7.0 FIX: Get the EAS project ID from multiple sources
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
-                      Constants.manifest?.extra?.eas?.projectId ||
-                      Constants.manifest2?.extra?.eas?.projectId ||
-                      'e1ee166c-212b-4eca-a1d7-44183b7be073'; // Hardcoded fallback
+    // ✅ V8.0 FIX: Try to get project ID from multiple sources, with better logging
+    let projectId = null;
+    
+    // Try expoConfig first (most reliable in EAS builds)
+    if (Constants.expoConfig?.extra?.eas?.projectId) {
+      projectId = Constants.expoConfig.extra.eas.projectId;
+      console.log('[Push Notifications] ✅ Found projectId in expoConfig.extra.eas');
+    }
+    // Try manifest (legacy)
+    else if (Constants.manifest?.extra?.eas?.projectId) {
+      projectId = Constants.manifest.extra.eas.projectId;
+      console.log('[Push Notifications] ✅ Found projectId in manifest.extra.eas');
+    }
+    // Try manifest2 (newer format)
+    else if (Constants.manifest2?.extra?.eas?.projectId) {
+      projectId = Constants.manifest2.extra.eas.projectId;
+      console.log('[Push Notifications] ✅ Found projectId in manifest2.extra.eas');
+    }
+    // Hardcoded fallback for production builds
+    else {
+      projectId = 'e1ee166c-212b-4eca-a1d7-44183b7be073';
+      console.log('[Push Notifications] ⚠️ Using hardcoded fallback projectId');
+    }
     
     console.log('[Push Notifications] ===== EAS PROJECT ID =====');
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
     console.log('[Push Notifications] ===================================');
 
-    // ✅ V7.0 FIX: Retry logic for token registration
+    // ✅ V8.0 FIX: Retry logic with longer delays and better error handling
     let tokenData = null;
     let lastError = null;
-    const maxRetries = 3;
+    const maxRetries = 5; // Increased from 3 to 5
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`[Push Notifications] 🔄 Token registration attempt ${attempt}/${maxRetries}...`);
+        
+        // ✅ V8.0 FIX: Add a small delay before first attempt to let network stabilize
+        if (attempt === 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
         
         tokenData = await Notifications.getExpoPushTokenAsync({
           projectId: projectId,
@@ -219,6 +244,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         console.log('[Push Notifications] ===== TOKEN OBTAINED =====');
         console.log('[Push Notifications] ✅ Token:', tokenData.data);
         console.log('[Push Notifications] Token length:', tokenData.data.length);
+        console.log('[Push Notifications] Token type:', typeof tokenData.data);
         console.log('[Push Notifications] ===================================');
         
         // Success! Break out of retry loop
@@ -226,11 +252,13 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       } catch (tokenError: any) {
         lastError = tokenError;
         console.error(`[Push Notifications] ❌ Attempt ${attempt} failed:`, tokenError?.message);
+        console.error(`[Push Notifications] Error code:`, tokenError?.code);
+        console.error(`[Push Notifications] Error details:`, JSON.stringify(tokenError, null, 2));
         
         // If this is the last attempt, we'll handle the error below
         if (attempt < maxRetries) {
-          // Wait before retrying (exponential backoff)
-          const waitTime = attempt * 1000;
+          // Wait before retrying (exponential backoff with longer delays)
+          const waitTime = attempt * 2000; // 2s, 4s, 6s, 8s
           console.log(`[Push Notifications] ⏳ Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
@@ -246,21 +274,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] Error code:', lastError?.code);
       console.error('[Push Notifications] ===================================');
       
-      // ✅ V7.0 FIX: Better error handling for different scenarios
-      if (lastError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
-          lastError?.message?.includes('does not exist') ||
-          lastError?.message?.includes('No EAS project ID') ||
-          lastError?.code === 'EXPERIENCE_NOT_FOUND') {
-        console.log('[Push Notifications] ℹ️ EAS project not found - this is expected in development');
-        console.log('[Push Notifications] ℹ️ Push notifications will work after building with EAS Build');
-        console.log('[Push Notifications] ℹ️ For TestFlight/App Store builds, notifications should work');
-        
-        // Don't show alert - just log and return null
-        return null;
-      }
-      
-      // For other errors, log but don't show alert
-      console.error('[Push Notifications] ❌ Token registration failed - continuing without token');
+      // ✅ V8.0 FIX: Better error handling - don't show alert, just return null
+      // The calling function will handle showing appropriate UI feedback
       return null;
     }
 
@@ -283,6 +298,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     console.error('[Push Notifications] Error:', error);
     if (error instanceof Error) {
       console.error('[Push Notifications] Error message:', error.message);
+      console.error('[Push Notifications] Error stack:', error.stack);
     }
     
     // Don't show alert - just log and return null
@@ -440,7 +456,7 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 
 /**
  * Enable or disable daily report notifications
- * ✅ V7.0 FIX: Enhanced with better token handling, retry logic, and immediate token registration
+ * ✅ V8.0 FIX: Enhanced with better token handling and user-friendly error messages
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
@@ -450,17 +466,18 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
 
-    // ✅ V7.0 CRITICAL FIX: If enabling, ALWAYS try to register token first
+    // ✅ V8.0 CRITICAL FIX: If enabling, ALWAYS try to register token first
     let pushToken = null;
     if (enabled) {
       console.log('[Push Notifications] 📲 Registering for push notifications...');
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Push token result:', pushToken);
       
-      // ✅ V7.0 CRITICAL FIX: If we're on a physical device and didn't get a token, fail
+      // ✅ V8.0 CRITICAL FIX: Better handling when token registration fails
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
         console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
         
+        // ✅ V8.0 FIX: More helpful error message with specific troubleshooting steps
         Alert.alert(
           'Token Registration Failed',
           'Unable to register for push notifications. This may be due to:\n\n' +
@@ -481,12 +498,12 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       }
     }
 
-    // ✅ V7.0 FIX: Build update data object
+    // ✅ V8.0 FIX: Build update data object
     const updateData: any = {
       daily_report_notifications: enabled,
     };
 
-    // ✅ V7.0 CRITICAL FIX: ALWAYS update push_token field
+    // ✅ V8.0 CRITICAL FIX: ALWAYS update push_token field
     if (enabled && pushToken) {
       // Save the token when enabling
       updateData.push_token = pushToken;
@@ -502,8 +519,8 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
 
     console.log('[Push Notifications] 💾 Updating profile with data:', JSON.stringify(updateData));
 
-    // ✅ V7.0 FIX: Retry logic for database update
-    let lastError = null;
+    // ✅ V8.0 FIX: Retry logic for database update with better error handling
+    let lastDbError = null;
     const maxRetries = 3;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -517,8 +534,9 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
           .select();
 
         if (error) {
-          lastError = error;
+          lastDbError = error;
           console.error(`[Push Notifications] ❌ Attempt ${attempt} failed:`, error.message);
+          console.error(`[Push Notifications] Error details:`, JSON.stringify(error, null, 2));
           
           // If this is the last attempt, we'll handle the error below
           if (attempt < maxRetries) {
@@ -528,7 +546,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
             continue;
           }
         } else if (!data || data.length === 0) {
-          lastError = new Error('No data returned from update');
+          lastDbError = new Error('No data returned from update');
           console.error(`[Push Notifications] ❌ Attempt ${attempt}: No data returned`);
           
           if (attempt < maxRetries) {
@@ -541,11 +559,12 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
           console.log('[Push Notifications] ===== UPDATE SUCCESS =====');
           console.log('[Push Notifications] ✅ Preferences updated successfully on attempt', attempt);
           console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
+          console.log('[Push Notifications] Push token in DB:', data[0]?.push_token ? 'Present ✓' : 'Missing ✗');
           console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
           return true;
         }
       } catch (attemptError) {
-        lastError = attemptError;
+        lastDbError = attemptError;
         console.error(`[Push Notifications] ❌ Exception on attempt ${attempt}:`, attemptError);
         
         if (attempt < maxRetries) {
@@ -557,7 +576,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
 
     // If we get here, all retries failed
     console.error('[Push Notifications] ===== UPDATE FAILED (ALL RETRIES) =====');
-    console.error('[Push Notifications] Last error:', lastError);
+    console.error('[Push Notifications] Last error:', lastDbError);
     
     Alert.alert(
       'Update Failed',
@@ -637,7 +656,7 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
- * ✅ V7.0 NEW: Force re-register push token for existing users
+ * ✅ V8.0 ENHANCED: Force re-register push token for existing users
  * This function should be called when a user who has notifications enabled but no token
  * opens the app or refreshes their profile
  */
@@ -645,6 +664,8 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
   try {
     console.log('[Push Notifications] ===== ENSURE PUSH TOKEN REGISTERED =====');
     console.log('[Push Notifications] User ID:', userId);
+    console.log('[Push Notifications] Platform:', Platform.OS);
+    console.log('[Push Notifications] Is Device:', Device.isDevice);
 
     // Skip for web and simulators
     if (Platform.OS === 'web' || !Device.isDevice) {
@@ -652,15 +673,45 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
       return;
     }
 
-    // Check if user has notifications enabled
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('daily_report_notifications, push_token')
-      .eq('id', userId)
-      .single();
+    // ✅ V8.0 FIX: Add retry logic for profile fetch
+    let profile = null;
+    let profileError = null;
+    const maxFetchRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxFetchRetries; attempt++) {
+      try {
+        console.log(`[Push Notifications] 📋 Fetching profile attempt ${attempt}/${maxFetchRetries}...`);
+        
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('daily_report_notifications, push_token')
+          .eq('id', userId)
+          .single();
+
+        if (error) {
+          profileError = error;
+          console.error(`[Push Notifications] ❌ Fetch attempt ${attempt} failed:`, error.message);
+          
+          if (attempt < maxFetchRetries) {
+            await new Promise(resolve => setTimeout(resolve, attempt * 500));
+            continue;
+          }
+        } else {
+          profile = data;
+          break;
+        }
+      } catch (fetchError) {
+        profileError = fetchError;
+        console.error(`[Push Notifications] ❌ Fetch exception on attempt ${attempt}:`, fetchError);
+        
+        if (attempt < maxFetchRetries) {
+          await new Promise(resolve => setTimeout(resolve, attempt * 500));
+        }
+      }
+    }
 
     if (profileError || !profile) {
-      console.error('[Push Notifications] Error fetching profile:', profileError);
+      console.error('[Push Notifications] ❌ Failed to fetch profile after all retries:', profileError);
       return;
     }
 
@@ -681,34 +732,51 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
       const { granted } = await checkNotificationPermissions();
       if (!granted) {
         console.log('[Push Notifications] ⚠️ Permissions not granted - cannot register token');
+        console.log('[Push Notifications] ℹ️ User needs to enable permissions in device settings');
         return;
       }
 
+      // ✅ V8.0 FIX: Add delay before token registration to let network stabilize
+      console.log('[Push Notifications] ⏳ Waiting 1 second for network to stabilize...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Register token
+      console.log('[Push Notifications] 📲 Attempting to register push token...');
       const token = await registerForPushNotificationsAsync();
+      console.log('[Push Notifications] 📲 Token registration result:', token ? 'Success' : 'Failed');
       
       if (token && token !== 'web-dummy-token' && token !== 'simulator-dummy-token') {
-        console.log('[Push Notifications] 📲 Got valid token, saving...');
+        console.log('[Push Notifications] 📲 Got valid token, saving to database...');
         const saved = await savePushToken(userId, token);
         
         if (saved) {
           console.log('[Push Notifications] ✅ Token registered and saved successfully');
+          console.log('[Push Notifications] ✅ Push notifications are now active for this user');
         } else {
-          console.error('[Push Notifications] ❌ Failed to save token');
+          console.error('[Push Notifications] ❌ Failed to save token to database');
         }
       } else {
-        console.log('[Push Notifications] ⚠️ No valid token obtained');
+        console.log('[Push Notifications] ⚠️ No valid token obtained - notifications may not work');
+        console.log('[Push Notifications] ℹ️ This is expected in development/Expo Go');
+        console.log('[Push Notifications] ℹ️ Notifications will work in TestFlight/App Store builds');
       }
     } else if (profile.push_token && 
                profile.push_token !== 'web-dummy-token' && 
                profile.push_token !== 'simulator-dummy-token') {
       console.log('[Push Notifications] ✅ User already has valid push token');
+      console.log('[Push Notifications] Token preview:', profile.push_token.substring(0, 30) + '...');
     } else {
       console.log('[Push Notifications] ℹ️ Notifications disabled or no token needed');
     }
 
     console.log('[Push Notifications] ===== ENSURE PUSH TOKEN COMPLETE =====');
   } catch (error) {
-    console.error('[Push Notifications] Exception in ensurePushTokenRegistered:', error);
+    console.error('[Push Notifications] ===== EXCEPTION IN ENSURE PUSH TOKEN =====');
+    console.error('[Push Notifications] Exception:', error);
+    if (error instanceof Error) {
+      console.error('[Push Notifications] Exception message:', error.message);
+      console.error('[Push Notifications] Exception stack:', error.stack);
+    }
+    console.error('[Push Notifications] ===== END EXCEPTION =====');
   }
 }

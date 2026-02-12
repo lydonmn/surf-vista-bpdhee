@@ -47,6 +47,7 @@ export default function ProfileScreen() {
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const [selectedNotificationLocations, setSelectedNotificationLocations] = useState<string[]>(['folly-beach']);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [isRetryingToken, setIsRetryingToken] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
