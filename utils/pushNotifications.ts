@@ -194,20 +194,22 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
     // Get the project ID from app config
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('[Push Notifications] EAS Project ID:', projectId);
+    console.log('[Push Notifications] EAS Project ID from config:', projectId);
+    console.log('[Push Notifications] Full extra config:', JSON.stringify(Constants.expoConfig?.extra));
 
     if (!projectId) {
-      console.error('[Push Notifications] No EAS project ID found in config');
+      console.error('[Push Notifications] ❌ No EAS project ID found in config');
+      console.error('[Push Notifications] Available config:', JSON.stringify(Constants.expoConfig?.extra, null, 2));
       Alert.alert(
         'Configuration Error',
-        'Push notifications are not properly configured. Please contact support.',
+        'Push notifications are not properly configured. The EAS project ID is missing from app.json. Please restart the app after the configuration is updated.',
         [{ text: 'OK' }]
       );
       return null;
     }
 
     // Get the Expo push token
-    console.log('[Push Notifications] Getting Expo push token...');
+    console.log('[Push Notifications] Getting Expo push token with projectId:', projectId);
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: projectId,
     });
@@ -250,7 +252,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
  */
 export async function savePushToken(userId: string, token: string): Promise<boolean> {
   try {
-    console.log('[Push Notifications] Saving push token for user:', userId);
+    console.log('[Push Notifications] ===== SAVING PUSH TOKEN =====');
+    console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Token:', token);
 
     const { data, error } = await supabase
@@ -260,17 +263,21 @@ export async function savePushToken(userId: string, token: string): Promise<bool
       .select();
 
     if (error) {
-      console.error('[Push Notifications] Error saving token:', error);
+      console.error('[Push Notifications] ❌ Error saving token');
+      console.error('[Push Notifications] Error code:', error.code);
+      console.error('[Push Notifications] Error message:', error.message);
       console.error('[Push Notifications] Error details:', JSON.stringify(error));
       return false;
     }
 
     console.log('[Push Notifications] ✅ Token saved successfully');
+    console.log('[Push Notifications] Updated data:', data);
     return true;
   } catch (error) {
-    console.error('[Push Notifications] Exception saving token:', error);
+    console.error('[Push Notifications] ❌ Exception saving token:', error);
     if (error instanceof Error) {
-      console.error('[Push Notifications] Exception details:', error.message);
+      console.error('[Push Notifications] Exception message:', error.message);
+      console.error('[Push Notifications] Exception stack:', error.stack);
     }
     return false;
   }
@@ -285,6 +292,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
     console.log('[Push Notifications] Platform:', Platform.OS);
+    console.log('[Push Notifications] Is Device:', Device.isDevice);
 
     // If enabling, register for push notifications first
     let pushToken = null;
@@ -295,7 +303,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       
       // If we didn't get a token and we're not on web/simulator, fail
       if (!pushToken && Platform.OS !== 'web' && Device.isDevice) {
-        console.error('[Push Notifications] Failed to get push token on physical device');
+        console.error('[Push Notifications] ❌ Failed to get push token on physical device');
         return false;
       }
     }
@@ -313,7 +321,8 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       updateData.push_token = null;
     }
 
-    console.log('[Push Notifications] Updating profile with data:', updateData);
+    console.log('[Push Notifications] Updating profile with data:', JSON.stringify(updateData));
+    console.log('[Push Notifications] Attempting database update...');
 
     const { data, error } = await supabase
       .from('profiles')
@@ -325,13 +334,33 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       console.error('[Push Notifications] ===== UPDATE ERROR =====');
       console.error('[Push Notifications] Error code:', error.code);
       console.error('[Push Notifications] Error message:', error.message);
-      console.error('[Push Notifications] Error details:', JSON.stringify(error));
+      console.error('[Push Notifications] Error hint:', error.hint);
+      console.error('[Push Notifications] Error details:', JSON.stringify(error, null, 2));
       console.error('[Push Notifications] ===== END ERROR =====');
+      
+      // Show specific error message to user
+      Alert.alert(
+        'Update Failed',
+        `Failed to update notification preferences:\n\n${error.message}\n\nPlease try refreshing your profile data or signing out and back in.`,
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+
+    if (!data || data.length === 0) {
+      console.error('[Push Notifications] ❌ No data returned from update - possible RLS issue');
+      console.error('[Push Notifications] This usually means the user does not have permission to update their profile');
+      
+      Alert.alert(
+        'Update Failed',
+        'Unable to update notification preferences. This may be a permissions issue. Please try refreshing your profile data.',
+        [{ text: 'OK' }]
+      );
       return false;
     }
 
     console.log('[Push Notifications] ✅ Preferences updated successfully');
-    console.log('[Push Notifications] Updated data:', data);
+    console.log('[Push Notifications] Updated data:', JSON.stringify(data, null, 2));
     console.log('[Push Notifications] ===== SET DAILY REPORT NOTIFICATIONS COMPLETE =====');
     return true;
   } catch (error) {
@@ -342,6 +371,12 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       console.error('[Push Notifications] Exception stack:', error.stack);
     }
     console.error('[Push Notifications] ===== END EXCEPTION =====');
+    
+    Alert.alert(
+      'Error',
+      'An unexpected error occurred while updating notifications. Please try again.',
+      [{ text: 'OK' }]
+    );
     return false;
   }
 }

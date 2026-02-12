@@ -132,7 +132,9 @@ export default function ProfileScreen() {
       // Small delay to ensure session is refreshed
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications...');
       const success = await setDailyReportNotifications(user.id, value);
+      console.log('[ProfileScreen] 📝 setDailyReportNotifications result:', success);
       
       if (success) {
         console.log('[ProfileScreen] ✅ Notifications updated successfully');
