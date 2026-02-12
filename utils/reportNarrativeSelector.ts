@@ -16,6 +16,7 @@ import { SurfReport } from '@/types';
  * - If admin has edited the report (report_text exists), use that
  * - Otherwise, use the auto-generated narrative (conditions)
  * - This ensures consistency between home page and report page
+ * - ALWAYS ensures units are present in numeric values
  */
 export function selectNarrativeText(report: SurfReport | null | undefined): string | null {
   if (!report) {
@@ -24,7 +25,7 @@ export function selectNarrativeText(report: SurfReport | null | undefined): stri
   }
 
   // ALWAYS prioritize report_text (admin-edited) over conditions (auto-generated)
-  const narrativeText = report.report_text || report.conditions || null;
+  let narrativeText = report.report_text || report.conditions || null;
   
   console.log('[reportNarrativeSelector] ===== NARRATIVE SELECTION =====');
   console.log('[reportNarrativeSelector] Report ID:', report.id);
@@ -36,6 +37,52 @@ export function selectNarrativeText(report: SurfReport | null | undefined): stri
   console.log('[reportNarrativeSelector] conditions length:', report.conditions?.length || 0);
   console.log('[reportNarrativeSelector] Selected source:', report.report_text ? 'report_text (EDITED)' : report.conditions ? 'conditions (AUTO)' : 'NONE');
   console.log('[reportNarrativeSelector] Selected narrative length:', narrativeText?.length || 0);
+  
+  // ✅ CRITICAL FIX: Ensure all numeric values have units
+  if (narrativeText) {
+    // Fix "surf is 2" -> "surf is 2 feet"
+    narrativeText = narrativeText.replace(/\b(\d+(\.\d+)?)\s*(ft|foot|feet)?\b(?!\s*(ft|foot|feet|mph|seconds|°F|°C|%))/gi, (match, num, decimal, unit) => {
+      // If unit is already present, keep it
+      if (unit) return match;
+      
+      // Check context to determine appropriate unit
+      const lowerMatch = match.toLowerCase();
+      const beforeMatch = narrativeText!.substring(Math.max(0, narrativeText!.indexOf(match) - 50), narrativeText!.indexOf(match)).toLowerCase();
+      
+      // Wave/surf height context
+      if (beforeMatch.includes('wave') || beforeMatch.includes('surf') || beforeMatch.includes('swell') || 
+          beforeMatch.includes('face') || beforeMatch.includes('rideable') || beforeMatch.includes('height')) {
+        return `${num} feet`;
+      }
+      
+      // Wind speed context
+      if (beforeMatch.includes('wind') || beforeMatch.includes('gust')) {
+        return `${num} mph`;
+      }
+      
+      // Period context
+      if (beforeMatch.includes('period') || beforeMatch.includes('interval')) {
+        return `${num} seconds`;
+      }
+      
+      // Temperature context
+      if (beforeMatch.includes('temp') || beforeMatch.includes('water') || beforeMatch.includes('air')) {
+        return `${num}°F`;
+      }
+      
+      // Default to feet for surf reports
+      return `${num} feet`;
+    });
+    
+    // Additional specific fixes for common patterns
+    narrativeText = narrativeText.replace(/rideable faces? at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'rideable face at $1 feet');
+    narrativeText = narrativeText.replace(/rideable faces? measuring (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'rideable face measuring $1 feet');
+    narrativeText = narrativeText.replace(/rideable wave faces? at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'rideable wave face at $1 feet');
+    narrativeText = narrativeText.replace(/surf is (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'surf is $1 feet');
+    narrativeText = narrativeText.replace(/waves? at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'wave at $1 feet');
+    narrativeText = narrativeText.replace(/swell at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'swell at $1 feet');
+  }
+  
   console.log('[reportNarrativeSelector] Narrative preview:', narrativeText ? narrativeText.substring(0, 150) + '...' : 'none');
   console.log('[reportNarrativeSelector] =====================================');
 

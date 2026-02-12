@@ -69,7 +69,6 @@ export default function AdminDataScreen() {
       const reports: LocationReport[] = [];
 
       for (const loc of locations) {
-        // Get the location config to show buoy ID
         const { data: locConfig } = await supabase
           .from('locations')
           .select('buoy_id')
@@ -83,7 +82,6 @@ export default function AdminDataScreen() {
           .eq('location', loc.id)
           .maybeSingle();
 
-        // Check if wave sensors are online by looking at wave_height
         const waveSensorsOnline = report?.wave_height && report.wave_height !== 'N/A' && report.wave_height !== '';
 
         reports.push({
@@ -110,7 +108,6 @@ export default function AdminDataScreen() {
     try {
       addLog(`Loading data counts for ${locationData.displayName}...`);
       
-      // Get current date in EST
       const now = new Date();
       const estDateString = now.toLocaleString('en-US', { 
         timeZone: 'America/New_York',
@@ -140,7 +137,6 @@ export default function AdminDataScreen() {
 
       addLog(`Data counts loaded for ${locationData.displayName}: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
       
-      // Also load report status for all locations
       await loadLocationReports(today);
     } catch (error) {
       console.error('Error loading data counts:', error);
@@ -153,34 +149,68 @@ export default function AdminDataScreen() {
     loadDataCounts();
   }, [loadDataCounts]);
 
-  const handleTriggerDailyUpdate = async () => {
+  const handlePullAndGenerateAllLocations = async () => {
     setIsLoading(true);
-    addLog(`Manually triggering 5 AM daily report for ALL active locations...`);
-    addLog(`⏳ This may take 60-90 seconds due to NOAA server response times...`, 'warning');
+    addLog(`🔄 Pulling new data and generating reports for ALL locations...`);
+    addLog(`⏳ This may take 2-3 minutes due to NOAA server response times...`, 'warning');
     addLog(`📍 Processing: ${locations.map(l => l.displayName).join(', ')}`, 'info');
 
     try {
+      // Step 1: Pull fresh data for all locations
+      addLog(`Step 1/2: Pulling fresh NOAA data for all locations...`, 'info');
+      
+      const dataResults = [];
+      for (const loc of locations) {
+        addLog(`  📍 Fetching data for ${loc.displayName}...`, 'info');
+        
+        try {
+          const response = await supabase.functions.invoke('update-all-surf-data', {
+            body: { location: loc.id }
+          });
+          
+          if (response.error) {
+            addLog(`  ❌ ${loc.displayName}: ${response.error.message}`, 'error');
+            dataResults.push({ location: loc.displayName, success: false, error: response.error.message });
+          } else if (response.data?.success) {
+            addLog(`  ✅ ${loc.displayName}: Data pulled successfully`, 'success');
+            dataResults.push({ location: loc.displayName, success: true });
+          } else {
+            const errorMsg = response.data?.error || 'Unknown error';
+            addLog(`  ⚠️ ${loc.displayName}: ${errorMsg}`, 'warning');
+            dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          addLog(`  ❌ ${loc.displayName}: ${errorMsg}`, 'error');
+          dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
+        }
+        
+        // Small delay between locations to avoid overwhelming NOAA servers
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Step 2: Generate reports for all locations
+      addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
+      
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
         body: {}
       });
       
-      console.log('Daily update response:', response);
-      addLog(`Daily update response: ${JSON.stringify(response.data).substring(0, 100)}...`);
+      console.log('Generate reports response:', response);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
+        addLog(`❌ Report generation error: ${errorMsg}`, 'error');
         
-        // Check for timeout errors
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-          addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
-          addLog(`💡 Tip: Try again in a few minutes. NOAA servers can be slow during peak hours.`, 'info');
+        // Show partial success if data was pulled
+        const dataSuccessCount = dataResults.filter(r => r.success).length;
+        if (dataSuccessCount > 0) {
           Alert.alert(
-            'Request Timed Out',
-            'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
+            'Partial Success',
+            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}`,
             [{ text: 'OK' }]
           );
         } else {
-          addLog(`❌ Daily report error: ${errorMsg}`, 'error');
           Alert.alert('Error', errorMsg);
         }
       } else if (response.data?.success) {
@@ -188,9 +218,9 @@ export default function AdminDataScreen() {
         const successCount = results.filter((r: any) => r.success).length;
         const totalCount = results.length;
         
-        addLog(`✅ Daily 5 AM report completed: ${successCount}/${totalCount} locations successful`, 'success');
+        addLog(`✅ Complete! Data pulled and reports generated: ${successCount}/${totalCount} locations`, 'success');
         
-        // Log each location result with detailed info
+        // Log each location result
         results.forEach((result: any) => {
           if (result.success) {
             if (result.skipped) {
@@ -204,7 +234,6 @@ export default function AdminDataScreen() {
           }
         });
         
-        // Show detailed alert
         const resultDetails = results.map((r: any) => {
           if (r.success) {
             const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
@@ -214,353 +243,23 @@ export default function AdminDataScreen() {
         }).join('\n');
         
         Alert.alert(
-          'Daily Reports Generated',
-          `Success: ${successCount}/${totalCount} locations\n\n${resultDetails}\n\n⚠️ = Wave sensors offline (wind/temp data only)`,
+          'Success!',
+          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline (wind/temp data only)`,
           [{ text: 'OK' }]
         );
         
-        // Wait for database to update, then reload counts
         await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
       } else {
-        const errorMsg = response.data?.error || 'Daily report failed';
-        const results = response.data?.results || [];
-        
-        // Check for timeout in response data
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
-          addLog(`⏱️ ${errorMsg}`, 'warning');
-          addLog(`💡 Tip: NOAA servers can be slow. The update may complete in the background.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            `${errorMsg}\n\nThe data update may still complete in the background. Try refreshing in a few minutes.`,
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Daily report failed: ${errorMsg}`, 'error');
-          
-          // Log individual location failures
-          results.forEach((result: any) => {
-            if (!result.success) {
-              addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
-            }
-          });
-          
-          Alert.alert('Error', errorMsg);
-        }
-      }
-    } catch (error) {
-      console.error('Error triggering daily update:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check for timeout errors
-      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-        addLog(`⏱️ Request timed out - NOAA servers are responding slowly`, 'warning');
-        addLog(`💡 Tip: Try again in a few minutes. The update may complete in the background.`, 'info');
-        Alert.alert(
-          'Request Timed Out',
-          'NOAA servers are responding slowly. This is normal during peak hours.\n\nThe data update may still complete in the background. Try refreshing in a few minutes.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        addLog(`❌ Daily update exception: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Failed to trigger daily update: ${errorMsg}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGenerateReport = async () => {
-    setIsLoading(true);
-    addLog(`Generating new surf report for ${locationData.displayName}...`);
-    addLog(`📍 Location: ${currentLocation}`, 'info');
-
-    try {
-      const response = await supabase.functions.invoke('generate-daily-report', {
-        body: { location: currentLocation }
-      });
-      
-      console.log('Generate report response:', response);
-      addLog(`Generate report response: ${JSON.stringify(response.data).substring(0, 200)}...`);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Report generation error: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
-      } else if (response.data?.success) {
-        addLog(`✅ Report generated successfully for ${locationData.displayName}`, 'success');
-        
-        // Show data age warning if applicable
-        if (response.data.dataAge && response.data.dataAge !== 'Using current data') {
-          addLog(`⚠️ ${response.data.dataAge}`, 'info');
-          Alert.alert('Success', `${response.data.message}\n\n${response.data.dataAge}`);
-        } else {
-          Alert.alert('Success', response.data.message || 'Surf report generated successfully');
-        }
-        
-        // Wait for database to update, then reload counts
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await loadDataCounts();
-      } else {
-        const errorMsg = response.data?.error || 'Failed to generate report';
-        const suggestion = response.data?.suggestion || '';
-        const missingData = response.data?.missingData || [];
-        
-        let fullMessage = errorMsg;
-        if (missingData.length > 0) {
-          fullMessage += `\n\nMissing: ${missingData.join(', ')}`;
-        }
-        if (suggestion) {
-          fullMessage += `\n\n${suggestion}`;
-        }
-        
+        const errorMsg = response.data?.error || 'Report generation failed';
         addLog(`❌ Report generation failed: ${errorMsg}`, 'error');
-        Alert.alert('Cannot Generate Report', fullMessage);
+        Alert.alert('Error', errorMsg);
       }
     } catch (error) {
-      console.error('Error generating report:', error);
+      console.error('Error in pull and generate:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Report generation exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFetchWeather = async () => {
-    setIsLoading(true);
-    addLog(`Fetching weather data for ${locationData.displayName}...`);
-    addLog(`📍 Location: ${currentLocation}`, 'info');
-    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
-
-    try {
-      const response = await supabase.functions.invoke('fetch-weather-data', {
-        body: { location: currentLocation }
-      });
-      
-      console.log('Weather response:', response);
-      addLog(`Weather response: ${JSON.stringify(response.data).substring(0, 200)}...`);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        
-        // Check for timeout errors
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-          addLog(`⏱️ Weather fetch timed out - NOAA servers are responding slowly`, 'warning');
-          addLog(`💡 Tip: Try again in a few minutes. NOAA servers can be slow during peak hours.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            'NOAA weather servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Weather error: ${errorMsg}`, 'error');
-          Alert.alert('Error', errorMsg);
-        }
-      } else if (response.data?.success) {
-        addLog(`✅ Weather fetch successful for ${locationData.displayName}: ${response.data.forecast_periods || 0} forecast periods`, 'success');
-        Alert.alert('Success', response.data.message || `Weather data fetched successfully for ${locationData.displayName}`);
-        
-        // Wait for database to update, then reload counts
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await loadDataCounts();
-      } else {
-        const errorMsg = response.data?.error || 'Failed to fetch weather data';
-        
-        // Check for timeout in response data
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
-          addLog(`⏱️ Weather fetch timed out: ${errorMsg}`, 'warning');
-          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            `${errorMsg}\n\nNOAA weather servers are responding slowly. Try again in a few minutes.`,
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Weather failed: ${errorMsg}`, 'error');
-          Alert.alert('Error', errorMsg);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching weather:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check for timeout errors
-      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-        addLog(`⏱️ Weather fetch timed out - NOAA servers are responding slowly`, 'warning');
-        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
-        Alert.alert(
-          'Request Timed Out',
-          'NOAA weather servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        addLog(`❌ Weather exception: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Failed to fetch weather: ${errorMsg}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFetchTides = async () => {
-    setIsLoading(true);
-    addLog(`Fetching tide data for ${locationData.displayName}...`);
-    addLog(`📍 Location: ${currentLocation}`, 'info');
-    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
-
-    try {
-      const response = await supabase.functions.invoke('fetch-tide-data', {
-        body: { location: currentLocation }
-      });
-      
-      console.log('Tide response:', response);
-      addLog(`Tide response: ${JSON.stringify(response.data).substring(0, 200)}...`);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        
-        // Check for timeout errors
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-          addLog(`⏱️ Tide fetch timed out - NOAA servers are responding slowly`, 'warning');
-          addLog(`💡 Tip: Try again in a few minutes.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            'NOAA tide servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Tide error: ${errorMsg}`, 'error');
-          Alert.alert('Error', errorMsg);
-        }
-      } else if (response.data?.success) {
-        addLog(`✅ Tide fetch successful for ${locationData.displayName}: ${response.data.count || 0} records`, 'success');
-        Alert.alert('Success', response.data.message || `Tide data fetched successfully for ${locationData.displayName}`);
-        
-        // Wait for database to update, then reload counts
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await loadDataCounts();
-      } else {
-        const errorMsg = response.data?.error || 'Failed to fetch tide data';
-        
-        // Check for timeout in response data
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
-          addLog(`⏱️ Tide fetch timed out: ${errorMsg}`, 'warning');
-          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            `${errorMsg}\n\nNOAA tide servers are responding slowly. Try again in a few minutes.`,
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Tide failed: ${errorMsg}`, 'error');
-          Alert.alert('Error', errorMsg);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching tides:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check for timeout errors
-      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-        addLog(`⏱️ Tide fetch timed out - NOAA servers are responding slowly`, 'warning');
-        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
-        Alert.alert(
-          'Request Timed Out',
-          'NOAA tide servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        addLog(`❌ Tide exception: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Failed to fetch tides: ${errorMsg}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFetchSurf = async () => {
-    setIsLoading(true);
-    addLog(`Fetching surf report data for ${locationData.displayName}...`);
-    addLog(`📍 Location: ${currentLocation}`, 'info');
-    addLog(`⏳ This may take 30-60 seconds due to NOAA server response times...`, 'warning');
-
-    try {
-      const response = await supabase.functions.invoke('fetch-surf-reports', {
-        body: { location: currentLocation }
-      });
-      
-      console.log('Surf response:', response);
-      addLog(`Surf response: ${JSON.stringify(response.data).substring(0, 200)}...`);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        
-        // Check for timeout errors
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-          addLog(`⏱️ Surf fetch timed out - NOAA servers are responding slowly`, 'warning');
-          addLog(`💡 Tip: Try again in a few minutes.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            'NOAA buoy servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Surf error: ${errorMsg}`, 'error');
-          Alert.alert('Error', errorMsg);
-        }
-      } else if (response.data?.success) {
-        const dataQuality = response.data.dataQuality || {};
-        const waveStatus = dataQuality.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
-        
-        addLog(`✅ Surf fetch successful for ${locationData.displayName}: ${waveStatus}`, 'success');
-        addLog(`  Wave Height: ${response.data.data?.wave_height || 'N/A'}`, 'info');
-        addLog(`  Buoy ID: ${response.data.buoyId}`, 'info');
-        
-        Alert.alert(
-          'Success',
-          `${response.data.message}\n\nBuoy: ${response.data.buoyId}\n${waveStatus}`,
-          [{ text: 'OK' }]
-        );
-        
-        // Wait for database to update, then reload counts
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await loadDataCounts();
-      } else {
-        const errorMsg = response.data?.error || 'Failed to fetch surf data';
-        const details = response.data?.details ? `\n\nDetails: ${response.data.details}` : '';
-        
-        // Check for timeout in response data
-        if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('slow')) {
-          addLog(`⏱️ Surf fetch timed out: ${errorMsg}`, 'warning');
-          addLog(`💡 Tip: NOAA servers can be slow. Try again in a few minutes.`, 'info');
-          Alert.alert(
-            'Request Timed Out',
-            `${errorMsg}\n\nNOAA buoy servers are responding slowly. Try again in a few minutes.`,
-            [{ text: 'OK' }]
-          );
-        } else {
-          addLog(`❌ Surf failed: ${errorMsg}${details}`, 'error');
-          Alert.alert('Error', `${errorMsg}${details}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching surf:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check for timeout errors
-      if (errorMsg.includes('timeout') || errorMsg.includes('timed out') || errorMsg.includes('AbortError')) {
-        addLog(`⏱️ Surf fetch timed out - NOAA servers are responding slowly`, 'warning');
-        addLog(`💡 Tip: Try again in a few minutes.`, 'info');
-        Alert.alert(
-          'Request Timed Out',
-          'NOAA buoy servers are responding slowly. This is normal during peak hours.\n\nTry again in a few minutes.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        addLog(`❌ Surf exception: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Failed to fetch surf data: ${errorMsg}`);
-      }
+      addLog(`❌ Exception: ${errorMsg}`, 'error');
+      Alert.alert('Error', `Failed to complete operation: ${errorMsg}`);
     } finally {
       setIsLoading(false);
     }
@@ -577,7 +276,6 @@ export default function AdminDataScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      // If can't go back, navigate to home
       router.replace('/(tabs)/(home)');
     }
   };
@@ -585,8 +283,10 @@ export default function AdminDataScreen() {
   const backIconName = 'chevron.left';
   const backMaterialIconName = 'arrow-back';
   const backButtonTextContent = 'Back';
-  const headerTitleText = 'Data Sources';
-  const sectionTitleText1 = `Current Data (Today)`;
+  const headerTitleText = 'Admin Data Manager';
+  const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
+  const mainButtonText = `🔄 Pull Data & Generate Reports (${locationCountText})`;
+  const sectionTitleText1 = `Current Data (Today) - ${locationData.displayName}`;
   const countLabelTides = 'Tides';
   const countLabelWeather = 'Weather';
   const countLabelForecast = 'Forecast';
@@ -601,22 +301,13 @@ ${locationListText}
 • Failed fetches preserve existing data
 
 The system automatically generates separate reports for each location every morning at 5 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
-  const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
-  const buttonText1 = `🌅 Trigger 5 AM Report (${locationCountText})`;
-  const buttonText2 = '🌊 Pull New Surf Data';
-  const buttonText3 = '📝 Generate New Narrative Report';
-  const sectionTitleText2 = 'Individual Data Sources';
-  const buttonText4 = '🌤️ Fetch Weather & Forecast';
-  const buttonText5 = '🌊 Fetch Tide Data';
-  const buttonText6 = '🏄 Fetch Surf Report';
-  const sectionTitleText3 = 'Activity Log';
+  const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
   const locationStatusTitle = '📍 Today\'s Report Status (All Locations)';
 
   return (
     <View style={styles.container}>
-      {/* Custom Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -670,7 +361,34 @@ The system automatically generates separate reports for each location every morn
           </Text>
         </View>
 
-        {/* Data Counts */}
+        {/* Main Action Button - Pull Data & Generate Reports for All Locations */}
+        <View style={styles.mainActionCard}>
+          <Text style={styles.mainActionTitle}>🚀 Primary Action</Text>
+          <Text style={styles.mainActionDescription}>
+            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. This is the same process that runs automatically at 5 AM EST every day.
+          </Text>
+          <TouchableOpacity
+            style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
+            onPress={handlePullAndGenerateAllLocations}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <IconSymbol
+                  ios_icon_name="arrow.clockwise.circle.fill"
+                  android_material_icon_name="sync"
+                  size={24}
+                  color="#fff"
+                />
+                <Text style={styles.buttonText}>{mainButtonText}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Data Counts for Current Location */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{sectionTitleText1}</Text>
           <View style={styles.countsGrid}>
@@ -693,7 +411,7 @@ The system automatically generates separate reports for each location every morn
           </View>
         </View>
 
-        {/* Location Report Status - IMPROVED with sensor status */}
+        {/* Location Report Status */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
           {locationReports.map((report) => {
@@ -747,99 +465,10 @@ The system automatically generates separate reports for each location every morn
           </Text>
         </View>
 
-        {/* Quick Actions for Current Location */}
-        <View style={styles.quickActionsCard}>
-          <Text style={styles.quickActionsTitle}>⚡ Quick Actions for {locationData.name}</Text>
-          
-          {/* Pull New Surf Data Button */}
-          <TouchableOpacity
-            style={[styles.button, styles.dataButton, isLoading && styles.buttonDisabled]}
-            onPress={handleFetchSurf}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <IconSymbol
-                  ios_icon_name="arrow.down.circle.fill"
-                  android_material_icon_name="download"
-                  size={20}
-                  color="#fff"
-                />
-                <Text style={styles.buttonText}>{buttonText2}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Generate New Narrative Report Button */}
-          <TouchableOpacity
-            style={[styles.button, styles.narrativeButton, isLoading && styles.buttonDisabled]}
-            onPress={handleGenerateReport}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <IconSymbol
-                  ios_icon_name="doc.text.fill"
-                  android_material_icon_name="description"
-                  size={20}
-                  color="#fff"
-                />
-                <Text style={styles.buttonText}>{buttonText3}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Manual Daily Update Button (simulates 5 AM automatic update) */}
-        <TouchableOpacity
-          style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
-          onPress={handleTriggerDailyUpdate}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>{buttonText1}</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Individual Updates */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{sectionTitleText2}</Text>
-          
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleFetchWeather}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>{buttonText4}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleFetchTides}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>{buttonText5}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleFetchSurf}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>{buttonText6}</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Activity Log */}
         <View style={styles.section}>
           <View style={styles.logHeader}>
-            <Text style={styles.sectionTitle}>{sectionTitleText3}</Text>
+            <Text style={styles.sectionTitle}>{sectionTitleText2}</Text>
             <TouchableOpacity onPress={handleClearLog}>
               <Text style={styles.clearButton}>{clearButtonText}</Text>
             </TouchableOpacity>
@@ -926,6 +555,26 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 16,
   },
+  mainActionCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  mainActionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  mainActionDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
   countsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -954,17 +603,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
   },
   primaryButton: {
     backgroundColor: colors.primary,
-  },
-  accentButton: {
-    backgroundColor: colors.accent,
-  },
-  secondaryButton: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -972,7 +616,7 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: '#FFFFFF',
   },
   logHeader: {
     flexDirection: 'row',
@@ -1133,33 +777,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-  },
-  quickActionsCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
-  },
-  quickActionsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  dataButton: {
-    backgroundColor: '#3B82F6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  narrativeButton: {
-    backgroundColor: '#10B981',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
   },
 });
