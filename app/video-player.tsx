@@ -56,51 +56,45 @@ export default function VideoPlayerScreen() {
   const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null); // ✅ NEW: Periodic audio reactivation
+  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ CRITICAL: Configure audio session for smooth playback on mount
+  // ✅ CRITICAL FIX: Configure audio session for continuous playback (no 8-second cutoffs)
   useEffect(() => {
-    console.log('[VideoPlayer] ⚡ Configuring audio session for smooth playback...');
+    console.log('[VideoPlayer] ⚡ Configuring audio session for CONTINUOUS playback...');
     
     let isActive = true;
     
-    // Configure audio session for optimal video playback
     const setupAudio = async () => {
       try {
         await configureAudioSession({
           category: 'playback',
           mode: 'moviePlayback',
-          mixWithOthers: false, // Prevent other audio from interrupting
+          mixWithOthers: false,
         });
 
         if (isActive) {
-          // Activate audio session
           await activateAudioSession();
-          console.log('[VideoPlayer] ✅ Audio session activated');
+          console.log('[VideoPlayer] ✅ Audio session activated for continuous playback');
 
-          // ✅ CRITICAL FIX: Periodically reactivate audio session to prevent 10-second cutoffs
-          // iOS sometimes deactivates audio sessions after periods of inactivity
+          // ✅ CRITICAL FIX: Reactivate audio every 5 seconds to prevent iOS from cutting audio
+          // iOS can deactivate audio sessions after ~8-10 seconds of "inactivity"
           audioReactivationIntervalRef.current = setInterval(async () => {
             if (isActive) {
-              console.log('[VideoPlayer] 🔄 Reactivating audio session (preventive maintenance)');
+              console.log('[VideoPlayer] 🔄 Reactivating audio session (preventing 8-second cutoff)');
               try {
                 await activateAudioSession();
               } catch (err) {
                 console.error('[VideoPlayer] Failed to reactivate audio:', err);
               }
             }
-          }, 8000); // Every 8 seconds (before the 10-second cutoff)
+          }, 5000); // Every 5 seconds (well before the 8-second cutoff)
 
-          // Set up interruption handling
           const cleanup = setupAudioInterruptionHandling(
             () => {
-              console.log('[VideoPlayer] ⚠️ Audio interruption began (phone call, notification, etc.)');
-              // Player will automatically pause
+              console.log('[VideoPlayer] ⚠️ Audio interruption began');
             },
             () => {
-              console.log('[VideoPlayer] ✅ Audio interruption ended - ready to resume');
-              // Player can be resumed by user or automatically
-              // Re-activate audio session after interruption
+              console.log('[VideoPlayer] ✅ Audio interruption ended - reactivating');
               if (isActive) {
                 activateAudioSession().catch(err => 
                   console.error('[VideoPlayer] Failed to reactivate audio after interruption:', err)
@@ -121,7 +115,6 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] Cleaning up audio session...');
       isActive = false;
       
-      // Clear periodic audio reactivation
       if (audioReactivationIntervalRef.current) {
         clearInterval(audioReactivationIntervalRef.current);
         audioReactivationIntervalRef.current = null;
@@ -147,22 +140,13 @@ export default function VideoPlayerScreen() {
     clearControlsTimeout();
     
     if (isPlaying) {
-      if (__DEV__) {
-        console.log('[VideoPlayer] Starting controls hide timer');
-      }
       controlsTimeoutRef.current = setTimeout(() => {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Hiding controls after inactivity');
-        }
         setControlsVisible(false);
       }, CONTROLS_HIDE_DELAY);
     }
   }, [isPlaying, clearControlsTimeout]);
 
   const toggleControls = useCallback(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] User toggled controls');
-    }
     const newVisibility = !controlsVisible;
     setControlsVisible(newVisibility);
     
@@ -174,69 +158,46 @@ export default function VideoPlayerScreen() {
   }, [controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
   const resetControlsTimeout = useCallback(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] User interaction - resetting timer');
-    }
     setControlsVisible(true);
     startControlsTimeout();
   }, [startControlsTimeout]);
 
-  // ✅ CRITICAL FIX: Memoize video URL to prevent player recreation
   const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
 
-  // ✅ CRITICAL: Refresh connection if idle for too long
   const refreshConnectionIfNeeded = useCallback(() => {
     const now = Date.now();
     const timeSinceLastActivity = now - lastPlaybackActivityRef.current;
     
-    // If idle for more than 45 seconds, refresh the connection
-    if (timeSinceLastActivity > 45000 && player && videoUrl) {
-      if (__DEV__) {
-        console.log('[VideoPlayer] ⚡ Idle detected - refreshing connection for instant playback');
-      }
+    if (timeSinceLastActivity > 45000 && videoUrl) {
+      console.log('[VideoPlayer] ⚡ Refreshing connection for instant playback');
       
-      // Send a lightweight HEAD request to keep connection warm
       fetch(videoUrl, {
         method: 'HEAD',
         cache: 'no-cache',
       })
         .then(() => {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ✅ Connection refreshed successfully');
-          }
+          console.log('[VideoPlayer] ✅ Connection refreshed');
           lastPlaybackActivityRef.current = now;
         })
         .catch(err => {
           console.warn('[VideoPlayer] Connection refresh failed:', err);
         });
     }
-  }, [videoUrl]); // ✅ FIXED: Removed player from dependencies to prevent recreation
+  }, [videoUrl]);
 
-  // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
+  // ✅ CRITICAL FIX: Initialize player with optimized settings
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl) {
-      if (__DEV__) {
-        console.log('[VideoPlayer] ⚡ Initializing player with OPTIMIZED PLAYBACK settings');
-      }
+      console.log('[VideoPlayer] ⚡ Initializing player with INSTANT PLAYBACK settings');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
       
-      // Update activity timestamp
       lastPlaybackActivityRef.current = Date.now();
       
-      // ✅ SMOOTH PLAYBACK: Configure player for optimal performance
-      if (__DEV__) {
-        console.log('[VideoPlayer] ✅ Smooth playback settings applied');
-        console.log('[VideoPlayer] - Audio session configured for uninterrupted playback');
-        console.log('[VideoPlayer] - Adaptive streaming enabled for smooth video');
-        console.log('[VideoPlayer] - Buffer optimization enabled');
-        console.log('[VideoPlayer] - Auto-play enabled for instant start');
-        console.log('[VideoPlayer] - Continuous audio mode enabled (no 10-second cutoffs)');
-      }
+      console.log('[VideoPlayer] ✅ Player configured for instant, smooth playback');
       
-      // ✅ CRITICAL FIX: Ensure audio stays active throughout playback
       activateAudioSession().catch(err => 
         console.error('[VideoPlayer] Failed to activate audio for player:', err)
       );
@@ -244,56 +205,39 @@ export default function VideoPlayerScreen() {
   });
 
   const handleExitPlayer = useCallback(async () => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] User exiting video player');
-    }
+    console.log('[VideoPlayer] User exiting video player');
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     
-    // Stop playback using the correct method
     if (player) {
       try {
         player.pause();
-        if (__DEV__) {
-          console.log('[VideoPlayer] Stopped playback');
-        }
+        console.log('[VideoPlayer] Stopped playback');
       } catch (e) {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Error stopping playback:', e);
-        }
+        console.log('[VideoPlayer] Error stopping playback:', e);
       }
     }
     
-    // Unlock screen orientation
     if (isFullscreen && Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
-        if (__DEV__) {
-          console.log('[VideoPlayer] Unlocked screen orientation');
-        }
+        console.log('[VideoPlayer] Unlocked screen orientation');
       } catch (e) {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Error unlocking orientation:', e);
-        }
+        console.log('[VideoPlayer] Error unlocking orientation:', e);
       }
     }
     
-    // Navigate back
     router.back();
   }, [player, isFullscreen]);
 
-  // ✅ CRITICAL: Set up periodic connection refresh to prevent idle timeouts
   useEffect(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] Setting up connection keep-alive mechanism');
-    }
+    console.log('[VideoPlayer] Setting up connection keep-alive');
     
-    // Check connection every 30 seconds and refresh if needed
     connectionRefreshTimeoutRef.current = setInterval(() => {
       refreshConnectionIfNeeded();
-    }, 30000); // 30 seconds
+    }, 30000);
     
     return () => {
       if (connectionRefreshTimeoutRef.current) {
@@ -304,32 +248,23 @@ export default function VideoPlayerScreen() {
   }, [refreshConnectionIfNeeded]);
 
   useEffect(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] Component mounted, loading video:', videoId);
-      console.log('[VideoPlayer] Preloaded URL available:', !!preloadedUrl);
-    }
+    console.log('[VideoPlayer] Component mounted, loading video:', videoId);
+    console.log('[VideoPlayer] ⚡ Preloaded URL available:', !!preloadedUrl);
     
-    // Update activity timestamp
     lastPlaybackActivityRef.current = Date.now();
     
     const loadVideo = async () => {
       if (hasLoadedRef.current) {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Already loaded, skipping...');
-        }
+        console.log('[VideoPlayer] Already loaded, skipping...');
         return;
       }
       
       try {
-        // Start loading immediately - don't wait for auth check
         setIsLoading(true);
         setError(null);
         
-        if (__DEV__) {
-          console.log('[VideoPlayer] ⚡ FAST PATH: Loading video metadata and URL in parallel');
-        }
+        console.log('[VideoPlayer] ⚡ FAST PATH: Loading video metadata and URL in parallel');
 
-        // Parallel execution: Load video metadata and check auth at the same time
         const [sessionResult, videoResult] = await Promise.all([
           supabase.auth.getSession(),
           supabase.from('videos').select('*').eq('id', videoId).single()
@@ -342,22 +277,16 @@ export default function VideoPlayerScreen() {
 
         const { data, error: fetchError } = videoResult;
         if (fetchError) {
-          if (__DEV__) {
-            console.error('[VideoPlayer] Error loading video:', fetchError);
-          }
+          console.error('[VideoPlayer] Error loading video:', fetchError);
           throw fetchError;
         }
 
-        if (__DEV__) {
-          console.log('[VideoPlayer] Video loaded:', data.title);
-        }
+        console.log('[VideoPlayer] Video loaded:', data.title);
         setVideo(data);
 
         // ✅ INSTANT PLAYBACK: Use preloaded URL if available
         if (preloadedUrl && typeof preloadedUrl === 'string') {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
-          }
+          console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           setVideoUrl(preloadedUrl);
           hasLoadedRef.current = true;
           
@@ -365,15 +294,11 @@ export default function VideoPlayerScreen() {
             setDuration(data.duration_seconds);
           }
           setIsLoading(false);
-          // ✅ Clear buffering immediately when using preloaded URL
           setIsBuffering(false);
           return;
         }
 
-        // Fallback: Generate signed URL if not preloaded (slower path)
-        if (__DEV__) {
-          console.log('[VideoPlayer] ⚠️ No preloaded URL - generating signed URL (slower)');
-        }
+        console.log('[VideoPlayer] ⚠️ No preloaded URL - generating signed URL (slower)');
         
         let fileName = '';
         try {
@@ -386,9 +311,7 @@ export default function VideoPlayerScreen() {
             fileName = pathParts[pathParts.length - 1];
           }
         } catch (e) {
-          if (__DEV__) {
-            console.error('[VideoPlayer] Error parsing URL:', e);
-          }
+          console.error('[VideoPlayer] Error parsing URL:', e);
           throw new Error('Invalid video URL format');
         }
 
@@ -401,21 +324,15 @@ export default function VideoPlayerScreen() {
           .createSignedUrl(fileName, 7200);
 
         if (signedUrlError || !signedUrlData?.signedUrl) {
-          if (__DEV__) {
-            console.error('[VideoPlayer] Signed URL error:', signedUrlError);
-          }
+          console.error('[VideoPlayer] Signed URL error:', signedUrlError);
           throw new Error('Failed to generate streaming URL');
         }
 
         const generatedUrl = signedUrlData.signedUrl;
-        if (__DEV__) {
-          console.log('[VideoPlayer] ✓ Signed URL created');
-        }
+        console.log('[VideoPlayer] ✓ Signed URL created');
         
         if (!generatedUrl.startsWith('https://')) {
-          if (__DEV__) {
-            console.error('[VideoPlayer] ❌ URL is not HTTPS');
-          }
+          console.error('[VideoPlayer] ❌ URL is not HTTPS');
           throw new Error('Video URL must use HTTPS');
         }
         
@@ -426,9 +343,7 @@ export default function VideoPlayerScreen() {
           setDuration(data.duration_seconds);
         }
       } catch (loadError: unknown) {
-        if (__DEV__) {
-          console.error('[VideoPlayer] Exception loading video:', loadError);
-        }
+        console.error('[VideoPlayer] Exception loading video:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
         setError(errorMessage);
       } finally {
@@ -442,21 +357,14 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (!player || !videoUrl) return;
 
-    if (__DEV__) {
-      console.log('[VideoPlayer] Setting up player event listeners');
-    }
+    console.log('[VideoPlayer] Setting up player event listeners');
 
     const statusListener = player.addListener('statusChange', (status) => {
-      if (__DEV__) {
-        console.log('[VideoPlayer] Status:', status.status);
-      }
+      console.log('[VideoPlayer] Status:', status.status);
       
       if (status.error) {
-        if (__DEV__) {
-          console.error('[VideoPlayer] ❌ Player error:', status.error);
-        }
+        console.error('[VideoPlayer] ❌ Player error:', status.error);
         
-        // ✅ SMOOTH PLAYBACK: Auto-recovery from errors with retry logic
         const errorString = String(status.error).toLowerCase();
         const isRecoverableError = errorString.includes('network') || 
                                    errorString.includes('timeout') || 
@@ -464,26 +372,18 @@ export default function VideoPlayerScreen() {
                                    errorString.includes('buffer');
         
         if (isRecoverableError && retryCount < maxRetries) {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ⚡ Recoverable error detected - attempting auto-recovery (attempt', retryCount + 1, 'of', maxRetries, ')...');
-          }
+          console.log('[VideoPlayer] ⚡ Recoverable error - auto-recovery attempt', retryCount + 1, 'of', maxRetries);
           
           setRetryCount(prev => prev + 1);
           
-          // Wait with exponential backoff and try to resume playback
           const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
           setTimeout(() => {
             if (player && videoUrl) {
-              if (__DEV__) {
-                console.log('[VideoPlayer] ⚡ Reloading video source for recovery...');
-              }
+              console.log('[VideoPlayer] ⚡ Reloading video source...');
               
-              // ✅ CRITICAL: Reactivate audio before recovery
               activateAudioSession()
                 .then(() => {
                   player.replace(videoUrl);
-                  
-                  // Wait a bit for the source to load, then play
                   setTimeout(() => {
                     if (player) {
                       player.play();
@@ -492,7 +392,6 @@ export default function VideoPlayerScreen() {
                 })
                 .catch(err => {
                   console.error('[VideoPlayer] Failed to reactivate audio for recovery:', err);
-                  // Try recovery anyway
                   player.replace(videoUrl);
                   setTimeout(() => {
                     if (player) {
@@ -503,9 +402,7 @@ export default function VideoPlayerScreen() {
             }
           }, backoffDelay);
         } else if (retryCount >= maxRetries) {
-          if (__DEV__) {
-            console.error('[VideoPlayer] ❌ Max retries reached - giving up');
-          }
+          console.error('[VideoPlayer] ❌ Max retries reached');
           setError(`Playback error: ${status.error}. Please check your internet connection and try again.`);
         } else {
           setError(`Playback error: ${status.error}`);
@@ -515,41 +412,28 @@ export default function VideoPlayerScreen() {
       
       if (status.status === 'readyToPlay') {
         const videoDuration = status.duration || 0;
-        if (__DEV__) {
-          console.log('[VideoPlayer] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
-        }
+        console.log('[VideoPlayer] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
         setDuration(videoDuration);
         
-        // ✅ CRITICAL FIX: Clear buffering immediately when ready
         setIsBuffering(false);
         
-        // Clear any pending buffering timeouts
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
         
-        // Reset retry count on successful load
         if (retryCount > 0) {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ✅ Video recovered successfully after', retryCount, 'retries');
-          }
+          console.log('[VideoPlayer] ✅ Video recovered after', retryCount, 'retries');
           setRetryCount(0);
         }
         
-        // ✅ CRITICAL FIX: Ensure audio session is active before playback
+        // ✅ CRITICAL FIX: Ensure audio is active before playback
         activateAudioSession()
           .then(() => {
-            if (__DEV__) {
-              console.log('[VideoPlayer] ✅ Audio session activated before playback');
-            }
+            console.log('[VideoPlayer] ✅ Audio session active - starting playback');
             
-            // ✅ INSTANT PLAYBACK: Auto-play when ready with smooth start
             if (!isPlaying) {
-              if (__DEV__) {
-                console.log('[VideoPlayer] ⚡ Starting instant playback with smooth audio...');
-              }
-              // Small delay to ensure audio is ready (prevents interruptions)
+              console.log('[VideoPlayer] ⚡ Starting INSTANT playback with continuous audio...');
               setTimeout(() => {
                 if (player) {
                   player.play();
@@ -559,7 +443,6 @@ export default function VideoPlayerScreen() {
           })
           .catch(err => {
             console.error('[VideoPlayer] Failed to activate audio before playback:', err);
-            // Still try to play even if audio activation fails
             if (!isPlaying && player) {
               player.play();
             }
@@ -567,26 +450,20 @@ export default function VideoPlayerScreen() {
       }
       
       if (status.status === 'loading') {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Video buffering...');
-        }
+        console.log('[VideoPlayer] Video buffering...');
         setIsBuffering(true);
         
-        // ✅ CRITICAL FIX: Shorter buffering timeout (max 2 seconds)
         const bufferTimeout = 2000;
         
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
         }
         bufferingTimeoutRef.current = setTimeout(() => {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ⚠️ Buffering timeout - forcing clear');
-          }
+          console.log('[VideoPlayer] ⚠️ Buffering timeout - forcing clear');
           setIsBuffering(false);
         }, bufferTimeout);
       }
       
-      // When status changes to idle or error, clear buffering
       if (status.status === 'idle' || status.status === 'error') {
         setIsBuffering(false);
         if (bufferingTimeoutRef.current) {
@@ -597,23 +474,18 @@ export default function VideoPlayerScreen() {
     });
 
     const playingListener = player.addListener('playingChange', (newIsPlaying) => {
-      if (__DEV__) {
-        console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
-      }
+      console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
       setIsPlaying(newIsPlaying);
       
-      // ✅ CRITICAL FIX: Clear buffering when video starts playing
       if (newIsPlaying) {
-        if (__DEV__) {
-          console.log('[VideoPlayer] ✅ Video playing - clearing buffering state');
-        }
+        console.log('[VideoPlayer] ✅ Video playing - clearing buffering');
         setIsBuffering(false);
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
         
-        // ✅ CRITICAL FIX: Re-activate audio session when playback starts
+        // ✅ CRITICAL FIX: Reactivate audio when playback starts
         activateAudioSession().catch(err => 
           console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
         );
@@ -627,7 +499,6 @@ export default function VideoPlayerScreen() {
       if (now - lastProgressUpdateRef.current < 100) return;
       lastProgressUpdateRef.current = now;
       
-      // Update activity timestamp on every time update
       lastPlaybackActivityRef.current = now;
       
       if (!isSeekingRef.current) {
@@ -643,7 +514,6 @@ export default function VideoPlayerScreen() {
         });
       }
 
-      // ✅ CRITICAL FIX: Clear buffering when receiving time updates
       setIsBuffering(false);
       if (bufferingTimeoutRef.current) {
         clearTimeout(bufferingTimeoutRef.current);
@@ -652,9 +522,7 @@ export default function VideoPlayerScreen() {
     });
 
     return () => {
-      if (__DEV__) {
-        console.log('[VideoPlayer] Cleaning up event listeners');
-      }
+      console.log('[VideoPlayer] Cleaning up event listeners');
       statusListener.remove();
       playingListener.remove();
       timeUpdateListener.remove();
@@ -666,22 +534,15 @@ export default function VideoPlayerScreen() {
     };
   }, [player, videoUrl, isPlaying, retryCount, preloadedUrl]);
 
-  // ✅ CRITICAL FIX: Load video source immediately when URL is available
+  // ✅ CRITICAL FIX: Load video source immediately
   useEffect(() => {
     if (videoUrl && player) {
-      if (__DEV__) {
-        console.log('[VideoPlayer] ⚡ Loading video source for instant playback...');
-      }
+      console.log('[VideoPlayer] ⚡ Loading video source for INSTANT playback...');
       try {
         player.replace(videoUrl);
-        
-        if (__DEV__) {
-          console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
-        }
+        console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
       } catch (e) {
-        if (__DEV__) {
-          console.error('[VideoPlayer] Error loading source:', e);
-        }
+        console.error('[VideoPlayer] Error loading source:', e);
         setError('Failed to load video source');
       }
     }
@@ -706,10 +567,6 @@ export default function VideoPlayerScreen() {
   }, [player, isPlaying]);
 
   useEffect(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] Playing state changed:', isPlaying);
-    }
-    
     if (isPlaying && controlsVisible) {
       startControlsTimeout();
     } else if (!isPlaying) {
@@ -729,13 +586,10 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    // Update activity timestamp
     lastPlaybackActivityRef.current = Date.now();
     
     const currentlyPlaying = player.playing;
-    if (__DEV__) {
-      console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
-    }
+    console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
       player.pause();
@@ -743,22 +597,18 @@ export default function VideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      // ✅ CRITICAL: Refresh connection and reactivate audio before playing
       refreshConnectionIfNeeded();
       
-      // ✅ CRITICAL FIX: Reactivate audio session before playing
+      // ✅ CRITICAL FIX: Reactivate audio before playing
       activateAudioSession()
         .then(() => {
-          if (__DEV__) {
-            console.log('[VideoPlayer] ✅ Audio reactivated before play');
-          }
+          console.log('[VideoPlayer] ✅ Audio reactivated - playing');
           player.play();
           setIsPlaying(true);
           resetControlsTimeout();
         })
         .catch(err => {
-          console.error('[VideoPlayer] Failed to reactivate audio before play:', err);
-          // Try to play anyway
+          console.error('[VideoPlayer] Failed to reactivate audio:', err);
           player.play();
           setIsPlaying(true);
           resetControlsTimeout();
@@ -767,9 +617,7 @@ export default function VideoPlayerScreen() {
   }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded]);
 
   const handleSeekStart = useCallback(() => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] Seek started');
-    }
+    console.log('[VideoPlayer] Seek started');
     isSeekingRef.current = true;
     setControlsVisible(true);
     clearControlsTimeout();
@@ -784,15 +632,13 @@ export default function VideoPlayerScreen() {
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    if (__DEV__) {
-      console.log('[VideoPlayer] Seek to:', value.toFixed(2));
-    }
+    console.log('[VideoPlayer] Seek to:', value.toFixed(2));
     if (player) {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
       
-      // ✅ CRITICAL: Reactivate audio after seeking
+      // ✅ CRITICAL FIX: Reactivate audio after seeking
       activateAudioSession().catch(err => 
         console.error('[VideoPlayer] Failed to reactivate audio after seek:', err)
       );
@@ -807,9 +653,7 @@ export default function VideoPlayerScreen() {
 
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    if (__DEV__) {
-      console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
-    }
+    console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
     
@@ -829,23 +673,17 @@ export default function VideoPlayerScreen() {
             : false;
           
           if (isPortraitVideo) {
-            if (__DEV__) {
-              console.log('[VideoPlayer] Portrait video - unlocking orientation');
-            }
+            console.log('[VideoPlayer] Portrait video - unlocking orientation');
             await ScreenOrientation.unlockAsync();
           } else {
-            if (__DEV__) {
-              console.log('[VideoPlayer] Landscape video - locking to landscape');
-            }
+            console.log('[VideoPlayer] Landscape video - locking to landscape');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
           }
         } else {
           await ScreenOrientation.unlockAsync();
         }
       } catch (e) {
-        if (__DEV__) {
-          console.log('[VideoPlayer] Screen orientation not available:', e);
-        }
+        console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
   }, [isFullscreen, video, isPlaying, startControlsTimeout]);

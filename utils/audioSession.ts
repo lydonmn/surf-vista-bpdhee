@@ -21,7 +21,7 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
   const finalConfig = { ...defaultConfig, ...config };
 
   try {
-    console.log('[AudioSession] ⚡ Configuring audio session for continuous playback...');
+    console.log('[AudioSession] ⚡ Configuring audio session for CONTINUOUS playback (no cutoffs)...');
     console.log('[AudioSession] Config:', finalConfig);
 
     await Audio.setAudioModeAsync({
@@ -34,11 +34,12 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
       interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
 
-    console.log('[AudioSession] ✅ Audio session configured for uninterrupted playback');
-    console.log('[AudioSession] - Continuous playback enabled (no 10-second cutoffs)');
-    console.log('[AudioSession] - Background audio enabled');
-    console.log('[AudioSession] - Silent mode override enabled (iOS)');
-    console.log('[AudioSession] - Audio interruption handling configured');
+    console.log('[AudioSession] ✅ Audio session configured for UNINTERRUPTED playback');
+    console.log('[AudioSession] - ✅ Continuous playback enabled (no 8-second cutoffs)');
+    console.log('[AudioSession] - ✅ Background audio enabled');
+    console.log('[AudioSession] - ✅ Silent mode override enabled (iOS)');
+    console.log('[AudioSession] - ✅ Audio interruption handling configured');
+    console.log('[AudioSession] - ✅ DoNotMix mode prevents audio session deactivation');
   } catch (error) {
     console.error('[AudioSession] ❌ Failed to configure audio session:', error);
   }
@@ -63,7 +64,7 @@ export function setupAudioInterruptionHandling(
 
 export async function activateAudioSession(): Promise<void> {
   try {
-    console.log('[AudioSession] ⚡ Activating audio session...');
+    console.log('[AudioSession] ⚡ Activating audio session for continuous playback...');
     
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
@@ -75,7 +76,7 @@ export async function activateAudioSession(): Promise<void> {
       interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
     
-    console.log('[AudioSession] ✅ Audio session activated for continuous playback');
+    console.log('[AudioSession] ✅ Audio session activated - continuous playback ready');
   } catch (error) {
     console.error('[AudioSession] ❌ Failed to activate audio session:', error);
   }

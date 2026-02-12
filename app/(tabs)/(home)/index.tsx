@@ -43,7 +43,6 @@ export default function HomeScreen() {
     return checkSubscription();
   }, [checkSubscription]);
 
-  // ✅ CRITICAL FIX: Simplified loading check - only check if initialized
   const isLoading = !isInitialized;
 
   const handleRefresh = useCallback(async () => {
@@ -61,9 +60,17 @@ export default function HomeScreen() {
     }
   }, [refreshVideos, refreshData]);
 
-  const handleVideoPress = useCallback((videoId: string) => {
+  const handleVideoPress = useCallback((videoId: string, preloadedUrl?: string) => {
     console.log('[HomeScreen] Video pressed:', videoId);
-    router.push(`/video-player?videoId=${videoId}`);
+    console.log('[HomeScreen] ⚡ Passing preloaded URL for instant playback:', !!preloadedUrl);
+    
+    router.push({
+      pathname: '/video-player',
+      params: { 
+        videoId,
+        preloadedUrl: preloadedUrl || '',
+      }
+    });
   }, []);
 
   const handleSubscribe = useCallback(async () => {
@@ -328,7 +335,6 @@ export default function HomeScreen() {
     },
   });
 
-  // ✅ CRITICAL FIX: Show loading only during initial auth check
   if (isLoading) {
     console.log('[HomeScreen] Showing loading state - isInitialized:', isInitialized);
     return (
@@ -339,7 +345,6 @@ export default function HomeScreen() {
     );
   }
 
-  // Show welcome screen with sign-in buttons if not authenticated
   if (!user) {
     console.log('[HomeScreen] No user, showing welcome screen');
     return (
@@ -398,25 +403,20 @@ export default function HomeScreen() {
   const latestVideo = videos && videos.length > 0 ? videos[0] : null;
   const todayDate = getESTDate();
   
-  // CRITICAL: Filter reports by current location to prevent crossover
   const locationSurfReports = surfReports?.filter((report: SurfReport) => report.location === currentLocation) || [];
   const todayReport = locationSurfReports.find((report: SurfReport) => report.date === todayDate);
   const todayWeatherForecast = weatherForecast?.find((w) => w.date === todayDate);
 
-  // Get air temperature from weather_data (current conditions) or weather_forecast
-  // CRITICAL: Try multiple sources to ensure we always show temperature
   const airTempFromData = weatherData?.temperature ? parseFloat(String(weatherData.temperature)) : null;
   const airTempFromForecast = todayWeatherForecast?.temperature || todayWeatherForecast?.high_temp;
   const airTemp = airTempFromData || airTempFromForecast;
   
   const temperatureText = airTemp ? `${Math.round(airTemp)}°F` : '--°F';
   
-  // Get water temperature from surf report
   const waterTempRaw = todayReport?.water_temp;
   const waterTempNum = waterTempRaw ? parseFloat(waterTempRaw.replace(/[^\d.-]/g, '')) : null;
   const waterTempText = waterTempNum ? `${Math.round(waterTempNum)}°F` : '--°F';
   
-  // Get weather condition with multiple fallbacks
   const weatherCondition = weatherData?.conditions || 
                           todayWeatherForecast?.conditions || 
                           todayWeatherForecast?.short_forecast || 
@@ -424,7 +424,6 @@ export default function HomeScreen() {
   const windSpeedRaw = todayReport?.wind_speed;
   const windSpeed = windSpeedRaw ? `${Math.round(parseFloat(windSpeedRaw.replace(/[^\d.-]/g, '')))} mph` : '--';
   const windDirection = todayReport?.wind_direction || 'SW';
-  // Get humidity with fallbacks
   const humidityFromData = weatherData?.humidity;
   const humidityFromForecast = todayWeatherForecast?.humidity;
   const humidityValue = humidityFromData ?? humidityFromForecast;
@@ -433,7 +432,6 @@ export default function HomeScreen() {
     : '--%';
   const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
   
-  // ✅ USE SHARED UTILITY - Ensures identical narrative selection as report page
   const narrativeText = selectNarrativeText(todayReport);
 
   return (
@@ -453,7 +451,7 @@ export default function HomeScreen() {
       {latestVideo && (
         <TouchableOpacity
           style={styles.videoCard}
-          onPress={() => handleVideoPress(latestVideo.id)}
+          onPress={() => handleVideoPress(latestVideo.id, latestVideo.signed_url)}
         >
           <ImageBackground
             source={resolveImageSource(latestVideo.thumbnail_url)}
