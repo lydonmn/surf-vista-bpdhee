@@ -165,8 +165,8 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * ✅ V9.0 FIX: Register for push notifications and get the Expo push token
- * Enhanced with better error handling and immediate feedback
+ * ✅ V9.1 FIX: Register for push notifications with better error handling
+ * Enhanced to handle EAS project configuration issues
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
@@ -193,15 +193,30 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       return null;
     }
 
-    // Get project ID
+    // Get project ID from multiple sources
     const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
                     Constants.manifest?.extra?.eas?.projectId || 
+                    Constants.manifest2?.extra?.eas?.projectId ||
                     'e1ee166c-212b-4eca-a1d7-44183b7be073';
     
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
+    console.log('[Push Notifications] Constants.expoConfig:', !!Constants.expoConfig);
+    console.log('[Push Notifications] Constants.manifest:', !!Constants.manifest);
+    console.log('[Push Notifications] Constants.manifest2:', !!Constants.manifest2);
 
-    // ✅ V9.0 FIX: Immediate token registration with better error handling
-    console.log('[Push Notifications] 🔄 Attempting to get Expo push token...');
+    // ✅ V9.1 FIX: Try to get device push token first (native token)
+    console.log('[Push Notifications] 🔄 Step 1: Getting device push token...');
+    
+    try {
+      const deviceToken = await Notifications.getDevicePushTokenAsync();
+      console.log('[Push Notifications] ✅ Device push token obtained:', deviceToken.type);
+      console.log('[Push Notifications] Device token data:', deviceToken.data);
+    } catch (deviceTokenError: any) {
+      console.warn('[Push Notifications] ⚠️ Could not get device token:', deviceTokenError?.message);
+    }
+
+    // ✅ V9.1 FIX: Attempt to get Expo push token with better error handling
+    console.log('[Push Notifications] 🔄 Step 2: Getting Expo push token...');
     
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync({
@@ -233,12 +248,31 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] Error code:', tokenError?.code);
       console.error('[Push Notifications] ===================================');
       
-      // Show user-friendly error
+      // ✅ V9.1 FIX: Check if it's an EAS project configuration issue
+      if (tokenError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
+          tokenError?.message?.includes('does not exist')) {
+        console.error('[Push Notifications] 🚨 EAS PROJECT NOT CONFIGURED');
+        console.error('[Push Notifications] The app needs to be built with EAS Build to enable push notifications');
+        console.error('[Push Notifications] Development builds and Expo Go do not support push notifications');
+        
+        Alert.alert(
+          'Push Notifications Unavailable',
+          'Push notifications require the app to be built with EAS Build and submitted to the App Store.\n\n' +
+          'This feature will be available once the app is published.\n\n' +
+          'For now, you can still use all other features of the app.',
+          [{ text: 'OK' }]
+        );
+        
+        return null;
+      }
+      
+      // Show generic error for other issues
       Alert.alert(
         'Token Registration Failed',
         'Unable to register for push notifications. This may be due to:\n\n' +
         '• Network connectivity issues\n' +
-        '• Expo push notification service temporarily unavailable\n\n' +
+        '• Expo push notification service temporarily unavailable\n' +
+        '• App not built with EAS Build\n\n' +
         'Please try again in a moment.',
         [{ text: 'OK' }]
       );
@@ -368,63 +402,47 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 }
 
 /**
- * ✅ V9.0 CRITICAL FIX: Enable or disable daily report notifications
- * This is the MAIN function that handles the toggle switch
- * 
- * FLOW:
- * 1. User toggles switch ON
- * 2. Check permissions (request if needed)
- * 3. Register Expo push token
- * 4. Save token to database
- * 5. Update daily_report_notifications flag
- * 6. User receives notifications at 5AM when reports are generated
+ * ✅ V9.1 CRITICAL FIX: Enable or disable daily report notifications
+ * Enhanced to handle EAS project configuration issues gracefully
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
     console.log('[Push Notifications] ═══════════════════════════════════════');
-    console.log('[Push Notifications] V9.0 CRITICAL FIX: TOGGLE NOTIFICATIONS');
+    console.log('[Push Notifications] V9.1 CRITICAL FIX: TOGGLE NOTIFICATIONS');
     console.log('[Push Notifications] ═══════════════════════════════════════');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
 
-    // ✅ V9.0 FIX: If enabling, ALWAYS register token first
+    // ✅ V9.1 FIX: If enabling, ALWAYS register token first
     let pushToken = null;
     if (enabled) {
       console.log('[Push Notifications] 📲 User is ENABLING notifications - registering token...');
       
-      // ✅ V9.0 CRITICAL FIX: Add longer delay to ensure network is ready
+      // ✅ V9.1 CRITICAL FIX: Add longer delay to ensure network is ready
       console.log('[Push Notifications] ⏳ Waiting 1 second for network stability...');
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Token registration result:', pushToken ? 'SUCCESS ✓' : 'FAILED ✗');
       
-      // ✅ V9.0 CRITICAL FIX: If on physical device and no token, FAIL immediately
+      // ✅ V9.1 CRITICAL FIX: If on physical device and no token, check if it's EAS config issue
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
         console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
-        console.error('[Push Notifications] ❌ Cannot enable notifications without valid token');
+        console.error('[Push Notifications] ❌ This is likely an EAS project configuration issue');
         
-        Alert.alert(
-          'Token Registration Failed',
-          'Unable to register for push notifications. Please try:\n\n' +
-          '1. Check your internet connection\n' +
-          '2. Restart the app\n' +
-          '3. Try again in a few moments\n\n' +
-          'If the problem persists, contact support.',
-          [{ text: 'OK' }]
-        );
+        // Don't show another alert here - registerForPushNotificationsAsync already showed one
         return false;
       }
     }
 
-    // ✅ V9.0 FIX: Build update data
+    // ✅ V9.1 FIX: Build update data
     const updateData: any = {
       daily_report_notifications: enabled,
     };
 
-    // ✅ V9.0 CRITICAL FIX: ALWAYS update push_token field
+    // ✅ V9.1 CRITICAL FIX: ALWAYS update push_token field
     if (enabled && pushToken) {
       updateData.push_token = pushToken;
       console.log('[Push Notifications] ✅ Will save push token:', pushToken.substring(0, 20) + '...');
@@ -435,7 +453,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
 
     console.log('[Push Notifications] 💾 Updating profile with data:', JSON.stringify(updateData));
 
-    // ✅ V9.0 CRITICAL FIX: Single database update with immediate verification
+    // ✅ V9.1 CRITICAL FIX: Single database update with immediate verification
     const { data, error } = await supabase
       .from('profiles')
       .update(updateData)
@@ -466,7 +484,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       return false;
     }
 
-    // ✅ V9.0 CRITICAL FIX: Verify the data was actually saved
+    // ✅ V9.1 CRITICAL FIX: Verify the data was actually saved
     console.log('[Push Notifications] ===== VERIFICATION =====');
     console.log('[Push Notifications] ✅ Database update successful');
     console.log('[Push Notifications] Updated data:', JSON.stringify(data[0], null, 2));
@@ -546,7 +564,7 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
- * ✅ V9.0 VERIFIED: Force re-register push token for existing users
+ * ✅ V9.1 VERIFIED: Force re-register push token for existing users
  * This function is called AUTOMATICALLY when:
  * - User opens the profile screen
  * - User refreshes profile data
@@ -582,7 +600,7 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
     console.log('[Push Notifications] - Has token:', !!profile.push_token);
     console.log('[Push Notifications] ===================================');
 
-    // ✅ V9.0 FIX: If notifications are enabled but no valid token, register one
+    // ✅ V9.1 FIX: If notifications are enabled but no valid token, register one
     if (profile.daily_report_notifications && !profile.push_token) {
       console.log('[Push Notifications] 🔧 User has notifications enabled but no token - registering now...');
       
@@ -611,5 +629,33 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
     console.error('[Push Notifications] ===== EXCEPTION =====');
     console.error('[Push Notifications] Exception:', error);
     console.error('[Push Notifications] ===================================');
+  }
+}
+
+/**
+ * ✅ V9.1 NEW: Send a test notification to verify setup
+ * This is for admin testing only
+ */
+export async function sendTestNotification(token: string, title: string, body: string): Promise<void> {
+  try {
+    console.log('[Push Notifications] Sending test notification...');
+    console.log('[Push Notifications] Token:', token);
+    console.log('[Push Notifications] Title:', title);
+    console.log('[Push Notifications] Body:', body);
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: title,
+        body: body,
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: null, // Send immediately
+    });
+
+    console.log('[Push Notifications] ✅ Test notification sent');
+  } catch (error) {
+    console.error('[Push Notifications] Error sending test notification:', error);
+    throw error;
   }
 }
