@@ -193,19 +193,17 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     }
 
     // Get the project ID from app config
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('[Push Notifications] EAS Project ID from config:', projectId);
-    console.log('[Push Notifications] Full extra config:', JSON.stringify(Constants.expoConfig?.extra));
+    // Try multiple possible locations for the project ID
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
+                      Constants.manifest?.extra?.eas?.projectId ||
+                      Constants.manifest2?.extra?.eas?.projectId ||
+                      'e1ee166c-212b-4eca-a1d7-44183b7be073'; // Fallback to known project ID
+    
+    console.log('[Push Notifications] EAS Project ID:', projectId);
+    console.log('[Push Notifications] Config source:', Constants.expoConfig?.extra?.eas?.projectId ? 'expoConfig' : 'fallback');
 
-    if (!projectId) {
-      console.error('[Push Notifications] ❌ No EAS project ID found in config');
-      console.error('[Push Notifications] Available config:', JSON.stringify(Constants.expoConfig?.extra, null, 2));
-      Alert.alert(
-        'Configuration Error',
-        'Push notifications are not properly configured. The EAS project ID is missing from app.json. Please restart the app after the configuration is updated.',
-        [{ text: 'OK' }]
-      );
-      return null;
+    if (!projectId || projectId === 'e1ee166c-212b-4eca-a1d7-44183b7be073') {
+      console.log('[Push Notifications] ℹ️ Using fallback project ID - this is normal in development');
     }
 
     // Get the Expo push token
@@ -279,6 +277,80 @@ export async function savePushToken(userId: string, token: string): Promise<bool
       console.error('[Push Notifications] Exception message:', error.message);
       console.error('[Push Notifications] Exception stack:', error.stack);
     }
+    return false;
+  }
+}
+
+/**
+ * Get user's selected notification locations
+ */
+export async function getNotificationLocations(userId: string): Promise<string[]> {
+  try {
+    console.log('[Push Notifications] Fetching notification locations for user:', userId);
+    
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('notification_locations')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('[Push Notifications] Error fetching locations:', error);
+      return ['folly-beach']; // Default to Folly Beach
+    }
+
+    console.log('[Push Notifications] Notification locations:', data?.notification_locations);
+    return data?.notification_locations || ['folly-beach'];
+  } catch (error) {
+    console.error('[Push Notifications] Exception fetching locations:', error);
+    return ['folly-beach'];
+  }
+}
+
+/**
+ * Update user's selected notification locations
+ */
+export async function setNotificationLocations(userId: string, locationIds: string[]): Promise<boolean> {
+  try {
+    console.log('[Push Notifications] ===== SET NOTIFICATION LOCATIONS =====');
+    console.log('[Push Notifications] User ID:', userId);
+    console.log('[Push Notifications] Location IDs:', locationIds);
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ notification_locations: locationIds })
+      .eq('id', userId)
+      .select();
+
+    if (error) {
+      console.error('[Push Notifications] ===== UPDATE ERROR =====');
+      console.error('[Push Notifications] Error:', JSON.stringify(error, null, 2));
+      
+      Alert.alert(
+        'Update Failed',
+        `Failed to update notification locations:\n\n${error.message}`,
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+
+    if (!data || data.length === 0) {
+      console.error('[Push Notifications] ❌ No data returned from update');
+      return false;
+    }
+
+    console.log('[Push Notifications] ✅ Locations updated successfully');
+    console.log('[Push Notifications] ===== SET NOTIFICATION LOCATIONS COMPLETE =====');
+    return true;
+  } catch (error) {
+    console.error('[Push Notifications] ===== EXCEPTION =====');
+    console.error('[Push Notifications] Exception:', error);
+    
+    Alert.alert(
+      'Error',
+      'An unexpected error occurred while updating notification locations.',
+      [{ text: 'OK' }]
+    );
     return false;
   }
 }

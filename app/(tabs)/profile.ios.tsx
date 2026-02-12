@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
+import { NotificationLocationSelector } from "@/components/NotificationLocationSelector";
 import { 
   restorePurchases, 
   presentCustomerCenter,
@@ -18,7 +19,9 @@ import {
   setDailyReportNotifications, 
   getDailyReportNotificationStatus,
   checkNotificationPermissions,
-  openNotificationSettings
+  openNotificationSettings,
+  getNotificationLocations,
+  setNotificationLocations
 } from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
@@ -41,6 +44,8 @@ export default function ProfileScreen() {
     status: string;
   } | null>(null);
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+  const [selectedNotificationLocations, setSelectedNotificationLocations] = useState<string[]>(['folly-beach']);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) {
@@ -50,6 +55,18 @@ export default function ProfileScreen() {
     const status = await getDailyReportNotificationStatus(user.id);
     console.log('[ProfileScreen iOS] ✅ Notification status loaded:', status);
     setDailyNotificationsEnabled(status);
+  }, [user?.id]);
+
+  const loadNotificationLocations = useCallback(async () => {
+    if (!user?.id) {
+      return;
+    }
+    console.log('[ProfileScreen iOS] 📍 Loading notification locations...');
+    setIsLoadingLocations(true);
+    const locations = await getNotificationLocations(user.id);
+    console.log('[ProfileScreen iOS] 📍 Notification locations loaded:', locations);
+    setSelectedNotificationLocations(locations);
+    setIsLoadingLocations(false);
   }, [user?.id]);
 
   const checkPermissions = useCallback(async () => {
@@ -68,8 +85,9 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (user?.id) {
       loadNotificationStatus();
+      loadNotificationLocations();
     }
-  }, [user?.id, loadNotificationStatus]);
+  }, [user?.id, loadNotificationStatus, loadNotificationLocations]);
 
   useEffect(() => {
     checkPermissions();
@@ -95,6 +113,52 @@ export default function ProfileScreen() {
     
     checkPaymentSystem();
   }, []);
+
+  const handleLocationsChange = async (newLocations: string[]) => {
+    if (!user?.id) {
+      console.error('[ProfileScreen iOS] ❌ No user ID available');
+      return;
+    }
+
+    console.log('[ProfileScreen iOS] 📍 Updating notification locations:', newLocations);
+    
+    try {
+      // Refresh session first
+      await refreshSession();
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const success = await setNotificationLocations(user.id, newLocations);
+      
+      if (success) {
+        console.log('[ProfileScreen iOS] ✅ Locations updated successfully');
+        setSelectedNotificationLocations(newLocations);
+        
+        const locationText = newLocations.length === 1 
+          ? '1 location' 
+          : `${newLocations.length} locations`;
+        
+        Alert.alert(
+          'Locations Updated',
+          `You will receive daily reports for ${locationText}.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        console.error('[ProfileScreen iOS] ❌ Failed to update locations');
+        Alert.alert(
+          'Update Failed',
+          'Failed to update notification locations. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[ProfileScreen iOS] ❌ Exception updating locations:', error);
+      Alert.alert(
+        'Error',
+        'An error occurred while updating locations. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
@@ -242,6 +306,7 @@ export default function ProfileScreen() {
     console.log('[ProfileScreen iOS] 🔄 Refreshing profile data...');
     await refreshProfile();
     await loadNotificationStatus();
+    await loadNotificationLocations();
     await checkPermissions();
     Alert.alert('Success', 'Profile data refreshed');
   };
@@ -717,6 +782,26 @@ export default function ProfileScreen() {
             />
           )}
         </View>
+
+        {dailyNotificationsEnabled && (
+          <>
+            <View style={styles.dividerSmall} />
+            {isLoadingLocations ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                  Loading locations...
+                </Text>
+              </View>
+            ) : (
+              <NotificationLocationSelector
+                selectedLocations={selectedNotificationLocations}
+                onLocationsChange={handleLocationsChange}
+                disabled={!dailyNotificationsEnabled}
+              />
+            )}
+          </>
+        )}
       </View>
 
       {isAdmin() && (
@@ -860,6 +945,9 @@ export default function ProfileScreen() {
           <Text style={[styles.debugText, { color: colors.textSecondary }]}>
             Permission Status: {permissionStatusText}
           </Text>
+          <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+            Notification Locations: {selectedNotificationLocations.join(', ')}
+          </Text>
         </View>
       )}
 
@@ -884,7 +972,7 @@ export default function ProfileScreen() {
             <View style={styles.modalIconContainer}>
               <IconSymbol
                 ios_icon_name="bell.badge.fill"
-                android_material_icon_name="notifications-active"
+                android_material_icon_name="notifications_active"
                 size={48}
                 color={colors.primary}
               />
@@ -1264,6 +1352,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 4,
+  },
+  dividerSmall: {
+    height: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    marginVertical: 12,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  loadingText: {
+    fontSize: 14,
   },
   actionItem: {
     flexDirection: 'row',
