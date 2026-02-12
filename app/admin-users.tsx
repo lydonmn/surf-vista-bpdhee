@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
@@ -616,152 +616,179 @@ export default function AdminUsersScreen() {
         </ScrollView>
       )}
 
-      {/* Action Modal */}
+      {/* Action Modal - IMPROVED WITH KEYBOARD AVOIDANCE AND SCROLLING */}
       <Modal
         visible={modalVisible}
         transparent
         animationType="slide"
         onRequestClose={closeModal}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                {selectedAction?.action === 'free_months' && 'Grant Free Months'}
-                {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
-                {selectedAction?.action === 'pause' && 'Pause Subscription'}
-                {selectedAction?.action === 'refund' && 'Issue Refund'}
-              </Text>
-              <TouchableOpacity onPress={closeModal}>
-                <IconSymbol
-                  ios_icon_name="xmark.circle.fill"
-                  android_material_icon_name="cancel"
-                  size={28}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              {selectedAction?.userEmail}
-            </Text>
-
-            {selectedAction?.action === 'free_months' && (
-              <View style={styles.modalBody}>
-                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                  Number of Free Months
-                </Text>
-                <TextInput
-                  style={[styles.modalInput, { 
-                    backgroundColor: theme.colors.background,
-                    color: theme.colors.text,
-                    borderColor: colors.textSecondary
-                  }]}
-                  placeholder="1"
-                  placeholderTextColor={colors.textSecondary}
-                  value={freeMonths}
-                  onChangeText={setFreeMonths}
-                  keyboardType="number-pad"
-                />
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                  Enter a number between 1 and 12. This will extend their subscription by the specified number of months.
-                </Text>
-              </View>
-            )}
-
-            {selectedAction?.action === 'pause' && (
-              <View style={styles.modalBody}>
-                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                  Pause Duration (Days)
-                </Text>
-                <TextInput
-                  style={[styles.modalInput, { 
-                    backgroundColor: theme.colors.background,
-                    color: theme.colors.text,
-                    borderColor: colors.textSecondary
-                  }]}
-                  placeholder="30"
-                  placeholderTextColor={colors.textSecondary}
-                  value={pauseDays}
-                  onChangeText={setPauseDays}
-                  keyboardType="number-pad"
-                />
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                  Enter the number of days to extend their subscription. This effectively pauses billing for the specified period.
-                </Text>
-              </View>
-            )}
-
-            {selectedAction?.action === 'cancel' && (
-              <View style={styles.modalBody}>
-                <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
-                  This will immediately cancel the user&apos;s subscription and revoke their access. This action cannot be undone.
-                </Text>
-              </View>
-            )}
-
-            {selectedAction?.action === 'refund' && (
-              <View style={styles.modalBody}>
-                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                  Refund Amount ($)
-                </Text>
-                <TextInput
-                  style={[styles.modalInput, { 
-                    backgroundColor: theme.colors.background,
-                    color: theme.colors.text,
-                    borderColor: colors.textSecondary
-                  }]}
-                  placeholder="12.99"
-                  placeholderTextColor={colors.textSecondary}
-                  value={refundAmount}
-                  onChangeText={setRefundAmount}
-                  keyboardType="decimal-pad"
-                />
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                  Enter the refund amount. This will cancel their subscription. You must process the actual refund through RevenueCat or your payment provider.
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.textSecondary }]}
-                onPress={closeModal}
-                disabled={actionLoading}
-              >
-                <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton, { 
-                  backgroundColor: selectedAction?.action === 'cancel' || selectedAction?.action === 'refund' 
-                    ? '#FF6B6B' 
-                    : colors.primary 
-                }]}
-                onPress={() => {
-                  if (selectedAction?.action === 'free_months') handleGrantFreeMonths();
-                  else if (selectedAction?.action === 'cancel') handleCancelSubscription();
-                  else if (selectedAction?.action === 'pause') handlePauseSubscription();
-                  else if (selectedAction?.action === 'refund') handleIssueRefund();
-                }}
-                disabled={actionLoading}
-              >
-                {actionLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.confirmButtonText}>
-                    {selectedAction?.action === 'free_months' && 'Grant'}
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlayTouchable}
+            activeOpacity={1}
+            onPress={closeModal}
+          >
+            <TouchableOpacity 
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={styles.modalContentWrapper}
+            >
+              <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                    {selectedAction?.action === 'free_months' && 'Grant Free Months'}
                     {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
-                    {selectedAction?.action === 'pause' && 'Pause'}
+                    {selectedAction?.action === 'pause' && 'Pause Subscription'}
                     {selectedAction?.action === 'refund' && 'Issue Refund'}
                   </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <TouchableOpacity onPress={closeModal}>
+                    <IconSymbol
+                      ios_icon_name="xmark.circle.fill"
+                      android_material_icon_name="cancel"
+                      size={28}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView 
+                  style={styles.modalScrollView}
+                  contentContainerStyle={styles.modalScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                >
+                  <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                    {selectedAction?.userEmail}
+                  </Text>
+
+                  {selectedAction?.action === 'free_months' && (
+                    <View style={styles.modalBody}>
+                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                        Number of Free Months
+                      </Text>
+                      <TextInput
+                        style={[styles.modalInput, { 
+                          backgroundColor: theme.colors.background,
+                          color: theme.colors.text,
+                          borderColor: colors.textSecondary
+                        }]}
+                        placeholder="1"
+                        placeholderTextColor={colors.textSecondary}
+                        value={freeMonths}
+                        onChangeText={setFreeMonths}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        maxLength={2}
+                      />
+                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                        Enter a number between 1 and 12. This will extend their subscription by the specified number of months.
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedAction?.action === 'pause' && (
+                    <View style={styles.modalBody}>
+                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                        Pause Duration (Days)
+                      </Text>
+                      <TextInput
+                        style={[styles.modalInput, { 
+                          backgroundColor: theme.colors.background,
+                          color: theme.colors.text,
+                          borderColor: colors.textSecondary
+                        }]}
+                        placeholder="30"
+                        placeholderTextColor={colors.textSecondary}
+                        value={pauseDays}
+                        onChangeText={setPauseDays}
+                        keyboardType="number-pad"
+                        returnKeyType="done"
+                        maxLength={3}
+                      />
+                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                        Enter the number of days to extend their subscription. This effectively pauses billing for the specified period.
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedAction?.action === 'cancel' && (
+                    <View style={styles.modalBody}>
+                      <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
+                        This will immediately cancel the user&apos;s subscription and revoke their access. This action cannot be undone.
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedAction?.action === 'refund' && (
+                    <View style={styles.modalBody}>
+                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                        Refund Amount ($)
+                      </Text>
+                      <TextInput
+                        style={[styles.modalInput, { 
+                          backgroundColor: theme.colors.background,
+                          color: theme.colors.text,
+                          borderColor: colors.textSecondary
+                        }]}
+                        placeholder="12.99"
+                        placeholderTextColor={colors.textSecondary}
+                        value={refundAmount}
+                        onChangeText={setRefundAmount}
+                        keyboardType="decimal-pad"
+                        returnKeyType="done"
+                      />
+                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                        Enter the refund amount. This will cancel their subscription. You must process the actual refund through RevenueCat or your payment provider.
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton, { borderColor: colors.textSecondary }]}
+                    onPress={closeModal}
+                    disabled={actionLoading}
+                  >
+                    <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.confirmButton, { 
+                      backgroundColor: selectedAction?.action === 'cancel' || selectedAction?.action === 'refund' 
+                        ? '#FF6B6B' 
+                        : colors.primary 
+                    }]}
+                    onPress={() => {
+                      if (selectedAction?.action === 'free_months') handleGrantFreeMonths();
+                      else if (selectedAction?.action === 'cancel') handleCancelSubscription();
+                      else if (selectedAction?.action === 'pause') handlePauseSubscription();
+                      else if (selectedAction?.action === 'refund') handleIssueRefund();
+                    }}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.confirmButtonText}>
+                        {selectedAction?.action === 'free_months' && 'Grant'}
+                        {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
+                        {selectedAction?.action === 'pause' && 'Pause'}
+                        {selectedAction?.action === 'refund' && 'Issue Refund'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -961,11 +988,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  modalOverlayTouchable: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContentWrapper: {
+    maxHeight: '85%',
+  },
   modalContent: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 24,
-    maxHeight: '80%',
+    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingBottom: 32,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -979,10 +1014,16 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     fontSize: 14,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  modalScrollView: {
+    maxHeight: 300,
+  },
+  modalScrollContent: {
+    paddingBottom: 16,
   },
   modalBody: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: 16,
@@ -993,8 +1034,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
+    fontSize: 18,
     marginBottom: 8,
+    minHeight: 48,
   },
   helperText: {
     fontSize: 13,
@@ -1008,6 +1050,7 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     gap: 12,
+    marginTop: 8,
   },
   modalButton: {
     flex: 1,

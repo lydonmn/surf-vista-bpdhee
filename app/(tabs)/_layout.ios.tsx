@@ -16,7 +16,7 @@ export default function TabLayout() {
         <Icon sf="water.waves" />
         <Label>Report</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger key="forecast" name="forecast" options={{ href: null }}>
+      <NativeTabs.Trigger key="forecast" name="forecast">
         <Icon sf="calendar" />
         <Label>Forecast</Label>
       </NativeTabs.Trigger>
