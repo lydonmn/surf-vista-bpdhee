@@ -7,6 +7,37 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Location-specific personality traits
+const LOCATION_PERSONALITIES: Record<string, {
+  casual: string[];
+  excited: string[];
+  disappointed: string[];
+  nickname: string;
+}> = {
+  'folly-beach': {
+    casual: ['Folly', 'the Edge of America', 'Folly Beach'],
+    excited: ['Folly is firing', 'Folly is going off', 'Folly is pumping'],
+    disappointed: ['not much happening at Folly', 'Folly is pretty flat', 'Folly is taking a rest'],
+    nickname: 'Folly'
+  },
+  'pawleys-island': {
+    casual: ['Pawleys', 'the island', 'Pawleys Island'],
+    excited: ['Pawleys has swell', 'Pawleys is working', 'Pawleys is delivering'],
+    disappointed: ['not a wave on Pawleys', 'Pawleys is dead flat', 'Pawleys is sleeping'],
+    nickname: 'Pawleys'
+  },
+  'holden-beach-nc': {
+    casual: ['Holden', 'Holden Beach', 'the beach'],
+    excited: ['Holden is cranking', 'Holden has waves', 'Holden is alive'],
+    disappointed: ['Holden is flat', 'nothing at Holden', 'Holden is quiet'],
+    nickname: 'Holden'
+  }
+};
+
+function getLocationPersonality(locationId: string) {
+  return LOCATION_PERSONALITIES[locationId] || LOCATION_PERSONALITIES['folly-beach'];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -17,7 +48,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Parse request body to check for specific location
     let targetLocationId: string | null = null;
     try {
       const body = await req.json();
@@ -32,16 +62,7 @@ serve(async (req) => {
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
     console.log('[Daily 5AM Report] 🌅 REPORT GENERATION STARTED');
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
-    console.log('[Daily 5AM Report] 🔧 Features:');
-    console.log('[Daily 5AM Report]   • Up to 5 retry attempts per location');
-    console.log('[Daily 5AM Report]   • Progressive delays: 5s, 10s, 20s, 30s, 60s');
-    console.log('[Daily 5AM Report]   • Dynamic location support');
-    console.log('[Daily 5AM Report]   • Push notifications for opted-in users');
-    console.log('[Daily 5AM Report]   • Single location or bulk processing');
-    console.log('[Daily 5AM Report]   • Handles buoy sensor failures gracefully');
-    console.log('[Daily 5AM Report] ═══════════════════════════════════════');
 
-    // Fetch locations - either specific one or all active
     let locationsQuery = supabase
       .from('locations')
       .select('id, name, display_name')
@@ -83,7 +104,6 @@ serve(async (req) => {
     const dateStr = estDate.toISOString().split('T')[0];
     
     console.log('[Daily 5AM Report] 📅 Target date:', dateStr);
-    console.log('[Daily 5AM Report] ⏰ Current EST time:', estDate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }));
 
     const results = [];
     
@@ -98,13 +118,8 @@ serve(async (req) => {
       if (result.success) {
         console.log(`[Daily 5AM Report] ✅ ${location.display_name}: SUCCESS`);
         
-        // Only send notifications if processing all locations (automated run)
-        // Don't send notifications for single location admin updates
         if (!result.skipped && !targetLocationId) {
-          console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
-          console.log(`[Daily 5AM Report] 📲 V9.0 VERIFIED: Sending push notifications for ${location.display_name}...`);
-          console.log(`[Daily 5AM Report] ✅ VERIFIED: This is the automatic 5AM notification flow`);
-          console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
+          console.log(`[Daily 5AM Report] 📲 Sending push notifications for ${location.display_name}...`);
           
           try {
             const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
@@ -115,20 +130,12 @@ serve(async (req) => {
             });
 
             if (notificationResult.data?.success) {
-              console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
-              console.log(`[Daily 5AM Report] ✅ V9.0 NOTIFICATION SUCCESS`);
               console.log(`[Daily 5AM Report] ✅ Notifications sent: ${notificationResult.data.notificationsSent} users`);
-              console.log(`[Daily 5AM Report] ✅ Total opted-in: ${notificationResult.data.totalOptedIn} users`);
-              console.log(`[Daily 5AM Report] ✅ Eligible (valid tokens): ${notificationResult.data.eligibleUsers} users`);
-              console.log(`[Daily 5AM Report] ✅ VERIFIED: Push notifications delivered via Expo Push API`);
-              console.log(`[Daily 5AM Report] ═══════════════════════════════════════`);
             } else {
               console.warn(`[Daily 5AM Report] ⚠️ Notification send failed:`, notificationResult.error);
-              console.warn(`[Daily 5AM Report] ⚠️ Error details:`, JSON.stringify(notificationResult, null, 2));
             }
           } catch (notifError) {
             console.error(`[Daily 5AM Report] ❌ Notification error:`, notifError);
-            console.error(`[Daily 5AM Report] ❌ Error details:`, JSON.stringify(notifError, null, 2));
           }
         } else if (targetLocationId) {
           console.log(`[Daily 5AM Report] ℹ️ Skipping notifications (single location admin update)`);
@@ -149,7 +156,6 @@ serve(async (req) => {
     console.log('[Daily 5AM Report] ═══════════════════════════════════════');
 
     if (allSucceeded) {
-      console.log('[Daily 5AM Report] ✅ All locations processed successfully!');
       const message = targetLocationId 
         ? `Report generated successfully for ${locationsData[0].display_name}`
         : 'Daily reports generated and notifications sent successfully for all locations';
@@ -163,7 +169,6 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (someSucceeded) {
-      console.log('[Daily 5AM Report] ⚠️ Some locations succeeded, some failed');
       return new Response(
         JSON.stringify({
           success: true,
@@ -176,7 +181,6 @@ serve(async (req) => {
         }
       );
     } else {
-      console.log('[Daily 5AM Report] ❌ All locations failed');
       return new Response(
         JSON.stringify({
           success: false,
@@ -226,7 +230,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
 
     if (existingReport && existingReport.conditions && existingReport.conditions.length > 100) {
       console.log(`[${locationName}] ✅ Valid report already exists for today - skipping`);
-      console.log(`[${locationName}] Report has ${existingReport.conditions.length} character narrative`);
       return {
         success: true,
         location: locationName,
@@ -236,7 +239,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
       };
     }
 
-    console.log(`[${locationName}] No existing report found or report is incomplete - generating new report`);
+    console.log(`[${locationName}] Generating new report...`);
 
     console.log(`[${locationName}] Step 1: Fetching weather data...`);
     let weatherData = null;
@@ -248,7 +251,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
       if (weatherError) {
         console.warn(`[${locationName}] Weather fetch warning:`, weatherError);
       } else if (weatherResult?.success) {
-        console.log(`[${locationName}] ✅ Weather data fetched successfully`);
+        console.log(`[${locationName}] ✅ Weather data fetched`);
         
         const { data: weatherDbData } = await supabase
           .from('weather_data')
@@ -260,7 +263,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         weatherData = weatherDbData;
       }
     } catch (weatherError) {
-      console.warn(`[${locationName}] Weather fetch failed (non-critical):`, weatherError);
+      console.warn(`[${locationName}] Weather fetch failed:`, weatherError);
     }
 
     console.log(`[${locationName}] Step 2: Fetching tide data...`);
@@ -273,7 +276,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
       if (tideError) {
         console.warn(`[${locationName}] Tide fetch warning:`, tideError);
       } else if (tideResult?.success) {
-        console.log(`[${locationName}] ✅ Tide data fetched successfully`);
+        console.log(`[${locationName}] ✅ Tide data fetched`);
         
         const { data: tideDbData } = await supabase
           .from('tide_data')
@@ -285,11 +288,8 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         tideDataArray = tideDbData || [];
       }
     } catch (tideError) {
-      console.warn(`[${locationName}] Tide fetch failed (non-critical):`, tideError);
+      console.warn(`[${locationName}] Tide fetch failed:`, tideError);
     }
-
-    console.log(`[${locationName}] Weather data:`, weatherData ? 'Found' : 'Not found');
-    console.log(`[${locationName}] Tide data: ${tideDataArray.length} records`);
 
     let lastError = null;
     let surfConditions = null;
@@ -298,7 +298,7 @@ async function processLocation(supabase: any, locationId: string, locationName: 
     
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching fresh buoy data...`);
+        console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching buoy data...`);
         
         const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
           body: { location: locationId },
@@ -308,9 +308,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
           console.warn(`[${locationName}] Attempt ${attempt}: Buoy fetch warning:`, buoyError);
         }
 
-        console.log(`[${locationName}] Attempt ${attempt}: Buoy data response:`, buoyData);
-
-        console.log(`[${locationName}] Waiting for database to update...`);
         await delay(1000);
 
         const { data: fetchedConditions, error: surfError } = await supabase
@@ -326,8 +323,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
           throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
         }
 
-        console.log(`[${locationName}] Attempt ${attempt}: Fetched conditions:`, fetchedConditions);
-
         const hasWaveData = fetchedConditions && (
           (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
           (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
@@ -339,17 +334,11 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         );
 
         if (hasWaveData) {
-          console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`, {
-            wave_height: fetchedConditions.wave_height,
-            surf_height: fetchedConditions.surf_height,
-            wave_period: fetchedConditions.wave_period,
-            updated_at: fetchedConditions.updated_at,
-          });
+          console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`);
           surfConditions = fetchedConditions;
           break;
         } else if (hasBuoyData) {
-          console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online with wind/temp data`);
-          console.log(`[${locationName}] Wind: ${fetchedConditions.wind_speed}, Water Temp: ${fetchedConditions.water_temp}`);
+          console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online`);
           
           if (attempt === MAX_RETRIES || (fetchedConditions.wind_speed !== 'N/A' && fetchedConditions.water_temp !== 'N/A')) {
             console.log(`[${locationName}] ✅ Proceeding with available data (wave sensors offline)`);
@@ -359,14 +348,14 @@ async function processLocation(supabase: any, locationId: string, locationName: 
           
           lastError = `Wave sensors offline, retrying... (${attempt}/${MAX_RETRIES})`;
         } else {
-          const errorMsg = `No valid buoy data available. Wave height: ${fetchedConditions?.wave_height || 'null'}, Wind: ${fetchedConditions?.wind_speed || 'null'}`;
+          const errorMsg = `No valid buoy data available`;
           console.log(`[${locationName}] ⚠️ Attempt ${attempt}/${MAX_RETRIES}: ${errorMsg}`);
           lastError = errorMsg;
         }
         
         if (attempt < MAX_RETRIES) {
           const delayMs = RETRY_DELAYS[attempt - 1];
-          console.log(`[${locationName}] Waiting ${delayMs/1000} seconds before retry ${attempt + 1}...`);
+          console.log(`[${locationName}] Waiting ${delayMs/1000} seconds before retry...`);
           await delay(delayMs);
         }
       } catch (attemptError) {
@@ -375,7 +364,6 @@ async function processLocation(supabase: any, locationId: string, locationName: 
         
         if (attempt < MAX_RETRIES) {
           const delayMs = RETRY_DELAYS[attempt - 1];
-          console.log(`[${locationName}] Waiting ${delayMs/1000} seconds before retry ${attempt + 1}...`);
           await delay(delayMs);
         }
       }
@@ -490,6 +478,9 @@ function generateWittyNarrative(
   tideData: any[] = []
 ): string {
   try {
+    const locationId = surfConditions.location || 'folly-beach';
+    const personality = getLocationPersonality(locationId);
+    
     const rideableFaceStr = surfConditions.surf_height || surfConditions.wave_height;
     
     const waveSensorsOffline = !rideableFaceStr || rideableFaceStr === 'N/A';
@@ -498,208 +489,171 @@ function generateWittyNarrative(
       console.log('Wave sensors offline - generating fallback narrative');
       
       const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'conditions unavailable';
-      const windSpeedNum = parseNumericValue(surfConditions.wind_speed, 0);
-      const windSpeedText = windSpeedNum > 0 ? `${windSpeedNum.toFixed(0)} mph` : 'N/A';
-      const windDir = surfConditions.wind_direction || 'Variable';
-      const waterTempNum = parseNumericValue(surfConditions.water_temp, 0);
-      const waterTempText = waterTempNum > 0 ? `${waterTempNum.toFixed(0)}°F` : 'N/A';
+      const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
+      const windDir = surfConditions.wind_direction || 'variable';
+      const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
       const buoyId = surfConditions.buoy_id || 'unknown';
       
-      const locationSeed = date.split('-').reduce((acc, val) => acc + parseInt(val), 0);
+      const windText = windSpeed > 0 ? `${windSpeed.toFixed(0)} mph ${windDir}` : 'calm';
+      const waterText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : 'unknown temp';
+      
+      const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
+      
       const messages = [
-        `The wave sensors on buoy ${buoyId} aren't reporting right now, so we can't give you rideable face heights or periods. The buoy is online though - winds are ${windSpeedText} from the ${windDir}, water temp is ${waterTempText}, and weather is ${weatherConditions.toLowerCase()}. Check local surf cams or head to the beach to see what's actually happening out there!`,
-        `Wave sensors are offline on buoy ${buoyId} today, so no wave data available. Wind is ${windSpeedText} from the ${windDir}, water's at ${waterTempText}, and it's ${weatherConditions.toLowerCase()}. Your best bet is to check the beach in person or look at surf cams for current conditions.`,
-        `Buoy ${buoyId} wave sensors are down at the moment - can't pull rideable face data. However, wind conditions show ${windSpeedText} from the ${windDir}, water temperature is ${waterTempText}, and the weather is ${weatherConditions.toLowerCase()}. Recommend checking visual reports or heading down to scout it yourself.`,
+        `Wave sensors are offline at ${personality.nickname} today, so we can't give you exact wave heights. The buoy is still reporting though - wind is ${windText}, water is ${waterText}, and it's ${weatherConditions.toLowerCase()}. Best bet is to check the beach cam or drive down to see what's actually out there.`,
+        
+        `No wave data from ${personality.nickname} right now - sensors are down. We've got wind at ${windText}, water temp at ${waterText}, and ${weatherConditions.toLowerCase()} skies. Check the local surf cam or head down to scout it yourself.`,
+        
+        `Buoy sensors are down at ${personality.nickname} - no wave readings available. Wind is ${windText}, water's ${waterText}, weather is ${weatherConditions.toLowerCase()}. You'll need to eyeball it from the beach or check a surf cam.`
       ];
       
-      const index = locationSeed % messages.length;
-      return messages[index];
+      return messages[seed % messages.length];
     }
     
-    // Parse numeric values properly
-    const rideableFaceNum = parseNumericValue(rideableFaceStr, 0);
-    const windSpeedNum = parseNumericValue(surfConditions.wind_speed, 0);
-    const windDir = surfConditions.wind_direction || 'Variable';
-    const swellDir = surfConditions.swell_direction || 'Variable';
-    const periodNum = parseNumericValue(surfConditions.wave_period, 0);
-    const waterTempNum = parseNumericValue(surfConditions.water_temp, 0);
+    const waveHeight = parseNumericValue(rideableFaceStr, 0);
+    const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
+    const windDir = surfConditions.wind_direction || 'variable';
+    const swellDir = surfConditions.swell_direction || 'mixed';
+    const period = parseNumericValue(surfConditions.wave_period, 0);
+    const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
+    const airTemp = parseNumericValue(weatherData?.temperature, 0);
+    const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'partly cloudy';
 
     const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
-    const isClean = (isOffshore && windSpeedNum < 15) || (!isOffshore && windSpeedNum < 8);
-
+    
     const rating = calculateSurfRating(surfConditions);
-    const locationSeed = date.split('-').reduce((acc, val) => acc + parseInt(val), 0) + (surfConditions.location === 'pawleys-island' ? 100 : 0);
+    const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
 
     let report = '';
 
+    // OPENING - Location-specific personality
     if (rating >= 8) {
       const openings = [
-        'It\'s absolutely firing out there!',
-        'Epic conditions today!',
-        'You gotta see this - it\'s going off!',
-        'Premium surf conditions right now!',
-        'Stellar session potential today!',
-        'The ocean is delivering today!',
+        `${personality.excited[seed % personality.excited.length]} today!`,
+        `Epic session at ${personality.nickname} right now.`,
+        `You need to see ${personality.nickname} today - it's incredible.`,
       ];
-      report += openings[locationSeed % openings.length];
+      report += openings[seed % openings.length];
     } else if (rating >= 6) {
       const openings = [
-        'Looking pretty fun out there today.',
-        'Decent waves rolling through.',
-        'Not bad at all - worth checking out.',
-        'Solid conditions for a session.',
-        'Good vibes in the water today.',
-        'Respectable surf on tap.',
+        `${personality.casual[seed % personality.casual.length]} is looking fun today.`,
+        `Solid conditions at ${personality.nickname}.`,
+        `Worth checking out ${personality.nickname} today.`,
       ];
-      report += openings[locationSeed % openings.length];
+      report += openings[seed % openings.length];
     } else if (rating >= 4) {
       const openings = [
-        'Small but rideable conditions.',
-        'Pretty mellow out there.',
-        'Not much size but it\'s clean.',
-        'Manageable conditions for all levels.',
-        'Gentle waves for a cruisy session.',
-        'Modest swell but still surfable.',
+        `Small but rideable at ${personality.nickname}.`,
+        `Mellow day at ${personality.nickname}.`,
+        `${personality.nickname} has some small waves.`,
       ];
-      report += openings[locationSeed % openings.length];
+      report += openings[seed % openings.length];
     } else {
       const openings = [
-        'Pretty flat today.',
-        'Not much happening.',
-        'Minimal surf conditions.',
-        'Small day at the beach.',
-        'Quiet conditions out there.',
-        'Low energy swell today.',
+        `${personality.disappointed[seed % personality.disappointed.length]} today.`,
+        `Pretty quiet at ${personality.nickname}.`,
+        `Minimal surf at ${personality.nickname} right now.`,
       ];
-      report += openings[locationSeed % openings.length];
+      report += openings[seed % openings.length];
     }
 
-    report += ` \n\n🌊 SURF CONDITIONS: `;
-    
-    if (rideableFaceNum >= 7) {
-      const descriptions = [
-        `A massive ${swellDir} swell is producing overhead rideable faces at ${rideableFaceNum.toFixed(1)} feet. `,
-        `Powerful ${swellDir} swell delivering overhead rideable faces measuring ${rideableFaceNum.toFixed(1)} feet. `,
-        `Significant ${swellDir} energy with rideable wave faces reaching ${rideableFaceNum.toFixed(1)} feet overhead. `,
-      ];
-      report += descriptions[locationSeed % descriptions.length];
-      
-      if (isClean) {
-        report += `The faces are clean and well-formed, offering powerful rides with plenty of push. `;
+    report += '\n\n';
+
+    // WAVE CONDITIONS - Natural, conversational language
+    if (waveHeight >= 7) {
+      report += `Overhead sets rolling in from the ${swellDir}`;
+      if (waveHeight >= 10) {
+        report += ` - we're talking ${waveHeight.toFixed(1)} foot faces, well overhead`;
       } else {
-        report += `However, the wind is creating some texture on the faces, making it challenging but still rideable for experienced surfers. `;
+        report += ` with ${waveHeight.toFixed(1)} foot faces`;
       }
-    } else if (rideableFaceNum >= 4.5) {
-      const descriptions = [
-        `A solid ${swellDir} swell is delivering chest to head high rideable faces at ${rideableFaceNum.toFixed(1)} feet. `,
-        `Quality ${swellDir} swell producing rideable wave faces at ${rideableFaceNum.toFixed(1)} feet, chest to head high. `,
-        `${swellDir} swell energy creating rideable faces measuring ${rideableFaceNum.toFixed(1)} feet from chest to overhead. `,
-      ];
-      report += descriptions[locationSeed % descriptions.length];
-      
-      if (isClean) {
-        report += `The wave faces are glassy and well-shaped, perfect for carving and generating speed. `;
-      } else {
-        report += `There's some wind chop on the faces, but the size makes up for it with plenty of power. `;
-      }
-    } else if (rideableFaceNum >= 2) {
-      const descriptions = [
-        `A small ${swellDir} swell is producing waist to chest high rideable faces at ${rideableFaceNum.toFixed(1)} feet. `,
-        `Modest ${swellDir} swell with rideable wave faces at ${rideableFaceNum.toFixed(1)} feet, waist to chest high. `,
-        `${swellDir} swell creating rideable faces measuring ${rideableFaceNum.toFixed(1)} feet, waist to chest level. `,
-      ];
-      report += descriptions[locationSeed % descriptions.length];
-      
-      if (isClean) {
-        report += `The conditions are clean and organized, ideal for practicing maneuvers and longboarding. `;
-      } else {
-        report += `The wind is adding some bump to the faces, making it a bit choppy but still fun. `;
-      }
-    } else if (rideableFaceNum >= 1) {
-      report += `Minimal swell with ankle to knee high rideable faces at ${rideableFaceNum.toFixed(1)} feet. `;
-      if (isClean) {
-        report += `Despite the small size, the faces are smooth - perfect for beginners or longboard cruising. `;
-      } else {
-        report += `The small size combined with wind chop makes it challenging, best for practicing pop-ups. `;
-      }
+    } else if (waveHeight >= 4.5) {
+      report += `Chest to head high ${swellDir} swell with ${waveHeight.toFixed(1)} foot faces`;
+    } else if (waveHeight >= 2.5) {
+      report += `Waist to chest high waves from the ${swellDir}, faces around ${waveHeight.toFixed(1)} feet`;
+    } else if (waveHeight >= 1.5) {
+      report += `Knee to waist high surf, ${waveHeight.toFixed(1)} foot faces from the ${swellDir}`;
+    } else if (waveHeight >= 0.5) {
+      report += `Ankle to knee high ripples, barely ${waveHeight.toFixed(1)} feet`;
     } else {
-      report += `Very minimal swell with rideable faces barely reaching ankle high at ${rideableFaceNum.toFixed(1)} feet. Better suited for swimming or stand-up paddleboarding than surfing today. `;
+      report += `Essentially flat - less than a foot`;
     }
-
-    if (periodNum >= 12) {
-      report += `Wave period is ${periodNum.toFixed(0)} seconds, which is excellent - these are long-period groundswells that pack serious punch and create well-defined sets with longer rides. `;
-    } else if (periodNum >= 10) {
-      report += `Wave period is ${periodNum.toFixed(0)} seconds, indicating a good quality swell with decent power and organized sets. `;
-    } else if (periodNum >= 8) {
-      report += `Wave period is ${periodNum.toFixed(0)} seconds, providing moderate energy with reasonably spaced sets. `;
-    } else if (periodNum >= 6) {
-      report += `Wave period is ${periodNum.toFixed(0)} seconds, which is on the shorter side - expect more frequent but less powerful waves with shorter rides. `;
-    } else if (periodNum > 0) {
-      report += `Short wave period at ${periodNum.toFixed(0)} seconds means choppy, wind-driven waves with limited power. `;
-    }
-
-    report += '\n\n💨 WIND CONDITIONS: ';
     
+    report += '. ';
+
+    // WAVE PERIOD - Natural description
+    if (period >= 12) {
+      report += `Long ${period.toFixed(0)} second intervals mean powerful groundswell with clean sets and long rides.`;
+    } else if (period >= 10) {
+      report += `${period.toFixed(0)} second period - decent power and organized sets.`;
+    } else if (period >= 8) {
+      report += `${period.toFixed(0)} second period gives moderate energy, reasonably spaced waves.`;
+    } else if (period >= 6) {
+      report += `Shorter ${period.toFixed(0)} second period means more frequent but weaker waves.`;
+    } else if (period > 0) {
+      report += `Quick ${period.toFixed(0)} second period - choppy wind swell with limited power.`;
+    }
+
+    report += '\n\n';
+
+    // WIND - Conversational and informative
     if (isOffshore) {
-      if (windSpeedNum < 5) {
-        report += `Nearly calm offshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are creating pristine, glassy conditions. `;
-      } else if (windSpeedNum < 10) {
-        report += `Light offshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are grooming the wave faces beautifully. `;
-      } else if (windSpeedNum < 15) {
-        report += `Moderate offshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are holding up the wave faces nicely. `;
-      } else if (windSpeedNum < 20) {
-        report += `Strong offshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are blowing hard - making paddling challenging. `;
+      if (windSpeed < 5) {
+        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze - glassy conditions.`;
+      } else if (windSpeed < 10) {
+        report += `${windSpeed.toFixed(0)} mph offshore ${windDir} wind grooming the faces nicely.`;
+      } else if (windSpeed < 15) {
+        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore - holding up the faces but getting strong.`;
+      } else if (windSpeed < 20) {
+        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore making it tough to paddle out.`;
       } else {
-        report += `Very strong offshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are creating difficult conditions. The wind is so strong it's blowing the tops off waves and making it hard to paddle. `;
+        report += `Howling ${windSpeed.toFixed(0)} mph ${windDir} offshore - blowing the tops off and making it difficult.`;
       }
     } else {
-      if (windSpeedNum < 5) {
-        report += `Nearly calm onshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} aren't causing much texture. `;
-      } else if (windSpeedNum < 8) {
-        report += `Light onshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are adding slight texture but still surfable. `;
-      } else if (windSpeedNum < 12) {
-        report += `Moderate onshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are creating noticeable chop. `;
-      } else if (windSpeedNum < 18) {
-        report += `Strong onshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are making conditions quite choppy. `;
+      if (windSpeed < 5) {
+        report += `Calm ${windSpeed.toFixed(0)} mph ${windDir} wind - minimal texture.`;
+      } else if (windSpeed < 8) {
+        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} onshore adding slight chop.`;
+      } else if (windSpeed < 12) {
+        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore creating bumpy conditions.`;
+      } else if (windSpeed < 18) {
+        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore - pretty choppy out there.`;
       } else {
-        report += `Very strong onshore winds at ${windSpeedNum.toFixed(0)} mph from the ${windDir} are creating blown-out conditions. `;
+        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} onshore - blown out and messy.`;
       }
     }
 
-    if (weatherData) {
-      report += '\n\n☀️ WEATHER: ';
-      const weatherConditions = weatherData.conditions || weatherData.short_forecast || 'Weather data unavailable';
-      const airTempNum = parseNumericValue(weatherData.temperature, 0);
-      const airTempText = airTempNum > 0 ? `${airTempNum.toFixed(0)}°F` : 'temperature unavailable';
-      
-      report += `Current conditions are ${weatherConditions.toLowerCase()}`;
-      if (airTempNum > 0) {
-        report += ` with air temperature at ${airTempText}`;
-      }
-      report += `. `;
-      
-      if (waterTempNum > 0) {
-        report += `Water temperature is ${waterTempNum.toFixed(0)}°F`;
-        
-        if (waterTempNum >= 75) {
-          report += `, which is warm - boardshorts or a spring suit will do. `;
-        } else if (waterTempNum >= 68) {
-          report += `, which is pleasant - a spring suit or thin wetsuit recommended. `;
-        } else if (waterTempNum >= 60) {
-          report += `, which is cool - a 3/2mm wetsuit is recommended for comfort. `;
-        } else if (waterTempNum >= 50) {
-          report += `, which is cold - you'll want a 4/3mm wetsuit with booties. `;
-        } else {
-          report += `, which is very cold - a 5/4mm wetsuit with hood, gloves, and booties is essential. `;
-        }
-      }
+    report += '\n\n';
+
+    // WEATHER & WATER TEMP - Combined naturally
+    const airTempText = airTemp > 0 ? `${airTemp.toFixed(0)}°F air` : '';
+    const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F water` : '';
+    
+    if (airTempText && waterTempText) {
+      report += `${weatherConditions} with ${airTempText}, ${waterTempText}. `;
+    } else if (waterTempText) {
+      report += `${weatherConditions}, ${waterTempText}. `;
+    } else {
+      report += `${weatherConditions}. `;
+    }
+    
+    // Wetsuit recommendation
+    if (waterTemp >= 75) {
+      report += `Boardshorts weather.`;
+    } else if (waterTemp >= 68) {
+      report += `Spring suit or thin wetsuit recommended.`;
+    } else if (waterTemp >= 60) {
+      report += `3/2mm wetsuit will keep you comfortable.`;
+    } else if (waterTemp >= 50) {
+      report += `4/3mm wetsuit with booties needed.`;
+    } else if (waterTemp > 0) {
+      report += `5/4mm with hood, gloves, and booties - it's cold.`;
     }
 
-    // TIDE SCHEDULE with proper time formatting
+    // TIDE - Simplified and actionable
     if (tideData && tideData.length > 0) {
-      report += '\n\n🌙 TIDE SCHEDULE: ';
+      report += '\n\n';
       
-      // Find current tide phase
       const now = new Date();
       const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
       const currentTimeStr = estNow.toLocaleTimeString('en-US', { 
@@ -709,76 +663,73 @@ function generateWittyNarrative(
         timeZone: 'America/New_York'
       });
       
-      let currentTidePhase = '';
+      let tidePhase = '';
       for (let i = 0; i < tideData.length - 1; i++) {
         const currentTide = tideData[i];
         const nextTide = tideData[i + 1];
         
         if (currentTimeStr >= currentTide.time && currentTimeStr < nextTide.time) {
-          const currentHeight = parseNumericValue(currentTide.height, 0);
-          const nextHeight = parseNumericValue(nextTide.height, 0);
-          
           if (currentTide.type.toLowerCase() === 'low') {
-            currentTidePhase = `Currently on an incoming tide (rising from ${currentHeight.toFixed(2)} ft low to ${nextHeight.toFixed(2)} ft high at ${nextTide.time}). `;
+            tidePhase = `Tide is coming in`;
           } else {
-            currentTidePhase = `Currently on an outgoing tide (dropping from ${currentHeight.toFixed(2)} ft high to ${nextHeight.toFixed(2)} ft low at ${nextTide.time}). `;
+            tidePhase = `Tide is going out`;
           }
           break;
         }
       }
       
-      report += currentTidePhase;
-      report += `Today's tide schedule: `;
+      if (tidePhase) {
+        report += `${tidePhase}. `;
+      }
       
-      const tideDescriptions = tideData.map(t => {
-        const tideType = t.type.toLowerCase() === 'high' ? 'High' : 'Low';
+      const tideList = tideData.map(t => {
         const height = parseNumericValue(t.height, 0);
-        return `${tideType} tide at ${t.time} (${height.toFixed(2)} ft)`;
-      });
+        return `${t.type} ${t.time} (${height.toFixed(1)}ft)`;
+      }).join(', ');
       
-      report += tideDescriptions.join(', ');
-      report += `. `;
+      report += `Today's tides: ${tideList}.`;
       
-      // Add tide advice based on surf size
-      if (rideableFaceNum >= 4) {
-        report += `With this size swell, mid to high tide will offer the best shape and power. `;
-      } else if (rideableFaceNum >= 2) {
-        report += `Mid tide usually offers the best balance of wave shape and rideable sections. `;
+      // Tide advice
+      if (waveHeight >= 4) {
+        report += ` Mid to high tide will be best for this size.`;
+      } else if (waveHeight >= 2) {
+        report += ` Mid tide usually works best.`;
       } else {
-        report += `Low to mid tide might give you the best chance at catching the available waves. `;
+        report += ` Low to mid tide might give you the best shot.`;
       }
     }
 
-    report += '\n\n📋 RECOMMENDATION: ';
-    
+    report += '\n\n';
+
+    // RECOMMENDATION - Clear and actionable
     if (rating >= 8) {
-      const closings = [
-        'Drop everything and get out here! These are the conditions you dream about.',
-        'This is the one you don\'t want to miss! Everything is lining up perfectly.',
-        'Absolutely worth the session! Premium conditions like this don\'t come around often.',
+      const recs = [
+        `Get out there! This is what you've been waiting for.`,
+        `Drop everything - these conditions are prime.`,
+        `Don't miss this one. Everything is lining up.`,
       ];
-      report += selectRandom(closings);
+      report += recs[seed % recs.length];
     } else if (rating >= 6) {
-      const closings = [
-        'Definitely worth checking out if you\'ve got time. The conditions are solid.',
-        'Should be a fun session. Nothing epic, but definitely good enough to make it worth your while.',
-        'Worth the paddle out. You\'ll get plenty of waves and have a good time.',
+      const recs = [
+        `Worth the paddle out. Should be a fun session.`,
+        `Definitely surf-worthy if you've got time.`,
+        `Good enough to make it worth your while.`,
       ];
-      report += selectRandom(closings);
+      report += recs[seed % recs.length];
     } else if (rating >= 4) {
-      const closings = [
-        'Could be fun for beginners or longboarders. Perfect for learning or cruising.',
-        'Decent for a mellow session. Great for working on technique.',
-        'Not epic but rideable. Perfect for a casual session.',
+      const recs = [
+        `Decent for beginners or longboarders. Mellow session vibes.`,
+        `Small but rideable. Good for working on technique.`,
+        `Not epic but you can catch waves. Perfect for learning.`,
       ];
-      report += selectRandom(closings);
+      report += recs[seed % recs.length];
     } else {
-      const closings = [
-        'Maybe wait for the next swell. The conditions today are pretty minimal and you\'d probably have more fun doing something else. Check back tomorrow or later this week.',
-        'Not really worth it today. Better to wait for when conditions improve.',
-        'Pretty minimal today. Save your energy for a better swell.',
+      const recs = [
+        `Save your energy for a better swell. Not much out there today.`,
+        `Probably not worth it. Wait for conditions to improve.`,
+        `Pretty minimal. Check back tomorrow or later this week.`,
       ];
-      report += selectRandom(closings);
+      report += recs[seed % recs.length];
     }
 
     return report;
