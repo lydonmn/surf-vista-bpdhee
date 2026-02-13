@@ -868,6 +868,34 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
+      {profile?.is_regional_admin && !profile.is_admin && (
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/admin-regional')}
+        >
+          <View style={styles.cardHeader}>
+            <IconSymbol
+              ios_icon_name="map.fill"
+              android_material_icon_name="place"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Regional Admin Panel
+            </Text>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </View>
+          <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            Upload videos and manage surf data for your assigned locations
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
         <TouchableOpacity
           style={styles.actionItem}

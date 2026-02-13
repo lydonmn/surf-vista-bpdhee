@@ -27,6 +27,8 @@ interface AuthContextType {
   refreshSession: () => Promise<void>;
   checkSubscription: () => boolean;
   isAdmin: () => boolean;
+  isRegionalAdmin: () => boolean;
+  canManageLocation: (locationId: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -484,6 +486,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return profile?.is_admin || false;
   }, [profile]);
 
+  const isRegionalAdmin = useCallback((): boolean => {
+    return profile?.is_regional_admin || false;
+  }, [profile]);
+
+  const canManageLocation = useCallback((locationId: string): boolean => {
+    // Super admins can manage all locations
+    if (profile?.is_admin) {
+      return true;
+    }
+    
+    // Regional admins can only manage their assigned locations
+    if (profile?.is_regional_admin && profile.managed_locations) {
+      return profile.managed_locations.includes(locationId);
+    }
+    
+    return false;
+  }, [profile]);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -498,7 +518,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile,
       refreshSession,
       checkSubscription,
-      isAdmin 
+      isAdmin,
+      isRegionalAdmin,
+      canManageLocation
     }}>
       {children}
     </AuthContext.Provider>

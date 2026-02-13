@@ -39,14 +39,33 @@ export default function AdminScreen() {
   const { user, profile } = useAuth();
   const { refreshVideos } = useVideos();
   const { locations } = useLocation();
+  const [availableLocations, setAvailableLocations] = useState<typeof locations>([]);
 
+  // Determine which locations this user can upload to
   useEffect(() => {
-    if (profile && !profile.is_admin) {
-      console.log('[AdminScreen] User is not admin, redirecting...');
-      Alert.alert('Access Denied', 'You do not have admin privileges');
-      router.back();
+    if (profile) {
+      if (profile.is_admin) {
+        // Super admin can upload to all locations
+        console.log('[AdminScreen] Super admin - all locations available');
+        setAvailableLocations(locations);
+      } else if (profile.is_regional_admin && profile.managed_locations) {
+        // Regional admin can only upload to their managed locations
+        console.log('[AdminScreen] Regional admin - filtering to managed locations:', profile.managed_locations);
+        const managedLocs = locations.filter(loc => profile.managed_locations?.includes(loc.id));
+        setAvailableLocations(managedLocs);
+        
+        // Set default to first managed location
+        if (managedLocs.length > 0 && !profile.managed_locations.includes(selectedLocation)) {
+          setSelectedLocation(managedLocs[0].id);
+        }
+      } else {
+        // Not an admin
+        console.log('[AdminScreen] User is not admin, redirecting...');
+        Alert.alert('Access Denied', 'You do not have admin privileges');
+        router.back();
+      }
     }
-  }, [profile]);
+  }, [profile, locations, selectedLocation]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -182,6 +201,14 @@ export default function AdminScreen() {
     if (!user) {
       Alert.alert('Error', 'You must be logged in to upload videos');
       return;
+    }
+
+    // Check if regional admin is trying to upload to a location they don't manage
+    if (profile?.is_regional_admin && !profile.is_admin) {
+      if (!profile.managed_locations?.includes(selectedLocation)) {
+        Alert.alert('Access Denied', 'You can only upload videos to your assigned locations');
+        return;
+      }
     }
 
     try {
@@ -341,7 +368,11 @@ export default function AdminScreen() {
       setVideoTitle('');
       setVideoDescription('');
       setUploadProgress(0);
-      setSelectedLocation('folly-beach');
+      
+      // Reset to first available location
+      if (availableLocations.length > 0) {
+        setSelectedLocation(availableLocations[0].id);
+      }
 
       await refreshVideos();
     } catch (error: any) {
@@ -361,7 +392,7 @@ export default function AdminScreen() {
     return bytes;
   };
 
-  if (!profile?.is_admin) {
+  if (!profile?.is_admin && !profile?.is_regional_admin) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -374,17 +405,20 @@ export default function AdminScreen() {
     );
   }
 
-  const locationInfoText = `Videos are automatically tagged to locations. When users select a location on the homepage, they'll see the latest video for that location in the large video card.`;
+  const locationInfoText = profile?.is_regional_admin && !profile.is_admin
+    ? `You can upload videos to your assigned locations. Videos are automatically tagged and will appear on the homepage when users select that location.`
+    : `Videos are automatically tagged to locations. When users select a location on the homepage, they'll see the latest video for that location in the large video card.`;
+
+  const titleText = profile?.is_regional_admin && !profile.is_admin ? 'Regional Admin Panel' : 'Admin Panel';
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Admin Panel</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>{titleText}</Text>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Upload Video</Text>
 
-          {/* ✅ NEW: Location-aware video upload info */}
           <View style={styles.infoCard}>
             <View style={styles.infoHeader}>
               <IconSymbol
@@ -449,9 +483,16 @@ export default function AdminScreen() {
           />
 
           <View style={styles.locationSection}>
-            <Text style={[styles.label, { color: theme.colors.text }]}>📍 Select Location for This Video:</Text>
+            <Text style={[styles.label, { color: theme.colors.text }]}>
+              📍 Select Location for This Video:
+            </Text>
+            {profile?.is_regional_admin && !profile.is_admin && (
+              <Text style={styles.helperText}>
+                You can only upload to your assigned locations
+              </Text>
+            )}
             <View style={styles.locationButtons}>
-              {locations.map((location) => {
+              {availableLocations.map((location) => {
                 const isSelected = selectedLocation === location.id;
                 return (
                   <TouchableOpacity
@@ -518,77 +559,100 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Quick Actions</Text>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/admin-users')}
-          >
-            <IconSymbol
-              ios_icon_name="person.2.fill"
-              android_material_icon_name="group"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.actionButtonText}>Manage Regional Admins</Text>
-          </TouchableOpacity>
+        {/* Only show admin actions for super admins */}
+        {profile?.is_admin && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Admin Actions</Text>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin-users')}
+            >
+              <IconSymbol
+                ios_icon_name="person.2.fill"
+                android_material_icon_name="group"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Manage Regional Admins</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/admin-data')}
-          >
-            <IconSymbol
-              ios_icon_name="arrow.clockwise.circle.fill"
-              android_material_icon_name="refresh"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.actionButtonText}>Update Surf Data</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin-data')}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.clockwise.circle.fill"
+                android_material_icon_name="refresh"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Update Surf Data (All Locations)</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/admin-locations')}
-          >
-            <IconSymbol
-              ios_icon_name="map.fill"
-              android_material_icon_name="place"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.actionButtonText}>Manage Locations</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin-locations')}
+            >
+              <IconSymbol
+                ios_icon_name="map.fill"
+                android_material_icon_name="place"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Manage Locations</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/admin-debug')}
-          >
-            <IconSymbol
-              ios_icon_name="wrench.and.screwdriver.fill"
-              android_material_icon_name="settings"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.actionButtonText}>Debug Tools</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin-debug')}
+            >
+              <IconSymbol
+                ios_icon_name="wrench.and.screwdriver.fill"
+                android_material_icon_name="settings"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Debug Tools</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.accent }]}
-            onPress={() => {
-              console.log('[AdminScreen] Navigating to demo paywall for screenshots');
-              router.push('/demo-paywall');
-            }}
-          >
-            <IconSymbol
-              ios_icon_name="creditcard.fill"
-              android_material_icon_name="payment"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.actionButtonText}>Show Demo Paywall</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to demo paywall for screenshots');
+                router.push('/demo-paywall');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="creditcard.fill"
+                android_material_icon_name="payment"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Show Demo Paywall</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Regional admin actions */}
+        {profile?.is_regional_admin && !profile.is_admin && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Regional Admin Actions</Text>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/admin-regional')}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.clockwise.circle.fill"
+                android_material_icon_name="refresh"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Manage Your Locations</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -693,6 +757,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
+    marginBottom: 8,
+  },
+  helperText: {
+    fontSize: 13,
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   locationButtons: {
