@@ -183,9 +183,10 @@ export default function AdminDataScreen() {
   };
 
   const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
-    console.log(`[AdminDataScreen] Generating report for ${locationName}`);
+    console.log(`[AdminDataScreen] Generating report for ${locationName} (manual trigger)`);
     setLoadingLocationId(locationId);
-    addLog(`📝 Generating conditions narrative for ${locationName}...`, 'info');
+    addLog(`📝 Generating report for ${locationName}...`, 'info');
+    addLog(`ℹ️ Manual trigger: Will use most recent available data from today`, 'info');
 
     try {
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
@@ -204,8 +205,15 @@ export default function AdminDataScreen() {
         
         if (locationResult?.success) {
           const waveStatus = locationResult.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
-          addLog(`✅ ${locationName}: Report generated (${waveStatus})`, 'success');
-          Alert.alert('Success', `Report generated for ${locationName}!\n\n${waveStatus}`);
+          const fallbackNote = locationResult.usedFallbackData ? ' (using most recent data)' : '';
+          addLog(`✅ ${locationName}: Report generated (${waveStatus}${fallbackNote})`, 'success');
+          
+          let alertMessage = `Report generated for ${locationName}!\n\n${waveStatus}`;
+          if (locationResult.usedFallbackData) {
+            alertMessage += '\n\nℹ️ Used most recent available data from today';
+          }
+          
+          Alert.alert('Success', alertMessage);
         } else {
           const errorMsg = locationResult?.error || 'Unknown error';
           addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
@@ -269,6 +277,7 @@ export default function AdminDataScreen() {
 
       // Step 2: Generate reports for all locations
       addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
+      addLog(`ℹ️ Manual trigger: Will use most recent available data if new data isn't ready`, 'info');
       
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
         body: {}
@@ -305,7 +314,8 @@ export default function AdminDataScreen() {
               addLog(`  ✅ ${result.location}: Report already exists`, 'info');
             } else {
               const waveStatus = result.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
-              addLog(`  ✅ ${result.location}: Report generated (${waveStatus})`, 'success');
+              const fallbackNote = result.usedFallbackData ? ' (used recent data)' : '';
+              addLog(`  ✅ ${result.location}: Report generated (${waveStatus}${fallbackNote})`, 'success');
             }
           } else {
             addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
@@ -315,14 +325,15 @@ export default function AdminDataScreen() {
         const resultDetails = results.map((r: any) => {
           if (r.success) {
             const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
-            return `${r.location}: ✅ ${waveIcon}`;
+            const fallbackIcon = r.usedFallbackData ? ' 📅' : '';
+            return `${r.location}: ✅ ${waveIcon}${fallbackIcon}`;
           }
           return `${r.location}: ❌`;
         }).join('\n');
         
         Alert.alert(
           'Success!',
-          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline (wind/temp data only)`,
+          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline\n📅 = Used recent data`,
           [{ text: 'OK' }]
         );
         
@@ -375,8 +386,10 @@ export default function AdminDataScreen() {
 
 • 6:00 AM EST: Generate initial conditions narrative for ALL locations
 ${locationListText}
+  - Retries up to 10 times (up to 15 min) until sufficient data is available
+  - Will NOT fail if wave sensors are offline - uses wind/temp data
 • Every 15 min (6 AM - 9 PM): Update buoy data only (narrative preserved)
-• Failed fetches preserve existing data
+• Manual triggers: Use most recent available data from today
 
 The system automatically generates separate reports for each location every morning at 6 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
   const sectionTitleText2 = 'Activity Log';
@@ -446,7 +459,7 @@ The system automatically generates separate reports for each location every morn
         <View style={styles.mainActionCard}>
           <Text style={styles.mainActionTitle}>🚀 Bulk Actions</Text>
           <Text style={styles.mainActionDescription}>
-            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. This is the same process that runs automatically at 6 AM EST every day.
+            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. Manual triggers will use the most recent available data from today if new data isn't ready yet.
           </Text>
           <TouchableOpacity
             style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
@@ -574,7 +587,7 @@ The system automatically generates separate reports for each location every morn
                 {!report.waveSensorsOnline && (
                   <View style={styles.warningBanner}>
                     <Text style={styles.warningText}>
-                      ⚠️ NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online.
+                      ⚠️ NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online. Manual triggers will use the most recent available data.
                     </Text>
                   </View>
                 )}
