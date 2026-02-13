@@ -215,6 +215,7 @@ export default function HomeScreen() {
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
+  const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
   console.log('[HomeScreen] ===== NARRATIVE DISPLAY =====');
   console.log('[HomeScreen] Location:', locationData.displayName);
@@ -222,6 +223,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
   console.log('[HomeScreen] Is custom (edited):', isCustomReport);
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
+  console.log('[HomeScreen] Is from today:', isReportFromToday);
 
   const waveHeightDisplay = todaysReport?.wave_height || todaysReport?.surf_height || 'N/A';
   const windDisplay = todaysReport?.wind_speed && todaysReport?.wind_direction 
@@ -243,13 +245,6 @@ export default function HomeScreen() {
         />
       }
     >
-      <View style={styles.headerSection}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Home
-        </Text>
-        <LocationSelector />
-      </View>
-
       {error && (
         <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
           <IconSymbol
@@ -267,7 +262,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* VIDEO CARD - NOW AT THE VERY TOP */}
+      {/* VIDEO CARD - AT THE VERY TOP */}
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         {isLoadingVideo ? (
           <View style={styles.loadingContainer}>
@@ -319,72 +314,38 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* CURRENT CONDITIONS */}
+      {/* LOCATION SELECTOR - BELOW VIDEO */}
+      <View style={styles.locationSelectorContainer}>
+        <LocationSelector />
+      </View>
+
+      {/* DATE - BELOW LOCATION SELECTOR */}
       {todaysReport && (
-        <View style={[styles.conditionsCard, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
-            Current Conditions
+        <View style={styles.dateContainer}>
+          <Text style={[styles.dateText, { color: theme.colors.text }]}>
+            {new Date(todaysReport.date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric'
+            })}
           </Text>
-          
-          <View style={styles.mainCondition}>
-            <Text style={[styles.temperature, { color: theme.colors.text }]}>
-              {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
-            </Text>
-            <Text style={[styles.weatherDescription, { color: colors.textSecondary }]}>
-              {todaysReport.weather_description || 'Clear'}
-            </Text>
-          </View>
-
-          <View style={styles.conditionsGrid}>
-            <View style={styles.conditionItem}>
+          {!isReportFromToday && (
+            <View style={styles.oldDataBadge}>
               <IconSymbol
-                ios_icon_name="wind"
-                android_material_icon_name="air"
-                size={20}
-                color={colors.textSecondary}
+                ios_icon_name="clock"
+                android_material_icon_name="schedule"
+                size={12}
+                color={colors.accent}
               />
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                {windDisplay}
+              <Text style={[styles.oldDataText, { color: colors.accent }]}>
+                Most recent report
               </Text>
             </View>
-
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="drop.fill"
-                android_material_icon_name="water-drop"
-                size={20}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                Water: {waterTempDisplay}
-              </Text>
-            </View>
-
-            <View style={styles.conditionItem}>
-              <IconSymbol
-                ios_icon_name="humidity.fill"
-                android_material_icon_name="water-drop"
-                size={20}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                Humidity: {todaysReport.humidity ? `${todaysReport.humidity}%` : '0%'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.ratingSection}>
-            <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
-              Stoke Rating
-            </Text>
-            <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
-              <Text style={styles.ratingText}>--/10</Text>
-            </View>
-          </View>
+          )}
         </View>
       )}
 
-      {/* SURF REPORT */}
+      {/* CONSOLIDATED REPORT & CONDITIONS */}
       {surfLoading && !isRefreshing ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -408,107 +369,119 @@ export default function HomeScreen() {
           </Text>
         </View>
       ) : (
-        <>
-          <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.reportHeader}>
-              <View style={styles.reportHeaderLeft}>
-                <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-                  {new Date(todaysReport.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </Text>
-                <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
-                  {locationData.displayName}
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
-              <Text style={[styles.conditionsBoxTitle, { color: colors.reportText }]}>
-                Surf Report
+        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
+          {/* CURRENT CONDITIONS SECTION */}
+          <View style={styles.conditionsSection}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Current Conditions
+            </Text>
+            
+            <View style={styles.mainCondition}>
+              <Text style={[styles.temperature, { color: theme.colors.text }]}>
+                {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
               </Text>
-              {narrativeText ? (
-                <>
-                  <ReportTextDisplay 
-                    text={narrativeText}
-                    isCustom={isCustomReport}
-                  />
-                  {todaysReport.report_text && todaysReport.edited_at && (
-                    <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                      Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
-                    </Text>
-                  )}
-                </>
-              ) : (
-                <Text style={[styles.conditionsText, { color: colors.reportText }]}>
-                  No surf conditions narrative available for {locationData.displayName}.
-                </Text>
-              )}
+              <Text style={[styles.weatherDescription, { color: colors.textSecondary }]}>
+                {todaysReport.weather_description || 'Clear'}
+              </Text>
             </View>
 
-            <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
+            <View style={styles.conditionsGrid}>
+              <View style={styles.conditionItem}>
                 <IconSymbol
                   ios_icon_name="water.waves"
                   android_material_icon_name="waves"
-                  size={24}
+                  size={20}
                   color={colors.primary}
                 />
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  Wave Height
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                  Waves
                 </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                   {waveHeightDisplay}
                 </Text>
               </View>
 
-              <View style={styles.statCard}>
+              <View style={styles.conditionItem}>
                 <IconSymbol
                   ios_icon_name="wind"
                   android_material_icon_name="air"
-                  size={24}
+                  size={20}
                   color={colors.primary}
                 />
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
                   Wind
                 </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                   {windDisplay}
                 </Text>
               </View>
 
-              <View style={styles.statCard}>
+              <View style={styles.conditionItem}>
                 <IconSymbol
-                  ios_icon_name="thermometer"
-                  android_material_icon_name="thermostat"
-                  size={24}
+                  ios_icon_name="drop.fill"
+                  android_material_icon_name="water-drop"
+                  size={20}
                   color={colors.primary}
                 />
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  Water Temp
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                  Water
                 </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                   {waterTempDisplay}
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.detailsButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/(tabs)/report')}
-            >
-              <Text style={styles.detailsButtonText}>View Full Report</Text>
-              <IconSymbol
-                ios_icon_name="chevron.right"
-                android_material_icon_name="chevron-right"
-                size={20}
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
+            <View style={styles.ratingSection}>
+              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
+                Stoke Rating
+              </Text>
+              <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
+                <Text style={styles.ratingText}>
+                  {ratingValue}/10
+                </Text>
+              </View>
+            </View>
           </View>
-        </>
+
+          {/* SURF REPORT NARRATIVE */}
+          <View style={[styles.reportNarrativeSection, { borderTopColor: 'rgba(0, 0, 0, 0.1)' }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Surf Report
+            </Text>
+            
+            {narrativeText ? (
+              <>
+                <ReportTextDisplay 
+                  text={narrativeText}
+                  isCustom={isCustomReport}
+                />
+                {todaysReport.report_text && todaysReport.edited_at && (
+                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                    Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
+                  </Text>
+                )}
+              </>
+            ) : (
+              <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
+                No surf conditions narrative available for {locationData.displayName}.
+              </Text>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.detailsButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/(tabs)/report')}
+          >
+            <Text style={styles.detailsButtonText}>View Full Report</Text>
+            <IconSymbol
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
@@ -526,18 +499,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 48,
+    paddingTop: 16,
     paddingBottom: 100,
   },
-  headerSection: {
+  locationSelectorContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  dateContainer: {
     paddingHorizontal: 16,
     marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    letterSpacing: -0.5,
+  dateText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  oldDataBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  oldDataText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   centerContent: {
     flex: 1,
@@ -693,7 +680,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  conditionsCard: {
+  reportCard: {
     borderRadius: 16,
     padding: 20,
     marginHorizontal: 16,
@@ -701,7 +688,10 @@ const styles = StyleSheet.create({
     boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
     elevation: 4,
   },
-  conditionsTitle: {
+  conditionsSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 16,
@@ -727,9 +717,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  conditionLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
   conditionValue: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   ratingSection: {
     flexDirection: 'row',
@@ -755,71 +750,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  reportCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
-    elevation: 4,
-  },
-  reportHeader: {
+  reportNarrativeSection: {
+    paddingTop: 24,
+    borderTopWidth: 1,
     marginBottom: 20,
   },
-  reportHeaderLeft: {
-    flex: 1,
-    gap: 6,
-  },
-  reportDate: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  reportSubtitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  conditionsBox: {
-    padding: 18,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  conditionsBoxTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  conditionsText: {
+  noReportText: {
     fontSize: 14,
     lineHeight: 22,
+    fontStyle: 'italic',
   },
   editedNote: {
     fontSize: 11,
     fontStyle: 'italic',
     marginTop: 10,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 122, 255, 0.08)',
-    gap: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
   },
   detailsButton: {
     flexDirection: 'row',
