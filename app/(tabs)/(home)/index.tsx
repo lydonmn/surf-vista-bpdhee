@@ -11,7 +11,7 @@ import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { formatWaterTemp, formatLastUpdated, getESTDate } from "@/utils/surfDataFormatter";
+import { formatWaterTemp, getESTDate } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 
@@ -35,8 +35,6 @@ export default function HomeScreen() {
       console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
     }
   });
-
-  const isDarkMode = theme.dark;
 
   const todayDate = useMemo(() => getESTDate(), []);
 

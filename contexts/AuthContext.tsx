@@ -38,16 +38,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   
-  // ✅ V6.0.2 FIX: Prevent multiple simultaneous initializations
   const isInitializingRef = useRef(false);
 
-  // ✅ V7.0 FIX: Enhanced push token registration with better error handling
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
       console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
       console.log('[AuthContext] 📲 User ID:', userId);
       
-      // Use the new ensurePushTokenRegistered function
       await ensurePushTokenRegistered(userId);
       
       console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
@@ -56,12 +53,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // ✅ V6.0.2 FIX: Simple, stable profile loader with timeout protection
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
       
-      // ✅ V6.0.2 FIX: Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Profile load timeout')), 10000)
       );
@@ -82,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        // ✅ V7.0 FIX: Register push token if needed (runs in background)
         registerPushTokenIfNeeded(authUser.id);
         return;
       }
@@ -108,13 +102,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // ✅ V6.0.2 FIX: Always set user even if profile fails
       console.log('[AuthContext] ⚠️ Profile load failed, setting user without profile');
       setProfile(null);
       setUser({ ...authUser });
     } catch (error) {
       console.error('[AuthContext] Exception loading profile:', error);
-      // ✅ V6.0.2 FIX: Always set user even on exception
       setProfile(null);
       setUser({ ...authUser });
     }
@@ -182,9 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // ✅ V6.0.2 FIX: Single initialization effect with proper guards
   useEffect(() => {
-    // Prevent multiple initializations
     if (isInitializingRef.current) {
       console.log('[AuthContext] Already initializing, skipping...');
       return;
@@ -226,14 +216,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await loadUserProfile(initialSession.user);
         }
         
-        // ✅ V6.0.2 CRITICAL FIX: ALWAYS complete initialization
         if (mounted) {
           console.log('[AuthContext] ✅ Initialization complete - setting isLoading=false, isInitialized=true');
           setIsLoading(false);
           setIsInitialized(true);
         }
 
-        // Initialize RevenueCat in background (non-blocking)
         if (mounted && Platform.OS !== 'web') {
           console.log('[AuthContext] 💳 Starting RevenueCat...');
           
@@ -253,7 +241,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
       } catch (error) {
         console.error('[AuthContext] ❌ Initialization error:', error);
-        // ✅ V6.0.2 CRITICAL FIX: ALWAYS complete initialization even on error
         if (mounted) {
           console.log('[AuthContext] ✅ Completing initialization despite error');
           setIsLoading(false);
@@ -266,7 +253,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
-    // ✅ V6.0.2 FIX: Simplified auth state listener
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
@@ -323,14 +309,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []); // ✅ V6.0.2 CRITICAL: Empty dependency array - only run once
+  }, [loadUserProfile]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
       
-      // ✅ V7.0 FIX: Also check push token when refreshing profile
       await registerPushTokenIfNeeded(session.user.id);
     }
   }, [session, loadUserProfile, registerPushTokenIfNeeded]);

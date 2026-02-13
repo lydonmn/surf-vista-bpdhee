@@ -1,3 +1,4 @@
+
 // Global error logging for runtime errors
 // Captures console.log/warn/error and sends to Natively server for AI debugging
 
@@ -25,7 +26,7 @@ const shouldMuteMessage = (message: string): boolean => {
 };
 
 // Queue for batching logs
-let logQueue: Array<{ level: string; message: string; source: string; timestamp: string; platform: string }> = [];
+let logQueue: { level: string; message: string; source: string; timestamp: string; platform: string }[] = [];
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_INTERVAL = 500; // Flush every 500ms
 
@@ -80,7 +81,7 @@ const getLogServerUrl = (): string | null => {
         }
       }
     }
-  } catch (e) {
+  } catch {
     // Silently fail
   }
 
@@ -111,17 +112,16 @@ const flushLogs = async () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(log),
-      }).catch((e) => {
+      }).catch(() => {
         // Log fetch errors only once to avoid spam
         if (!fetchErrorLogged) {
           fetchErrorLogged = true;
-          // Use a different method to avoid recursion - write directly without going through our intercept
           if (typeof window !== 'undefined' && window.console) {
-            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat):', e.message || e);
+            (window.console as any).__proto__.log.call(console, '[Natively] Fetch error (will not repeat)');
           }
         }
       });
-    } catch (e) {
+    } catch {
       // Silently ignore sync errors
     }
   }
@@ -176,43 +176,23 @@ const sendErrorToParent = (level: string, message: string, data: any) => {
         source: 'expo-template'
       }, '*');
     }
-  } catch (error) {
+  } catch {
     // Silently fail
   }
 };
 
-// Function to extract meaningful source location from stack trace
-const extractSourceLocation = (stack: string): string => {
-  if (!stack) return '';
-
-  // Look for various patterns in the stack trace
-  const patterns = [
-    // Pattern for app files: app/filename.tsx:line:column
-    /at .+\/(app\/[^:)]+):(\d+):(\d+)/,
-    // Pattern for components: components/filename.tsx:line:column
-    /at .+\/(components\/[^:)]+):(\d+):(\d+)/,
-    // Pattern for any .tsx/.ts files
-    /at .+\/([^/]+\.tsx?):(\d+):(\d+)/,
-    // Pattern for bundle files with source maps
-    /at .+\/([^/]+\.bundle[^:]*):(\d+):(\d+)/,
-    // Pattern for any JavaScript file
-    /at .+\/([^/\s:)]+\.[jt]sx?):(\d+):(\d+)/
-  ];
-
-  for (const pattern of patterns) {
-    const match = stack.match(pattern);
-    if (match) {
-      return `${match[1]}:${match[2]}:${match[3]}`;
+// Helper to safely stringify arguments
+const stringifyArgs = (args: any[]): string => {
+  return args.map(arg => {
+    if (typeof arg === 'string') return arg;
+    if (arg === null) return 'null';
+    if (arg === undefined) return 'undefined';
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
     }
-  }
-
-  // If no specific pattern matches, try to find any file reference
-  const fileMatch = stack.match(/at .+\/([^/\s:)]+\.[jt]sx?):(\d+)/);
-  if (fileMatch) {
-    return `${fileMatch[1]}:${fileMatch[2]}`;
-  }
-
-  return '';
+  }).join(' ');
 };
 
 // Function to get caller information from stack trace
@@ -258,20 +238,6 @@ const getCallerInfo = (): string => {
   }
 
   return '';
-};
-
-// Helper to safely stringify arguments
-const stringifyArgs = (args: any[]): string => {
-  return args.map(arg => {
-    if (typeof arg === 'string') return arg;
-    if (arg === null) return 'null';
-    if (arg === undefined) return 'undefined';
-    try {
-      return JSON.stringify(arg);
-    } catch {
-      return String(arg);
-    }
-  }).join(' ');
 };
 
 export const setupErrorLogging = () => {
@@ -334,7 +300,7 @@ export const setupErrorLogging = () => {
   // Capture unhandled errors in web environment
   if (typeof window !== 'undefined') {
     // Override window.onerror to catch JavaScript errors
-    window.onerror = (message, source, lineno, colno, error) => {
+    window.onerror = (message, source, lineno, colno) => {
       const sourceFile = source ? source.split('/').pop() : 'unknown';
       const errorMessage = `RUNTIME ERROR: ${message} at ${sourceFile}:${lineno}:${colno}`;
 
@@ -342,7 +308,6 @@ export const setupErrorLogging = () => {
       sendErrorToParent('error', 'JavaScript Runtime Error', {
         message,
         source: `${sourceFile}:${lineno}:${colno}`,
-        error: error?.stack || error,
       });
 
       return false; // Don't prevent default error handling

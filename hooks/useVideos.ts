@@ -22,7 +22,6 @@ export function useVideos() {
   const isFetchingRef = useRef(false);
   const currentLocationRef = useRef(currentLocation);
 
-  // ✅ CRITICAL: Optimized caching and preloading for instant playback
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour
   const PRELOAD_SIZE = 20 * 1024 * 1024; // 20MB preload for instant start
   const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (more frequent)
@@ -32,15 +31,15 @@ export function useVideos() {
     currentLocationRef.current = currentLocation;
   }, [currentLocation]);
 
-  const generateSignedUrl = useCallback(async (videoUrl: string, videoId: string): Promise<string | null> => {
+  const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
     try {
-      const cached = preloadedUrlsRef.current.get(videoId);
+      const cached = preloadedUrlsRef.current.get(videoIdParam);
       if (cached) {
         const age = Date.now() - cached.timestamp;
         if (age < SIGNED_URL_CACHE_DURATION) {
           return cached.url;
         } else {
-          preloadedUrlsRef.current.delete(videoId);
+          preloadedUrlsRef.current.delete(videoIdParam);
         }
       }
 
@@ -66,7 +65,7 @@ export function useVideos() {
         return null;
       }
       
-      preloadedUrlsRef.current.set(videoId, {
+      preloadedUrlsRef.current.set(videoIdParam, {
         url: data.signedUrl,
         timestamp: Date.now()
       });
@@ -78,21 +77,19 @@ export function useVideos() {
     }
   }, [SIGNED_URL_CACHE_DURATION]);
 
-  // ✅ CRITICAL FIX: More aggressive keep-alive
   const keepConnectionsAlive = useCallback(async () => {
     const now = Date.now();
     const timeSinceLastActivity = now - lastActivityRef.current;
     
     console.log('[useVideos] ⏰ Keep-alive check');
     
-    // Refresh if idle for more than 1 minute (more aggressive)
     if (timeSinceLastActivity > 60000) {
       console.log('[useVideos] ⚡ Refreshing connections for instant playback');
       
       const firstVideo = Array.from(preloadedUrlsRef.current.entries())[0];
       
       if (firstVideo) {
-        const [videoId, { url }] = firstVideo;
+        const [, { url }] = firstVideo;
         try {
           await fetch(url, {
             method: 'HEAD',
@@ -108,20 +105,18 @@ export function useVideos() {
     }
   }, []);
 
-  // ✅ CRITICAL FIX: More aggressive preloading for instant playback
-  const preloadVideo = useCallback(async (signedUrl: string, videoId: string): Promise<void> => {
-    if (preloadingQueueRef.current.has(videoId)) {
+  const preloadVideo = useCallback(async (signedUrl: string, videoIdParam: string): Promise<void> => {
+    if (preloadingQueueRef.current.has(videoIdParam)) {
       return;
     }
 
     try {
-      preloadingQueueRef.current.add(videoId);
+      preloadingQueueRef.current.add(videoIdParam);
       
       lastActivityRef.current = Date.now();
       
-      console.log('[useVideos] ⚡ Preloading video for instant playback:', videoId);
+      console.log('[useVideos] ⚡ Preloading video for instant playback:', videoIdParam);
       
-      // Strategy 1: Fetch first 20MB to warm up CDN
       const response = await fetch(signedUrl, {
         method: 'GET',
         headers: {
@@ -131,12 +126,11 @@ export function useVideos() {
       });
 
       if (response.ok || response.status === 206) {
-        console.log('[useVideos] ✅ Video preloaded:', videoId);
+        console.log('[useVideos] ✅ Video preloaded:', videoIdParam);
         
-        // Strategy 2: Cache locally for instant access
         try {
           const cacheDir = `${FileSystem.cacheDirectory}video_cache/`;
-          const cacheFile = `${cacheDir}${videoId}_preload.mp4`;
+          const cacheFile = `${cacheDir}${videoIdParam}_preload.mp4`;
           
           const dirInfo = await FileSystem.getInfoAsync(cacheDir);
           if (!dirInfo.exists) {
@@ -156,9 +150,9 @@ export function useVideos() {
         }
       }
     } catch (error) {
-      console.error('[useVideos] Error preloading video:', videoId, error);
+      console.error('[useVideos] Error preloading video:', videoIdParam, error);
     } finally {
-      preloadingQueueRef.current.delete(videoId);
+      preloadingQueueRef.current.delete(videoIdParam);
     }
   }, [PRELOAD_SIZE]);
 
@@ -199,7 +193,6 @@ export function useVideos() {
 
       console.log('[useVideos] ✅ Fetched', data.length, 'videos');
 
-      // ✅ INSTANT PLAYBACK: Generate ALL signed URLs in parallel
       const videosWithSignedUrls = await Promise.all(
         data.map(async (video) => {
           const signedUrl = await generateSignedUrl(video.video_url, video.id);
@@ -212,7 +205,6 @@ export function useVideos() {
         })
       );
 
-      // ✅ CRITICAL FIX: Preload ALL videos aggressively in parallel
       const preloadPromises = videosWithSignedUrls
         .filter(video => video.signed_url)
         .map(video => 
@@ -245,7 +237,6 @@ export function useVideos() {
     fetchVideosRef.current?.();
   }, []);
 
-  // ✅ CRITICAL FIX: More frequent background refresh
   const backgroundRefresh = useCallback(async () => {
     if (isFetchingRef.current) {
       return;
@@ -294,12 +285,10 @@ export function useVideos() {
     
     fetchVideos();
 
-    // ✅ CRITICAL FIX: More frequent keep-alive (every 45 seconds)
     keepAliveIntervalRef.current = setInterval(() => {
       keepConnectionsAlive();
     }, KEEP_ALIVE_INTERVAL);
 
-    // ✅ CRITICAL FIX: More frequent background refresh (every 8 minutes)
     const refreshInterval = setInterval(() => {
       backgroundRefresh();
     }, REFRESH_INTERVAL);
