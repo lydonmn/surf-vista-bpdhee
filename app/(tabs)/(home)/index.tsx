@@ -14,7 +14,6 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, getESTDate } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
-import { CurrentConditions } from "@/components/CurrentConditions";
 import { LocationSelector } from "@/components/LocationSelector";
 
 export default function HomeScreen() {
@@ -243,6 +242,14 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
+  const waveHeightDisplay = todaysReport?.wave_height || todaysReport?.surf_height || 'N/A';
+  const windDisplay = todaysReport?.wind_speed && todaysReport?.wind_direction 
+    ? `${todaysReport.wind_speed} ${todaysReport.wind_direction}` 
+    : 'N/A';
+  const waterTempDisplay = formatWaterTemp(todaysReport?.water_temp);
+  const ratingValue = todaysReport?.rating ?? 5;
+  const ratingColorValue = getRatingColor(ratingValue);
+
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -257,12 +264,10 @@ export default function HomeScreen() {
     >
       <View style={styles.headerSection}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Today&apos;s Surf Report
+          SurfVista
         </Text>
         <LocationSelector />
       </View>
-
-      <CurrentConditions weather={weatherData} surfReport={todaysReport} />
 
       {error && (
         <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
@@ -281,152 +286,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {surfLoading && !isRefreshing ? (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading surf reports for {locationData.displayName}...
-          </Text>
-        </View>
-      ) : !todaysReport ? (
-        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={48}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No Report Available
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Surf reports for {locationData.displayName} will be generated automatically from NOAA data.
-          </Text>
-        </View>
-      ) : (
-        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.reportHeader}>
-            <View style={styles.reportHeaderLeft}>
-              <Text style={[styles.reportDate, { color: theme.colors.text }]}>
-                {new Date(todaysReport.date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </Text>
-              <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
-                {locationData.displayName}
-              </Text>
-              {!isReportFromToday && (
-                <View style={styles.oldDataBadge}>
-                  <IconSymbol
-                    ios_icon_name="clock"
-                    android_material_icon_name="schedule"
-                    size={12}
-                    color={colors.accent}
-                  />
-                  <Text style={[styles.oldDataText, { color: colors.accent }]}>
-                    Most recent report
-                  </Text>
-                </View>
-              )}
-            </View>
-            <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(todaysReport.rating ?? 5) }]}>
-              <Text style={styles.ratingText}>{todaysReport.rating ?? 5}/10</Text>
-            </View>
-          </View>
-
-          <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
-            <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
-              Surf Conditions
-            </Text>
-            {narrativeText ? (
-              <>
-                <ReportTextDisplay 
-                  text={narrativeText}
-                  isCustom={isCustomReport}
-                />
-                {todaysReport.report_text && todaysReport.edited_at && (
-                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                    Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
-                  </Text>
-                )}
-              </>
-            ) : (
-              <Text style={[styles.conditionsText, { color: colors.reportText }]}>
-                No surf conditions narrative available for {locationData.displayName}.
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.quickStats}>
-            <View style={styles.statItem}>
-              <IconSymbol
-                ios_icon_name="water.waves"
-                android_material_icon_name="waves"
-                size={20}
-                color={colors.primary}
-              />
-              <View style={styles.statTextContainer}>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  Wave Height
-                </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                  {todaysReport.wave_height || todaysReport.surf_height || 'N/A'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.statItem}>
-              <IconSymbol
-                ios_icon_name="wind"
-                android_material_icon_name="air"
-                size={20}
-                color={colors.primary}
-              />
-              <View style={styles.statTextContainer}>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  Wind
-                </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                  {todaysReport.wind_speed} {todaysReport.wind_direction}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.statItem}>
-              <IconSymbol
-                ios_icon_name="thermometer"
-                android_material_icon_name="thermostat"
-                size={20}
-                color={colors.primary}
-              />
-              <View style={styles.statTextContainer}>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  Water Temp
-                </Text>
-                <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                  {formatWaterTemp(todaysReport.water_temp)}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.detailsButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/(tabs)/report')}
-          >
-            <Text style={styles.detailsButtonText}>View Full Report</Text>
-            <IconSymbol
-              ios_icon_name="chevron.right"
-              android_material_icon_name="chevron-right"
-              size={20}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
-        </View>
-      )}
-
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         <View style={styles.sectionHeader}>
           <IconSymbol
@@ -436,7 +295,7 @@ export default function HomeScreen() {
             color={colors.primary}
           />
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Latest Drone Footage
+            Today&apos;s Drone Footage
           </Text>
         </View>
 
@@ -500,6 +359,148 @@ export default function HomeScreen() {
           </View>
         )}
       </View>
+
+      {surfLoading && !isRefreshing ? (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading surf reports for {locationData.displayName}...
+          </Text>
+        </View>
+      ) : !todaysReport ? (
+        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
+          <IconSymbol
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={48}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            No Report Available
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.reportHeader}>
+              <View style={styles.reportHeaderLeft}>
+                <Text style={[styles.reportDate, { color: theme.colors.text }]}>
+                  {new Date(todaysReport.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Text>
+                <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
+                  {locationData.displayName}
+                </Text>
+                {!isReportFromToday && (
+                  <View style={styles.oldDataBadge}>
+                    <IconSymbol
+                      ios_icon_name="clock"
+                      android_material_icon_name="schedule"
+                      size={12}
+                      color={colors.accent}
+                    />
+                    <Text style={[styles.oldDataText, { color: colors.accent }]}>
+                      Most recent report
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
+                <Text style={styles.ratingText}>{ratingValue}/10</Text>
+              </View>
+            </View>
+
+            <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
+              <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
+                Surf Report
+              </Text>
+              {narrativeText ? (
+                <>
+                  <ReportTextDisplay 
+                    text={narrativeText}
+                    isCustom={isCustomReport}
+                  />
+                  {todaysReport.report_text && todaysReport.edited_at && (
+                    <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                      Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={[styles.conditionsText, { color: colors.reportText }]}>
+                  No surf conditions narrative available for {locationData.displayName}.
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <IconSymbol
+                  ios_icon_name="water.waves"
+                  android_material_icon_name="waves"
+                  size={24}
+                  color={colors.primary}
+                />
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Wave Height
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {waveHeightDisplay}
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <IconSymbol
+                  ios_icon_name="wind"
+                  android_material_icon_name="air"
+                  size={24}
+                  color={colors.primary}
+                />
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Wind
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {windDisplay}
+                </Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <IconSymbol
+                  ios_icon_name="thermometer"
+                  android_material_icon_name="thermostat"
+                  size={24}
+                  color={colors.primary}
+                />
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Water Temp
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {waterTempDisplay}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.detailsButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/(tabs)/report')}
+            >
+              <Text style={styles.detailsButtonText}>View Full Report</Text>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -521,12 +522,13 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     paddingHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 20,
     gap: 12,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
+    letterSpacing: -0.5,
   },
   centerContent: {
     flex: 1,
@@ -612,120 +614,19 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 16,
+    lineHeight: 20,
   },
   emptyState: {
     paddingVertical: 32,
     alignItems: 'center',
   },
-  reportCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  reportHeaderLeft: {
-    flex: 1,
-    gap: 4,
-  },
-  reportDate: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  reportSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  oldDataBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  oldDataText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  ratingBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  conditionsBox: {
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  conditionsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  conditionsText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  editedNote: {
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-  quickStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  statTextContainer: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  statValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  detailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  detailsButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   videoSection: {
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
-    marginBottom: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
+    marginBottom: 20,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
+    elevation: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -742,8 +643,8 @@ const styles = StyleSheet.create({
   },
   videoPreviewContainer: {
     width: '100%',
-    height: 200,
-    borderRadius: 8,
+    height: 220,
+    borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: '#000000',
@@ -789,7 +690,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   videoInfo: {
-    gap: 4,
+    gap: 6,
   },
   videoTitle: {
     fontSize: 18,
@@ -801,5 +702,109 @@ const styles = StyleSheet.create({
   },
   videoDate: {
     fontSize: 12,
+  },
+  reportCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
+    elevation: 4,
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  reportHeaderLeft: {
+    flex: 1,
+    gap: 6,
+  },
+  reportDate: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  reportSubtitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  oldDataBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  oldDataText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  ratingBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  ratingText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  conditionsBox: {
+    padding: 18,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  conditionsTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  conditionsText: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  editedNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 10,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 122, 255, 0.08)',
+    gap: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  detailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  detailsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

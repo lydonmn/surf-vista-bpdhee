@@ -373,12 +373,12 @@ export default function AdminDataScreen() {
   const locationListText = locations.map(loc => `  - ${loc.displayName}`).join('\n');
   const infoTextContent = `✅ ACTIVE - Automated updates are running!
 
-• 5:00 AM EST: Generate initial conditions narrative for ALL locations
+• 6:00 AM EST: Generate initial conditions narrative for ALL locations
 ${locationListText}
-• Every 15 min (5 AM - 9 PM): Update buoy data only (narrative preserved)
+• Every 15 min (6 AM - 9 PM): Update buoy data only (narrative preserved)
 • Failed fetches preserve existing data
 
-The system automatically generates separate reports for each location every morning at 5 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
+The system automatically generates separate reports for each location every morning at 6 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
   const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
@@ -446,7 +446,7 @@ The system automatically generates separate reports for each location every morn
         <View style={styles.mainActionCard}>
           <Text style={styles.mainActionTitle}>🚀 Bulk Actions</Text>
           <Text style={styles.mainActionDescription}>
-            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. This is the same process that runs automatically at 5 AM EST every day.
+            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. This is the same process that runs automatically at 6 AM EST every day.
           </Text>
           <TouchableOpacity
             style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
