@@ -27,7 +27,6 @@ export default function HomeScreen() {
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
 
-  // ✅ CRITICAL FIX: Move all useMemo hooks BEFORE any conditional returns
   const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
@@ -257,6 +256,7 @@ export default function HomeScreen() {
   const ratingValue = todaysReport?.rating ?? 5;
   const ratingColorValue = getRatingColor(ratingValue);
   const weatherDescDisplay = todaysReport?.weather_conditions || 'N/A';
+  const airTempDisplay = todaysReport?.air_temp ? `${Math.round(Number(todaysReport.air_temp))}°F` : 'N/A';
 
   return (
     <ScrollView 
@@ -394,99 +394,81 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-          {/* CURRENT CONDITIONS SECTION */}
+          {/* CURRENT CONDITIONS SECTION - COMPACT GRID */}
           <View style={styles.conditionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               Current Conditions
             </Text>
             
-            <View style={styles.conditionsGrid}>
-              <View style={styles.conditionItem}>
+            <View style={styles.conditionsCompactGrid}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="thermometer"
                   android_material_icon_name="thermostat"
-                  size={20}
+                  size={16}
                   color={colors.primary}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Temp
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                  {todaysReport.air_temp ? `${Math.round(Number(todaysReport.air_temp))}°F` : 'N/A'}
+                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
+                  {airTempDisplay}
                 </Text>
               </View>
 
-              <View style={styles.conditionItem}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="cloud.fill"
                   android_material_icon_name="cloud"
-                  size={20}
+                  size={16}
                   color={colors.primary}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Weather
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
                   {weatherDescDisplay}
                 </Text>
               </View>
 
-              <View style={styles.conditionItem}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="water.waves"
                   android_material_icon_name="waves"
-                  size={20}
+                  size={16}
                   color={colors.primary}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Waves
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
                   {waveHeightDisplay}
                 </Text>
               </View>
 
-              <View style={styles.conditionItem}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="wind"
                   android_material_icon_name="air"
-                  size={20}
+                  size={16}
                   color={colors.primary}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Wind
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
                   {windDisplay}
                 </Text>
               </View>
 
-              <View style={styles.conditionItem}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="drop.fill"
                   android_material_icon_name="water-drop"
-                  size={20}
+                  size={16}
                   color={colors.primary}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Water
-                </Text>
-                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
                   {waterTempDisplay}
                 </Text>
               </View>
 
-              <View style={styles.conditionItem}>
+              <View style={styles.conditionCompactItem}>
                 <IconSymbol
                   ios_icon_name="star.fill"
                   android_material_icon_name="star"
-                  size={20}
-                  color={colors.primary}
+                  size={16}
+                  color={ratingColorValue}
                 />
-                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                  Stoke
-                </Text>
-                <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
+                <Text style={[styles.conditionCompactValue, { color: ratingColorValue }]}>
                   {ratingValue}/10
                 </Text>
               </View>
@@ -533,7 +515,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* 7-DAY FORECAST SECTION */}
+      {/* 7-DAY FORECAST SECTION - IMPROVED CONTRAST */}
       {!surfLoading && (
         <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
           <View style={styles.forecastHeader}>
@@ -590,7 +572,11 @@ export default function HomeScreen() {
               });
               
               return (
-                <View key={index} style={[styles.forecastDay, { backgroundColor: theme.colors.background }]}>
+                <View key={index} style={[styles.forecastDay, { 
+                  backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+                }]}>
                   <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
                     {dayName}
                   </Text>
@@ -614,7 +600,7 @@ export default function HomeScreen() {
                       {lowTempDisplay}
                     </Text>
                   </View>
-                  <Text style={[styles.forecastWeather, { color: colors.textSecondary }]} numberOfLines={2}>
+                  <Text style={[styles.forecastWeather, { color: theme.colors.text }]} numberOfLines={2}>
                     {weatherDesc}
                   </Text>
                 </View>
@@ -835,44 +821,42 @@ const styles = StyleSheet.create({
   },
   reportCard: {
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
     elevation: 4,
   },
   conditionsSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  conditionsGrid: {
+  conditionsCompactGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 8,
   },
-  conditionItem: {
-    width: '30%',
+  conditionCompactItem: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 122, 255, 0.08)',
+    borderRadius: 8,
   },
-  conditionLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  conditionValue: {
-    fontSize: 14,
+  conditionCompactValue: {
+    fontSize: 13,
     fontWeight: '600',
-    textAlign: 'center',
   },
   reportNarrativeSection: {
-    paddingTop: 24,
+    paddingTop: 20,
     borderTopWidth: 1,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   noReportText: {
     fontSize: 14,
@@ -888,7 +872,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 12,
     gap: 8,
   },
@@ -920,48 +904,53 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   forecastDay: {
-    width: 120,
-    padding: 16,
+    width: 110,
+    padding: 14,
     borderRadius: 12,
     alignItems: 'center',
     gap: 6,
   },
   forecastDayName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
   },
   forecastDate: {
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: 11,
+    marginBottom: 6,
+    fontWeight: '500',
   },
   forecastWaveHeight: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   forecastLabel: {
-    fontSize: 11,
+    fontSize: 10,
     marginBottom: 6,
+    fontWeight: '500',
   },
   forecastTempRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     marginBottom: 6,
   },
   forecastTemp: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
   },
   forecastTempDivider: {
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
   forecastTempLabel: {
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
   forecastWeather: {
     fontSize: 11,
     textAlign: 'center',
     lineHeight: 14,
+    fontWeight: '500',
   },
   noForecastContainer: {
     paddingVertical: 20,
