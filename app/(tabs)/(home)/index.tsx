@@ -259,22 +259,26 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
   // ✅ CRITICAL FIX: Prioritize surf_height (rideable face) over wave_height (significant wave height)
-  // surf_height is what surfers actually ride (0.5-0.7x of wave_height)
+  // surf_height is what surfers actually ride (calculated from raw wave height and period)
   const surfHeightValue = (todaysReport as any)?.surf_height;
   const waveHeightValue = todaysReport?.wave_height;
   
-  console.log('[HomeScreen] Wave data values:', {
-    surf_height: surfHeightValue,
-    wave_height: waveHeightValue,
-    using: surfHeightValue && surfHeightValue !== 'N/A' ? 'surf_height' : 'wave_height'
-  });
+  console.log('[HomeScreen] ===== WAVE DATA CHECK =====');
+  console.log('[HomeScreen] Report ID:', todaysReport?.id);
+  console.log('[HomeScreen] Report date:', todaysReport?.date);
+  console.log('[HomeScreen] surf_height (rideable face):', surfHeightValue);
+  console.log('[HomeScreen] wave_height (raw):', waveHeightValue);
+  console.log('[HomeScreen] wave_period:', todaysReport?.wave_period);
+  console.log('[HomeScreen] ===========================');
   
-  // Use surf_height if available, otherwise fall back to wave_height
-  const waveHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A') 
+  // Use surf_height if available and valid, otherwise fall back to wave_height
+  const waveHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
-    : (waveHeightValue && waveHeightValue !== 'N/A') 
+    : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
       ? waveHeightValue 
       : 'N/A';
+  
+  console.log('[HomeScreen] Final wave height display:', waveHeightDisplay);
   
   // ✅ FIX: Use weatherData for current conditions, fallback to todaysReport
   const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
@@ -668,8 +672,8 @@ export default function HomeScreen() {
               const daySurfHeight = (dayReport as any)?.surf_height;
               const dayWaveHeight = dayReport?.wave_height;
               const waveDisplay = dayWeatherForecast?.swell_height_range || 
-                                 (daySurfHeight && daySurfHeight !== 'N/A' ? daySurfHeight : dayWaveHeight) || 
-                                 '--';
+                                 (daySurfHeight && daySurfHeight !== 'N/A' && daySurfHeight !== null ? daySurfHeight : 
+                                  (dayWaveHeight && dayWaveHeight !== 'N/A' && dayWaveHeight !== null ? dayWaveHeight : '--'));
               
               const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
               

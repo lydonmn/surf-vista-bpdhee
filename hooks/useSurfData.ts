@@ -63,11 +63,11 @@ export function useSurfData() {
   const lastFetchTimeRef = useRef<number>(0);
   const currentLocationRef = useRef(currentLocation);
 
-  // ✅ CRITICAL FIX: Stable fetchData function with no dependencies
+  // Stable fetchData function with no dependencies
   const fetchDataRef = useRef<() => Promise<void>>();
   
   fetchDataRef.current = async () => {
-    // ✅ CRITICAL: Prevent concurrent fetches and debounce rapid calls
+    // Prevent concurrent fetches and debounce rapid calls
     const now = Date.now();
     const timeSinceLastFetch = now - lastFetchTimeRef.current;
     
@@ -76,7 +76,7 @@ export function useSurfData() {
       return;
     }
 
-    // ✅ CRITICAL: Debounce - don't fetch if we just fetched within last 5 seconds
+    // Debounce - don't fetch if we just fetched within last 5 seconds
     if (timeSinceLastFetch < DEBOUNCE_DELAY) {
       console.log('[useSurfData] Fetch called too soon after last fetch (', timeSinceLastFetch, 'ms), skipping...');
       return;
@@ -96,12 +96,20 @@ export function useSurfData() {
       console.log('[useSurfData] Fetching data for EST date:', today);
 
       // Fetch all data in parallel with location filter
-      const [surfReportsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
+      // CRITICAL FIX: Also fetch surf_conditions to get real-time wave data
+      const [surfReportsResult, surfConditionsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
         supabase
           .from('surf_reports')
           .select('*')
           .eq('location', location)
           .order('date', { ascending: false })
+          .limit(7),
+        supabase
+          .from('surf_conditions')
+          .select('*')
+          .eq('location', location)
+          .order('date', { ascending: false })
+          .order('updated_at', { ascending: false })
           .limit(7),
         supabase
           .from('weather_data')
@@ -135,6 +143,10 @@ export function useSurfData() {
         console.error('[useSurfData] Surf reports error:', surfReportsResult.error);
         throw surfReportsResult.error;
       }
+      if (surfConditionsResult.error) {
+        console.error('[useSurfData] Surf conditions error:', surfConditionsResult.error);
+        throw surfConditionsResult.error;
+      }
       if (weatherResult.error) {
         console.error('[useSurfData] Weather error:', weatherResult.error);
         throw weatherResult.error;
@@ -150,15 +162,54 @@ export function useSurfData() {
 
       console.log('[useSurfData] Data fetched successfully for location:', location);
 
+      // CRITICAL FIX: Merge surf_conditions data into surf_reports
+      // This ensures we always show the most recent wave data even if the report hasn't been regenerated
+      const mergedReports = (surfReportsResult.data || []).map(report => {
+        // Find matching surf_conditions for this date
+        const matchingCondition = (surfConditionsResult.data || []).find(
+          cond => cond.date === report.date && cond.location === report.location
+        );
+        
+        if (matchingCondition) {
+          console.log(`[useSurfData] Merging surf_conditions into report for ${report.date}:`, {
+            report_wave_height: report.wave_height,
+            report_surf_height: report.surf_height,
+            condition_wave_height: matchingCondition.wave_height,
+            condition_surf_height: matchingCondition.surf_height,
+          });
+          
+          // If report has N/A but conditions has data, use conditions data
+          return {
+            ...report,
+            wave_height: (report.wave_height === 'N/A' && matchingCondition.wave_height !== 'N/A') 
+              ? matchingCondition.wave_height 
+              : report.wave_height,
+            surf_height: ((!report.surf_height || report.surf_height === 'N/A') && matchingCondition.surf_height !== 'N/A') 
+              ? matchingCondition.surf_height 
+              : report.surf_height,
+            wave_period: (report.wave_period === 'N/A' && matchingCondition.wave_period !== 'N/A') 
+              ? matchingCondition.wave_period 
+              : report.wave_period,
+            swell_direction: (report.swell_direction === 'N/A' && matchingCondition.swell_direction !== 'N/A') 
+              ? matchingCondition.swell_direction 
+              : report.swell_direction,
+          };
+        }
+        
+        return report;
+      });
+      
+      console.log('[useSurfData] Merged reports with real-time conditions:', mergedReports.length);
+
       // Check if we have any data for this location
-      const hasData = (surfReportsResult.data && surfReportsResult.data.length > 0) ||
+      const hasData = (mergedReports && mergedReports.length > 0) ||
                       weatherResult.data ||
                       (forecastResult.data && forecastResult.data.length > 0) ||
                       (tideResult.data && tideResult.data.length > 0);
 
       if (isMountedRef.current) {
         setState({
-          surfReports: surfReportsResult.data || [],
+          surfReports: mergedReports,
           weatherData: weatherResult.data,
           weatherForecast: forecastResult.data || [],
           tideData: tideResult.data || [],
@@ -200,7 +251,7 @@ export function useSurfData() {
     }
   };
 
-  // ✅ CRITICAL FIX: Stable wrapper function
+  // Stable wrapper function
   const fetchData = useCallback(() => {
     fetchDataRef.current?.();
   }, []);
@@ -288,7 +339,7 @@ export function useSurfData() {
           throw new Error(errorMessage);
         }
 
-        // ✅ CRITICAL FIX: Wait for database to update before refreshing
+        // Wait for database to update before refreshing
         console.log('[useSurfData] Waiting for database to update...');
         await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -333,12 +384,12 @@ export function useSurfData() {
     }
   }, []);
 
-  // ✅ CRITICAL FIX: Update currentLocationRef when location changes
+  // Update currentLocationRef when location changes
   useEffect(() => {
     currentLocationRef.current = currentLocation;
   }, [currentLocation]);
 
-  // ✅ CRITICAL FIX: Fetch data when location changes
+  // Fetch data when location changes
   useEffect(() => {
     console.log('[useSurfData] Location changed to:', currentLocation);
     if (!isFetchingRef.current) {
@@ -347,7 +398,7 @@ export function useSurfData() {
     }
   }, [currentLocation, fetchData]);
 
-  // ✅ CRITICAL FIX: Stable periodic refresh setup
+  // Stable periodic refresh setup
   useEffect(() => {
     console.log('[useSurfData] Setting up periodic refresh (every 30 minutes)...');
     
@@ -372,7 +423,7 @@ export function useSurfData() {
     };
   }, [fetchData]);
 
-  // ✅ CRITICAL FIX: Stable app state change handler
+  // Stable app state change handler
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
@@ -394,7 +445,7 @@ export function useSurfData() {
     };
   }, [fetchData]);
 
-  // ✅ CRITICAL FIX: Set up real-time subscriptions with stable dependencies
+  // Set up real-time subscriptions with stable dependencies
   useEffect(() => {
     console.log('[useSurfData] Setting up real-time subscriptions for location:', currentLocation);
 
@@ -491,7 +542,7 @@ export function useSurfData() {
     };
   }, [currentLocation]);
 
-  // ✅ CRITICAL FIX: Cleanup on unmount
+  // Cleanup on unmount
   useEffect(() => {
     console.log('[useSurfData] Hook mounted');
     isMountedRef.current = true;
