@@ -266,13 +266,16 @@ export default function AdminDataScreen() {
         const locationResult = results.find((r: any) => r.locationId === locationId);
         
         if (locationResult?.success) {
-          const waveStatus = locationResult.hasWaveData ? 'Wave sensors online' : 'Wave sensors offline';
-          const fallbackNote = locationResult.usedFallbackData ? ' (using most recent data)' : '';
-          addLog(`${locationName}: Report generated (${waveStatus}${fallbackNote})`, 'success');
+          const waveStatus = locationResult.hasWaveData ? 'Wave sensors online ✅' : 'Wave sensors offline ⚠️';
+          const dataSource = locationResult.usedFallbackData ? 'Used most recent available data' : 'Used fresh data';
+          addLog(`${locationName}: Report generated successfully`, 'success');
+          addLog(`${locationName}: ${waveStatus}`, locationResult.hasWaveData ? 'success' : 'warning');
+          addLog(`${locationName}: ${dataSource}`, 'info');
           
-          let alertMessage = `Report generated for ${locationName}!\n\n${waveStatus}`;
-          if (locationResult.usedFallbackData) {
-            alertMessage += '\n\nUsed most recent available data from today';
+          let alertMessage = `✅ Report generated for ${locationName}!\n\n${waveStatus}\n${dataSource}`;
+          
+          if (!locationResult.hasWaveData) {
+            alertMessage += '\n\n⚠️ Note: Wave sensors are temporarily offline on the buoy, but wind and water temperature data are available. The report includes all available conditions.';
           }
           
           showErrorModal('Success', alertMessage);
@@ -382,9 +385,11 @@ export default function AdminDataScreen() {
             if (result.skipped) {
               addLog(`${result.location}: Report already exists`, 'info');
             } else {
-              const waveStatus = result.hasWaveData ? 'Wave sensors online' : 'Wave sensors offline';
-              const fallbackNote = result.usedFallbackData ? ' (used recent data)' : '';
-              addLog(`${result.location}: Report generated (${waveStatus}${fallbackNote})`, 'success');
+              const waveStatus = result.hasWaveData ? 'Wave sensors online ✅' : 'Wave sensors offline ⚠️';
+              const dataSource = result.usedFallbackData ? 'Used most recent data' : 'Used fresh data';
+              addLog(`${result.location}: Report generated successfully`, 'success');
+              addLog(`${result.location}: ${waveStatus}`, result.hasWaveData ? 'success' : 'warning');
+              addLog(`${result.location}: ${dataSource}`, 'info');
             }
           } else {
             addLog(`${result.location}: ${result.error}`, 'error');
@@ -394,15 +399,15 @@ export default function AdminDataScreen() {
         const resultDetails = results.map((r: any) => {
           if (r.success) {
             const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
-            const fallbackIcon = r.usedFallbackData ? ' 📅' : '';
-            return `${r.location}: ✅ ${waveIcon}${fallbackIcon}`;
+            const dataIcon = r.usedFallbackData ? ' 📅' : ' 🆕';
+            return `${r.location}: ✅ ${waveIcon}${dataIcon}`;
           }
           return `${r.location}: ❌`;
         }).join('\n');
         
         showErrorModal(
           'Success!',
-          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline\n📅 = Used recent data`
+          `✅ Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n🌊 = Wave sensors online\n⚠️ = Wave sensors offline (wind/temp available)\n🆕 = Fresh data\n📅 = Most recent data`
         );
         
         await new Promise(resolve => setTimeout(resolve, 2000));

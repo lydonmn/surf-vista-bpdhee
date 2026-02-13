@@ -561,7 +561,7 @@ serve(async (req) => {
       );
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Daily 5AM Report] 💥 Fatal error:', error);
     return new Response(
       JSON.stringify({
@@ -645,7 +645,7 @@ async function processLocation(
         if (weatherAttempt < 3) {
           await delay(2000);
         }
-      } catch (weatherError) {
+      } catch (weatherError: any) {
         console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} failed:`, weatherError);
       }
     }
@@ -682,7 +682,7 @@ async function processLocation(
         if (tideAttempt < 3) {
           await delay(2000);
         }
-      } catch (tideError) {
+      } catch (tideError: any) {
         console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} failed:`, tideError);
       }
     }
@@ -693,11 +693,11 @@ async function processLocation(
     let usedFallbackData = false;
     
     console.log(`[${locationName}] Step 3: Fetching surf/buoy data...`);
-    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (immediate fallback to most recent data)' : 'SCHEDULED (retry for fresh data)'}`);
+    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (use most recent available data)' : 'SCHEDULED (retry for fresh data)'}`);
     
-    // MANUAL TRIGGER: Immediately use most recent data from today
+    // MANUAL TRIGGER: Use most recent data from today (or yesterday as fallback)
     if (isManualTrigger) {
-      console.log(`[${locationName}] 🔍 Manual trigger: Fetching most recent surf data from today...`);
+      console.log(`[${locationName}] 🔍 Manual trigger: Using most recent successfully pulled data...`);
       
       // First, try to trigger a fresh fetch (but don't wait for it)
       try {
@@ -706,7 +706,7 @@ async function processLocation(
           body: { location: locationId },
         });
         await delay(3000); // Give it 3 seconds to populate
-      } catch (fetchError) {
+      } catch (fetchError: any) {
         console.warn(`[${locationName}] Fresh fetch attempt failed (will use existing data):`, fetchError);
       }
       
@@ -714,8 +714,8 @@ async function processLocation(
       const { data: mostRecentData, error: recentError } = await supabase
         .from('surf_conditions')
         .select('*')
-        .eq('date', dateStr)
         .eq('location', locationId)
+        .eq('date', dateStr)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -726,6 +726,12 @@ async function processLocation(
       
       if (mostRecentData) {
         console.log(`[${locationName}] ✅ Using most recent data from today (updated: ${mostRecentData.updated_at})`);
+        console.log(`[${locationName}] Data details:`, {
+          wave_height: mostRecentData.wave_height,
+          surf_height: mostRecentData.surf_height,
+          wind_speed: mostRecentData.wind_speed,
+          water_temp: mostRecentData.water_temp
+        });
         surfConditions = mostRecentData;
         usedFallbackData = true;
       } else {
@@ -739,8 +745,8 @@ async function processLocation(
         const { data: yesterdayData } = await supabase
           .from('surf_conditions')
           .select('*')
-          .eq('date', yesterdayStr)
           .eq('location', locationId)
+          .eq('date', yesterdayStr)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -832,7 +838,7 @@ async function processLocation(
             console.log(`[${locationName}] ⏳ Waiting ${delayMs/1000} seconds before retry...`);
             await delay(delayMs);
           }
-        } catch (attemptError) {
+        } catch (attemptError: any) {
           console.error(`[${locationName}] Attempt ${attempt} error:`, attemptError);
           lastError = attemptError.message;
           
@@ -850,10 +856,21 @@ async function processLocation(
       throw new Error(`Failed to fetch surf data: ${lastError}`);
     }
 
+    // ✅ CRITICAL FIX: Check if we have valid wave data in the surf conditions we're using
+    const hasValidWaveData = surfConditions && (
+      (surfConditions.wave_height && surfConditions.wave_height !== 'N/A' && surfConditions.wave_height !== '') ||
+      (surfConditions.surf_height && surfConditions.surf_height !== 'N/A' && surfConditions.surf_height !== '')
+    );
+
     console.log(`[${locationName}] Step 4: Generating daily report...`);
-    if (usedFallbackData) {
-      console.log(`[${locationName}] ℹ️ Using fallback data (most recent available from today)`);
-    }
+    console.log(`[${locationName}] Data source: ${usedFallbackData ? 'Most recent available data' : 'Fresh data'}`);
+    console.log(`[${locationName}] Wave sensors status: ${hasValidWaveData ? 'ONLINE' : 'OFFLINE'}`);
+    console.log(`[${locationName}] Surf conditions to use:`, {
+      wave_height: surfConditions.wave_height,
+      surf_height: surfConditions.surf_height,
+      wind_speed: surfConditions.wind_speed,
+      water_temp: surfConditions.water_temp
+    });
     
     const captureTime = surfConditions.updated_at 
       ? new Date(surfConditions.updated_at).toLocaleTimeString('en-US', { 
@@ -873,6 +890,7 @@ async function processLocation(
     );
 
     console.log(`[${locationName}] Generated narrative (${narrative.length} characters)`);
+    console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
 
     const rating = calculateSurfRating(surfConditions);
     console.log(`[${locationName}] Calculated rating: ${rating}/10`);
@@ -912,11 +930,11 @@ async function processLocation(
       date: dateStr,
       captureTime: captureTime,
       rating: rating,
-      hasWaveData: surfConditions.wave_height !== 'N/A' && surfConditions.wave_height !== '',
+      hasWaveData: hasValidWaveData,
       usedFallbackData: usedFallbackData,
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[${locationName}] ❌ Failed:`, error.message);
     return {
       success: false,
