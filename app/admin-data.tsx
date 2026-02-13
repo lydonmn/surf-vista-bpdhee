@@ -61,6 +61,7 @@ export default function AdminDataScreen() {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
+  const [nextCompleteDataTime, setNextCompleteDataTime] = useState('');
 
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
@@ -74,6 +75,52 @@ export default function AdminDataScreen() {
     setErrorModalMessage(message);
     setErrorModalVisible(true);
   };
+
+  // Calculate next complete data window (:20 or :50)
+  const calculateNextCompleteDataTime = useCallback(() => {
+    const now = new Date();
+    const currentMinutes = now.getMinutes();
+    
+    let nextMinute: number;
+    if (currentMinutes < 20) {
+      nextMinute = 20;
+    } else if (currentMinutes < 50) {
+      nextMinute = 50;
+    } else {
+      nextMinute = 20; // Next hour
+    }
+    
+    const nextTime = new Date(now);
+    if (nextMinute === 20 && currentMinutes >= 50) {
+      nextTime.setHours(nextTime.getHours() + 1);
+      nextTime.setMinutes(20);
+    } else {
+      nextTime.setMinutes(nextMinute);
+    }
+    nextTime.setSeconds(0);
+    
+    const timeString = nextTime.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/New_York'
+    });
+    
+    const minutesUntil = Math.round((nextTime.getTime() - now.getTime()) / 60000);
+    
+    return `${timeString} (in ${minutesUntil} min)`;
+  }, []);
+
+  useEffect(() => {
+    const updateNextDataTime = () => {
+      setNextCompleteDataTime(calculateNextCompleteDataTime());
+    };
+    
+    updateNextDataTime();
+    const interval = setInterval(updateNextDataTime, 60000); // Update every minute
+    
+    return () => clearInterval(interval);
+  }, [calculateNextCompleteDataTime]);
 
   const loadLocationReports = useCallback(async (today: string) => {
     try {
@@ -418,7 +465,7 @@ export default function AdminDataScreen() {
   const countLabelSurf = 'Surf';
   const infoTitleText = 'Automated Update Schedule';
   const locationListText = locations.map(loc => `  - ${loc.displayName}`).join('\n');
-  const infoTextContent = `ACTIVE - Automated updates are running!\n\n• 6:00 AM EST: Generate initial conditions narrative for ALL locations\n${locationListText}\n  - Retries up to 10 times (up to 15 min) until sufficient data is available\n  - Will NOT fail if wave sensors are offline - uses wind/temp data\n• Every 15 min (6 AM - 9 PM): Update buoy data only (narrative preserved)\n• Manual triggers: Use most recent available data from today\n\nThe system automatically generates separate reports for each location every morning at 6 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
+  const infoTextContent = `🔄 ACTIVE - Automated updates are running!\n\n📊 NOAA Buoy Data Schedule:\n• Buoy updates every 10 minutes (:00, :10, :20, :30, :40, :50)\n• COMPLETE wave data available at :20 and :50 of each hour\n• System fetches ONLY at :20 and :50 to ensure complete data\n\n⏰ Automated Schedule:\n• 6:00 AM EST: Generate initial conditions narrative for ALL locations\n${locationListText}\n  - Waits for next :20 or :50 window for complete data\n  - Retries up to 5 times if data incomplete\n  - Will NOT fail if wave sensors are offline - uses wind/temp data\n\n• :20 and :50 of every hour: Update buoy data only (narrative preserved)\n  - Ensures we always get complete wave data from NOAA\n  - Skips incomplete data at other times\n\n🎯 Manual Triggers:\n• Use most recent available data from today\n• No waiting for next data window\n• Immediate report generation\n\n📍 Next Complete Data Window: ${nextCompleteDataTime}`;
   const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
