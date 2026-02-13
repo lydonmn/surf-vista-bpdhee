@@ -58,10 +58,10 @@ export default function HomeScreen() {
         console.log('[HomeScreen] Report ID:', report.id);
         console.log('[HomeScreen] Report date:', report.date);
         console.log('[HomeScreen] Report location:', report.location);
+        console.log('[HomeScreen] wave_height:', report.wave_height);
+        console.log('[HomeScreen] surf_height:', (report as any).surf_height);
         console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
         console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
-        console.log('[HomeScreen] report_text length:', report.report_text?.length || 0);
-        console.log('[HomeScreen] conditions length:', report.conditions?.length || 0);
         return report;
       } else {
         console.log('[HomeScreen] No report for today, checking for most recent report...');
@@ -78,6 +78,8 @@ export default function HomeScreen() {
           console.log('[HomeScreen] Report ID:', mostRecentReport.id);
           console.log('[HomeScreen] Report date:', mostRecentReport.date);
           console.log('[HomeScreen] Report location:', mostRecentReport.location);
+          console.log('[HomeScreen] wave_height:', mostRecentReport.wave_height);
+          console.log('[HomeScreen] surf_height:', (mostRecentReport as any).surf_height);
           return mostRecentReport;
         }
         
@@ -187,12 +189,13 @@ export default function HomeScreen() {
   }, [latestVideo]);
 
   if (!isInitialized || isLoading) {
+    const loadingTextContent = 'Loading your profile...';
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading your profile...
+            {loadingTextContent}
           </Text>
         </View>
       </View>
@@ -201,6 +204,11 @@ export default function HomeScreen() {
 
   if (!user || !isSubscribed) {
     console.log('[HomeScreen] Showing locked content');
+    const titleText = 'Subscriber Only Content';
+    const descriptionText = 'Subscribe to access exclusive 6K drone footage and detailed surf reports';
+    const debugText = 'You are signed in but not subscribed';
+    const buttonText = user ? 'Subscribe Now' : 'Sign In / Subscribe';
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -211,14 +219,14 @@ export default function HomeScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscriber Only Content
+            {titleText}
           </Text>
           <Text style={[styles.text, { color: colors.textSecondary }]}>
-            Subscribe to access exclusive 6K drone footage and detailed surf reports
+            {descriptionText}
           </Text>
           {user && (
             <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              You are signed in but not subscribed
+              {debugText}
             </Text>
           )}
           <TouchableOpacity
@@ -226,7 +234,7 @@ export default function HomeScreen() {
             onPress={() => router.push('/login')}
           >
             <Text style={styles.subscribeButtonText}>
-              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+              {buttonText}
             </Text>
           </TouchableOpacity>
         </View>
@@ -250,13 +258,29 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
+  // ✅ CRITICAL FIX: Prioritize surf_height (rideable face) over wave_height (significant wave height)
+  // surf_height is what surfers actually ride (0.5-0.7x of wave_height)
+  const surfHeightValue = (todaysReport as any)?.surf_height;
+  const waveHeightValue = todaysReport?.wave_height;
+  
+  console.log('[HomeScreen] Wave data values:', {
+    surf_height: surfHeightValue,
+    wave_height: waveHeightValue,
+    using: surfHeightValue && surfHeightValue !== 'N/A' ? 'surf_height' : 'wave_height'
+  });
+  
+  // Use surf_height if available, otherwise fall back to wave_height
+  const waveHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A') 
+    ? surfHeightValue 
+    : (waveHeightValue && waveHeightValue !== 'N/A') 
+      ? waveHeightValue 
+      : 'N/A';
+  
   // ✅ FIX: Use weatherData for current conditions, fallback to todaysReport
   const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
   const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
   
   const weatherDescDisplay = weatherData?.conditions || todaysReport?.weather_conditions || 'N/A';
-  
-  const waveHeightDisplay = todaysReport?.wave_height || todaysReport?.surf_height || 'N/A';
   
   const windSpeedValue = weatherData?.wind_speed || todaysReport?.wind_speed;
   const windDirValue = weatherData?.wind_direction || todaysReport?.wind_direction;
@@ -277,6 +301,32 @@ export default function HomeScreen() {
     rating: ratingValue,
     weatherDataSource: weatherData ? 'weatherData' : 'todaysReport'
   });
+
+  const errorTitleText = 'Unable to fetch surf data';
+  const emptyVideoText = `No videos available yet for ${locationData.displayName}`;
+  const currentDateText = new Date().toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric'
+  });
+  const oldDataBadgeText = 'Showing most recent report';
+  const loadingReportsText = `Loading surf reports for ${locationData.displayName}...`;
+  const noReportTitleText = 'No Report Available';
+  const noReportDescText = `Surf reports for ${locationData.displayName} will be generated automatically each morning at 6 AM EST.`;
+  const currentConditionsTitle = 'Current Conditions';
+  const airTempLabel = 'Air Temp';
+  const weatherLabel = 'Weather';
+  const waveHeightLabel = 'Wave Height';
+  const windLabel = 'Wind';
+  const waterTempLabel = 'Water Temp';
+  const surfReportTitle = 'Surf Report';
+  const noNarrativeText = `No surf conditions narrative available for ${locationData.displayName}.`;
+  const editedNotePrefix = 'Edited ';
+  const viewFullReportText = 'View Full Report';
+  const forecastTitle = '7-Day Forecast';
+  const swellLabel = 'swell';
+  const noForecastText = 'No forecast data available yet. Pull down to refresh or check back later.';
 
   return (
     <ScrollView 
@@ -299,7 +349,7 @@ export default function HomeScreen() {
             color="#FFFFFF"
           />
           <View style={styles.errorTextContainer}>
-            <Text style={styles.errorText}>Unable to fetch surf data</Text>
+            <Text style={styles.errorText}>{errorTitleText}</Text>
             <Text style={styles.errorSubtext}>
               {error}
             </Text>
@@ -353,7 +403,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos available yet for {locationData.displayName}
+              {emptyVideoText}
             </Text>
           </View>
         )}
@@ -367,12 +417,7 @@ export default function HomeScreen() {
       {/* DATE - BELOW LOCATION SELECTOR - ALWAYS SHOW TODAY'S DATE */}
       <View style={styles.dateContainer}>
         <Text style={[styles.dateText, { color: theme.colors.text }]}>
-          {new Date().toLocaleDateString('en-US', {
-            timeZone: 'America/New_York',
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric'
-          })}
+          {currentDateText}
         </Text>
         {todaysReport && !isReportFromToday && (
           <View style={styles.oldDataBadge}>
@@ -383,7 +428,7 @@ export default function HomeScreen() {
               color={colors.accent}
             />
             <Text style={[styles.oldDataText, { color: colors.accent }]}>
-              Showing most recent report
+              {oldDataBadgeText}
             </Text>
           </View>
         )}
@@ -394,7 +439,7 @@ export default function HomeScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading surf reports for {locationData.displayName}...
+            {loadingReportsText}
           </Text>
         </View>
       ) : !todaysReport ? (
@@ -406,10 +451,10 @@ export default function HomeScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No Report Available
+            {noReportTitleText}
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
+            {noReportDescText}
           </Text>
         </View>
       ) : (
@@ -417,7 +462,7 @@ export default function HomeScreen() {
           {/* CURRENT CONDITIONS SECTION - IMPROVED LAYOUT */}
           <View style={styles.conditionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Current Conditions
+              {currentConditionsTitle}
             </Text>
             
             <View style={styles.conditionsGrid}>
@@ -432,7 +477,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Air Temp
+                      {airTempLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {airTempDisplay}
@@ -449,7 +494,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Weather
+                      {weatherLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]} numberOfLines={1}>
                       {weatherDescDisplay}
@@ -469,7 +514,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Wave Height
+                      {waveHeightLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {waveHeightDisplay}
@@ -486,7 +531,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Wind
+                      {windLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {windDisplay}
@@ -506,7 +551,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Water Temp
+                      {waterTempLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {waterTempDisplay}
@@ -540,7 +585,7 @@ export default function HomeScreen() {
           {/* SURF REPORT NARRATIVE */}
           <View style={[styles.reportNarrativeSection, { borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Surf Report
+              {surfReportTitle}
             </Text>
             
             {narrativeText ? (
@@ -551,13 +596,13 @@ export default function HomeScreen() {
                 />
                 {todaysReport.report_text && todaysReport.edited_at && (
                   <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                    Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
+                    {editedNotePrefix}{new Date(todaysReport.edited_at).toLocaleDateString()}
                   </Text>
                 )}
               </>
             ) : (
               <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
-                No surf conditions narrative available for {locationData.displayName}.
+                {noNarrativeText}
               </Text>
             )}
           </View>
@@ -566,7 +611,7 @@ export default function HomeScreen() {
             style={[styles.detailsButton, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/(tabs)/report')}
           >
-            <Text style={styles.detailsButtonText}>View Full Report</Text>
+            <Text style={styles.detailsButtonText}>{viewFullReportText}</Text>
             <IconSymbol
               ios_icon_name="chevron.right"
               android_material_icon_name="chevron-right"
@@ -588,7 +633,7 @@ export default function HomeScreen() {
               color={colors.primary}
             />
             <Text style={[styles.forecastTitle, { color: theme.colors.text }]}>
-              7-Day Forecast
+              {forecastTitle}
             </Text>
           </View>
           
@@ -618,7 +663,14 @@ export default function HomeScreen() {
               
               const highTempDisplay = dayWeatherForecast?.high_temp ? `${Math.round(dayWeatherForecast.high_temp)}°` : dayReport?.air_temp ? `${Math.round(Number(dayReport.air_temp))}°` : '--';
               const lowTempDisplay = dayWeatherForecast?.low_temp ? `${Math.round(dayWeatherForecast.low_temp)}°` : '--';
-              const waveDisplay = dayWeatherForecast?.swell_height_range || dayReport?.wave_height || dayReport?.surf_height || '--';
+              
+              // ✅ CRITICAL FIX: Use surf_height if available, otherwise wave_height
+              const daySurfHeight = (dayReport as any)?.surf_height;
+              const dayWaveHeight = dayReport?.wave_height;
+              const waveDisplay = dayWeatherForecast?.swell_height_range || 
+                                 (daySurfHeight && daySurfHeight !== 'N/A' ? daySurfHeight : dayWaveHeight) || 
+                                 '--';
+              
               const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
               
               console.log('[HomeScreen] Forecast day', index, ':', {
@@ -627,6 +679,8 @@ export default function HomeScreen() {
                 monthDay,
                 hasReport: !!dayReport,
                 hasForecast: !!dayWeatherForecast,
+                surf_height: daySurfHeight,
+                wave_height: dayWaveHeight,
                 waveDisplay,
                 highTemp: highTempDisplay,
                 lowTemp: lowTempDisplay,
@@ -649,7 +703,7 @@ export default function HomeScreen() {
                     {waveDisplay}
                   </Text>
                   <Text style={[styles.forecastLabel, { color: colors.textSecondary }]}>
-                    swell
+                    {swellLabel}
                   </Text>
                   <View style={styles.forecastTempRow}>
                     <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
@@ -673,7 +727,7 @@ export default function HomeScreen() {
           {locationWeatherForecast.length === 0 && locationSurfReports.length === 0 && (
             <View style={styles.noForecastContainer}>
               <Text style={[styles.noForecastText, { color: colors.textSecondary }]}>
-                No forecast data available yet. Pull down to refresh or check back later.
+                {noForecastText}
               </Text>
             </View>
           )}
