@@ -5,9 +5,9 @@ import { useTheme } from '@react-navigation/native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
-import { supabase } from '@/app/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database } from '@/app/integrations/supabase/types';
+import { Database } from '@/integrations/supabase/types';
 import { ReportTextDisplay } from '@/components/ReportTextDisplay';
 import { useLocation } from '@/contexts/LocationContext';
 

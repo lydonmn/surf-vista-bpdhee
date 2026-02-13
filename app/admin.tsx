@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { supabase } from '@/app/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import { Video } from 'expo-av';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';

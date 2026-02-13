@@ -1,8 +1,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { supabase } from '@/app/integrations/supabase/client';
-import { Database } from '@/app/integrations/supabase/types';
+import { supabase } from '@/integrations/supabase/client';
+import { Database } from '@/integrations/supabase/types';
 import { useLocation } from '@/contexts/LocationContext';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];

@@ -8,7 +8,7 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
-import { supabase } from "@/app/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
