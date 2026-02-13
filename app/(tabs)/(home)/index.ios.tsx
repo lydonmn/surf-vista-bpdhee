@@ -235,12 +235,10 @@ export default function HomeScreen() {
         />
       }
     >
-      <View style={styles.topBar}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-            Today&apos;s Surf Report
-          </Text>
-        </View>
+      <View style={styles.headerSection}>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+          Today&apos;s Surf Report
+        </Text>
         <LocationSelector />
       </View>
 
@@ -486,14 +484,16 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 48,
-    paddingHorizontal: 16,
     paddingBottom: 100,
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  headerSection: {
+    paddingHorizontal: 16,
     marginBottom: 16,
+    gap: 12,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
   },
   centerContent: {
     flex: 1,
@@ -509,13 +509,6 @@ const styles = StyleSheet.create({
   loadingContainer: {
     paddingVertical: 20,
     alignItems: 'center',
-  },
-  header: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
   },
   title: {
     fontSize: 24,
@@ -551,6 +544,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     padding: 16,
     borderRadius: 12,
+    marginHorizontal: 16,
     marginBottom: 16,
     gap: 12,
   },
@@ -573,6 +567,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 32,
     borderRadius: 12,
+    marginHorizontal: 16,
     marginBottom: 16,
   },
   emptyTitle: {
@@ -593,6 +588,7 @@ const styles = StyleSheet.create({
   reportCard: {
     borderRadius: 12,
     padding: 16,
+    marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
@@ -683,6 +679,7 @@ const styles = StyleSheet.create({
   videoSection: {
     borderRadius: 12,
     padding: 16,
+    marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
     elevation: 3,
