@@ -1,9 +1,9 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { Database } from '@/integrations/supabase/types';
+import { Database } from '@/app/integrations/supabase/types';
 import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
 import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
 

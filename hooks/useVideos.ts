@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/integrations/supabase/types';
+import { supabase } from '@/app/integrations/supabase/client';
+import { Database } from '@/app/integrations/supabase/types';
 import { useLocation } from '@/contexts/LocationContext';
 import * as FileSystem from 'expo-file-system/legacy';
 

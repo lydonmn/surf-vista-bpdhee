@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/app/integrations/supabase/client";
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
