@@ -28,7 +28,7 @@ export function LocationSelector() {
       >
         <IconSymbol
           ios_icon_name="location.fill"
-          android_material_icon_name="location_on"
+          android_material_icon_name="place"
           size={16}
           color={colors.primary}
         />
@@ -37,7 +37,7 @@ export function LocationSelector() {
         </Text>
         <IconSymbol
           ios_icon_name="chevron.down"
-          android_material_icon_name="arrow_drop_down"
+          android_material_icon_name="arrow-drop-down"
           size={16}
           color={colors.textSecondary}
         />
@@ -89,7 +89,7 @@ export function LocationSelector() {
                   <View style={styles.locationOptionContent}>
                     <IconSymbol
                       ios_icon_name="location.fill"
-                      android_material_icon_name="location_on"
+                      android_material_icon_name="place"
                       size={24}
                       color={isSelected ? colors.primary : colors.textSecondary}
                     />
@@ -105,7 +105,7 @@ export function LocationSelector() {
                   {isSelected && (
                     <IconSymbol
                       ios_icon_name="checkmark.circle.fill"
-                      android_material_icon_name="check_circle"
+                      android_material_icon_name="check-circle"
                       size={24}
                       color={colors.primary}
                     />

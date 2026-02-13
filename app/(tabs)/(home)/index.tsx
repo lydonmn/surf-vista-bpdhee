@@ -119,8 +119,9 @@ export default function HomeScreen() {
       console.log('[HomeScreen] Screen focused - refreshing data for', locationData.displayName);
       if (isInitialized && !isLoading && user && profile && isSubscribed) {
         refreshData();
+        loadLatestVideo();
       }
-    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, locationData.displayName])
+    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
   );
 
   useEffect(() => {
@@ -436,7 +437,7 @@ export default function HomeScreen() {
                   <View style={styles.playButtonContainer}>
                     <IconSymbol
                       ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play_circle"
+                      android_material_icon_name="play-circle"
                       size={64}
                       color="rgba(255, 255, 255, 0.9)"
                     />

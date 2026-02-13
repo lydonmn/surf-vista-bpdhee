@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
@@ -28,8 +28,6 @@ export default function ReportScreen() {
   
   const [surfConditions, setSurfConditions] = useState<any>(null);
 
-
-  // ✅ Initialize video player with caching enabled for smooth preview playback
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
       console.log('[ReportScreen] Initializing video preview player with caching');
@@ -67,7 +65,6 @@ export default function ReportScreen() {
 
   const todayDate = useMemo(() => getESTDate(), []);
 
-  // CRITICAL: Filter reports by current location to prevent crossover
   const locationSurfReports = useMemo(() => {
     const filtered = surfReports.filter(report => report.location === currentLocation);
     console.log('[ReportScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
@@ -200,6 +197,17 @@ export default function ReportScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[ReportScreen] Screen focused - refreshing data for', locationData.displayName);
+      if (isInitialized && !authLoading && user && profile && isSubscribed) {
+        refreshData();
+        loadLatestVideo();
+        fetchSurfConditions();
+      }
+    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, fetchSurfConditions, locationData.displayName])
+  );
+
   useEffect(() => {
     console.log('[ReportScreen] Auth state:', {
       hasUser: !!user,
@@ -236,7 +244,6 @@ export default function ReportScreen() {
         },
         (payload) => {
           console.log('[ReportScreen] Surf conditions updated:', payload);
-          // Only refresh if the change is for the current location
           if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
             console.log('[ReportScreen] Surf conditions for current location', locationData.displayName, 'updated, refreshing...');
             fetchSurfConditions();
@@ -268,10 +275,8 @@ export default function ReportScreen() {
       await updateAllData();
       console.log('[ReportScreen] Data update completed successfully for', locationData.displayName);
       
-      // Wait a moment for the database to update
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Force refresh the data
       await Promise.all([refreshData(), fetchSurfConditions()]);
       
       Alert.alert(
@@ -312,7 +317,6 @@ export default function ReportScreen() {
       console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
       console.log('[ReportScreen] ✅ Passing preloaded URL for instant playback');
       
-      // Pass the signed URL if available for instant playback
       const params: any = { videoId: latestVideo.id };
       if (latestVideo.video_url) {
         params.preloadedUrl = latestVideo.video_url;
@@ -327,11 +331,9 @@ export default function ReportScreen() {
 
   const handleEditReport = useCallback(() => {
     console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);
-    // Don't pass an ID - the edit screen will automatically load today's report for current location
     router.push('/edit-report');
   }, [locationData.displayName]);
 
-  // ✅ Update video player source when latest video changes
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
       console.log('[ReportScreen] Loading video preview with caching enabled');
@@ -349,19 +351,19 @@ export default function ReportScreen() {
     if (upper === 'N' || upper === 'NORTH') {
       return { ios: 'arrow.up', android: 'north' };
     } else if (upper === 'NE' || upper === 'NORTHEAST' || upper.includes('NORTH') && upper.includes('EAST')) {
-      return { ios: 'arrow.up.right', android: 'north_east' };
+      return { ios: 'arrow.up.right', android: 'north-east' };
     } else if (upper === 'E' || upper === 'EAST') {
       return { ios: 'arrow.right', android: 'east' };
     } else if (upper === 'SE' || upper === 'SOUTHEAST' || upper.includes('SOUTH') && upper.includes('EAST')) {
-      return { ios: 'arrow.down.right', android: 'south_east' };
+      return { ios: 'arrow.down.right', android: 'south-east' };
     } else if (upper === 'S' || upper === 'SOUTH') {
       return { ios: 'arrow.down', android: 'south' };
     } else if (upper === 'SW' || upper === 'SOUTHWEST' || upper.includes('SOUTH') && upper.includes('WEST')) {
-      return { ios: 'arrow.down.left', android: 'south_west' };
+      return { ios: 'arrow.down.left', android: 'south-west' };
     } else if (upper === 'W' || upper === 'WEST') {
       return { ios: 'arrow.left', android: 'west' };
     } else if (upper === 'NW' || upper === 'NORTHWEST' || upper.includes('NORTH') && upper.includes('WEST')) {
-      return { ios: 'arrow.up.left', android: 'north_west' };
+      return { ios: 'arrow.up.left', android: 'north-west' };
     }
     
     const degreeMatch = direction.match(/(\d+)/);
@@ -371,19 +373,19 @@ export default function ReportScreen() {
         if (degrees >= 337.5 || degrees < 22.5) {
           return { ios: 'arrow.up', android: 'north' };
         } else if (degrees >= 22.5 && degrees < 67.5) {
-          return { ios: 'arrow.up.right', android: 'north_east' };
+          return { ios: 'arrow.up.right', android: 'north-east' };
         } else if (degrees >= 67.5 && degrees < 112.5) {
           return { ios: 'arrow.right', android: 'east' };
         } else if (degrees >= 112.5 && degrees < 157.5) {
-          return { ios: 'arrow.down.right', android: 'south_east' };
+          return { ios: 'arrow.down.right', android: 'south-east' };
         } else if (degrees >= 157.5 && degrees < 202.5) {
           return { ios: 'arrow.down', android: 'south' };
         } else if (degrees >= 202.5 && degrees < 247.5) {
-          return { ios: 'arrow.down.left', android: 'south_west' };
+          return { ios: 'arrow.down.left', android: 'south-west' };
         } else if (degrees >= 247.5 && degrees < 292.5) {
           return { ios: 'arrow.left', android: 'west' };
         } else if (degrees >= 292.5 && degrees < 337.5) {
-          return { ios: 'arrow.up.left', android: 'north_west' };
+          return { ios: 'arrow.up.left', android: 'north-west' };
         }
       }
     }
@@ -438,7 +440,6 @@ export default function ReportScreen() {
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
-    // CRITICAL: Filter tides by current location to prevent crossover
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
       return tideDate === todayDate && tide.location === currentLocation;
@@ -448,7 +449,6 @@ export default function ReportScreen() {
     
     const todayDisplayDate = formatDateString(todayDate);
     
-    // ✅ USE SHARED UTILITY - Ensures identical narrative selection as home page
     const narrativeText = selectNarrativeText(report);
     const isCustomReport = isCustomNarrative(report);
     
@@ -639,7 +639,7 @@ export default function ReportScreen() {
             <View style={styles.tideHeader}>
               <IconSymbol
                 ios_icon_name="arrow.up.arrow.down"
-                android_material_icon_name="swap_vert"
+                android_material_icon_name="swap-vert"
                 size={20}
                 color={colors.primary}
               />
@@ -938,13 +938,12 @@ export default function ReportScreen() {
                 contentFit="cover"
                 nativeControls={false}
               />
-              {/* ✅ expo-video with caching enabled for smooth preview */}
               {videoReady && (
                 <View style={styles.videoOverlay}>
                   <View style={styles.playButtonContainer}>
                     <IconSymbol
                       ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play_circle"
+                      android_material_icon_name="play-circle"
                       size={64}
                       color="rgba(255, 255, 255, 0.9)"
                     />
