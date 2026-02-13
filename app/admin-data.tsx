@@ -460,21 +460,21 @@ export default function AdminDataScreen() {
   const backIconName = 'chevron.left';
   const backMaterialIconName = 'chevron-left';
   const backButtonTextContent = 'Back';
-  const headerTitleText = 'Admin Data Manager';
+  const headerTitleText = 'Surf Data Manager';
   const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
-  const mainButtonText = `Pull Data & Generate Reports (${locationCountText})`;
-  const sectionTitleText1 = `Current Data (Today) - ${locationData.displayName}`;
+  const mainButtonText = `Update All Locations`;
+  const sectionTitleText1 = `Data Summary - ${locationData.displayName}`;
   const countLabelTides = 'Tides';
   const countLabelWeather = 'Weather';
   const countLabelForecast = 'Forecast';
   const countLabelSurf = 'Surf';
-  const infoTitleText = 'Automated Update Schedule';
-  const locationListText = locations.map(loc => `  - ${loc.displayName}`).join('\n');
-  const infoTextContent = `🔄 ACTIVE - Automated updates are running!\n\n📊 NOAA Buoy Data Schedule:\n• Buoy updates every 10 minutes (:00, :10, :20, :30, :40, :50)\n• COMPLETE wave data available at :20 and :50 of each hour\n• System fetches ONLY at :20 and :50 to ensure complete data\n\n⏰ Automated Schedule:\n• 6:00 AM EST: Generate initial conditions narrative for ALL locations\n${locationListText}\n  - Waits for next :20 or :50 window for complete data\n  - Retries up to 5 times if data incomplete\n  - Will NOT fail if wave sensors are offline - uses wind/temp data\n\n• :20 and :50 of every hour: Update buoy data only (narrative preserved)\n  - Ensures we always get complete wave data from NOAA\n  - Skips incomplete data at other times\n\n🎯 Manual Triggers:\n• Use most recent available data from today\n• No waiting for next data window\n• Immediate report generation\n\n📍 Next Complete Data Window: ${nextCompleteDataTime}`;
+  const infoTitleText = 'System Status';
+  const locationListText = locations.map(loc => `  • ${loc.displayName}`).join('\n');
+  const infoTextContent = `🔄 Automated Updates Active\n\n📊 Data Collection:\n• Buoy data: Every hour at :20 and :50\n• Weather: Hourly updates\n• Tides: Daily at 6 AM EST\n\n⏰ Report Generation:\n• Daily: 6:00 AM EST for all locations\n• Manual: Uses most recent available data\n\n📍 Next Data Window: ${nextCompleteDataTime}`;
   const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
-  const locationStatusTitle = 'Today\'s Report Status (All Locations)';
+  const locationStatusTitle = 'Location Status';
 
   return (
     <View style={styles.container}>
@@ -743,58 +743,67 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 48,
-    paddingBottom: 12,
-    backgroundColor: colors.background,
+    paddingBottom: 16,
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     paddingVertical: 8,
     paddingRight: 8,
   },
   backButtonText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
   },
   headerSpacer: {
-    width: 60,
+    width: 70,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 100,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 16,
+    marginBottom: 12,
+    marginLeft: 4,
   },
   mainActionCard: {
     backgroundColor: colors.card,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 24,
-    borderWidth: 3,
-    borderColor: colors.primary,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   mainActionTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
     marginBottom: 8,
@@ -808,25 +817,28 @@ const styles = StyleSheet.create({
   countsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   countCard: {
     flex: 1,
-    minWidth: '45%',
+    minWidth: '47%',
     backgroundColor: colors.card,
-    padding: 16,
+    padding: 18,
     borderRadius: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   countValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     color: colors.primary,
     marginBottom: 4,
   },
   countLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
+    fontWeight: '500',
   },
   button: {
     padding: 16,
@@ -898,71 +910,91 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
     borderLeftWidth: 4,
     borderLeftColor: colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   infoTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   locationCard: {
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   locationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   locationName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
     color: colors.text,
   },
   locationStatus: {
-    fontSize: 24,
+    fontSize: 26,
   },
   locationDetails: {
-    gap: 4,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 14,
+    paddingLeft: 4,
   },
   locationDetailText: {
-    fontSize: 13,
+    fontSize: 14,
     color: colors.textSecondary,
+    lineHeight: 20,
   },
   locationDetailWarning: {
-    color: '#ffaa00',
+    color: '#ff9500',
     fontWeight: '600',
   },
   locationActions: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
+    gap: 10,
+    marginTop: 4,
   },
   locationActionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   pullDataButton: {
     backgroundColor: '#3B82F6',
@@ -971,7 +1003,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
   },
   locationActionText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -990,29 +1022,32 @@ const styles = StyleSheet.create({
   },
   locationSelectorCard: {
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: colors.primary,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   locationSelectorTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   locationButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 8,
+    gap: 10,
+    marginBottom: 12,
   },
   locationButton: {
-    minWidth: '45%',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    minWidth: '47%',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 12,
     backgroundColor: colors.background,
     borderWidth: 2,
     borderColor: colors.border,
@@ -1021,9 +1056,14 @@ const styles = StyleSheet.create({
   locationButtonActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   locationButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.text,
   },
@@ -1031,9 +1071,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   locationSelectorSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,

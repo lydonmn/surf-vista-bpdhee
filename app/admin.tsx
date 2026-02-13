@@ -531,7 +531,7 @@ export default function AdminScreen() {
               size={20}
               color="#FFFFFF"
             />
-            <Text style={styles.actionButtonText}>Manage Users</Text>
+            <Text style={styles.actionButtonText}>Manage Regional Admins</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

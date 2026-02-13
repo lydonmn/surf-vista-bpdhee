@@ -1,491 +1,503 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@react-navigation/native';
-import { supabase } from '@/app/integrations/supabase/client';
-import { router } from 'expo-router';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { supabase } from './integrations/supabase/client';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { useAuth } from '@/contexts/AuthContext';
+import { useLocation } from '@/contexts/LocationContext';
 
-interface UserProfile {
+interface RegionalAdmin {
   id: string;
   email: string;
-  is_admin: boolean;
-  is_subscribed: boolean;
-  subscription_end_date: string | null;
+  is_regional_admin: boolean;
+  managed_locations: string[];
   created_at: string;
-  daily_report_notifications: boolean;
-  push_token: string | null;
-}
-
-interface SubscriptionAction {
-  userId: string;
-  userEmail: string;
-  action: 'free_months' | 'cancel' | 'pause' | 'refund';
+  created_by: string | null;
 }
 
 export default function AdminUsersScreen() {
-  const theme = useTheme();
-  const { profile } = useAuth();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { user, profile } = useAuth();
+  const { locations } = useLocation();
+  const [regionalAdmins, setRegionalAdmins] = useState<RegionalAdmin[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<SubscriptionAction | null>(null);
-  const [monthsInput, setMonthsInput] = useState('1');
-  const [processing, setProcessing] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorModalTitle, setErrorModalTitle] = useState('');
+  const [errorModalMessage, setErrorModalMessage] = useState('');
+  
+  // Form state
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 
-  const loadUsers = useCallback(async () => {
+  const loadRegionalAdmins = useCallback(async () => {
     try {
-      setLoading(true);
-      console.log('[AdminUsers] Loading all users');
-      
+      console.log('[AdminUsersScreen] Loading regional admins...');
+      setIsLoading(true);
+
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, is_regional_admin, managed_locations, created_at, created_by')
+        .eq('is_regional_admin', true)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[AdminUsers] Error loading users:', error);
+        console.error('[AdminUsersScreen] Error loading regional admins:', error);
+        showErrorModal('Error', `Failed to load regional admins: ${error.message}`);
         return;
       }
 
-      console.log('[AdminUsers] Loaded', data.length, 'users');
-      setUsers(data);
+      console.log('[AdminUsersScreen] Loaded', data?.length || 0, 'regional admins');
+      setRegionalAdmins(data || []);
     } catch (error) {
-      console.error('[AdminUsers] Exception loading users:', error);
+      console.error('[AdminUsersScreen] Exception loading regional admins:', error);
+      showErrorModal('Error', 'Failed to load regional admins');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (profile?.is_admin) {
-      loadUsers();
+    if (profile && !profile.is_admin) {
+      console.log('[AdminUsersScreen] User is not admin, redirecting...');
+      showErrorModal('Access Denied', 'You do not have admin privileges');
+      router.back();
+      return;
     }
-  }, [profile?.is_admin, loadUsers]);
 
-  const openActionModal = (userId: string, userEmail: string, action: SubscriptionAction['action']) => {
-    setSelectedAction({ userId, userEmail, action });
-    setModalVisible(true);
+    loadRegionalAdmins();
+  }, [profile, loadRegionalAdmins]);
+
+  const showErrorModal = (title: string, message: string) => {
+    setErrorModalTitle(title);
+    setErrorModalMessage(message);
+    setErrorModalVisible(true);
   };
 
-  const closeModal = () => {
-    setModalVisible(false);
-    setSelectedAction(null);
-    setMonthsInput('1');
+  const toggleLocationSelection = (locationId: string) => {
+    setSelectedLocations(prev => {
+      if (prev.includes(locationId)) {
+        return prev.filter(id => id !== locationId);
+      } else {
+        return [...prev, locationId];
+      }
+    });
   };
 
-  const handleGrantFreeMonths = async () => {
-    if (!selectedAction) return;
+  const resetForm = () => {
+    setNewAdminEmail('');
+    setNewAdminPassword('');
+    setSelectedLocations([]);
+  };
 
-    const months = parseInt(monthsInput);
-    if (isNaN(months) || months < 1 || months > 12) {
+  const handleCreateRegionalAdmin = async () => {
+    if (!newAdminEmail.trim() || !newAdminPassword.trim()) {
+      showErrorModal('Missing Information', 'Please enter both email and password');
+      return;
+    }
+
+    if (selectedLocations.length === 0) {
+      showErrorModal('Missing Information', 'Please select at least one location for this regional admin');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newAdminEmail.trim())) {
+      showErrorModal('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    // Validate password strength
+    if (newAdminPassword.length < 8) {
+      showErrorModal('Weak Password', 'Password must be at least 8 characters long');
       return;
     }
 
     try {
-      setProcessing(true);
-      console.log('[AdminUsers] Granting', months, 'free months to user:', selectedAction.userEmail);
+      console.log('[AdminUsersScreen] Creating regional admin:', newAdminEmail);
+      setIsSaving(true);
 
-      const newEndDate = new Date();
-      newEndDate.setMonth(newEndDate.getMonth() + months);
+      // Create the user account via Supabase Auth Admin API
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: newAdminEmail.trim(),
+        password: newAdminPassword,
+        email_confirm: true, // Auto-confirm email
+      });
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: true,
-          subscription_end_date: newEndDate.toISOString(),
-        })
-        .eq('id', selectedAction.userId);
-
-      if (error) {
-        console.error('[AdminUsers] Error granting free months:', error);
-        return;
+      if (authError) {
+        console.error('[AdminUsersScreen] Error creating auth user:', authError);
+        throw new Error(authError.message);
       }
 
-      console.log('[AdminUsers] ✅ Free months granted successfully');
-      closeModal();
-      await loadUsers();
+      if (!authData.user) {
+        throw new Error('Failed to create user account');
+      }
+
+      console.log('[AdminUsersScreen] Auth user created:', authData.user.id);
+
+      // Update the profile to set regional admin status
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          is_regional_admin: true,
+          managed_locations: selectedLocations,
+          created_by: user?.id || null,
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) {
+        console.error('[AdminUsersScreen] Error updating profile:', profileError);
+        throw new Error(profileError.message);
+      }
+
+      console.log('[AdminUsersScreen] ✅ Regional admin created successfully');
+
+      const locationNames = selectedLocations
+        .map(id => locations.find(loc => loc.id === id)?.displayName || id)
+        .join(', ');
+
+      showErrorModal(
+        'Success!',
+        `Regional admin created successfully!\n\nEmail: ${newAdminEmail}\nLocations: ${locationNames}\n\nThey can now log in with the password you set.`
+      );
+
+      resetForm();
+      setModalVisible(false);
+      await loadRegionalAdmins();
     } catch (error) {
-      console.error('[AdminUsers] Exception granting free months:', error);
+      console.error('[AdminUsersScreen] Error creating regional admin:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      showErrorModal('Error', `Failed to create regional admin: ${errorMsg}`);
     } finally {
-      setProcessing(false);
+      setIsSaving(false);
     }
   };
 
-  const handleCancelSubscription = async () => {
-    if (!selectedAction) return;
-
+  const handleDeleteRegionalAdmin = async (adminId: string, adminEmail: string) => {
     try {
-      setProcessing(true);
-      console.log('[AdminUsers] Canceling subscription for user:', selectedAction.userEmail);
+      console.log('[AdminUsersScreen] Deleting regional admin:', adminEmail);
 
-      const { error } = await supabase
+      // Update profile to remove regional admin status
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          is_subscribed: false,
-          subscription_end_date: null,
+          is_regional_admin: false,
+          managed_locations: [],
         })
-        .eq('id', selectedAction.userId);
+        .eq('id', adminId);
 
-      if (error) {
-        console.error('[AdminUsers] Error canceling subscription:', error);
-        return;
+      if (profileError) {
+        console.error('[AdminUsersScreen] Error updating profile:', profileError);
+        throw new Error(profileError.message);
       }
 
-      console.log('[AdminUsers] ✅ Subscription canceled successfully');
-      closeModal();
-      await loadUsers();
+      console.log('[AdminUsersScreen] ✅ Regional admin removed successfully');
+      showErrorModal('Success', `Regional admin access removed for ${adminEmail}`);
+      await loadRegionalAdmins();
     } catch (error) {
-      console.error('[AdminUsers] Exception canceling subscription:', error);
-    } finally {
-      setProcessing(false);
+      console.error('[AdminUsersScreen] Error deleting regional admin:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      showErrorModal('Error', `Failed to remove regional admin: ${errorMsg}`);
     }
   };
 
-  const handlePauseSubscription = async () => {
-    if (!selectedAction) return;
-
-    try {
-      setProcessing(true);
-      console.log('[AdminUsers] Pausing subscription for user:', selectedAction.userEmail);
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: false,
-        })
-        .eq('id', selectedAction.userId);
-
-      if (error) {
-        console.error('[AdminUsers] Error pausing subscription:', error);
-        return;
-      }
-
-      console.log('[AdminUsers] ✅ Subscription paused successfully');
-      closeModal();
-      await loadUsers();
-    } catch (error) {
-      console.error('[AdminUsers] Exception pausing subscription:', error);
-    } finally {
-      setProcessing(false);
-    }
+  const confirmDelete = (adminId: string, adminEmail: string) => {
+    setErrorModalTitle('Confirm Removal');
+    setErrorModalMessage(`Are you sure you want to remove regional admin access for ${adminEmail}?\n\nThey will still have their user account but will no longer have admin privileges.`);
+    setErrorModalVisible(true);
+    
+    // Store the action for the modal button
+    (errorModalVisible as any).deleteAction = () => handleDeleteRegionalAdmin(adminId, adminEmail);
   };
 
-  const handleIssueRefund = async () => {
-    if (!selectedAction) return;
-
-    try {
-      setProcessing(true);
-      console.log('[AdminUsers] Issuing refund for user:', selectedAction.userEmail);
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: false,
-          subscription_end_date: null,
-        })
-        .eq('id', selectedAction.userId);
-
-      if (error) {
-        console.error('[AdminUsers] Error issuing refund:', error);
-        return;
-      }
-
-      console.log('[AdminUsers] ✅ Refund issued successfully');
-      closeModal();
-      await loadUsers();
-    } catch (error) {
-      console.error('[AdminUsers] Exception issuing refund:', error);
-    } finally {
-      setProcessing(false);
+  const handleGoBack = () => {
+    console.log('[AdminUsersScreen] Navigating back...');
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/admin');
     }
-  };
-
-  const getSubscriptionStatus = (user: UserProfile): string => {
-    if (user.is_subscribed) {
-      if (user.subscription_end_date) {
-        const endDate = new Date(user.subscription_end_date);
-        const now = new Date();
-        if (endDate > now) {
-          return `Active until ${formatDate(user.subscription_end_date)}`;
-        } else {
-          return 'Expired';
-        }
-      }
-      return 'Active';
-    }
-    return 'Not Subscribed';
-  };
-
-  const formatDate = (dateString: string | null): string => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
   };
 
   if (!profile?.is_admin) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={64}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Admin access required
-          </Text>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary }]}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.buttonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <View style={styles.container}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading users...
-          </Text>
+          <Text style={styles.loadingText}>Checking permissions...</Text>
         </View>
       </View>
     );
   }
 
+  const backIconName = 'chevron.left';
+  const backMaterialIconName = 'chevron-left';
+  const backButtonText = 'Back';
+  const headerTitleText = 'Manage Regional Admins';
+  const addButtonText = 'Add Regional Admin';
+  const sectionTitleText = 'Regional Admins';
+  const emptyStateText = 'No regional admins yet';
+  const emptyStateSubtext = 'Add regional admins to help manage specific locations';
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
+          <IconSymbol
+            ios_icon_name={backIconName}
+            android_material_icon_name={backMaterialIconName}
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.backButtonText, { color: colors.primary }]}>
+            {backButtonText}
+          </Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{headerTitleText}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <IconSymbol
-              ios_icon_name="chevron.left"
-              android_material_icon_name="chevron-left"
-              size={24}
-              color={colors.primary}
-            />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={[styles.title, { color: theme.colors.text }]}>
-              User Management
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              {users.length} total users
-            </Text>
-          </View>
-        </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setModalVisible(true)}
+        >
+          <IconSymbol
+            ios_icon_name="plus.circle.fill"
+            android_material_icon_name="add_circle"
+            size={24}
+            color="#FFFFFF"
+          />
+          <Text style={styles.addButtonText}>{addButtonText}</Text>
+        </TouchableOpacity>
 
-        {users.map((user) => (
-          <View key={user.id} style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.userHeader}>
-              <View style={styles.userInfo}>
-                <Text style={[styles.userEmail, { color: theme.colors.text }]}>
-                  {user.email}
-                </Text>
-                <View style={styles.badgeRow}>
-                  {user.is_admin && (
-                    <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-                      <Text style={styles.badgeText}>Admin</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{sectionTitleText}</Text>
+
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : regionalAdmins.length === 0 ? (
+            <View style={styles.emptyState}>
+              <IconSymbol
+                ios_icon_name="person.2"
+                android_material_icon_name="group"
+                size={48}
+                color={colors.textSecondary}
+              />
+              <Text style={styles.emptyStateText}>{emptyStateText}</Text>
+              <Text style={styles.emptyStateSubtext}>{emptyStateSubtext}</Text>
+            </View>
+          ) : (
+            <>
+              {regionalAdmins.map((admin) => {
+                const locationNames = admin.managed_locations
+                  .map(id => locations.find(loc => loc.id === id)?.displayName || id)
+                  .join(', ');
+                const createdDate = new Date(admin.created_at).toLocaleDateString();
+
+                return (
+                  <View style={styles.adminCard} key={admin.id}>
+                    <View style={styles.adminHeader}>
+                      <View style={styles.adminInfo}>
+                        <Text style={styles.adminEmail}>{admin.email}</Text>
+                        <Text style={styles.adminLocations}>
+                          Locations: {locationNames || 'None'}
+                        </Text>
+                        <Text style={styles.adminDate}>Created: {createdDate}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => confirmDelete(admin.id, admin.email)}
+                      >
+                        <IconSymbol
+                          ios_icon_name="trash.fill"
+                          android_material_icon_name="delete"
+                          size={20}
+                          color="#FF3B30"
+                        />
+                      </TouchableOpacity>
                     </View>
-                  )}
-                  <View style={[
-                    styles.badge,
-                    { backgroundColor: user.is_subscribed ? colors.primary : colors.textSecondary }
-                  ]}>
-                    <Text style={styles.badgeText}>
-                      {user.is_subscribed ? 'Subscribed' : 'Free'}
-                    </Text>
                   </View>
-                  {user.daily_report_notifications && (
-                    <View style={[styles.badge, { backgroundColor: '#22C55E' }]}>
-                      <Text style={styles.badgeText}>Notifications On</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={[styles.userStatus, { color: colors.textSecondary }]}>
-                  {getSubscriptionStatus(user)}
-                </Text>
-                <Text style={[styles.userDate, { color: colors.textSecondary }]}>
-                  Joined {formatDate(user.created_at)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                onPress={() => openActionModal(user.id, user.email, 'free_months')}
-              >
-                <IconSymbol
-                  ios_icon_name="gift.fill"
-                  android_material_icon_name="card-giftcard"
-                  size={16}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.actionButtonText}>Grant Free</Text>
-              </TouchableOpacity>
-
-              {user.is_subscribed && (
-                <>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
-                    onPress={() => openActionModal(user.id, user.email, 'pause')}
-                  >
-                    <IconSymbol
-                      ios_icon_name="pause.fill"
-                      android_material_icon_name="pause"
-                      size={16}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Pause</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: '#F44336' }]}
-                    onPress={() => openActionModal(user.id, user.email, 'cancel')}
-                  >
-                    <IconSymbol
-                      ios_icon_name="xmark.circle.fill"
-                      android_material_icon_name="cancel"
-                      size={16}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
-                    onPress={() => openActionModal(user.id, user.email, 'refund')}
-                  >
-                    <IconSymbol
-                      ios_icon_name="dollarsign.circle.fill"
-                      android_material_icon_name="payment"
-                      size={16}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Refund</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </View>
-        ))}
+                );
+              })}
+            </>
+          )}
+        </View>
       </ScrollView>
 
+      {/* Add Regional Admin Modal */}
       <Modal
         visible={modalVisible}
         transparent={true}
-        animationType="fade"
-        onRequestClose={closeModal}
+        animationType="slide"
+        onRequestClose={() => !isSaving && setModalVisible(false)}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              {selectedAction?.action === 'free_months' && 'Grant Free Subscription'}
-              {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
-              {selectedAction?.action === 'pause' && 'Pause Subscription'}
-              {selectedAction?.action === 'refund' && 'Issue Refund'}
-            </Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              {selectedAction?.userEmail}
-            </Text>
-
-            {selectedAction?.action === 'free_months' && (
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                  Number of months (1-12):
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: theme.colors.background,
-                      color: theme.colors.text,
-                      borderColor: colors.textSecondary,
-                    }
-                  ]}
-                  value={monthsInput}
-                  onChangeText={setMonthsInput}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="1"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-            )}
-
-            {selectedAction?.action === 'cancel' && (
-              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-                This will immediately cancel the user&apos;s subscription. They will lose access to subscriber content.
-              </Text>
-            )}
-
-            {selectedAction?.action === 'pause' && (
-              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-                This will pause the user&apos;s subscription. They will lose access but can resume later.
-              </Text>
-            )}
-
-            {selectedAction?.action === 'refund' && (
-              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-                This will cancel the subscription and mark it for refund. Process the refund through your payment provider.
-              </Text>
-            )}
-
-            <View style={styles.modalButtons}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Regional Admin</Text>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.textSecondary }]}
-                onPress={closeModal}
-                disabled={processing}
+                onPress={() => {
+                  if (!isSaving) {
+                    resetForm();
+                    setModalVisible(false);
+                  }
+                }}
+                disabled={isSaving}
               >
-                <Text style={styles.modalButtonText}>Cancel</Text>
+                <IconSymbol
+                  ios_icon_name="xmark.circle.fill"
+                  android_material_icon_name="close"
+                  size={28}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              <Text style={styles.label}>Email Address</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="admin@example.com"
+                placeholderTextColor={colors.textSecondary}
+                value={newAdminEmail}
+                onChangeText={setNewAdminEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isSaving}
+              />
+
+              <Text style={styles.label}>Initial Password</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Minimum 8 characters"
+                placeholderTextColor={colors.textSecondary}
+                value={newAdminPassword}
+                onChangeText={setNewAdminPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isSaving}
+              />
+
+              <Text style={styles.label}>Managed Locations</Text>
+              <Text style={styles.helperText}>
+                Select which locations this admin can manage
+              </Text>
+
+              <View style={styles.locationCheckboxes}>
+                {locations.map((location) => {
+                  const isSelected = selectedLocations.includes(location.id);
+                  return (
+                    <TouchableOpacity
+                      key={location.id}
+                      style={[
+                        styles.locationCheckbox,
+                        isSelected && styles.locationCheckboxSelected,
+                      ]}
+                      onPress={() => toggleLocationSelection(location.id)}
+                      disabled={isSaving}
+                    >
+                      <View style={[
+                        styles.checkbox,
+                        isSelected && styles.checkboxSelected,
+                      ]}>
+                        {isSelected && (
+                          <IconSymbol
+                            ios_icon_name="checkmark"
+                            android_material_icon_name="check"
+                            size={16}
+                            color="#FFFFFF"
+                          />
+                        )}
+                      </View>
+                      <Text style={[
+                        styles.locationCheckboxText,
+                        isSelected && styles.locationCheckboxTextSelected,
+                      ]}>
+                        {location.displayName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  if (!isSaving) {
+                    resetForm();
+                    setModalVisible(false);
+                  }
+                }}
+                disabled={isSaving}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.modalButton,
-                  {
-                    backgroundColor:
-                      selectedAction?.action === 'free_months' ? colors.primary :
-                      selectedAction?.action === 'pause' ? '#FF9800' :
-                      selectedAction?.action === 'cancel' ? '#F44336' :
-                      '#9C27B0'
-                  }
+                  styles.saveButton,
+                  isSaving && styles.buttonDisabled,
                 ]}
-                onPress={() => {
-                  if (selectedAction?.action === 'free_months') handleGrantFreeMonths();
-                  else if (selectedAction?.action === 'cancel') handleCancelSubscription();
-                  else if (selectedAction?.action === 'pause') handlePauseSubscription();
-                  else if (selectedAction?.action === 'refund') handleIssueRefund();
-                }}
-                disabled={processing}
+                onPress={handleCreateRegionalAdmin}
+                disabled={isSaving}
               >
-                {processing ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.modalButtonText}>Confirm</Text>
+                  <Text style={styles.saveButtonText}>Create Admin</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Error/Success Modal */}
+      <Modal
+        visible={errorModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.errorModalOverlay}>
+          <View style={styles.errorModalContent}>
+            <Text style={styles.errorModalTitle}>{errorModalTitle}</Text>
+            <Text style={styles.errorModalMessage}>{errorModalMessage}</Text>
+            <TouchableOpacity
+              style={styles.errorModalButton}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.errorModalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -494,173 +506,316 @@ export default function AdminUsersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 48,
+    paddingBottom: 16,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingRight: 8,
+  },
+  backButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  headerSpacer: {
+    width: 70,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingTop: 60,
     paddingBottom: 100,
   },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    gap: 12,
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  subtitle: {
-    fontSize: 16,
-    marginTop: 4,
   },
   loadingText: {
     fontSize: 16,
+    color: colors.textSecondary,
     marginTop: 16,
   },
-  errorText: {
-    fontSize: 18,
-    marginTop: 16,
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  button: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  userCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  userHeader: {
-    marginBottom: 12,
-  },
-  userInfo: {
-    gap: 6,
-  },
-  userEmail: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  userStatus: {
-    fontSize: 13,
-  },
-  userDate: {
-    fontSize: 12,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  actionButton: {
+  addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
+  addButtonText: {
+    fontSize: 17,
     fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  adminCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  adminHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  adminInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  adminEmail: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  adminLocations: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  adminDate: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  deleteButton: {
+    padding: 8,
   },
   modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 24,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  label: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  helperText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 12,
+  },
+  input: {
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  locationCheckboxes: {
+    gap: 10,
+    marginTop: 8,
+  },
+  locationCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  locationCheckboxSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.card,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  locationCheckboxText: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  locationCheckboxTextSelected: {
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  saveButton: {
+    backgroundColor: colors.primary,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  errorModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  modalContent: {
+  errorModalContent: {
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 24,
     width: '100%',
     maxWidth: 400,
-    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
     elevation: 5,
   },
-  modalTitle: {
+  errorModalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 8,
+    color: colors.text,
+    marginBottom: 12,
   },
-  modalSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  modalMessage: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
+  errorModalMessage: {
     fontSize: 16,
+    color: colors.text,
+    lineHeight: 24,
+    marginBottom: 20,
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
+  errorModalButton: {
+    backgroundColor: colors.primary,
     paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 8,
     alignItems: 'center',
   },
-  modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  errorModalButtonText: {
+    fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

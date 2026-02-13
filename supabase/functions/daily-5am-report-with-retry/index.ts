@@ -699,18 +699,7 @@ async function processLocation(
     if (isManualTrigger) {
       console.log(`[${locationName}] 🔍 Manual trigger: Using most recent successfully pulled data...`);
       
-      // First, try to trigger a fresh fetch (but don't wait for it)
-      try {
-        console.log(`[${locationName}] Attempting to fetch fresh data...`);
-        await supabase.functions.invoke('fetch-surf-reports', {
-          body: { location: locationId },
-        });
-        await delay(3000); // Give it 3 seconds to populate
-      } catch (fetchError: any) {
-        console.warn(`[${locationName}] Fresh fetch attempt failed (will use existing data):`, fetchError);
-      }
-      
-      // Now get the most recent data from today (whether it's fresh or not)
+      // Get the most recent data from today
       const { data: mostRecentData, error: recentError } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -721,6 +710,7 @@ async function processLocation(
         .maybeSingle();
       
       if (recentError) {
+        console.error(`[${locationName}] Error fetching surf conditions:`, recentError);
         throw new Error(`Failed to fetch surf conditions: ${recentError.message}`);
       }
       
@@ -738,11 +728,11 @@ async function processLocation(
         // No data at all for today - try yesterday as last resort
         console.log(`[${locationName}] ⚠️ No data found for today, checking yesterday...`);
         
-        const yesterday = new Date(estDate);
+        const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
         
-        const { data: yesterdayData } = await supabase
+        const { data: yesterdayData, error: yesterdayError } = await supabase
           .from('surf_conditions')
           .select('*')
           .eq('location', locationId)
@@ -751,12 +741,17 @@ async function processLocation(
           .limit(1)
           .maybeSingle();
         
+        if (yesterdayError) {
+          console.error(`[${locationName}] Error fetching yesterday's data:`, yesterdayError);
+        }
+        
         if (yesterdayData) {
           console.log(`[${locationName}] ✅ Using yesterday's data as fallback`);
           // Update the date to today so the report shows for today
           surfConditions = { ...yesterdayData, date: dateStr };
           usedFallbackData = true;
         } else {
+          console.error(`[${locationName}] ❌ No surf data available for today or yesterday`);
           throw new Error('No surf data available for today or yesterday');
         }
       }
