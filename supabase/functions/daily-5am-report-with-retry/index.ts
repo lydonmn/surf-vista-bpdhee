@@ -587,10 +587,8 @@ async function processLocation(
   dateStr: string,
   isManualTrigger: boolean = false
 ) {
-  const MAX_RETRIES = isManualTrigger ? 3 : 10; // Fewer retries for manual, more for scheduled
-  const RETRY_DELAYS = isManualTrigger 
-    ? [3000, 5000, 10000] // Faster retries for manual triggers
-    : [5000, 10000, 20000, 30000, 60000, 120000, 180000, 300000, 600000, 900000]; // Up to 15 min wait for scheduled
+  const MAX_RETRIES = isManualTrigger ? 1 : 10; // Only 1 attempt for manual, 10 for scheduled
+  const RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000, 120000, 180000, 300000, 600000, 900000]; // Up to 15 min wait for scheduled
   
   try {
     console.log(`[${locationName}] Checking if report already exists for today...`);
@@ -694,129 +692,162 @@ async function processLocation(
     let surfConditions = null;
     let usedFallbackData = false;
     
-    console.log(`[${locationName}] Step 3: Fetching surf/buoy data with retry logic...`);
-    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (use most recent data)' : 'SCHEDULED (wait for new data)'}`);
+    console.log(`[${locationName}] Step 3: Fetching surf/buoy data...`);
+    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (immediate fallback to most recent data)' : 'SCHEDULED (retry for fresh data)'}`);
     
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // MANUAL TRIGGER: Immediately use most recent data from today
+    if (isManualTrigger) {
+      console.log(`[${locationName}] 🔍 Manual trigger: Fetching most recent surf data from today...`);
+      
+      // First, try to trigger a fresh fetch (but don't wait for it)
       try {
-        console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching buoy data...`);
-        
-        // Try to fetch fresh data
-        const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
+        console.log(`[${locationName}] Attempting to fetch fresh data...`);
+        await supabase.functions.invoke('fetch-surf-reports', {
           body: { location: locationId },
         });
-
-        if (buoyError) {
-          console.warn(`[${locationName}] Attempt ${attempt}: Buoy fetch warning:`, buoyError);
-        }
-
-        await delay(2000);
-
-        // Query for the most recent surf conditions for today
-        const { data: fetchedConditions, error: surfError } = await supabase
+        await delay(3000); // Give it 3 seconds to populate
+      } catch (fetchError) {
+        console.warn(`[${locationName}] Fresh fetch attempt failed (will use existing data):`, fetchError);
+      }
+      
+      // Now get the most recent data from today (whether it's fresh or not)
+      const { data: mostRecentData, error: recentError } = await supabase
+        .from('surf_conditions')
+        .select('*')
+        .eq('date', dateStr)
+        .eq('location', locationId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (recentError) {
+        throw new Error(`Failed to fetch surf conditions: ${recentError.message}`);
+      }
+      
+      if (mostRecentData) {
+        console.log(`[${locationName}] ✅ Using most recent data from today (updated: ${mostRecentData.updated_at})`);
+        surfConditions = mostRecentData;
+        usedFallbackData = true;
+      } else {
+        // No data at all for today - try yesterday as last resort
+        console.log(`[${locationName}] ⚠️ No data found for today, checking yesterday...`);
+        
+        const yesterday = new Date(estDate);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        
+        const { data: yesterdayData } = await supabase
           .from('surf_conditions')
           .select('*')
-          .eq('date', dateStr)
+          .eq('date', yesterdayStr)
           .eq('location', locationId)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-
-        if (surfError) {
-          throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
+        
+        if (yesterdayData) {
+          console.log(`[${locationName}] ✅ Using yesterday's data as fallback`);
+          // Update the date to today so the report shows for today
+          surfConditions = { ...yesterdayData, date: dateStr };
+          usedFallbackData = true;
+        } else {
+          throw new Error('No surf data available for today or yesterday');
         }
-
-        // Check if we have valid data
-        const hasWaveData = fetchedConditions && (
-          (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
-          (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
-        );
-
-        const hasBuoyData = fetchedConditions && (
-          (fetchedConditions.wind_speed && fetchedConditions.wind_speed !== 'N/A') ||
-          (fetchedConditions.water_temp && fetchedConditions.water_temp !== 'N/A')
-        );
-
-        // SUCCESS CASE: We have wave data
-        if (hasWaveData) {
-          console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`);
-          surfConditions = fetchedConditions;
-          break;
-        } 
-        
-        // PARTIAL DATA CASE: Buoy is online but wave sensors are offline
-        else if (hasBuoyData) {
-          console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online (wind/temp available)`);
+      }
+    } 
+    // SCHEDULED TRIGGER: Retry logic for fresh data
+    else {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching buoy data...`);
           
-          // For manual triggers, use available data immediately
-          if (isManualTrigger) {
-            console.log(`[${locationName}] ✅ Manual trigger: Using available buoy data (wave sensors offline)`);
-            surfConditions = fetchedConditions;
-            usedFallbackData = true;
-            break;
+          // Try to fetch fresh data
+          const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
+            body: { location: locationId },
+          });
+
+          if (buoyError) {
+            console.warn(`[${locationName}] Attempt ${attempt}: Buoy fetch warning:`, buoyError);
           }
-          
-          // For scheduled runs, retry until we get wave data OR reach max retries
-          if (attempt === MAX_RETRIES) {
-            console.log(`[${locationName}] ✅ Max retries reached: Proceeding with available buoy data (wave sensors offline)`);
-            surfConditions = fetchedConditions;
-            usedFallbackData = true;
-            break;
+
+          await delay(2000);
+
+          // Query for the most recent surf conditions for today
+          const { data: fetchedConditions, error: surfError } = await supabase
+            .from('surf_conditions')
+            .select('*')
+            .eq('date', dateStr)
+            .eq('location', locationId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (surfError) {
+            throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
           }
+
+          // Check if we have valid data
+          const hasWaveData = fetchedConditions && (
+            (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
+            (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
+          );
+
+          const hasBuoyData = fetchedConditions && (
+            (fetchedConditions.wind_speed && fetchedConditions.wind_speed !== 'N/A') ||
+            (fetchedConditions.water_temp && fetchedConditions.water_temp !== 'N/A')
+          );
+
+          // SUCCESS CASE: We have wave data
+          if (hasWaveData) {
+            console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`);
+            surfConditions = fetchedConditions;
+            break;
+          } 
           
-          lastError = `Wave sensors offline, retrying... (${attempt}/${MAX_RETRIES})`;
-        } 
-        
-        // NO DATA CASE: Nothing available yet
-        else {
-          const errorMsg = `No valid buoy data available`;
-          console.log(`[${locationName}] ⚠️ Attempt ${attempt}/${MAX_RETRIES}: ${errorMsg}`);
-          
-          // For manual triggers, try to use ANY data from today as fallback
-          if (isManualTrigger && attempt >= 2) {
-            console.log(`[${locationName}] 🔍 Manual trigger: Searching for ANY data from today...`);
+          // PARTIAL DATA CASE: Buoy is online but wave sensors are offline
+          else if (hasBuoyData) {
+            console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online (wind/temp available)`);
             
-            const { data: anyTodayData } = await supabase
-              .from('surf_conditions')
-              .select('*')
-              .eq('date', dateStr)
-              .eq('location', locationId)
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            
-            if (anyTodayData) {
-              console.log(`[${locationName}] ✅ Found existing data from today - using as fallback`);
-              surfConditions = anyTodayData;
+            // Reach max retries, use available data
+            if (attempt === MAX_RETRIES) {
+              console.log(`[${locationName}] ✅ Max retries reached: Proceeding with available buoy data (wave sensors offline)`);
+              surfConditions = fetchedConditions;
               usedFallbackData = true;
               break;
             }
+            
+            lastError = `Wave sensors offline, retrying... (${attempt}/${MAX_RETRIES})`;
+          } 
+          
+          // NO DATA CASE: Nothing available yet
+          else {
+            const errorMsg = `No valid buoy data available`;
+            console.log(`[${locationName}] ⚠️ Attempt ${attempt}/${MAX_RETRIES}: ${errorMsg}`);
+            lastError = errorMsg;
           }
           
-          lastError = errorMsg;
-        }
-        
-        // Wait before next retry
-        if (attempt < MAX_RETRIES) {
-          const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-          console.log(`[${locationName}] ⏳ Waiting ${delayMs/1000} seconds before retry...`);
-          await delay(delayMs);
-        }
-      } catch (attemptError) {
-        console.error(`[${locationName}] Attempt ${attempt} error:`, attemptError);
-        lastError = attemptError.message;
-        
-        if (attempt < MAX_RETRIES) {
-          const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-          await delay(delayMs);
+          // Wait before next retry
+          if (attempt < MAX_RETRIES) {
+            const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
+            console.log(`[${locationName}] ⏳ Waiting ${delayMs/1000} seconds before retry...`);
+            await delay(delayMs);
+          }
+        } catch (attemptError) {
+          console.error(`[${locationName}] Attempt ${attempt} error:`, attemptError);
+          lastError = attemptError.message;
+          
+          if (attempt < MAX_RETRIES) {
+            const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
+            await delay(delayMs);
+          }
         }
       }
     }
 
     // Final check: Do we have ANY data to work with?
     if (!surfConditions) {
-      console.error(`[${locationName}] ❌ All ${MAX_RETRIES} attempts failed. Last error: ${lastError}`);
-      throw new Error(`Failed after ${MAX_RETRIES} attempts: ${lastError}`);
+      console.error(`[${locationName}] ❌ All attempts failed. Last error: ${lastError}`);
+      throw new Error(`Failed to fetch surf data: ${lastError}`);
     }
 
     console.log(`[${locationName}] Step 4: Generating daily report...`);
