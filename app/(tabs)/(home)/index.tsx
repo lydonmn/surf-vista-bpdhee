@@ -264,7 +264,7 @@ export default function HomeScreen() {
     >
       <View style={styles.headerSection}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          SurfVista
+          Home
         </Text>
         <LocationSelector />
       </View>
@@ -286,19 +286,8 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* VIDEO CARD - NOW AT THE VERY TOP */}
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.sectionHeader}>
-          <IconSymbol
-            ios_icon_name="video.fill"
-            android_material_icon_name="videocam"
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Today&apos;s Drone Footage
-          </Text>
-        </View>
-
         {isLoadingVideo ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -332,23 +321,12 @@ export default function HomeScreen() {
                       size={64}
                       color="rgba(255, 255, 255, 0.9)"
                     />
-                    <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                  </View>
+                  <View style={styles.videoTitleOverlay}>
+                    <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
                   </View>
                 </View>
               )}
-            </View>
-            <View style={styles.videoInfo}>
-              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
-                {latestVideo.title}
-              </Text>
-              {latestVideo.description && (
-                <Text style={[styles.videoDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {latestVideo.description}
-                </Text>
-              )}
-              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                {new Date(latestVideo.created_at).toLocaleDateString()}
-              </Text>
             </View>
           </TouchableOpacity>
         ) : (
@@ -360,6 +338,72 @@ export default function HomeScreen() {
         )}
       </View>
 
+      {/* CURRENT CONDITIONS */}
+      {todaysReport && (
+        <View style={[styles.conditionsCard, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.conditionsTitle, { color: theme.colors.text }]}>
+            Current Conditions
+          </Text>
+          
+          <View style={styles.mainCondition}>
+            <Text style={[styles.temperature, { color: theme.colors.text }]}>
+              {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
+            </Text>
+            <Text style={[styles.weatherDescription, { color: colors.textSecondary }]}>
+              {todaysReport.weather_description || 'Clear'}
+            </Text>
+          </View>
+
+          <View style={styles.conditionsGrid}>
+            <View style={styles.conditionItem}>
+              <IconSymbol
+                ios_icon_name="wind"
+                android_material_icon_name="air"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                {windDisplay}
+              </Text>
+            </View>
+
+            <View style={styles.conditionItem}>
+              <IconSymbol
+                ios_icon_name="drop.fill"
+                android_material_icon_name="water-drop"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                Water: {waterTempDisplay}
+              </Text>
+            </View>
+
+            <View style={styles.conditionItem}>
+              <IconSymbol
+                ios_icon_name="humidity.fill"
+                android_material_icon_name="water-drop"
+                size={20}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                Humidity: {todaysReport.humidity ? `${todaysReport.humidity}%` : '0%'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.ratingSection}>
+            <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
+              Stoke Rating
+            </Text>
+            <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
+              <Text style={styles.ratingText}>--/10</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* SURF REPORT */}
       {surfLoading && !isRefreshing ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -411,13 +455,10 @@ export default function HomeScreen() {
                   </View>
                 )}
               </View>
-              <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
-                <Text style={styles.ratingText}>{ratingValue}/10</Text>
-              </View>
             </View>
 
             <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
-              <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
+              <Text style={[styles.conditionsBoxTitle, { color: colors.reportText }]}>
                 Surf Report
               </Text>
               {narrativeText ? (
@@ -522,11 +563,11 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     paddingHorizontal: 16,
-    marginBottom: 20,
-    gap: 12,
+    marginBottom: 16,
+    gap: 8,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     letterSpacing: -0.5,
   },
@@ -622,30 +663,18 @@ const styles = StyleSheet.create({
   },
   videoSection: {
     borderRadius: 16,
-    padding: 16,
     marginHorizontal: 16,
-    marginBottom: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
     boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
     elevation: 4,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
   videoCard: {
-    gap: 12,
+    width: '100%',
   },
   videoPreviewContainer: {
     width: '100%',
-    height: 220,
-    borderRadius: 12,
-    overflow: 'hidden',
+    height: 280,
     position: 'relative',
     backgroundColor: '#000000',
   },
@@ -681,27 +710,82 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  tapToPlayText: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 14,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  videoTitleOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
-  videoInfo: {
-    gap: 6,
+  videoTitleOnVideo: {
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 32,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
-  videoTitle: {
-    fontSize: 18,
+  conditionsCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
+    elevation: 4,
+  },
+  conditionsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  mainCondition: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  temperature: {
+    fontSize: 48,
     fontWeight: 'bold',
   },
-  videoDescription: {
-    fontSize: 14,
-    lineHeight: 20,
+  weatherDescription: {
+    fontSize: 16,
+    marginTop: 4,
   },
-  videoDate: {
-    fontSize: 12,
+  conditionsGrid: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  conditionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  conditionValue: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  ratingSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  ratingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  ratingBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  ratingText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   reportCard: {
     borderRadius: 16,
@@ -712,9 +796,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   reportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 20,
   },
   reportHeaderLeft: {
@@ -740,24 +821,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  ratingBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   conditionsBox: {
     padding: 18,
     borderRadius: 12,
     marginBottom: 20,
   },
-  conditionsTitle: {
+  conditionsBoxTitle: {
     fontSize: 17,
     fontWeight: 'bold',
     marginBottom: 12,
