@@ -1,232 +1,194 @@
 
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function ResetPasswordScreen() {
   const theme = useTheme();
+  const { user } = useAuth();
   const params = useLocalSearchParams();
-  const [newPassword, setNewPassword] = useState('');
+  const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isValidToken, setIsValidToken] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     console.log('[ResetPassword] Screen loaded with params:', params);
-    
-    // Check if we have a valid recovery token
-    const checkToken = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (session) {
-          console.log('[ResetPassword] Valid recovery session found');
-          setIsValidToken(true);
-        } else {
-          console.log('[ResetPassword] No valid recovery session');
-          Alert.alert(
-            'Invalid or Expired Link',
-            'This password reset link is invalid or has expired. Please request a new password reset email.',
-            [
-              {
-                text: 'OK',
-                onPress: () => router.replace('/login')
-              }
-            ]
-          );
-        }
-      } catch (error) {
-        console.error('[ResetPassword] Error checking token:', error);
-        Alert.alert(
-          'Error',
-          'Failed to verify password reset link. Please try again.',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.replace('/login')
-            }
-          ]
-        );
-      }
-    };
+    console.log('[ResetPassword] User:', user?.id);
+  }, [params, user]);
 
-    checkToken();
-  }, [params]);
+  const handleSubmit = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
 
-  const handleResetPassword = async () => {
-    if (!newPassword || !confirmPassword) {
-      Alert.alert('Missing Information', 'Please enter and confirm your new password');
+    if (!password || !confirmPassword) {
+      setErrorMessage('Please enter both password fields');
       return;
     }
 
-    if (newPassword.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters long');
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters');
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Passwords Don\'t Match', 'Please make sure both passwords match');
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
       return;
     }
-
-    setIsLoading(true);
 
     try {
-      console.log('[ResetPassword] Updating password...');
-      
-      const { data, error } = await supabase.auth.updateUser({
-        password: newPassword
+      setLoading(true);
+      console.log('[ResetPassword] Updating password');
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: password
       });
 
-      if (error) {
-        console.error('[ResetPassword] Password update error:', error);
-        Alert.alert('Error', error.message || 'Failed to reset password');
-      } else {
-        console.log('[ResetPassword] Password updated successfully');
-        Alert.alert(
-          'Password Reset Successful! ✅',
-          'Your password has been updated. You can now sign in with your new password.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Sign out to clear the recovery session
-                supabase.auth.signOut();
-                router.replace('/login');
-              }
-            }
-          ]
-        );
+      if (updateError) {
+        console.error('[ResetPassword] Error updating password:', updateError);
+        setErrorMessage(updateError.message);
+        return;
       }
-    } catch (error: any) {
-      console.error('[ResetPassword] Exception:', error);
-      Alert.alert('Error', error.message || 'An unexpected error occurred');
+
+      console.log('[ResetPassword] ✅ Password updated successfully');
+      setSuccessMessage('Password updated successfully!');
+      
+      setTimeout(() => {
+        router.replace('/(tabs)/(home)');
+      }, 2000);
+    } catch (err) {
+      console.error('[ResetPassword] Exception:', err);
+      setErrorMessage('An unexpected error occurred');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  if (!isValidToken) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Verifying reset link...
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: colors.primary }]}>
-              <IconSymbol
-                ios_icon_name="lock.rotation"
-                android_material_icon_name="lock_reset"
-                size={64}
-                color="#FFFFFF"
-              />
-            </View>
-            <Text style={[styles.title, { color: theme.colors.text }]}>
-              Create New Password
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Enter your new password below
-            </Text>
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
-              <IconSymbol
-                ios_icon_name="lock.fill"
-                android_material_icon_name="lock"
-                size={20}
-                color={colors.textSecondary}
-              />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="New Password (min 6 characters)"
-                placeholderTextColor={colors.textSecondary}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                editable={!isLoading}
-                autoCorrect={false}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <IconSymbol
-                ios_icon_name="lock.fill"
-                android_material_icon_name="lock"
-                size={20}
-                color={colors.textSecondary}
-              />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Confirm New Password"
-                placeholderTextColor={colors.textSecondary}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                editable={!isLoading}
-                autoCorrect={false}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                { backgroundColor: colors.primary },
-                isLoading && styles.submitButtonDisabled
-              ]}
-              onPress={handleResetPassword}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.submitButtonText}>
-                  Reset Password
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => router.replace('/login')}
-              disabled={isLoading}
-            >
-              <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.noticeContainer, { backgroundColor: 'rgba(70, 130, 180, 0.15)' }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
             <IconSymbol
-              ios_icon_name="info.circle.fill"
-              android_material_icon_name="info"
-              size={20}
+              ios_icon_name="chevron.left"
+              android_material_icon_name="chevron-left"
+              size={24}
               color={colors.primary}
             />
-            <Text style={[styles.noticeText, { color: theme.colors.text }]}>
-              💡 Choose a strong password with at least 6 characters. After resetting, you&apos;ll be able to sign in with your new password.
-            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Reset Password
+          </Text>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.label, { color: theme.colors.text }]}>
+            New Password
+          </Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.background,
+                  color: theme.colors.text,
+                  borderColor: colors.textSecondary,
+                }
+              ]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter new password"
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <IconSymbol
+                ios_icon_name={showPassword ? "eye.slash.fill" : "eye.fill"}
+                android_material_icon_name={showPassword ? "visibility-off" : "visibility"}
+                size={20}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
           </View>
+
+          <Text style={[styles.label, { color: theme.colors.text }]}>
+            Confirm Password
+          </Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.background,
+                  color: theme.colors.text,
+                  borderColor: colors.textSecondary,
+                }
+              ]}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry={!showConfirmPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              <IconSymbol
+                ios_icon_name={showConfirmPassword ? "eye.slash.fill" : "eye.fill"}
+                android_material_icon_name={showConfirmPassword ? "visibility-off" : "visibility"}
+                size={20}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {errorMessage ? (
+            <View style={[styles.messageBox, { backgroundColor: colors.errorBackground }]}>
+              <Text style={styles.messageText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          {successMessage ? (
+            <View style={[styles.messageBox, { backgroundColor: colors.primary + '20' }]}>
+              <Text style={[styles.messageText, { color: colors.primary }]}>{successMessage}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              { backgroundColor: colors.primary },
+              loading && styles.buttonDisabled
+            ]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.submitButtonText}>Update Password</Text>
+            )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -238,93 +200,73 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  content: {
-    maxWidth: 400,
-    width: '100%',
-    alignSelf: 'center',
+    padding: 16,
+    paddingTop: 60,
   },
   header: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(70, 130, 180, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 24,
     gap: 12,
   },
+  backButton: {
+    padding: 8,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  card: {
+    borderRadius: 12,
+    padding: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  inputContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
   input: {
-    flex: 1,
-    paddingVertical: 16,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    paddingRight: 48,
     fontSize: 16,
   },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    padding: 4,
+  },
+  messageBox: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  messageText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    textAlign: 'center',
+  },
   submitButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 8,
     alignItems: 'center',
     marginTop: 8,
   },
-  submitButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.6,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-  },
-  cancelButton: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  noticeContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(70, 130, 180, 0.3)',
-  },
-  noticeText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    textAlign: 'center',
   },
 });

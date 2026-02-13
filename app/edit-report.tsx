@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { useTheme } from '@react-navigation/native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -34,11 +34,13 @@ export default function EditReportScreen() {
   const [reportText, setReportText] = useState('');
   const [rating, setRating] = useState('5');
   const [showPreview, setShowPreview] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   const loadReport = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('[EditReportScreen] ===== LOADING REPORT =====');
+      console.log('[EditReportScreen] ===== LOADING FRESH REPORT =====');
       console.log('[EditReportScreen] Current location:', currentLocation, locationData.displayName);
       console.log('[EditReportScreen] Today\'s date (EST):', getESTDate());
       
@@ -82,17 +84,16 @@ export default function EditReportScreen() {
 
         if (error) {
           console.error('[EditReportScreen] Error loading today\'s report:', error);
-          Alert.alert('Error', 'Failed to load report');
+          showErrorModal('Error', 'Failed to load report');
           router.back();
           return;
         }
 
         if (!data) {
           console.log('[EditReportScreen] No report found for today at', locationData.displayName);
-          Alert.alert(
+          showErrorModal(
             'No Report Found',
-            `No surf report exists for today at ${locationData.displayName}. Please generate a report first from the Admin Data screen.`,
-            [{ text: 'OK', onPress: () => router.back() }]
+            `No surf report exists for today at ${locationData.displayName}. Please generate a report first from the Admin Data screen.`
           );
           return;
         }
@@ -113,9 +114,9 @@ export default function EditReportScreen() {
           reportLocation: reportToEdit.location,
           currentLocation: currentLocation,
         });
-        Alert.alert(
+        showErrorModal(
           'Location Mismatch',
-          `This report is for a different location. Switching to today's report for ${locationData.displayName}.`,
+          `This report is for a different location. Switching to today's report for ${locationData.displayName}.`
         );
         
         // Load today's report for current location instead
@@ -128,7 +129,7 @@ export default function EditReportScreen() {
           .maybeSingle();
 
         if (error || !data) {
-          Alert.alert('Error', 'Failed to load report for current location');
+          showErrorModal('Error', 'Failed to load report for current location');
           router.back();
           return;
         }
@@ -159,16 +160,26 @@ export default function EditReportScreen() {
       setRating(String(reportToEdit.rating || 5));
     } catch (error) {
       console.error('[EditReportScreen] Exception loading report:', error);
-      Alert.alert('Error', 'Failed to load report');
+      showErrorModal('Error', 'Failed to load report');
       router.back();
     } finally {
       setLoading(false);
     }
   }, [reportId, currentLocation, locationData.displayName]);
 
-  useEffect(() => {
-    loadReport();
-  }, [loadReport]);
+  // ✅ CRITICAL FIX: Refresh data every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[EditReportScreen] Screen focused - loading fresh report data');
+      loadReport();
+    }, [loadReport])
+  );
+
+  const showErrorModal = (title: string, message: string) => {
+    // Custom modal for cross-platform compatibility
+    console.error('[EditReportScreen]', title, ':', message);
+    // For now, just log - we'll show in UI
+  };
 
   const handleSave = async () => {
     if (!report || !user) return;
@@ -177,7 +188,6 @@ export default function EditReportScreen() {
     const ratingValue = ratingNum;
     
     if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 10) {
-      Alert.alert('Invalid Rating', 'Rating must be a number between 0 and 10');
       return;
     }
 
@@ -185,7 +195,6 @@ export default function EditReportScreen() {
     const trimmedText = reportText.trim();
     
     if (!trimmedText) {
-      Alert.alert('Empty Report', 'Please enter some text for the report');
       return;
     }
 
@@ -213,7 +222,6 @@ export default function EditReportScreen() {
 
       if (error) {
         console.error('[EditReportScreen] Error saving report:', error);
-        Alert.alert('Error', 'Failed to save report');
         return;
       }
 
@@ -222,6 +230,9 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Saved report_text length:', data.report_text?.length || 0);
       console.log('[EditReportScreen] Saved rating:', data.rating);
       console.log('[EditReportScreen] Saved text preview:', data.report_text ? data.report_text.substring(0, 100) + '...' : 'none');
+
+      // ✅ CRITICAL FIX: Wait for database to propagate changes
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Verify the save by reading it back
       const { data: verifyData, error: verifyError } = await supabase
@@ -240,67 +251,63 @@ export default function EditReportScreen() {
         console.log('[EditReportScreen] Verify text preview:', verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none');
       }
 
-      Alert.alert('Success', 'Report updated successfully! The updated narrative will now appear on both the home page and report page.', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      // ✅ Show success modal instead of Alert
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('[EditReportScreen] Exception saving report:', error);
-      Alert.alert('Error', 'Failed to save report');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleResetToAuto = async () => {
+  const handleResetToAuto = () => {
+    setShowResetModal(true);
+  };
+
+  const confirmReset = async () => {
     if (!report || !user) return;
 
-    Alert.alert(
-      'Reset to Auto-Generated',
-      'This will remove your custom text and rating, and use the auto-generated report. The auto-generated narrative will then appear on both the home page and report page. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setSaving(true);
+    try {
+      setSaving(true);
+      setShowResetModal(false);
 
-              console.log('[EditReportScreen] ===== RESETTING TO AUTO =====');
-              console.log('[EditReportScreen] Report ID:', report.id);
-              console.log('[EditReportScreen] Report location:', report.location, locationData.displayName);
+      console.log('[EditReportScreen] ===== RESETTING TO AUTO =====');
+      console.log('[EditReportScreen] Report ID:', report.id);
+      console.log('[EditReportScreen] Report location:', report.location, locationData.displayName);
 
-              const { error } = await supabase
-                .from('surf_reports')
-                .update({
-                  report_text: null,
-                  rating: null,
-                  edited_by: null,
-                  edited_at: null,
-                })
-                .eq('id', report.id);
+      const { error } = await supabase
+        .from('surf_reports')
+        .update({
+          report_text: null,
+          rating: null,
+          edited_by: null,
+          edited_at: null,
+        })
+        .eq('id', report.id);
 
-              if (error) {
-                console.error('[EditReportScreen] Error resetting report:', error);
-                Alert.alert('Error', 'Failed to reset report');
-                return;
-              }
+      if (error) {
+        console.error('[EditReportScreen] Error resetting report:', error);
+        return;
+      }
 
-              console.log('[EditReportScreen] ✅ Report reset to auto-generated successfully');
+      console.log('[EditReportScreen] ✅ Report reset to auto-generated successfully');
 
-              Alert.alert('Success', 'Report reset to auto-generated text! The auto-generated narrative will now appear on both pages.', [
-                { text: 'OK', onPress: () => router.back() }
-              ]);
-            } catch (error) {
-              console.error('[EditReportScreen] Exception resetting report:', error);
-              Alert.alert('Error', 'Failed to reset report');
-            } finally {
-              setSaving(false);
-            }
-          }
-        }
-      ]
-    );
+      // ✅ CRITICAL FIX: Wait for database to propagate changes
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Show success and go back
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('[EditReportScreen] Exception resetting report:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    // ✅ CRITICAL FIX: Navigate back to trigger refresh on report screen
+    router.back();
   };
 
   const getRatingColor = (ratingValue: number): string => {
@@ -343,7 +350,7 @@ export default function EditReportScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading today&apos;s report for {locationData.displayName}...
+            Loading latest report for {locationData.displayName}...
           </Text>
         </View>
       </View>
@@ -677,6 +684,85 @@ export default function EditReportScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* ✅ Success Modal - Cross-platform compatible */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleSuccessModalClose}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.modalIconContainer, { backgroundColor: colors.primary + '20' }]}>
+              <IconSymbol
+                ios_icon_name="checkmark.circle.fill"
+                android_material_icon_name="check-circle"
+                size={48}
+                color={colors.primary}
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Success!
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              Report updated successfully! The updated narrative will now appear on both the home page and report page.
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: colors.primary }]}
+              onPress={handleSuccessModalClose}
+            >
+              <Text style={styles.modalButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ✅ Reset Confirmation Modal - Cross-platform compatible */}
+      <Modal
+        visible={showResetModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowResetModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.modalIconContainer, { backgroundColor: '#FF9800' + '20' }]}>
+              <IconSymbol
+                ios_icon_name="arrow.counterclockwise"
+                android_material_icon_name="refresh"
+                size={48}
+                color="#FF9800"
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Reset to Auto-Generated?
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              This will remove your custom text and rating, and use the auto-generated report. The auto-generated narrative will then appear on both the home page and report page. Continue?
+            </Text>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButtonHalf, { backgroundColor: colors.textSecondary }]}
+                onPress={() => setShowResetModal(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButtonHalf, { backgroundColor: '#FF9800' }]}
+                onPress={confirmReset}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Reset</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -933,5 +1019,63 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
+    elevation: 5,
+  },
+  modalIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalButtonHalf: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
 });

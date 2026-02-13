@@ -1,12 +1,12 @@
 
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@react-navigation/native';
+import { supabase } from '@/app/integrations/supabase/client';
 import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
-import { supabase } from '@/app/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface UserProfile {
   id: string;
@@ -30,78 +30,42 @@ export default function AdminUsersScreen() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedAction, setSelectedAction] = useState<SubscriptionAction | null>(null);
-  const [freeMonths, setFreeMonths] = useState('1');
-  const [pauseDays, setPauseDays] = useState('30');
-  const [refundAmount, setRefundAmount] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
+  const [monthsInput, setMonthsInput] = useState('1');
+  const [processing, setProcessing] = useState(false);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
-      console.log('[AdminUsers] ===== LOADING ALL USERS =====');
-      console.log('[AdminUsers] Current admin user:', profile?.email);
       setLoading(true);
+      console.log('[AdminUsers] Loading all users');
       
-      // Fetch ALL users from profiles table
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, is_admin, is_subscribed, subscription_end_date, created_at, daily_report_notifications, push_token')
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[AdminUsers] ❌ Error loading users:', error);
-        console.error('[AdminUsers] Error code:', error.code);
-        console.error('[AdminUsers] Error message:', error.message);
-        console.error('[AdminUsers] Error details:', JSON.stringify(error));
-        throw error;
+        console.error('[AdminUsers] Error loading users:', error);
+        return;
       }
 
-      console.log('[AdminUsers] ✅ Successfully loaded users');
-      console.log('[AdminUsers] Total users fetched:', data?.length || 0);
-      console.log('[AdminUsers] Admin users:', data?.filter(u => u.is_admin).length || 0);
-      console.log('[AdminUsers] Regular users:', data?.filter(u => !u.is_admin).length || 0);
-      console.log('[AdminUsers] Subscribed users:', data?.filter(u => u.is_subscribed).length || 0);
-      console.log('[AdminUsers] Users with notifications enabled:', data?.filter(u => u.daily_report_notifications).length || 0);
-      console.log('[AdminUsers] Users with push tokens:', data?.filter(u => u.push_token && u.push_token !== 'null').length || 0);
-      
-      // Log first few users for verification
-      if (data && data.length > 0) {
-        console.log('[AdminUsers] Sample users (first 3):');
-        data.slice(0, 3).forEach((user, index) => {
-          console.log(`  ${index + 1}. ${user.email} - Admin: ${user.is_admin}, Subscribed: ${user.is_subscribed}`);
-        });
-      }
-      
-      setUsers(data || []);
-      
-      // Show success message if we have users
-      if (data && data.length > 0) {
-        console.log('[AdminUsers] 🎉 User list updated successfully!');
-      } else {
-        console.log('[AdminUsers] ⚠️ No users found in database');
-      }
-    } catch (error: any) {
-      console.error('[AdminUsers] ❌ Exception loading users:', error);
-      Alert.alert('Error', 'Failed to load users: ' + error.message);
+      console.log('[AdminUsers] Loaded', data.length, 'users');
+      setUsers(data);
+    } catch (error) {
+      console.error('[AdminUsers] Exception loading users:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (profile?.is_admin) {
       loadUsers();
     }
-  }, [profile]);
-
-  const filteredUsers = users.filter(user => 
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  }, [profile, loadUsers]);
 
   const openActionModal = (userId: string, userEmail: string, action: SubscriptionAction['action']) => {
-    console.log('[AdminUsers] Opening action modal:', action, 'for user:', userEmail);
     setSelectedAction({ userId, userEmail, action });
     setModalVisible(true);
   };
@@ -109,67 +73,44 @@ export default function AdminUsersScreen() {
   const closeModal = () => {
     setModalVisible(false);
     setSelectedAction(null);
-    setFreeMonths('1');
-    setPauseDays('30');
-    setRefundAmount('');
+    setMonthsInput('1');
   };
 
   const handleGrantFreeMonths = async () => {
     if (!selectedAction) return;
 
-    const months = parseInt(freeMonths);
+    const months = parseInt(monthsInput);
     if (isNaN(months) || months < 1 || months > 12) {
-      Alert.alert('Invalid Input', 'Please enter a number between 1 and 12');
       return;
     }
 
     try {
+      setProcessing(true);
       console.log('[AdminUsers] Granting', months, 'free months to user:', selectedAction.userEmail);
-      setActionLoading(true);
 
-      const user = users.find(u => u.id === selectedAction.userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      let newEndDate: Date;
-      
-      if (user.subscription_end_date && new Date(user.subscription_end_date) > new Date()) {
-        newEndDate = new Date(user.subscription_end_date);
-        newEndDate.setMonth(newEndDate.getMonth() + months);
-        console.log('[AdminUsers] Extending existing subscription by', months, 'months');
-      } else {
-        newEndDate = new Date();
-        newEndDate.setMonth(newEndDate.getMonth() + months);
-        console.log('[AdminUsers] Creating new subscription for', months, 'months');
-      }
+      const newEndDate = new Date();
+      newEndDate.setMonth(newEndDate.getMonth() + months);
 
       const { error } = await supabase
         .from('profiles')
         .update({
           is_subscribed: true,
-          subscription_end_date: newEndDate.toISOString()
+          subscription_end_date: newEndDate.toISOString(),
         })
         .eq('id', selectedAction.userId);
 
       if (error) {
         console.error('[AdminUsers] Error granting free months:', error);
-        throw error;
+        return;
       }
 
-      console.log('[AdminUsers] ✅ Successfully granted free months');
-      Alert.alert(
-        'Success',
-        `Granted ${months} free month${months > 1 ? 's' : ''} to ${selectedAction.userEmail}\n\nNew end date: ${newEndDate.toLocaleDateString()}`
-      );
-      
-      await loadUsers();
+      console.log('[AdminUsers] ✅ Free months granted successfully');
       closeModal();
-    } catch (error: any) {
+      await loadUsers();
+    } catch (error) {
       console.error('[AdminUsers] Exception granting free months:', error);
-      Alert.alert('Error', 'Failed to grant free months: ' + error.message);
     } finally {
-      setActionLoading(false);
+      setProcessing(false);
     }
   };
 
@@ -177,158 +118,105 @@ export default function AdminUsersScreen() {
     if (!selectedAction) return;
 
     try {
-      console.log('[AdminUsers] Cancelling subscription for user:', selectedAction.userEmail);
-      setActionLoading(true);
+      setProcessing(true);
+      console.log('[AdminUsers] Canceling subscription for user:', selectedAction.userEmail);
 
       const { error } = await supabase
         .from('profiles')
         .update({
           is_subscribed: false,
-          subscription_end_date: null
+          subscription_end_date: null,
         })
         .eq('id', selectedAction.userId);
 
       if (error) {
-        console.error('[AdminUsers] Error cancelling subscription:', error);
-        throw error;
+        console.error('[AdminUsers] Error canceling subscription:', error);
+        return;
       }
 
-      console.log('[AdminUsers] ✅ Successfully cancelled subscription');
-      Alert.alert('Success', `Subscription cancelled for ${selectedAction.userEmail}`);
-      
-      await loadUsers();
+      console.log('[AdminUsers] ✅ Subscription canceled successfully');
       closeModal();
-    } catch (error: any) {
-      console.error('[AdminUsers] Exception cancelling subscription:', error);
-      Alert.alert('Error', 'Failed to cancel subscription: ' + error.message);
+      await loadUsers();
+    } catch (error) {
+      console.error('[AdminUsers] Exception canceling subscription:', error);
     } finally {
-      setActionLoading(false);
+      setProcessing(false);
     }
   };
 
   const handlePauseSubscription = async () => {
     if (!selectedAction) return;
 
-    const days = parseInt(pauseDays);
-    if (isNaN(days) || days < 1 || days > 365) {
-      Alert.alert('Invalid Input', 'Please enter a number between 1 and 365');
-      return;
-    }
-
     try {
-      console.log('[AdminUsers] Pausing subscription for', days, 'days for user:', selectedAction.userEmail);
-      setActionLoading(true);
-
-      const user = users.find(u => u.id === selectedAction.userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      if (!user.subscription_end_date) {
-        Alert.alert('Error', 'User does not have an active subscription to pause');
-        return;
-      }
-
-      const currentEndDate = new Date(user.subscription_end_date);
-      const newEndDate = new Date(currentEndDate);
-      newEndDate.setDate(newEndDate.getDate() + days);
+      setProcessing(true);
+      console.log('[AdminUsers] Pausing subscription for user:', selectedAction.userEmail);
 
       const { error } = await supabase
         .from('profiles')
         .update({
-          subscription_end_date: newEndDate.toISOString()
+          is_subscribed: false,
         })
         .eq('id', selectedAction.userId);
 
       if (error) {
         console.error('[AdminUsers] Error pausing subscription:', error);
-        throw error;
+        return;
       }
 
-      console.log('[AdminUsers] ✅ Successfully paused subscription');
-      Alert.alert(
-        'Success',
-        `Subscription paused for ${days} day${days > 1 ? 's' : ''}\n\nOriginal end date: ${currentEndDate.toLocaleDateString()}\nNew end date: ${newEndDate.toLocaleDateString()}`
-      );
-      
-      await loadUsers();
+      console.log('[AdminUsers] ✅ Subscription paused successfully');
       closeModal();
-    } catch (error: any) {
+      await loadUsers();
+    } catch (error) {
       console.error('[AdminUsers] Exception pausing subscription:', error);
-      Alert.alert('Error', 'Failed to pause subscription: ' + error.message);
     } finally {
-      setActionLoading(false);
+      setProcessing(false);
     }
   };
 
   const handleIssueRefund = async () => {
     if (!selectedAction) return;
 
-    const amount = parseFloat(refundAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert('Invalid Input', 'Please enter a valid refund amount');
-      return;
-    }
-
     try {
-      console.log('[AdminUsers] Issuing refund of $', amount, 'to user:', selectedAction.userEmail);
-      setActionLoading(true);
+      setProcessing(true);
+      console.log('[AdminUsers] Issuing refund for user:', selectedAction.userEmail);
 
       const { error } = await supabase
         .from('profiles')
         .update({
           is_subscribed: false,
-          subscription_end_date: null
+          subscription_end_date: null,
         })
         .eq('id', selectedAction.userId);
 
       if (error) {
         console.error('[AdminUsers] Error issuing refund:', error);
-        throw error;
+        return;
       }
 
-      console.log('[AdminUsers] ✅ Successfully issued refund');
-      Alert.alert(
-        'Refund Issued',
-        `Refund of $${amount.toFixed(2)} marked for ${selectedAction.userEmail}\n\nSubscription has been cancelled.\n\nIMPORTANT: Process the actual refund through RevenueCat dashboard or your payment provider.`
-      );
-      
-      await loadUsers();
+      console.log('[AdminUsers] ✅ Refund issued successfully');
       closeModal();
-    } catch (error: any) {
+      await loadUsers();
+    } catch (error) {
       console.error('[AdminUsers] Exception issuing refund:', error);
-      Alert.alert('Error', 'Failed to issue refund: ' + error.message);
     } finally {
-      setActionLoading(false);
+      setProcessing(false);
     }
   };
 
-  const getSubscriptionStatus = (user: UserProfile): { text: string; color: string } => {
-    if (user.is_admin) {
-      return { text: 'Admin (Full Access)', color: colors.accent };
+  const getSubscriptionStatus = (user: UserProfile): string => {
+    if (user.is_subscribed) {
+      if (user.subscription_end_date) {
+        const endDate = new Date(user.subscription_end_date);
+        const now = new Date();
+        if (endDate > now) {
+          return `Active until ${formatDate(user.subscription_end_date)}`;
+        } else {
+          return 'Expired';
+        }
+      }
+      return 'Active';
     }
-
-    if (!user.is_subscribed) {
-      return { text: 'No Subscription', color: colors.textSecondary };
-    }
-
-    if (!user.subscription_end_date) {
-      return { text: 'Active (No End Date)', color: colors.primary };
-    }
-
-    const endDate = new Date(user.subscription_end_date);
-    const now = new Date();
-    const isActive = endDate > now;
-
-    if (isActive) {
-      const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      return { 
-        text: `Active (${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} left)`, 
-        color: colors.primary 
-      };
-    } else {
-      return { text: 'Expired', color: '#FF6B6B' };
-    }
+    return 'Not Subscribed';
   };
 
   const formatDate = (dateString: string | null): string => {
@@ -364,430 +252,239 @@ export default function AdminUsersScreen() {
     );
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <IconSymbol
-            ios_icon_name="chevron.left"
-            android_material_icon_name="arrow-back"
-            size={24}
-            color={colors.primary}
-          />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: theme.colors.text }]}>
-          User Management
-        </Text>
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={loadUsers}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
-              size={24}
-              color={colors.primary}
-            />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <IconSymbol
-          ios_icon_name="magnifyingglass"
-          android_material_icon_name="search"
-          size={20}
-          color={colors.textSecondary}
-        />
-        <TextInput
-          style={[styles.searchInput, { color: theme.colors.text }]}
-          placeholder="Search by email..."
-          placeholderTextColor={colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      <View style={[styles.statsCard, { backgroundColor: theme.colors.card }]}>
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: theme.colors.text }]}>
-            {users.length}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-            Total Users
-          </Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>
-            {users.filter(u => u.is_subscribed).length}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-            Subscribed
-          </Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.accent }]}>
-            {users.filter(u => u.is_admin).length}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-            Admins
-          </Text>
-        </View>
-      </View>
-
-      {loading ? (
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading all users...
+            Loading users...
           </Text>
         </View>
-      ) : (
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {filteredUsers.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol
-                ios_icon_name="person.slash"
-                android_material_icon_name="person-off"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                {searchQuery ? 'No users found matching your search' : 'No users found'}
-              </Text>
-            </View>
-          ) : (
-            filteredUsers.map((user, index) => {
-              const status = getSubscriptionStatus(user);
-              const hasNotifications = user.daily_report_notifications;
-              const hasPushToken = user.push_token && user.push_token !== 'null';
-              
-              return (
-                <View key={`user-${user.id || index}`} style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
-                  <View style={styles.userHeader}>
-                    <View style={styles.userIconContainer}>
-                      <IconSymbol
-                        ios_icon_name="person.circle.fill"
-                        android_material_icon_name="account-circle"
-                        size={40}
-                        color={user.is_admin ? colors.accent : colors.primary}
-                      />
-                    </View>
-                    <View style={styles.userInfo}>
-                      <Text style={[styles.userEmail, { color: theme.colors.text }]}>
-                        {user.email}
-                      </Text>
-                      <Text style={[styles.userDate, { color: colors.textSecondary }]}>
-                        Joined {formatDate(user.created_at)}
-                      </Text>
-                    </View>
-                  </View>
+      </View>
+    );
+  }
 
-                  <View style={[styles.statusBadge, { backgroundColor: status.color + '20' }]}>
-                    <Text style={[styles.statusText, { color: status.color }]}>
-                      {status.text}
-                    </Text>
-                  </View>
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <IconSymbol
+              ios_icon_name="chevron.left"
+              android_material_icon_name="chevron-left"
+              size={24}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <View style={styles.headerTextContainer}>
+            <Text style={[styles.title, { color: theme.colors.text }]}>
+              User Management
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              {users.length} total users
+            </Text>
+          </View>
+        </View>
 
-                  {user.subscription_end_date && (
-                    <View style={styles.endDateContainer}>
-                      <IconSymbol
-                        ios_icon_name="calendar"
-                        android_material_icon_name="calendar-today"
-                        size={16}
-                        color={colors.textSecondary}
-                      />
-                      <Text style={[styles.endDateText, { color: colors.textSecondary }]}>
-                        Ends: {formatDate(user.subscription_end_date)}
-                      </Text>
+        {users.map((user) => (
+          <View key={user.id} style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.userHeader}>
+              <View style={styles.userInfo}>
+                <Text style={[styles.userEmail, { color: theme.colors.text }]}>
+                  {user.email}
+                </Text>
+                <View style={styles.badgeRow}>
+                  {user.is_admin && (
+                    <View style={[styles.badge, { backgroundColor: colors.accent }]}>
+                      <Text style={styles.badgeText}>Admin</Text>
                     </View>
                   )}
-
-                  {/* Notification Status */}
-                  <View style={styles.notificationStatusContainer}>
-                    <View style={styles.notificationStatusRow}>
-                      <IconSymbol
-                        ios_icon_name="bell.fill"
-                        android_material_icon_name="notifications"
-                        size={16}
-                        color={hasNotifications ? colors.primary : colors.textSecondary}
-                      />
-                      <Text style={[styles.notificationStatusText, { 
-                        color: hasNotifications ? colors.primary : colors.textSecondary 
-                      }]}>
-                        Notifications: {hasNotifications ? 'Enabled' : 'Disabled'}
-                      </Text>
+                  <View style={[
+                    styles.badge,
+                    { backgroundColor: user.is_subscribed ? colors.primary : colors.textSecondary }
+                  ]}>
+                    <Text style={styles.badgeText}>
+                      {user.is_subscribed ? 'Subscribed' : 'Free'}
+                    </Text>
+                  </View>
+                  {user.daily_report_notifications && (
+                    <View style={[styles.badge, { backgroundColor: '#22C55E' }]}>
+                      <Text style={styles.badgeText}>Notifications On</Text>
                     </View>
-                    {hasNotifications && (
-                      <View style={styles.notificationStatusRow}>
-                        <IconSymbol
-                          ios_icon_name="checkmark.circle.fill"
-                          android_material_icon_name="check-circle"
-                          size={16}
-                          color={hasPushToken ? '#4CAF50' : '#FF9800'}
-                        />
-                        <Text style={[styles.notificationStatusText, { 
-                          color: hasPushToken ? '#4CAF50' : '#FF9800'
-                        }]}>
-                          Push Token: {hasPushToken ? 'Registered' : 'Missing'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.actionsContainer}>
-                    <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                      onPress={() => openActionModal(user.id, user.email, 'free_months')}
-                    >
-                      <IconSymbol
-                        ios_icon_name="gift.fill"
-                        android_material_icon_name="card-giftcard"
-                        size={18}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.actionButtonText}>
-                        Free Months
-                      </Text>
-                    </TouchableOpacity>
-
-                    {user.is_subscribed && (
-                      <>
-                        <TouchableOpacity
-                          style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
-                          onPress={() => openActionModal(user.id, user.email, 'pause')}
-                        >
-                          <IconSymbol
-                            ios_icon_name="pause.circle.fill"
-                            android_material_icon_name="pause-circle"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.actionButtonText}>
-                            Pause
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.actionButton, { backgroundColor: '#FF6B6B' }]}
-                          onPress={() => openActionModal(user.id, user.email, 'cancel')}
-                        >
-                          <IconSymbol
-                            ios_icon_name="xmark.circle.fill"
-                            android_material_icon_name="cancel"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.actionButtonText}>
-                            Cancel
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
-                          onPress={() => openActionModal(user.id, user.email, 'refund')}
-                        >
-                          <IconSymbol
-                            ios_icon_name="dollarsign.circle.fill"
-                            android_material_icon_name="payment"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.actionButtonText}>
-                            Refund
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
+                  )}
                 </View>
-              );
-            })
-          )}
-        </ScrollView>
-      )}
+                <Text style={[styles.userStatus, { color: colors.textSecondary }]}>
+                  {getSubscriptionStatus(user)}
+                </Text>
+                <Text style={[styles.userDate, { color: colors.textSecondary }]}>
+                  Joined {formatDate(user.created_at)}
+                </Text>
+              </View>
+            </View>
 
-      {/* Action Modal - IMPROVED WITH KEYBOARD AVOIDANCE AND SCROLLING */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeModal}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <TouchableOpacity 
-            style={styles.modalOverlayTouchable}
-            activeOpacity={1}
-            onPress={closeModal}
-          >
-            <TouchableOpacity 
-              activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}
-              style={styles.modalContentWrapper}
-            >
-              <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                    {selectedAction?.action === 'free_months' && 'Grant Free Months'}
-                    {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
-                    {selectedAction?.action === 'pause' && 'Pause Subscription'}
-                    {selectedAction?.action === 'refund' && 'Issue Refund'}
-                  </Text>
-                  <TouchableOpacity onPress={closeModal}>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                onPress={() => openActionModal(user.id, user.email, 'free_months')}
+              >
+                <IconSymbol
+                  ios_icon_name="gift.fill"
+                  android_material_icon_name="card-giftcard"
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.actionButtonText}>Grant Free</Text>
+              </TouchableOpacity>
+
+              {user.is_subscribed && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
+                    onPress={() => openActionModal(user.id, user.email, 'pause')}
+                  >
+                    <IconSymbol
+                      ios_icon_name="pause.fill"
+                      android_material_icon_name="pause"
+                      size={16}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>Pause</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#F44336' }]}
+                    onPress={() => openActionModal(user.id, user.email, 'cancel')}
+                  >
                     <IconSymbol
                       ios_icon_name="xmark.circle.fill"
                       android_material_icon_name="cancel"
-                      size={28}
-                      color={colors.textSecondary}
+                      size={16}
+                      color="#FFFFFF"
                     />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView 
-                  style={styles.modalScrollView}
-                  contentContainerStyle={styles.modalScrollContent}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={true}
-                >
-                  <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                    {selectedAction?.userEmail}
-                  </Text>
-
-                  {selectedAction?.action === 'free_months' && (
-                    <View style={styles.modalBody}>
-                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                        Number of Free Months
-                      </Text>
-                      <TextInput
-                        style={[styles.modalInput, { 
-                          backgroundColor: theme.colors.background,
-                          color: theme.colors.text,
-                          borderColor: colors.textSecondary
-                        }]}
-                        placeholder="1"
-                        placeholderTextColor={colors.textSecondary}
-                        value={freeMonths}
-                        onChangeText={setFreeMonths}
-                        keyboardType="number-pad"
-                        returnKeyType="done"
-                        maxLength={2}
-                      />
-                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                        Enter a number between 1 and 12. This will extend their subscription by the specified number of months.
-                      </Text>
-                    </View>
-                  )}
-
-                  {selectedAction?.action === 'pause' && (
-                    <View style={styles.modalBody}>
-                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                        Pause Duration (Days)
-                      </Text>
-                      <TextInput
-                        style={[styles.modalInput, { 
-                          backgroundColor: theme.colors.background,
-                          color: theme.colors.text,
-                          borderColor: colors.textSecondary
-                        }]}
-                        placeholder="30"
-                        placeholderTextColor={colors.textSecondary}
-                        value={pauseDays}
-                        onChangeText={setPauseDays}
-                        keyboardType="number-pad"
-                        returnKeyType="done"
-                        maxLength={3}
-                      />
-                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                        Enter the number of days to extend their subscription. This effectively pauses billing for the specified period.
-                      </Text>
-                    </View>
-                  )}
-
-                  {selectedAction?.action === 'cancel' && (
-                    <View style={styles.modalBody}>
-                      <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
-                        This will immediately cancel the user&apos;s subscription and revoke their access. This action cannot be undone.
-                      </Text>
-                    </View>
-                  )}
-
-                  {selectedAction?.action === 'refund' && (
-                    <View style={styles.modalBody}>
-                      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                        Refund Amount ($)
-                      </Text>
-                      <TextInput
-                        style={[styles.modalInput, { 
-                          backgroundColor: theme.colors.background,
-                          color: theme.colors.text,
-                          borderColor: colors.textSecondary
-                        }]}
-                        placeholder="12.99"
-                        placeholderTextColor={colors.textSecondary}
-                        value={refundAmount}
-                        onChangeText={setRefundAmount}
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                      />
-                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                        Enter the refund amount. This will cancel their subscription. You must process the actual refund through RevenueCat or your payment provider.
-                      </Text>
-                    </View>
-                  )}
-                </ScrollView>
-
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.cancelButton, { borderColor: colors.textSecondary }]}
-                    onPress={closeModal}
-                    disabled={actionLoading}
-                  >
-                    <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>
-                      Cancel
-                    </Text>
+                    <Text style={styles.actionButtonText}>Cancel</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.modalButton, styles.confirmButton, { 
-                      backgroundColor: selectedAction?.action === 'cancel' || selectedAction?.action === 'refund' 
-                        ? '#FF6B6B' 
-                        : colors.primary 
-                    }]}
-                    onPress={() => {
-                      if (selectedAction?.action === 'free_months') handleGrantFreeMonths();
-                      else if (selectedAction?.action === 'cancel') handleCancelSubscription();
-                      else if (selectedAction?.action === 'pause') handlePauseSubscription();
-                      else if (selectedAction?.action === 'refund') handleIssueRefund();
-                    }}
-                    disabled={actionLoading}
+                    style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
+                    onPress={() => openActionModal(user.id, user.email, 'refund')}
                   >
-                    {actionLoading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>
-                        {selectedAction?.action === 'free_months' && 'Grant'}
-                        {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
-                        {selectedAction?.action === 'pause' && 'Pause'}
-                        {selectedAction?.action === 'refund' && 'Issue Refund'}
-                      </Text>
-                    )}
+                    <IconSymbol
+                      ios_icon_name="dollarsign.circle.fill"
+                      android_material_icon_name="payment"
+                      size={16}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>Refund</Text>
                   </TouchableOpacity>
-                </View>
+                </>
+              )}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              {selectedAction?.action === 'free_months' && 'Grant Free Subscription'}
+              {selectedAction?.action === 'cancel' && 'Cancel Subscription'}
+              {selectedAction?.action === 'pause' && 'Pause Subscription'}
+              {selectedAction?.action === 'refund' && 'Issue Refund'}
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              {selectedAction?.userEmail}
+            </Text>
+
+            {selectedAction?.action === 'free_months' && (
+              <View style={styles.inputContainer}>
+                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                  Number of months (1-12):
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: theme.colors.background,
+                      color: theme.colors.text,
+                      borderColor: colors.textSecondary,
+                    }
+                  ]}
+                  value={monthsInput}
+                  onChangeText={setMonthsInput}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholder="1"
+                  placeholderTextColor={colors.textSecondary}
+                />
               </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
+            )}
+
+            {selectedAction?.action === 'cancel' && (
+              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+                This will immediately cancel the user&apos;s subscription. They will lose access to subscriber content.
+              </Text>
+            )}
+
+            {selectedAction?.action === 'pause' && (
+              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+                This will pause the user&apos;s subscription. They will lose access but can resume later.
+              </Text>
+            )}
+
+            {selectedAction?.action === 'refund' && (
+              <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+                This will cancel the subscription and mark it for refund. Process the refund through your payment provider.
+              </Text>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.textSecondary }]}
+                onPress={closeModal}
+                disabled={processing}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    backgroundColor:
+                      selectedAction?.action === 'free_months' ? colors.primary :
+                      selectedAction?.action === 'pause' ? '#FF9800' :
+                      selectedAction?.action === 'cancel' ? '#F44336' :
+                      '#9C27B0'
+                  }
+                ]}
+                onPress={() => {
+                  if (selectedAction?.action === 'free_months') handleGrantFreeMonths();
+                  else if (selectedAction?.action === 'cancel') handleCancelSubscription();
+                  else if (selectedAction?.action === 'pause') handlePauseSubscription();
+                  else if (selectedAction?.action === 'refund') handleIssueRefund();
+                }}
+                disabled={processing}
+              >
+                {processing ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Confirm</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -798,6 +495,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingTop: 60,
+    paddingBottom: 100,
+  },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -807,83 +512,42 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
+    marginBottom: 24,
+    gap: 12,
   },
   backButton: {
     padding: 8,
   },
-  refreshButton: {
-    padding: 8,
-    minWidth: 40,
-    alignItems: 'center',
+  headerTextContainer: {
+    flex: 1,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    flex: 1,
-    textAlign: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 12,
-    textAlign: 'center',
+  subtitle: {
+    fontSize: 16,
+    marginTop: 4,
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    marginHorizontal: 8,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
+  loadingText: {
     fontSize: 16,
     marginTop: 16,
+  },
+  errorText: {
+    fontSize: 18,
+    marginTop: 16,
+    marginBottom: 24,
     textAlign: 'center',
+  },
+  button: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   userCard: {
     borderRadius: 12,
@@ -893,60 +557,37 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   userHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 12,
-    gap: 12,
-  },
-  userIconContainer: {
-    width: 40,
-    height: 40,
   },
   userInfo: {
-    flex: 1,
+    gap: 6,
   },
   userEmail: {
     fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontWeight: 'bold',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  userStatus: {
+    fontSize: 13,
   },
   userDate: {
     fontSize: 12,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  endDateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  endDateText: {
-    fontSize: 13,
-  },
-  notificationStatusContainer: {
-    marginBottom: 12,
-    gap: 6,
-  },
-  notificationStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  notificationStatusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  actionsContainer: {
+  actionButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
@@ -954,124 +595,72 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
+    gap: 4,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   actionButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-  },
-  errorText: {
-    fontSize: 18,
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loadingText: {
-    fontSize: 16,
-    marginTop: 16,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalOverlayTouchable: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalContentWrapper: {
-    maxHeight: '85%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 24,
-    paddingHorizontal: 24,
-    paddingBottom: 32,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
+    elevation: 5,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    marginBottom: 8,
   },
   modalSubtitle: {
     fontSize: 14,
     marginBottom: 16,
   },
-  modalScrollView: {
-    maxHeight: 300,
+  modalMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
   },
-  modalScrollContent: {
-    paddingBottom: 16,
-  },
-  modalBody: {
+  inputContainer: {
     marginBottom: 16,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
     marginBottom: 8,
+    fontWeight: '600',
   },
-  modalInput: {
+  input: {
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
-    fontSize: 18,
-    marginBottom: 8,
-    minHeight: 48,
+    fontSize: 16,
   },
-  helperText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  warningText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  modalActions: {
+  modalButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  cancelButton: {
-    borderWidth: 2,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  confirmButton: {
-    minHeight: 48,
-  },
-  confirmButtonText: {
+  modalButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

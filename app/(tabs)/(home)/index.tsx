@@ -1,554 +1,758 @@
 
-import { LocationSelector } from "@/components/LocationSelector";
-import { WeeklyForecast } from "@/components/WeeklyForecast";
-import { useState, useCallback, useMemo } from "react";
-import { SurfReport } from "@/types";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
+import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
-import { IconSymbol } from "@/components/IconSymbol";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, ImageBackground, ImageSourcePropType, useColorScheme } from "react-native";
-import { useSurfData } from "@/hooks/useSurfData";
-import { useVideos } from "@/hooks/useVideos";
+import { router, useFocusEffect } from "expo-router";
 import { colors } from "@/styles/commonStyles";
-import { router } from "expo-router";
-import { presentPaywall } from "@/utils/superwallConfig";
-import { selectNarrativeText } from "@/utils/reportNarrativeSelector";
+import { IconSymbol } from "@/components/IconSymbol";
+import { useSurfData } from "@/hooks/useSurfData";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
+import { supabase } from "@/app/integrations/supabase/client";
+import { Video } from "@/types";
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { formatWaterTemp, formatLastUpdated, getESTDate } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
-
-function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
-  if (!source) return { uri: '' };
-  if (typeof source === 'string') return { uri: source };
-  return source as ImageSourcePropType;
-}
-
-function getESTDate(): string {
-  const now = new Date();
-  const estOffset = -5 * 60;
-  const localOffset = now.getTimezoneOffset();
-  const estTime = new Date(now.getTime() + (estOffset - localOffset) * 60 * 1000);
-  return estTime.toISOString().split('T')[0];
-}
+import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 
 export default function HomeScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
-  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
-  const { videos, refreshVideos } = useVideos();
-  const { surfReports, weatherData, weatherForecast, refreshData } = useSurfData();
-  const { currentLocation } = useLocation();
-  
-  const [refreshing, setRefreshing] = useState(false);
+  const theme = useTheme();
+  const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
+  const isSubscribed = checkSubscription();
+  const { currentLocation, locationData } = useLocation();
+  const { surfReports, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [latestVideo, setLatestVideo] = useState<Video | null>(null);
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
-  const hasSubscription = useMemo(() => {
-    return checkSubscription();
-  }, [checkSubscription]);
-
-  const isLoading = !isInitialized;
-
-  const handleRefresh = useCallback(async () => {
-    console.log('[HomeScreen] Manual refresh triggered');
-    setRefreshing(true);
-    try {
-      await Promise.all([
-        refreshVideos(),
-        refreshData()
-      ]);
-    } catch (error) {
-      console.error('[HomeScreen] Error refreshing data:', error);
-    } finally {
-      setRefreshing(false);
+  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
+    if (latestVideo?.video_url) {
+      console.log('[HomeScreen] Initializing video preview player with caching');
+      player.loop = true;
+      player.muted = true;
+      player.volume = 0;
+      console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
     }
-  }, [refreshVideos, refreshData]);
-
-  const handleVideoPress = useCallback((videoId: string, preloadedUrl?: string) => {
-    console.log('[HomeScreen] Video pressed:', videoId);
-    console.log('[HomeScreen] ⚡ Passing preloaded URL for instant playback:', !!preloadedUrl);
-    
-    router.push({
-      pathname: '/video-player',
-      params: { 
-        videoId,
-        preloadedUrl: preloadedUrl || '',
-      }
-    });
-  }, []);
-
-  const handleSubscribe = useCallback(async () => {
-    console.log('[HomeScreen] Subscribe button pressed');
-    try {
-      await presentPaywall();
-    } catch (error) {
-      console.error('[HomeScreen] Error presenting paywall:', error);
-      Alert.alert('Error', 'Failed to open subscription page. Please try again.');
-    }
-  }, []);
-
-  const handleSignIn = useCallback(() => {
-    console.log('[HomeScreen] Sign In button pressed');
-    router.push('/login');
-  }, []);
-
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: isDark ? '#000000' : colors.background,
-    },
-    scrollContent: {
-      paddingBottom: 100,
-    },
-    welcomeText: {
-      fontSize: 18,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-      textAlign: 'center',
-      marginTop: 20,
-      marginBottom: 8,
-    },
-    videoCard: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      borderRadius: 16,
-      overflow: 'hidden',
-      backgroundColor: isDark ? '#1A1A1A' : colors.card,
-    },
-    videoThumbnail: {
-      width: '100%',
-      height: 250,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    videoOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.3)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    surfVistaTitle: {
-      fontSize: 48,
-      fontWeight: 'bold',
-      color: '#5B9BD5',
-      textAlign: 'center',
-      marginBottom: 16,
-    },
-    playButton: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: 'rgba(91, 155, 213, 0.9)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    locationSection: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-    },
-    updatedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: 12,
-      gap: 8,
-    },
-    updatedText: {
-      fontSize: 14,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-    },
-    conditionsCard: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      backgroundColor: isDark ? '#1A1A1A' : colors.card,
-      borderRadius: 16,
-      padding: 16,
-    },
-    conditionsTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-      marginBottom: 12,
-    },
-    conditionsGrid: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-    },
-    conditionItem: {
-      flex: 1,
-    },
-    temperatureText: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    weatherText: {
-      fontSize: 14,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-      marginTop: 4,
-    },
-    stokeRatingContainer: {
-      alignItems: 'flex-end',
-    },
-    stokeLabel: {
-      fontSize: 12,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-      marginBottom: 4,
-    },
-    stokeRating: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      color: '#FF6B35',
-    },
-    weatherDetailsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 16,
-      paddingTop: 12,
-      borderTopWidth: 1,
-      borderTopColor: isDark ? '#333333' : colors.secondary,
-    },
-    weatherDetail: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-    },
-    weatherDetailText: {
-      fontSize: 13,
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    reportCard: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      backgroundColor: isDark ? '#1A1A1A' : colors.card,
-      borderRadius: 16,
-      padding: 16,
-    },
-    reportHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 12,
-      gap: 8,
-    },
-    reportTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-    },
-    reportText: {
-      fontSize: 14,
-      color: isDark ? '#FFFFFF' : colors.text,
-      lineHeight: 20,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: isDark ? '#000000' : colors.background,
-    },
-    loadingText: {
-      marginTop: 12,
-      fontSize: 16,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-    },
-    welcomeContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: isDark ? '#000000' : colors.background,
-    },
-    logoContainer: {
-      width: 120,
-      height: 120,
-      borderRadius: 60,
-      backgroundColor: colors.primary,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: 24,
-    },
-    appTitle: {
-      fontSize: 32,
-      fontWeight: 'bold',
-      color: isDark ? '#FFFFFF' : colors.text,
-      marginBottom: 8,
-    },
-    appSubtitle: {
-      fontSize: 16,
-      color: isDark ? '#B0B0B0' : colors.textSecondary,
-      marginBottom: 40,
-    },
-    signInButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 48,
-      paddingVertical: 16,
-      borderRadius: 12,
-      marginBottom: 16,
-      minWidth: 200,
-      alignItems: 'center',
-    },
-    signInButtonText: {
-      color: '#FFFFFF',
-      fontSize: 18,
-      fontWeight: '600',
-    },
-    signUpButton: {
-      backgroundColor: 'transparent',
-      paddingHorizontal: 48,
-      paddingVertical: 16,
-      borderRadius: 12,
-      borderWidth: 2,
-      borderColor: colors.primary,
-      minWidth: 200,
-      alignItems: 'center',
-    },
-    signUpButtonText: {
-      color: colors.primary,
-      fontSize: 18,
-      fontWeight: '600',
-    },
-    errorContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: isDark ? '#000000' : colors.background,
-    },
-    errorText: {
-      fontSize: 16,
-      color: colors.error,
-      textAlign: 'center',
-      marginBottom: 16,
-    },
-    subscribeButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 8,
-      marginTop: 16,
-    },
-    subscribeButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
-    },
   });
 
-  if (isLoading) {
-    console.log('[HomeScreen] Showing loading state - isInitialized:', isInitialized);
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
+  const isDarkMode = theme.dark;
 
-  if (!user) {
-    console.log('[HomeScreen] No user, showing welcome screen');
+  const todayDate = useMemo(() => getESTDate(), []);
+
+  const locationSurfReports = useMemo(() => {
+    const filtered = surfReports.filter(report => report.location === currentLocation);
+    console.log('[HomeScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
+    return filtered;
+  }, [surfReports, currentLocation]);
+
+  const todaysReport = useMemo(() => {
+    try {
+      console.log('[HomeScreen] ===== FINDING TODAY\'S REPORT =====');
+      console.log('[HomeScreen] Current EST date:', todayDate);
+      console.log('[HomeScreen] Current location:', currentLocation, locationData.displayName);
+      console.log('[HomeScreen] Total reports for this location:', locationSurfReports.length);
+      
+      const todayReports = locationSurfReports.filter(report => {
+        if (!report.date) return false;
+        const reportDate = report.date.split('T')[0];
+        return reportDate === todayDate;
+      });
+      
+      console.log('[HomeScreen] Found', todayReports.length, 'reports for today at', locationData.displayName);
+      
+      if (todayReports.length > 0) {
+        const report = todayReports[0];
+        console.log('[HomeScreen] ===== USING TODAY\'S REPORT =====');
+        console.log('[HomeScreen] Report ID:', report.id);
+        console.log('[HomeScreen] Report location:', report.location);
+        console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
+        console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
+        console.log('[HomeScreen] report_text length:', report.report_text?.length || 0);
+        console.log('[HomeScreen] conditions length:', report.conditions?.length || 0);
+        return report;
+      } else {
+        console.log('[HomeScreen] ❌ No report found for today at', locationData.displayName);
+        return null;
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error filtering reports:', error);
+      return null;
+    }
+  }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
+
+  const loadLatestVideo = useCallback(async () => {
+    try {
+      setIsLoadingVideo(true);
+      setVideoReady(false);
+      console.log('[HomeScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
+      
+      const { data: videoData, error: videoError } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('location', currentLocation)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (videoError) {
+        console.log('[HomeScreen] Video fetch error:', videoError.message);
+      } else if (videoData) {
+        console.log('[HomeScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        setLatestVideo(videoData);
+      } else {
+        console.log('[HomeScreen] No videos found for location:', currentLocation, locationData.displayName);
+        setLatestVideo(null);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error loading video:', error);
+    } finally {
+      setIsLoadingVideo(false);
+    }
+  }, [currentLocation, locationData.displayName]);
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[HomeScreen] Screen focused - refreshing data for', locationData.displayName);
+      if (isInitialized && !isLoading && user && profile && isSubscribed) {
+        refreshData();
+      }
+    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, locationData.displayName])
+  );
+
+  useEffect(() => {
+    if (isInitialized && !isLoading && user && profile && isSubscribed) {
+      console.log('[HomeScreen] Loading data for location:', currentLocation, locationData.displayName);
+      loadLatestVideo();
+    }
+  }, [isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, currentLocation, locationData.displayName]);
+
+  useEffect(() => {
+    if (latestVideo?.video_url && videoPlayer) {
+      console.log('[HomeScreen] Loading video preview with caching enabled');
+      videoPlayer.replace(latestVideo.video_url);
+      videoPlayer.play();
+      setVideoReady(true);
+    }
+  }, [latestVideo?.video_url, videoPlayer]);
+
+  const handleRefresh = async () => {
+    console.log('[HomeScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
+    setIsRefreshing(true);
+    await Promise.all([refreshData(), loadLatestVideo()]);
+    setIsRefreshing(false);
+  };
+
+  const handleVideoPress = useCallback(() => {
+    if (latestVideo) {
+      console.log('[HomeScreen] Opening fullscreen video player for:', latestVideo.id);
+      console.log('[HomeScreen] ✅ Passing preloaded URL for instant playback');
+      
+      const params: any = { videoId: latestVideo.id };
+      if (latestVideo.video_url) {
+        params.preloadedUrl = latestVideo.video_url;
+      }
+      
+      router.push({
+        pathname: '/video-player',
+        params
+      });
+    }
+  }, [latestVideo]);
+
+  if (!isInitialized || isLoading) {
     return (
-      <View style={styles.welcomeContainer}>
-        <View style={styles.logoContainer}>
-          <IconSymbol
-            ios_icon_name="waveform"
-            android_material_icon_name="waves"
-            size={64}
-            color="#FFFFFF"
-          />
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading your profile...
+          </Text>
         </View>
-        <Text style={styles.appTitle}>SurfVista</Text>
-        <Text style={styles.appSubtitle}>Folly Beach, SC</Text>
-        
-        <TouchableOpacity
-          style={styles.signInButton}
-          onPress={handleSignIn}
-        >
-          <Text style={styles.signInButtonText}>Sign In</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.signUpButton}
-          onPress={handleSignIn}
-        >
-          <Text style={styles.signUpButtonText}>Sign Up</Text>
-        </TouchableOpacity>
       </View>
     );
   }
 
-  if (!hasSubscription) {
-    console.log('[HomeScreen] User not subscribed, showing subscribe screen');
+  if (!user || !isSubscribed) {
+    console.log('[HomeScreen] Showing locked content');
     return (
-      <View style={styles.errorContainer}>
-        <IconSymbol
-          ios_icon_name="lock.circle"
-          android_material_icon_name="lock"
-          size={64}
-          color={colors.primary}
-        />
-        <Text style={styles.errorText}>Subscribe to access exclusive surf reports and videos</Text>
-        <TouchableOpacity
-          style={styles.subscribeButton}
-          onPress={handleSubscribe}
-        >
-          <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
-        </TouchableOpacity>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.centerContent}>
+          <IconSymbol
+            ios_icon_name="lock.fill"
+            android_material_icon_name="lock"
+            size={64}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            Subscriber Only Content
+          </Text>
+          <Text style={[styles.text, { color: colors.textSecondary }]}>
+            Subscribe to access exclusive 6K drone footage and detailed surf reports
+          </Text>
+          {user && (
+            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
+              You are signed in but not subscribed
+            </Text>
+          )}
+          <TouchableOpacity
+            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.subscribeButtonText}>
+              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
-  console.log('[HomeScreen] Rendering main content');
+  console.log('[HomeScreen] Showing content for', locationData.displayName);
 
-  const latestVideo = videos && videos.length > 0 ? videos[0] : null;
-  const todayDate = getESTDate();
-  
-  const locationSurfReports = surfReports?.filter((report: SurfReport) => report.location === currentLocation) || [];
-  const todayReport = locationSurfReports.find((report: SurfReport) => report.date === todayDate);
-  const todayWeatherForecast = weatherForecast?.find((w) => w.date === todayDate);
+  const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
+  const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
 
-  const airTempFromData = weatherData?.temperature ? parseFloat(String(weatherData.temperature)) : null;
-  const airTempFromForecast = todayWeatherForecast?.temperature || todayWeatherForecast?.high_temp;
-  const airTemp = airTempFromData || airTempFromForecast;
-  
-  const temperatureText = airTemp ? `${Math.round(airTemp)}°F` : '--°F';
-  
-  const waterTempRaw = todayReport?.water_temp;
-  const waterTempNum = waterTempRaw ? parseFloat(waterTempRaw.replace(/[^\d.-]/g, '')) : null;
-  const waterTempText = waterTempNum ? `${Math.round(waterTempNum)}°F` : '--°F';
-  
-  const weatherCondition = weatherData?.conditions || 
-                          todayWeatherForecast?.conditions || 
-                          todayWeatherForecast?.short_forecast || 
-                          'Loading...';
-  const windSpeedRaw = todayReport?.wind_speed;
-  const windSpeed = windSpeedRaw ? `${Math.round(parseFloat(windSpeedRaw.replace(/[^\d.-]/g, '')))} mph` : '--';
-  const windDirection = todayReport?.wind_direction || 'SW';
-  const humidityFromData = weatherData?.humidity;
-  const humidityFromForecast = todayWeatherForecast?.humidity;
-  const humidityValue = humidityFromData ?? humidityFromForecast;
-  const humidity = humidityValue !== null && humidityValue !== undefined 
-    ? `${Math.round(humidityValue)}%` 
-    : '--%';
-  const stokeRating = todayReport?.rating ? `${todayReport.rating}/10` : '--/10';
-  
-  const narrativeText = selectNarrativeText(todayReport);
+  console.log('[HomeScreen] ===== NARRATIVE DISPLAY =====');
+  console.log('[HomeScreen] Location:', locationData.displayName);
+  console.log('[HomeScreen] Report location:', todaysReport?.location);
+  console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
+  console.log('[HomeScreen] Is custom (edited):', isCustomReport);
+  console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
 
   return (
-    <ScrollView
-      style={styles.container}
+    <ScrollView 
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={styles.scrollContent}
       refreshControl={
         <RefreshControl
-          refreshing={refreshing}
+          refreshing={isRefreshing}
           onRefresh={handleRefresh}
           tintColor={colors.primary}
         />
       }
     >
-      <Text style={styles.welcomeText}>Welcome to</Text>
+      <View style={styles.header}>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+          Today&apos;s Surf Report
+        </Text>
+        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+          {locationData.displayName}
+        </Text>
+      </View>
 
-      {latestVideo && (
-        <TouchableOpacity
-          style={styles.videoCard}
-          onPress={() => handleVideoPress(latestVideo.id, latestVideo.signed_url)}
-        >
-          <ImageBackground
-            source={resolveImageSource(latestVideo.thumbnail_url)}
-            style={styles.videoThumbnail}
-            resizeMode="cover"
-          >
-            <View style={styles.videoOverlay}>
-              <Text style={styles.surfVistaTitle}>SurfVista</Text>
-              <View style={styles.playButton}>
-                <IconSymbol
-                  ios_icon_name="play.fill"
-                  android_material_icon_name="play-arrow"
-                  size={32}
-                  color="#FFFFFF"
-                />
-              </View>
-            </View>
-          </ImageBackground>
-        </TouchableOpacity>
+      {error && (
+        <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle.fill"
+            android_material_icon_name="warning"
+            size={24}
+            color="#FFFFFF"
+          />
+          <View style={styles.errorTextContainer}>
+            <Text style={styles.errorText}>Unable to fetch surf data</Text>
+            <Text style={styles.errorSubtext}>
+              {error}
+            </Text>
+          </View>
+        </View>
       )}
 
-      <View style={styles.locationSection}>
-        <LocationSelector />
-        <View style={styles.updatedRow}>
+      {surfLoading && !isRefreshing ? (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Loading surf reports for {locationData.displayName}...
+          </Text>
+        </View>
+      ) : !todaysReport ? (
+        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
-            ios_icon_name="clock"
-            android_material_icon_name="schedule"
-            size={16}
-            color={isDark ? '#B0B0B0' : colors.textSecondary}
+            ios_icon_name="water.waves"
+            android_material_icon_name="waves"
+            size={48}
+            color={colors.textSecondary}
           />
-          <Text style={styles.updatedText}>Updated Just now</Text>
-          <TouchableOpacity onPress={handleRefresh}>
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            No Report Available
+          </Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Surf reports for {locationData.displayName} will be generated automatically from NOAA data.
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.reportHeader}>
+            <View style={styles.reportHeaderLeft}>
+              <Text style={[styles.reportDate, { color: theme.colors.text }]}>
+                {new Date(todaysReport.date).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </Text>
+              <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
+                {locationData.displayName}
+              </Text>
+            </View>
+            <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(todaysReport.rating ?? 5) }]}>
+              <Text style={styles.ratingText}>{todaysReport.rating ?? 5}/10</Text>
+            </View>
+          </View>
+
+          <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
+            <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
+              Surf Conditions
+            </Text>
+            {narrativeText ? (
+              <>
+                <ReportTextDisplay 
+                  text={narrativeText}
+                  isCustom={isCustomReport}
+                />
+                {todaysReport.report_text && todaysReport.edited_at && (
+                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                    Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
+                  </Text>
+                )}
+              </>
+            ) : (
+              <Text style={[styles.conditionsText, { color: colors.reportText }]}>
+                No surf conditions narrative available for {locationData.displayName}.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.quickStats}>
+            <View style={styles.statItem}>
+              <IconSymbol
+                ios_icon_name="water.waves"
+                android_material_icon_name="waves"
+                size={20}
+                color={colors.primary}
+              />
+              <View style={styles.statTextContainer}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Wave Height
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {todaysReport.wave_height || 'N/A'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.statItem}>
+              <IconSymbol
+                ios_icon_name="wind"
+                android_material_icon_name="air"
+                size={20}
+                color={colors.primary}
+              />
+              <View style={styles.statTextContainer}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Wind
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {todaysReport.wind_speed} {todaysReport.wind_direction}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.statItem}>
+              <IconSymbol
+                ios_icon_name="thermometer"
+                android_material_icon_name="thermostat"
+                size={20}
+                color={colors.primary}
+              />
+              <View style={styles.statTextContainer}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  Water Temp
+                </Text>
+                <Text style={[styles.statValue, { color: theme.colors.text }]}>
+                  {formatWaterTemp(todaysReport.water_temp)}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.detailsButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/(tabs)/report')}
+          >
+            <Text style={styles.detailsButtonText}>View Full Report</Text>
             <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
               size={20}
-              color={colors.primary}
+              color="#FFFFFF"
             />
           </TouchableOpacity>
         </View>
-      </View>
-
-      <View style={styles.conditionsCard}>
-        <Text style={styles.conditionsTitle}>Current Conditions</Text>
-        <View style={styles.conditionsGrid}>
-          <View style={styles.conditionItem}>
-            <Text style={styles.temperatureText}>{temperatureText}</Text>
-            <Text style={styles.weatherText}>{weatherCondition}</Text>
-          </View>
-          <View style={styles.stokeRatingContainer}>
-            <Text style={styles.stokeLabel}>Stoke Rating</Text>
-            <Text style={styles.stokeRating}>{stokeRating}</Text>
-          </View>
-        </View>
-        <View style={styles.weatherDetailsRow}>
-          <View style={styles.weatherDetail}>
-            <IconSymbol
-              ios_icon_name="wind"
-              android_material_icon_name="air"
-              size={16}
-              color={isDark ? '#FFFFFF' : colors.text}
-            />
-            <Text style={styles.weatherDetailText}>{windSpeed} {windDirection}</Text>
-          </View>
-          <View style={styles.weatherDetail}>
-            <IconSymbol
-              ios_icon_name="drop.fill"
-              android_material_icon_name="water_drop"
-              size={16}
-              color={isDark ? '#FFFFFF' : colors.text}
-            />
-            <Text style={styles.weatherDetailText}>Water: {waterTempText}</Text>
-          </View>
-          <View style={styles.weatherDetail}>
-            <Text style={styles.weatherDetailText}>Humidity: {humidity}</Text>
-          </View>
-        </View>
-      </View>
-
-      {todayReport && narrativeText && (
-        <View style={styles.reportCard}>
-          <View style={styles.reportHeader}>
-            <IconSymbol
-              ios_icon_name="doc.text"
-              android_material_icon_name="description"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={styles.reportTitle}>Today&apos;s Surf Report</Text>
-          </View>
-          <Text style={styles.reportText}>{narrativeText}</Text>
-        </View>
       )}
 
-      {weatherForecast && weatherForecast.length > 0 && (
-        <WeeklyForecast forecast={weatherForecast} />
-      )}
+      <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol
+            ios_icon_name="video.fill"
+            android_material_icon_name="videocam"
+            size={24}
+            color={colors.primary}
+          />
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Latest Drone Footage
+          </Text>
+        </View>
+
+        {isLoadingVideo ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : latestVideo ? (
+          <TouchableOpacity
+            style={styles.videoCard}
+            onPress={handleVideoPress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.videoPreviewContainer}>
+              {!videoReady && (
+                <View style={styles.videoLoadingOverlay}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              )}
+              <VideoView
+                style={[styles.videoPreview, !videoReady && styles.videoHidden]}
+                player={videoPlayer}
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+                contentFit="cover"
+                nativeControls={false}
+              />
+              {videoReady && (
+                <View style={styles.videoOverlay}>
+                  <View style={styles.playButtonContainer}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play_circle"
+                      size={64}
+                      color="rgba(255, 255, 255, 0.9)"
+                    />
+                    <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+            <View style={styles.videoInfo}>
+              <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
+                {latestVideo.title}
+              </Text>
+              {latestVideo.description && (
+                <Text style={[styles.videoDescription, { color: colors.textSecondary }]} numberOfLines={2}>
+                  {latestVideo.description}
+                </Text>
+              )}
+              <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
+                {new Date(latestVideo.created_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No videos available yet for {locationData.displayName}
+            </Text>
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 }
+
+function getRatingColor(rating: number): string {
+  if (rating >= 8) return '#22C55E';
+  if (rating >= 6) return '#FFC107';
+  if (rating >= 4) return '#FF9800';
+  return '#F44336';
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 48,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 48,
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 16,
+  },
+  loadingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  header: {
+    marginBottom: 24,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  text: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  debugText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  subscribeButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  subscribeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 12,
+  },
+  errorTextContainer: {
+    flex: 1,
+  },
+  errorText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  errorSubtext: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    lineHeight: 18,
+    opacity: 0.9,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    padding: 32,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyState: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  reportCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  reportHeaderLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  reportDate: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  reportSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  ratingBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  ratingText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  conditionsBox: {
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  conditionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  conditionsText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  editedNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  quickStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  statTextContainer: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  detailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  detailsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  videoSection: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  videoCard: {
+    gap: 12,
+  },
+  videoPreviewContainer: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#000000',
+  },
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoHidden: {
+    opacity: 0,
+  },
+  videoLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    zIndex: 10,
+  },
+  videoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  playButtonContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  tapToPlayText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  videoInfo: {
+    gap: 4,
+  },
+  videoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  videoDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  videoDate: {
+    fontSize: 12,
+  },
+});
