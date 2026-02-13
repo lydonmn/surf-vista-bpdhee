@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -60,6 +60,8 @@ export default function HomeScreen() {
         console.log('[HomeScreen] Report location:', report.location);
         console.log('[HomeScreen] wave_height:', report.wave_height);
         console.log('[HomeScreen] surf_height:', (report as any).surf_height);
+        console.log('[HomeScreen] wind_speed:', report.wind_speed);
+        console.log('[HomeScreen] wind_direction:', report.wind_direction);
         console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
         console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
         return report;
@@ -243,6 +245,8 @@ export default function HomeScreen() {
   }
 
   console.log('[HomeScreen] Showing content for', locationData.displayName);
+  console.log('[HomeScreen] Surf conditions available:', !!surfConditions);
+  console.log('[HomeScreen] Surf conditions:', surfConditions);
   console.log('[HomeScreen] Weather data available:', !!weatherData);
   console.log('[HomeScreen] Weather data:', weatherData);
 
@@ -258,17 +262,18 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
-  // ✅ CRITICAL FIX: Prioritize surf_height (rideable face) over wave_height (significant wave height)
-  // surf_height is what surfers actually ride (calculated from raw wave height and period)
-  const surfHeightValue = (todaysReport as any)?.surf_height;
-  const waveHeightValue = todaysReport?.wave_height;
+  // ✅ CRITICAL FIX: Use surf_conditions as primary source, fall back to report
+  // This ensures we always show the most recent data
+  const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
+  const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
   console.log('[HomeScreen] ===== WAVE DATA CHECK =====');
-  console.log('[HomeScreen] Report ID:', todaysReport?.id);
-  console.log('[HomeScreen] Report date:', todaysReport?.date);
-  console.log('[HomeScreen] surf_height (rideable face):', surfHeightValue);
-  console.log('[HomeScreen] wave_height (raw):', waveHeightValue);
-  console.log('[HomeScreen] wave_period:', todaysReport?.wave_period);
+  console.log('[HomeScreen] surfConditions surf_height:', surfConditions?.surf_height);
+  console.log('[HomeScreen] surfConditions wave_height:', surfConditions?.wave_height);
+  console.log('[HomeScreen] todaysReport surf_height:', (todaysReport as any)?.surf_height);
+  console.log('[HomeScreen] todaysReport wave_height:', todaysReport?.wave_height);
+  console.log('[HomeScreen] Final surfHeightValue:', surfHeightValue);
+  console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
   console.log('[HomeScreen] ===========================');
   
   // Use surf_height if available and valid, otherwise fall back to wave_height
@@ -280,31 +285,32 @@ export default function HomeScreen() {
   
   console.log('[HomeScreen] Final wave height display:', waveHeightDisplay);
   
-  // ✅ FIX: Use weatherData for current conditions, fallback to todaysReport
+  // ✅ FIX: Use surf_conditions for wind data (most recent), fall back to weatherData, then report
+  const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
+  const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
+  const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
+  
+  // ✅ FIX: Use weatherData for air temp and conditions (most accurate for current weather)
   const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
   const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
   
   const weatherDescDisplay = weatherData?.conditions || todaysReport?.weather_conditions || 'N/A';
   
-  const windSpeedValue = weatherData?.wind_speed || todaysReport?.wind_speed;
-  const windDirValue = weatherData?.wind_direction || todaysReport?.wind_direction;
-  const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
-  
-  const waterTempDisplay = formatWaterTemp(todaysReport?.water_temp);
+  // ✅ FIX: Use surf_conditions for water temp (most recent buoy reading)
+  const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
+  const waterTempDisplay = formatWaterTemp(waterTempValue);
   
   const ratingValue = todaysReport?.rating ?? 5;
   const ratingColorValue = getRatingColor(ratingValue);
   const ratingLabel = 'Stoke Rating';
 
-  console.log('[HomeScreen] Current conditions data:', {
-    airTemp: airTempDisplay,
-    weather: weatherDescDisplay,
-    waveHeight: waveHeightDisplay,
-    wind: windDisplay,
-    waterTemp: waterTempDisplay,
-    rating: ratingValue,
-    weatherDataSource: weatherData ? 'weatherData' : 'todaysReport'
-  });
+  console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
+  console.log('[HomeScreen] Wave height:', waveHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
+  console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
+  console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
+  console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
+  console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
+  console.log('[HomeScreen] ================================================');
 
   const errorTitleText = 'Unable to fetch surf data';
   const emptyVideoText = `No videos available yet for ${locationData.displayName}`;

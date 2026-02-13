@@ -9,9 +9,11 @@ type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
 type WeatherData = Database['public']['Tables']['weather_data']['Row'];
 type WeatherForecast = Database['public']['Tables']['weather_forecast']['Row'];
 type TideData = Database['public']['Tables']['tide_data']['Row'];
+type SurfConditions = Database['public']['Tables']['surf_conditions']['Row'];
 
 interface SurfDataState {
   surfReports: SurfReport[];
+  surfConditions: SurfConditions | null;
   weatherData: WeatherData | null;
   weatherForecast: WeatherForecast[];
   tideData: TideData[];
@@ -46,6 +48,7 @@ export function useSurfData() {
   const { currentLocation } = useLocation();
   const [state, setState] = useState<SurfDataState>({
     surfReports: [],
+    surfConditions: null,
     weatherData: null,
     weatherForecast: [],
     tideData: [],
@@ -96,7 +99,7 @@ export function useSurfData() {
       console.log('[useSurfData] Fetching data for EST date:', today);
 
       // Fetch all data in parallel with location filter
-      // CRITICAL FIX: Also fetch surf_conditions to get real-time wave data
+      // CRITICAL FIX: Fetch surf_conditions separately for today's real-time data
       const [surfReportsResult, surfConditionsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
         supabase
           .from('surf_reports')
@@ -108,13 +111,15 @@ export function useSurfData() {
           .from('surf_conditions')
           .select('*')
           .eq('location', location)
-          .order('date', { ascending: false })
+          .eq('date', today)
           .order('updated_at', { ascending: false })
-          .limit(7),
+          .limit(1)
+          .maybeSingle(),
         supabase
           .from('weather_data')
           .select('*')
           .eq('location', location)
+          .eq('date', today)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -161,38 +166,38 @@ export function useSurfData() {
       }
 
       console.log('[useSurfData] Data fetched successfully for location:', location);
+      console.log('[useSurfData] Today\'s surf conditions:', surfConditionsResult.data);
+      console.log('[useSurfData] Today\'s weather data:', weatherResult.data);
 
-      // CRITICAL FIX: Merge surf_conditions data into surf_reports
-      // This ensures we always show the most recent wave data even if the report hasn't been regenerated
+      // CRITICAL FIX: Merge surf_conditions data into surf_reports for today
+      // This ensures we always show the most recent wave data
       const mergedReports = (surfReportsResult.data || []).map(report => {
-        // Find matching surf_conditions for this date
-        const matchingCondition = (surfConditionsResult.data || []).find(
-          cond => cond.date === report.date && cond.location === report.location
-        );
+        const reportDate = report.date.split('T')[0];
         
-        if (matchingCondition) {
-          console.log(`[useSurfData] Merging surf_conditions into report for ${report.date}:`, {
+        // If this is today's report and we have fresh surf_conditions, merge them
+        if (reportDate === today && surfConditionsResult.data) {
+          const conditions = surfConditionsResult.data;
+          console.log(`[useSurfData] Merging today's surf_conditions into report:`, {
             report_wave_height: report.wave_height,
             report_surf_height: report.surf_height,
-            condition_wave_height: matchingCondition.wave_height,
-            condition_surf_height: matchingCondition.surf_height,
+            report_wind_speed: report.wind_speed,
+            report_wind_direction: report.wind_direction,
+            conditions_wave_height: conditions.wave_height,
+            conditions_surf_height: conditions.surf_height,
+            conditions_wind_speed: conditions.wind_speed,
+            conditions_wind_direction: conditions.wind_direction,
           });
           
-          // If report has N/A but conditions has data, use conditions data
+          // Always use the most recent surf_conditions data for today
           return {
             ...report,
-            wave_height: (report.wave_height === 'N/A' && matchingCondition.wave_height !== 'N/A') 
-              ? matchingCondition.wave_height 
-              : report.wave_height,
-            surf_height: ((!report.surf_height || report.surf_height === 'N/A') && matchingCondition.surf_height !== 'N/A') 
-              ? matchingCondition.surf_height 
-              : report.surf_height,
-            wave_period: (report.wave_period === 'N/A' && matchingCondition.wave_period !== 'N/A') 
-              ? matchingCondition.wave_period 
-              : report.wave_period,
-            swell_direction: (report.swell_direction === 'N/A' && matchingCondition.swell_direction !== 'N/A') 
-              ? matchingCondition.swell_direction 
-              : report.swell_direction,
+            wave_height: conditions.wave_height || report.wave_height,
+            surf_height: conditions.surf_height || report.surf_height,
+            wave_period: conditions.wave_period || report.wave_period,
+            swell_direction: conditions.swell_direction || report.swell_direction,
+            wind_speed: conditions.wind_speed || report.wind_speed,
+            wind_direction: conditions.wind_direction || report.wind_direction,
+            water_temp: conditions.water_temp || report.water_temp,
           };
         }
         
@@ -210,6 +215,7 @@ export function useSurfData() {
       if (isMountedRef.current) {
         setState({
           surfReports: mergedReports,
+          surfConditions: surfConditionsResult.data,
           weatherData: weatherResult.data,
           weatherForecast: forecastResult.data || [],
           tideData: tideResult.data || [],
@@ -470,6 +476,27 @@ export function useSurfData() {
       )
       .subscribe();
 
+    // Set up real-time subscription for surf conditions
+    const surfConditionsSubscription = supabase
+      .channel(`surf_conditions_${currentLocation}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surf_conditions',
+          filter: `location=eq.${currentLocation}`,
+        },
+        (payload) => {
+          console.log('[useSurfData] Surf conditions updated for current location, refreshing data...');
+          if (!isFetchingRef.current) {
+            lastFetchTimeRef.current = 0; // Reset debounce for real-time update
+            fetchDataRef.current?.();
+          }
+        }
+      )
+      .subscribe();
+
     // Set up real-time subscription for weather data
     const weatherSubscription = supabase
       .channel(`weather_data_${currentLocation}`)
@@ -536,6 +563,7 @@ export function useSurfData() {
     return () => {
       console.log('[useSurfData] Cleaning up real-time subscriptions...');
       surfReportsSubscription.unsubscribe();
+      surfConditionsSubscription.unsubscribe();
       weatherSubscription.unsubscribe();
       forecastSubscription.unsubscribe();
       tideSubscription.unsubscribe();

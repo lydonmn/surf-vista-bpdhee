@@ -20,13 +20,11 @@ export default function ReportScreen() {
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
+  const { surfReports, surfConditions, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
-  
-  const [surfConditions, setSurfConditions] = useState<any>(null);
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -142,31 +140,6 @@ export default function ReportScreen() {
     return null;
   }, [todaysReport, lastValidReport, locationData.displayName]);
 
-  const fetchSurfConditions = useCallback(async () => {
-    try {
-      console.log('[ReportScreen] Fetching surf conditions for location:', currentLocation, locationData.displayName, 'date:', todayDate);
-      
-      const { data: conditionsData, error: conditionsError } = await supabase
-        .from('surf_conditions')
-        .select('*')
-        .eq('date', todayDate)
-        .eq('location', currentLocation)
-        .maybeSingle();
-
-      if (conditionsError) {
-        console.error('[ReportScreen] Error fetching surf conditions:', conditionsError);
-      } else if (conditionsData) {
-        console.log('[ReportScreen] Surf conditions loaded for today at', locationData.displayName, ':', conditionsData);
-        setSurfConditions(conditionsData);
-      } else {
-        console.log('[ReportScreen] No surf conditions for today at location:', currentLocation, locationData.displayName);
-        setSurfConditions(null);
-      }
-    } catch (error) {
-      console.error('[ReportScreen] Error in fetchSurfConditions:', error);
-    }
-  }, [todayDate, currentLocation, locationData.displayName]);
-
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
@@ -203,9 +176,8 @@ export default function ReportScreen() {
       if (isInitialized && !authLoading && user && profile && isSubscribed) {
         refreshData();
         loadLatestVideo();
-        fetchSurfConditions();
       }
-    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, fetchSurfConditions, locationData.displayName])
+    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
   );
 
   useEffect(() => {
@@ -222,49 +194,13 @@ export default function ReportScreen() {
     if (isInitialized && !authLoading && user && profile && isSubscribed) {
       console.log('[ReportScreen] Loading data for location:', currentLocation, locationData.displayName);
       loadLatestVideo();
-      fetchSurfConditions();
     }
-  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, fetchSurfConditions, currentLocation, locationData.displayName]);
-
-  useEffect(() => {
-    if (!isInitialized || authLoading || !user || !profile || !isSubscribed) {
-      return;
-    }
-
-    console.log('[ReportScreen] Setting up real-time subscription for surf_conditions at', locationData.displayName);
-    
-    const subscription = supabase
-      .channel('surf_conditions_report_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surf_conditions',
-        },
-        (payload) => {
-          console.log('[ReportScreen] Surf conditions updated:', payload);
-          if (payload.new && 'location' in payload.new && payload.new.location === currentLocation) {
-            console.log('[ReportScreen] Surf conditions for current location', locationData.displayName, 'updated, refreshing...');
-            fetchSurfConditions();
-          } else if (payload.old && 'location' in payload.old && payload.old.location === currentLocation) {
-            console.log('[ReportScreen] Surf conditions for current location', locationData.displayName, 'deleted, refreshing...');
-            fetchSurfConditions();
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('[ReportScreen] Cleaning up real-time subscription');
-      subscription.unsubscribe();
-    };
-  }, [isInitialized, authLoading, user, profile, isSubscribed, fetchSurfConditions, currentLocation, locationData.displayName]);
+  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, currentLocation, locationData.displayName]);
 
   const handleRefresh = async () => {
     console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
     setIsRefreshing(true);
-    await Promise.all([refreshData(), loadLatestVideo(), fetchSurfConditions()]);
+    await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
   };
 
@@ -277,7 +213,7 @@ export default function ReportScreen() {
       
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      await Promise.all([refreshData(), fetchSurfConditions()]);
+      await refreshData();
       
       Alert.alert(
         'Update Complete',
@@ -396,6 +332,8 @@ export default function ReportScreen() {
   const renderReportCard = (report: any, index: number) => {
     const todayReportForRating = todaysReport || report;
     
+    // ✅ CRITICAL FIX: Use surf_conditions as primary source for all current data
+    // This ensures both home and report pages show the same data
     const displayData = surfConditions || report;
     const hasValidWaveData = hasValidSurfData(displayData);
     
@@ -407,9 +345,12 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Report date:', reportDateStr, '(isToday:', isToday + ')');
     console.log('[ReportScreen] Report location:', report.location, locationData.displayName);
     console.log('[ReportScreen] Current location:', currentLocation);
+    console.log('[ReportScreen] Using data from:', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)');
     console.log('[ReportScreen] Has valid wave data:', hasValidWaveData);
     console.log('[ReportScreen] Display data surf_height:', displayData.surf_height);
     console.log('[ReportScreen] Display data wave_height:', displayData.wave_height);
+    console.log('[ReportScreen] Display data wind_speed:', displayData.wind_speed);
+    console.log('[ReportScreen] Display data wind_direction:', displayData.wind_direction);
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
@@ -436,6 +377,7 @@ export default function ReportScreen() {
     const swellDirectionDisplay = isValidValue(swellDirectionValue) ? swellDirectionValue : null;
     
     console.log('[ReportScreen] Surf height to display:', surfHeightDisplay);
+    console.log('[ReportScreen] Wind to display:', windSpeedDisplay, windDirectionDisplay);
     
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
@@ -782,6 +724,9 @@ export default function ReportScreen() {
   }
 
   console.log('[ReportScreen] Showing surf reports for', locationData.displayName);
+  console.log('[ReportScreen] Surf conditions available:', !!surfConditions);
+  console.log('[ReportScreen] Weather data available:', !!weatherData);
+  
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
