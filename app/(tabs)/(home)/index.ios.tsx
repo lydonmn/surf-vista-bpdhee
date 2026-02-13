@@ -14,13 +14,15 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, getESTDate } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
+import { CurrentConditions } from "@/components/CurrentConditions";
+import { LocationSelector } from "@/components/LocationSelector";
 
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const { surfReports, weatherData, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -54,7 +56,9 @@ export default function HomeScreen() {
       const todayReports = locationSurfReports.filter(report => {
         if (!report.date) return false;
         const reportDate = report.date.split('T')[0];
-        return reportDate === todayDate;
+        const isToday = reportDate === todayDate;
+        console.log('[HomeScreen] Checking report:', reportDate, 'vs today:', todayDate, '=', isToday);
+        return isToday;
       });
       
       console.log('[HomeScreen] Found', todayReports.length, 'reports for today at', locationData.displayName);
@@ -63,6 +67,7 @@ export default function HomeScreen() {
         const report = todayReports[0];
         console.log('[HomeScreen] ===== USING TODAY\'S REPORT =====');
         console.log('[HomeScreen] Report ID:', report.id);
+        console.log('[HomeScreen] Report date:', report.date);
         console.log('[HomeScreen] Report location:', report.location);
         console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
         console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
@@ -230,14 +235,16 @@ export default function HomeScreen() {
         />
       }
     >
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Today&apos;s Surf Report
-        </Text>
-        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-          {locationData.displayName}
-        </Text>
+      <View style={styles.topBar}>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            Today&apos;s Surf Report
+          </Text>
+        </View>
+        <LocationSelector />
       </View>
+
+      <CurrentConditions weather={weatherData} surfReport={todaysReport} />
 
       {error && (
         <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
@@ -482,6 +489,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 100,
   },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -498,15 +511,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    marginBottom: 24,
+    flex: 1,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
   },
   title: {
     fontSize: 24,

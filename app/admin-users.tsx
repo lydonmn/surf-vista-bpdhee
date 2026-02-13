@@ -63,7 +63,7 @@ export default function AdminUsersScreen() {
     if (profile?.is_admin) {
       loadUsers();
     }
-  }, [profile, loadUsers]);
+  }, [profile?.is_admin, loadUsers]);
 
   const openActionModal = (userId: string, userEmail: string, action: SubscriptionAction['action']) => {
     setSelectedAction({ userId, userEmail, action });

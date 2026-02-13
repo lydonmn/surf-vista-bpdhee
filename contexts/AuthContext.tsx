@@ -309,7 +309,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile]);
+  }, [loadUserProfile, registerPushTokenIfNeeded]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
@@ -318,7 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       await registerPushTokenIfNeeded(session.user.id);
     }
-  }, [session, loadUserProfile, registerPushTokenIfNeeded]);
+  }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {

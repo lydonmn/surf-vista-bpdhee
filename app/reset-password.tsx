@@ -66,7 +66,8 @@ export default function ResetPasswordScreen() {
       }, 2000);
     } catch (err) {
       console.error('[ResetPassword] Exception:', err);
-      setErrorMessage('An unexpected error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setErrorMessage(errorMsg);
     } finally {
       setLoading(false);
     }

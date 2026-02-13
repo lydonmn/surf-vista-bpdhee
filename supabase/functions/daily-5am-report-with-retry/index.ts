@@ -559,80 +559,80 @@ function generateWittyNarrative(
 
     report += '\n\n';
 
-    // WAVE CONDITIONS - Natural, conversational language
+    // WAVE CONDITIONS - Natural, conversational language (NO REDUNDANT UNITS)
     if (waveHeight >= 7) {
       report += `Overhead sets rolling in from the ${swellDir}`;
       if (waveHeight >= 10) {
-        report += ` - we're talking ${waveHeight.toFixed(1)} foot faces, well overhead`;
+        report += ` - we're talking ${waveHeight.toFixed(1)} feet, well overhead`;
       } else {
         report += ` with ${waveHeight.toFixed(1)} foot faces`;
       }
     } else if (waveHeight >= 4.5) {
-      report += `Chest to head high ${swellDir} swell with ${waveHeight.toFixed(1)} foot faces`;
+      report += `Chest to head high ${swellDir} swell, ${waveHeight.toFixed(1)} feet`;
     } else if (waveHeight >= 2.5) {
-      report += `Waist to chest high waves from the ${swellDir}, faces around ${waveHeight.toFixed(1)} feet`;
+      report += `Waist to chest high waves from the ${swellDir}, around ${waveHeight.toFixed(1)} feet`;
     } else if (waveHeight >= 1.5) {
-      report += `Knee to waist high surf, ${waveHeight.toFixed(1)} foot faces from the ${swellDir}`;
+      report += `Knee to waist high surf, ${waveHeight.toFixed(1)} feet from the ${swellDir}`;
     } else if (waveHeight >= 0.5) {
       report += `Ankle to knee high ripples, barely ${waveHeight.toFixed(1)} feet`;
     } else {
-      report += `Essentially flat - less than a foot`;
+      report += `Essentially flat, less than a foot`;
     }
     
     report += '. ';
 
-    // WAVE PERIOD - Natural description
+    // WAVE PERIOD - Natural description (NO REDUNDANT "SECONDS")
     if (period >= 12) {
-      report += `Long ${period.toFixed(0)} second intervals mean powerful groundswell with clean sets and long rides.`;
+      report += `Long ${period.toFixed(0)}-second intervals mean powerful groundswell with clean sets and long rides.`;
     } else if (period >= 10) {
-      report += `${period.toFixed(0)} second period - decent power and organized sets.`;
+      report += `${period.toFixed(0)}-second period brings decent power and organized sets.`;
     } else if (period >= 8) {
-      report += `${period.toFixed(0)} second period gives moderate energy, reasonably spaced waves.`;
+      report += `${period.toFixed(0)}-second period gives moderate energy with reasonably spaced waves.`;
     } else if (period >= 6) {
-      report += `Shorter ${period.toFixed(0)} second period means more frequent but weaker waves.`;
+      report += `Shorter ${period.toFixed(0)}-second period means more frequent but weaker waves.`;
     } else if (period > 0) {
-      report += `Quick ${period.toFixed(0)} second period - choppy wind swell with limited power.`;
+      report += `Quick ${period.toFixed(0)}-second period, choppy wind swell with limited power.`;
     }
 
     report += '\n\n';
 
-    // WIND - Conversational and informative
+    // WIND - Conversational and informative (CLEAN MPH USAGE)
     if (isOffshore) {
       if (windSpeed < 5) {
-        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze - glassy conditions.`;
+        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze, glassy conditions.`;
       } else if (windSpeed < 10) {
         report += `${windSpeed.toFixed(0)} mph offshore ${windDir} wind grooming the faces nicely.`;
       } else if (windSpeed < 15) {
-        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore - holding up the faces but getting strong.`;
+        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore holding up the faces but getting strong.`;
       } else if (windSpeed < 20) {
         report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore making it tough to paddle out.`;
       } else {
-        report += `Howling ${windSpeed.toFixed(0)} mph ${windDir} offshore - blowing the tops off and making it difficult.`;
+        report += `Howling ${windSpeed.toFixed(0)} mph ${windDir} offshore blowing the tops off.`;
       }
     } else {
       if (windSpeed < 5) {
-        report += `Calm ${windSpeed.toFixed(0)} mph ${windDir} wind - minimal texture.`;
+        report += `Calm ${windSpeed.toFixed(0)} mph ${windDir} wind, minimal texture.`;
       } else if (windSpeed < 8) {
         report += `Light ${windSpeed.toFixed(0)} mph ${windDir} onshore adding slight chop.`;
       } else if (windSpeed < 12) {
         report += `${windSpeed.toFixed(0)} mph ${windDir} onshore creating bumpy conditions.`;
       } else if (windSpeed < 18) {
-        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore - pretty choppy out there.`;
+        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore, pretty choppy out there.`;
       } else {
-        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} onshore - blown out and messy.`;
+        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} onshore, blown out and messy.`;
       }
     }
 
     report += '\n\n';
 
-    // WEATHER & WATER TEMP - Combined naturally
-    const airTempText = airTemp > 0 ? `${airTemp.toFixed(0)}°F air` : '';
-    const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F water` : '';
+    // WEATHER & WATER TEMP - Combined naturally (CLEAN DEGREE SYMBOLS)
+    const airTempText = airTemp > 0 ? `${airTemp.toFixed(0)}°F` : '';
+    const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : '';
     
     if (airTempText && waterTempText) {
-      report += `${weatherConditions} with ${airTempText}, ${waterTempText}. `;
+      report += `${weatherConditions} with ${airTempText} air and ${waterTempText} water. `;
     } else if (waterTempText) {
-      report += `${weatherConditions}, ${waterTempText}. `;
+      report += `${weatherConditions}, water is ${waterTempText}. `;
     } else {
       report += `${weatherConditions}. `;
     }
@@ -647,10 +647,10 @@ function generateWittyNarrative(
     } else if (waterTemp >= 50) {
       report += `4/3mm wetsuit with booties needed.`;
     } else if (waterTemp > 0) {
-      report += `5/4mm with hood, gloves, and booties - it's cold.`;
+      report += `5/4mm with hood, gloves, and booties, it's cold.`;
     }
 
-    // TIDE - Simplified and actionable
+    // TIDE - Simplified and actionable (CLEAN FORMATTING)
     if (tideData && tideData.length > 0) {
       report += '\n\n';
       
@@ -684,10 +684,10 @@ function generateWittyNarrative(
       
       const tideList = tideData.map(t => {
         const height = parseNumericValue(t.height, 0);
-        return `${t.type} ${t.time} (${height.toFixed(1)}ft)`;
+        return `${t.type} at ${t.time} (${height.toFixed(1)}ft)`;
       }).join(', ');
       
-      report += `Today's tides: ${tideList}.`;
+      report += `Tides today: ${tideList}.`;
       
       // Tide advice
       if (waveHeight >= 4) {
