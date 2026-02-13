@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const { surfReports, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -235,6 +235,8 @@ export default function HomeScreen() {
   }
 
   console.log('[HomeScreen] Showing content for', locationData.displayName);
+  console.log('[HomeScreen] Weather data available:', !!weatherData);
+  console.log('[HomeScreen] Weather data:', weatherData);
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
@@ -248,15 +250,33 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
+  // ✅ FIX: Use weatherData for current conditions, fallback to todaysReport
+  const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
+  const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
+  
+  const weatherDescDisplay = weatherData?.conditions || todaysReport?.weather_conditions || 'N/A';
+  
   const waveHeightDisplay = todaysReport?.wave_height || todaysReport?.surf_height || 'N/A';
-  const windDisplay = todaysReport?.wind_speed && todaysReport?.wind_direction 
-    ? `${todaysReport.wind_speed} ${todaysReport.wind_direction}` 
-    : 'N/A';
+  
+  const windSpeedValue = weatherData?.wind_speed || todaysReport?.wind_speed;
+  const windDirValue = weatherData?.wind_direction || todaysReport?.wind_direction;
+  const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
+  
   const waterTempDisplay = formatWaterTemp(todaysReport?.water_temp);
+  
   const ratingValue = todaysReport?.rating ?? 5;
   const ratingColorValue = getRatingColor(ratingValue);
-  const weatherDescDisplay = todaysReport?.weather_conditions || 'N/A';
-  const airTempDisplay = todaysReport?.air_temp ? `${Math.round(Number(todaysReport.air_temp))}°F` : 'N/A';
+  const ratingLabel = 'Stoke Rating';
+
+  console.log('[HomeScreen] Current conditions data:', {
+    airTemp: airTempDisplay,
+    weather: weatherDescDisplay,
+    waveHeight: waveHeightDisplay,
+    wind: windDisplay,
+    waterTemp: waterTempDisplay,
+    rating: ratingValue,
+    weatherDataSource: weatherData ? 'weatherData' : 'todaysReport'
+  });
 
   return (
     <ScrollView 
@@ -394,89 +414,131 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
-          {/* CURRENT CONDITIONS SECTION - COMPACT GRID */}
+          {/* CURRENT CONDITIONS SECTION - IMPROVED LAYOUT */}
           <View style={styles.conditionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               Current Conditions
             </Text>
             
-            <View style={styles.conditionsCompactGrid}>
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="thermometer"
-                  android_material_icon_name="thermostat"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
-                  {airTempDisplay}
-                </Text>
+            <View style={styles.conditionsGrid}>
+              {/* Row 1: Air Temp & Weather */}
+              <View style={styles.conditionRow}>
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="thermometer"
+                    android_material_icon_name="thermostat"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Air Temp
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                      {airTempDisplay}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="cloud.fill"
+                    android_material_icon_name="cloud"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Weather
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]} numberOfLines={1}>
+                      {weatherDescDisplay}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="cloud.fill"
-                  android_material_icon_name="cloud"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
-                  {weatherDescDisplay}
-                </Text>
+              {/* Row 2: Wave Height & Wind */}
+              <View style={styles.conditionRow}>
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="water.waves"
+                    android_material_icon_name="waves"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Wave Height
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                      {waveHeightDisplay}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="wind"
+                    android_material_icon_name="air"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Wind
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                      {windDisplay}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="water.waves"
-                  android_material_icon_name="waves"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
-                  {waveHeightDisplay}
-                </Text>
-              </View>
+              {/* Row 3: Water Temp & Stoke Rating */}
+              <View style={styles.conditionRow}>
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="drop.fill"
+                    android_material_icon_name="water-drop"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      Water Temp
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                      {waterTempDisplay}
+                    </Text>
+                  </View>
+                </View>
 
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="wind"
-                  android_material_icon_name="air"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
-                  {windDisplay}
-                </Text>
-              </View>
-
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="drop.fill"
-                  android_material_icon_name="water-drop"
-                  size={16}
-                  color={colors.primary}
-                />
-                <Text style={[styles.conditionCompactValue, { color: theme.colors.text }]}>
-                  {waterTempDisplay}
-                </Text>
-              </View>
-
-              <View style={styles.conditionCompactItem}>
-                <IconSymbol
-                  ios_icon_name="star.fill"
-                  android_material_icon_name="star"
-                  size={16}
-                  color={ratingColorValue}
-                />
-                <Text style={[styles.conditionCompactValue, { color: ratingColorValue }]}>
-                  {ratingValue}/10
-                </Text>
+                <View style={styles.conditionItem}>
+                  <IconSymbol
+                    ios_icon_name="star.fill"
+                    android_material_icon_name="star"
+                    size={18}
+                    color={ratingColorValue}
+                  />
+                  <View style={styles.conditionTextContainer}>
+                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                      {ratingLabel}
+                    </Text>
+                    <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
+                      {ratingValue}
+                      <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>
+                        /10
+                      </Text>
+                    </Text>
+                  </View>
+                </View>
               </View>
             </View>
           </View>
 
           {/* SURF REPORT NARRATIVE */}
-          <View style={[styles.reportNarrativeSection, { borderTopColor: 'rgba(0, 0, 0, 0.1)' }]}>
+          <View style={[styles.reportNarrativeSection, { borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               Surf Report
             </Text>
@@ -821,7 +883,7 @@ const styles = StyleSheet.create({
   },
   reportCard: {
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     marginHorizontal: 16,
     marginBottom: 16,
     boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
@@ -833,25 +895,41 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  conditionsCompactGrid: {
+  conditionsGrid: {
+    gap: 12,
+  },
+  conditionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 12,
   },
-  conditionCompactItem: {
+  conditionItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0, 122, 255, 0.08)',
-    borderRadius: 8,
+    gap: 10,
+    padding: 12,
+    backgroundColor: 'rgba(0, 122, 255, 0.06)',
+    borderRadius: 12,
   },
-  conditionCompactValue: {
-    fontSize: 13,
+  conditionTextContainer: {
+    flex: 1,
+  },
+  conditionLabel: {
+    fontSize: 11,
     fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  conditionValue: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  ratingOutOf: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   reportNarrativeSection: {
     paddingTop: 20,
