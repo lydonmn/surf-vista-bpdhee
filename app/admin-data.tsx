@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
@@ -58,6 +58,9 @@ export default function AdminDataScreen() {
   });
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [locationReports, setLocationReports] = useState<LocationReport[]>([]);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorModalTitle, setErrorModalTitle] = useState('');
+  const [errorModalMessage, setErrorModalMessage] = useState('');
 
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
@@ -65,6 +68,12 @@ export default function AdminDataScreen() {
     const id = `${Date.now()}-${Math.random()}`;
     setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
   }, []);
+
+  const showErrorModal = (title: string, message: string) => {
+    setErrorModalTitle(title);
+    setErrorModalMessage(message);
+    setErrorModalVisible(true);
+  };
 
   const loadLocationReports = useCallback(async (today: string) => {
     try {
@@ -154,7 +163,7 @@ export default function AdminDataScreen() {
   const handlePullDataForLocation = async (locationId: string, locationName: string) => {
     console.log(`[AdminDataScreen] Pulling data for ${locationName}`);
     setLoadingLocationId(locationId);
-    addLog(`🔄 Pulling fresh NOAA data for ${locationName}...`, 'info');
+    addLog(`Pulling fresh NOAA data for ${locationName}...`, 'info');
 
     try {
       const response = await supabase.functions.invoke('update-all-surf-data', {
@@ -162,21 +171,21 @@ export default function AdminDataScreen() {
       });
       
       if (response.error) {
-        addLog(`❌ ${locationName}: ${response.error.message}`, 'error');
-        Alert.alert('Error', `Failed to pull data for ${locationName}: ${response.error.message}`);
+        addLog(`${locationName}: ${response.error.message}`, 'error');
+        showErrorModal('Error', `Failed to pull data for ${locationName}: ${response.error.message}`);
       } else if (response.data?.success) {
-        addLog(`✅ ${locationName}: Data pulled successfully`, 'success');
-        Alert.alert('Success', `Fresh data pulled for ${locationName}!`);
+        addLog(`${locationName}: Data pulled successfully`, 'success');
+        showErrorModal('Success', `Fresh data pulled for ${locationName}!`);
         await loadDataCounts();
       } else {
         const errorMsg = response.data?.error || 'Unknown error';
-        addLog(`⚠️ ${locationName}: ${errorMsg}`, 'warning');
-        Alert.alert('Warning', `${locationName}: ${errorMsg}`);
+        addLog(`${locationName}: ${errorMsg}`, 'warning');
+        showErrorModal('Warning', `${locationName}: ${errorMsg}`);
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to pull data: ${errorMsg}`);
+      addLog(`${locationName}: ${errorMsg}`, 'error');
+      showErrorModal('Error', `Failed to pull data: ${errorMsg}`);
     } finally {
       setLoadingLocationId(null);
     }
@@ -185,8 +194,8 @@ export default function AdminDataScreen() {
   const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
     console.log(`[AdminDataScreen] Generating report for ${locationName} (manual trigger)`);
     setLoadingLocationId(locationId);
-    addLog(`📝 Generating report for ${locationName}...`, 'info');
-    addLog(`ℹ️ Manual trigger: Will use most recent available data from today`, 'info');
+    addLog(`Generating report for ${locationName}...`, 'info');
+    addLog(`Manual trigger: Will use most recent available data from today`, 'info');
 
     try {
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
@@ -194,42 +203,55 @@ export default function AdminDataScreen() {
       });
       
       console.log('Generate report response:', response);
+      console.log('Response data:', JSON.stringify(response.data, null, 2));
+      console.log('Response error:', response.error);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
-        Alert.alert('Error', `Failed to generate report for ${locationName}: ${errorMsg}`);
-      } else if (response.data?.success) {
+        console.error(`[AdminDataScreen] Function invocation error:`, errorMsg);
+        addLog(`${locationName}: Function error - ${errorMsg}`, 'error');
+        showErrorModal('Error', `Failed to invoke report function for ${locationName}:\n\n${errorMsg}\n\nCheck Edge Function logs for details.`);
+        return;
+      }
+
+      if (response.data?.success) {
         const results = response.data.results || [];
         const locationResult = results.find((r: any) => r.locationId === locationId);
         
         if (locationResult?.success) {
-          const waveStatus = locationResult.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+          const waveStatus = locationResult.hasWaveData ? 'Wave sensors online' : 'Wave sensors offline';
           const fallbackNote = locationResult.usedFallbackData ? ' (using most recent data)' : '';
-          addLog(`✅ ${locationName}: Report generated (${waveStatus}${fallbackNote})`, 'success');
+          addLog(`${locationName}: Report generated (${waveStatus}${fallbackNote})`, 'success');
           
           let alertMessage = `Report generated for ${locationName}!\n\n${waveStatus}`;
           if (locationResult.usedFallbackData) {
-            alertMessage += '\n\nℹ️ Used most recent available data from today';
+            alertMessage += '\n\nUsed most recent available data from today';
           }
           
-          Alert.alert('Success', alertMessage);
+          showErrorModal('Success', alertMessage);
         } else {
           const errorMsg = locationResult?.error || 'Unknown error';
-          addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
-          Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
+          addLog(`${locationName}: ${errorMsg}`, 'error');
+          showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
         }
         
         await loadDataCounts();
+      } else if (response.data?.success === false) {
+        const errorMsg = response.data?.error || response.data?.message || 'Report generation failed';
+        console.error(`[AdminDataScreen] Function returned error:`, errorMsg);
+        addLog(`${locationName}: ${errorMsg}`, 'error');
+        showErrorModal('Error', `Report generation failed for ${locationName}:\n\n${errorMsg}`);
       } else {
-        const errorMsg = response.data?.error || 'Report generation failed';
-        addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        console.error(`[AdminDataScreen] Unexpected response format:`, response.data);
+        const errorMsg = 'Unexpected response format from Edge Function';
+        addLog(`${locationName}: ${errorMsg}`, 'error');
+        showErrorModal('Error', `${errorMsg}\n\nResponse: ${JSON.stringify(response.data)}`);
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ ${locationName}: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to generate report: ${errorMsg}`);
+      console.error(`[AdminDataScreen] Exception:`, error);
+      addLog(`${locationName}: Exception - ${errorMsg}`, 'error');
+      showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
     } finally {
       setLoadingLocationId(null);
     }
@@ -237,17 +259,16 @@ export default function AdminDataScreen() {
 
   const handlePullAndGenerateAllLocations = async () => {
     setIsLoading(true);
-    addLog(`🔄 Pulling new data and generating reports for ALL locations...`);
-    addLog(`⏳ This may take 2-3 minutes due to NOAA server response times...`, 'warning');
-    addLog(`📍 Processing: ${locations.map(l => l.displayName).join(', ')}`, 'info');
+    addLog(`Pulling new data and generating reports for ALL locations...`);
+    addLog(`This may take 2-3 minutes due to NOAA server response times...`, 'warning');
+    addLog(`Processing: ${locations.map(l => l.displayName).join(', ')}`, 'info');
 
     try {
-      // Step 1: Pull fresh data for all locations
       addLog(`Step 1/2: Pulling fresh NOAA data for all locations...`, 'info');
       
       const dataResults = [];
       for (const loc of locations) {
-        addLog(`  📍 Fetching data for ${loc.displayName}...`, 'info');
+        addLog(`Fetching data for ${loc.displayName}...`, 'info');
         
         try {
           const response = await supabase.functions.invoke('update-all-surf-data', {
@@ -255,70 +276,71 @@ export default function AdminDataScreen() {
           });
           
           if (response.error) {
-            addLog(`  ❌ ${loc.displayName}: ${response.error.message}`, 'error');
+            addLog(`${loc.displayName}: ${response.error.message}`, 'error');
             dataResults.push({ location: loc.displayName, success: false, error: response.error.message });
           } else if (response.data?.success) {
-            addLog(`  ✅ ${loc.displayName}: Data pulled successfully`, 'success');
+            addLog(`${loc.displayName}: Data pulled successfully`, 'success');
             dataResults.push({ location: loc.displayName, success: true });
           } else {
             const errorMsg = response.data?.error || 'Unknown error';
-            addLog(`  ⚠️ ${loc.displayName}: ${errorMsg}`, 'warning');
+            addLog(`${loc.displayName}: ${errorMsg}`, 'warning');
             dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          addLog(`  ❌ ${loc.displayName}: ${errorMsg}`, 'error');
+          addLog(`${loc.displayName}: ${errorMsg}`, 'error');
           dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
         }
         
-        // Small delay between locations to avoid overwhelming NOAA servers
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      // Step 2: Generate reports for all locations
       addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
-      addLog(`ℹ️ Manual trigger: Will use most recent available data if new data isn't ready`, 'info');
+      addLog(`Manual trigger: Will use most recent available data if new data is not ready`, 'info');
       
       const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
         body: {}
       });
       
       console.log('Generate reports response:', response);
+      console.log('Response data:', JSON.stringify(response.data, null, 2));
+      console.log('Response error:', response.error);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
-        addLog(`❌ Report generation error: ${errorMsg}`, 'error');
+        console.error(`[AdminDataScreen] Function invocation error:`, errorMsg);
+        addLog(`Report generation error: ${errorMsg}`, 'error');
         
-        // Show partial success if data was pulled
         const dataSuccessCount = dataResults.filter(r => r.success).length;
         if (dataSuccessCount > 0) {
-          Alert.alert(
+          showErrorModal(
             'Partial Success',
-            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}`,
-            [{ text: 'OK' }]
+            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}\n\nCheck Edge Function logs for details.`
           );
         } else {
-          Alert.alert('Error', errorMsg);
+          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}\n\nCheck Edge Function logs for details.`);
         }
-      } else if (response.data?.success) {
+        return;
+      }
+
+      if (response.data?.success) {
         const results = response.data.results || [];
         const successCount = results.filter((r: any) => r.success).length;
         const totalCount = results.length;
         
-        addLog(`✅ Complete! Data pulled and reports generated: ${successCount}/${totalCount} locations`, 'success');
+        addLog(`Complete! Data pulled and reports generated: ${successCount}/${totalCount} locations`, 'success');
         
-        // Log each location result
         results.forEach((result: any) => {
           if (result.success) {
             if (result.skipped) {
-              addLog(`  ✅ ${result.location}: Report already exists`, 'info');
+              addLog(`${result.location}: Report already exists`, 'info');
             } else {
-              const waveStatus = result.hasWaveData ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+              const waveStatus = result.hasWaveData ? 'Wave sensors online' : 'Wave sensors offline';
               const fallbackNote = result.usedFallbackData ? ' (used recent data)' : '';
-              addLog(`  ✅ ${result.location}: Report generated (${waveStatus}${fallbackNote})`, 'success');
+              addLog(`${result.location}: Report generated (${waveStatus}${fallbackNote})`, 'success');
             }
           } else {
-            addLog(`  ❌ ${result.location}: ${result.error}`, 'error');
+            addLog(`${result.location}: ${result.error}`, 'error');
           }
         });
         
@@ -331,24 +353,38 @@ export default function AdminDataScreen() {
           return `${r.location}: ❌`;
         }).join('\n');
         
-        Alert.alert(
+        showErrorModal(
           'Success!',
-          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline\n📅 = Used recent data`,
-          [{ text: 'OK' }]
+          `Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n⚠️ = Wave sensors offline\n📅 = Used recent data`
         );
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDataCounts();
+      } else if (response.data?.success === false) {
+        const errorMsg = response.data?.error || response.data?.message || 'Report generation failed';
+        console.error(`[AdminDataScreen] Function returned error:`, errorMsg);
+        addLog(`Report generation failed: ${errorMsg}`, 'error');
+        
+        const dataSuccessCount = dataResults.filter(r => r.success).length;
+        if (dataSuccessCount > 0) {
+          showErrorModal(
+            'Partial Success',
+            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}`
+          );
+        } else {
+          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}`);
+        }
       } else {
-        const errorMsg = response.data?.error || 'Report generation failed';
-        addLog(`❌ Report generation failed: ${errorMsg}`, 'error');
-        Alert.alert('Error', errorMsg);
+        console.error(`[AdminDataScreen] Unexpected response format:`, response.data);
+        const errorMsg = 'Unexpected response format from Edge Function';
+        addLog(`${errorMsg}`, 'error');
+        showErrorModal('Error', `${errorMsg}\n\nResponse: ${JSON.stringify(response.data)}`);
       }
     } catch (error) {
       console.error('Error in pull and generate:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Exception: ${errorMsg}`, 'error');
-      Alert.alert('Error', `Failed to complete operation: ${errorMsg}`);
+      addLog(`Exception: ${errorMsg}`, 'error');
+      showErrorModal('Error', `Failed to complete operation: ${errorMsg}`);
     } finally {
       setIsLoading(false);
     }
@@ -374,28 +410,19 @@ export default function AdminDataScreen() {
   const backButtonTextContent = 'Back';
   const headerTitleText = 'Admin Data Manager';
   const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
-  const mainButtonText = `🔄 Pull Data & Generate Reports (${locationCountText})`;
+  const mainButtonText = `Pull Data & Generate Reports (${locationCountText})`;
   const sectionTitleText1 = `Current Data (Today) - ${locationData.displayName}`;
   const countLabelTides = 'Tides';
   const countLabelWeather = 'Weather';
   const countLabelForecast = 'Forecast';
   const countLabelSurf = 'Surf';
-  const infoTitleText = '⏰ Automated Update Schedule';
+  const infoTitleText = 'Automated Update Schedule';
   const locationListText = locations.map(loc => `  - ${loc.displayName}`).join('\n');
-  const infoTextContent = `✅ ACTIVE - Automated updates are running!
-
-• 6:00 AM EST: Generate initial conditions narrative for ALL locations
-${locationListText}
-  - Retries up to 10 times (up to 15 min) until sufficient data is available
-  - Will NOT fail if wave sensors are offline - uses wind/temp data
-• Every 15 min (6 AM - 9 PM): Update buoy data only (narrative preserved)
-• Manual triggers: Use most recent available data from today
-
-The system automatically generates separate reports for each location every morning at 6 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
+  const infoTextContent = `ACTIVE - Automated updates are running!\n\n• 6:00 AM EST: Generate initial conditions narrative for ALL locations\n${locationListText}\n  - Retries up to 10 times (up to 15 min) until sufficient data is available\n  - Will NOT fail if wave sensors are offline - uses wind/temp data\n• Every 15 min (6 AM - 9 PM): Update buoy data only (narrative preserved)\n• Manual triggers: Use most recent available data from today\n\nThe system automatically generates separate reports for each location every morning at 6 AM EST. The initial narrative is retained all day while buoy data updates every 15 minutes.`;
   const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';
-  const locationStatusTitle = '📍 Today\'s Report Status (All Locations)';
+  const locationStatusTitle = 'Today\'s Report Status (All Locations)';
 
   return (
     <View style={styles.container}>
@@ -419,12 +446,10 @@ The system automatically generates separate reports for each location every morn
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Push Notification Tester */}
         <PushNotificationTester />
 
-        {/* Location Selector */}
         <View style={styles.locationSelectorCard}>
-          <Text style={styles.locationSelectorTitle}>📍 Select Location</Text>
+          <Text style={styles.locationSelectorTitle}>Select Location</Text>
           <View style={styles.locationButtons}>
             {locations.map((loc) => {
               const isActive = currentLocation === loc.id;
@@ -455,11 +480,10 @@ The system automatically generates separate reports for each location every morn
           </Text>
         </View>
 
-        {/* Main Action Button - Pull Data & Generate Reports for All Locations */}
         <View style={styles.mainActionCard}>
-          <Text style={styles.mainActionTitle}>🚀 Bulk Actions</Text>
+          <Text style={styles.mainActionTitle}>Bulk Actions</Text>
           <Text style={styles.mainActionDescription}>
-            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. Manual triggers will use the most recent available data from today if new data isn't ready yet.
+            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. Manual triggers will use the most recent available data from today if new data is not ready yet.
           </Text>
           <TouchableOpacity
             style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
@@ -482,7 +506,6 @@ The system automatically generates separate reports for each location every morn
           </TouchableOpacity>
         </View>
 
-        {/* Data Counts for Current Location */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{sectionTitleText1}</Text>
           <View style={styles.countsGrid}>
@@ -505,7 +528,6 @@ The system automatically generates separate reports for each location every morn
           </View>
         </View>
 
-        {/* Location Report Status with Individual Controls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
           {locationReports.map((report) => {
@@ -518,7 +540,7 @@ The system automatically generates separate reports for each location every morn
             const lastUpdatedText = report.lastUpdated !== 'Never' 
               ? new Date(report.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
               : 'Never';
-            const sensorStatus = report.waveSensorsOnline ? '🌊 Wave sensors online' : '⚠️ Wave sensors offline';
+            const sensorStatus = report.waveSensorsOnline ? 'Wave sensors online' : 'Wave sensors offline';
             const isLoadingThisLocation = loadingLocationId === report.locationId;
             
             return (
@@ -541,7 +563,6 @@ The system automatically generates separate reports for each location every morn
                   <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
                 </View>
                 
-                {/* Individual Location Actions */}
                 <View style={styles.locationActions}>
                   <TouchableOpacity
                     style={[styles.locationActionButton, styles.pullDataButton, isLoadingThisLocation && styles.buttonDisabled]}
@@ -587,7 +608,7 @@ The system automatically generates separate reports for each location every morn
                 {!report.waveSensorsOnline && (
                   <View style={styles.warningBanner}>
                     <Text style={styles.warningText}>
-                      ⚠️ NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online. Manual triggers will use the most recent available data.
+                      NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online. Manual triggers will use the most recent available data.
                     </Text>
                   </View>
                 )}
@@ -596,7 +617,6 @@ The system automatically generates separate reports for each location every morn
           })}
         </View>
 
-        {/* Automated Update Schedule Info */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>{infoTitleText}</Text>
           <Text style={styles.infoText}>
@@ -604,7 +624,6 @@ The system automatically generates separate reports for each location every morn
           </Text>
         </View>
 
-        {/* Activity Log */}
         <View style={styles.section}>
           <View style={styles.logHeader}>
             <Text style={styles.sectionTitle}>{sectionTitleText2}</Text>
@@ -639,6 +658,26 @@ The system automatically generates separate reports for each location every morn
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={errorModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{errorModalTitle}</Text>
+            <Text style={styles.modalMessage}>{errorModalMessage}</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -943,5 +982,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: colors.text,
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  modalButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
