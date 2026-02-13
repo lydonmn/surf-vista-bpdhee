@@ -393,16 +393,22 @@ export default function HomeScreen() {
               Current Conditions
             </Text>
             
-            <View style={styles.mainCondition}>
-              <Text style={[styles.temperature, { color: theme.colors.text }]}>
-                {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
-              </Text>
-              <Text style={[styles.weatherDescription, { color: colors.textSecondary }]}>
-                {todaysReport.weather_description || 'Clear'}
-              </Text>
-            </View>
-
             <View style={styles.conditionsGrid}>
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="thermometer"
+                  android_material_icon_name="thermostat"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                  Temp
+                </Text>
+                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                  {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
+                </Text>
+              </View>
+
               <View style={styles.conditionItem}>
                 <IconSymbol
                   ios_icon_name="water.waves"
@@ -447,14 +453,18 @@ export default function HomeScreen() {
                   {waterTempDisplay}
                 </Text>
               </View>
-            </View>
 
-            <View style={styles.ratingSection}>
-              <Text style={[styles.ratingLabel, { color: colors.textSecondary }]}>
-                Stoke Rating
-              </Text>
-              <View style={[styles.ratingBadge, { backgroundColor: ratingColorValue }]}>
-                <Text style={styles.ratingText}>
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="star.fill"
+                  android_material_icon_name="star"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                  Stoke
+                </Text>
+                <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
                   {ratingValue}/10
                 </Text>
               </View>
@@ -498,6 +508,77 @@ export default function HomeScreen() {
               color="#FFFFFF"
             />
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 7-DAY FORECAST SECTION */}
+      {!surfLoading && (
+        <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.forecastHeader}>
+            <IconSymbol
+              ios_icon_name="calendar"
+              android_material_icon_name="calendar-today"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.forecastTitle, { color: theme.colors.text }]}>
+              7-Day Forecast
+            </Text>
+          </View>
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.forecastScrollContent}
+          >
+            {Array.from({ length: 7 }).map((_, index) => {
+              const forecastDate = new Date();
+              forecastDate.setDate(forecastDate.getDate() + index);
+              const dateStr = forecastDate.toLocaleDateString('en-US', { 
+                timeZone: 'America/New_York',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+              });
+              const [month, day, year] = dateStr.split('/');
+              const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+              
+              const dayReport = locationSurfReports.find(r => r.date.split('T')[0] === formattedDate);
+              
+              const dayName = index === 0 ? 'Today' : 
+                            index === 1 ? 'Tomorrow' : 
+                            forecastDate.toLocaleDateString('en-US', { weekday: 'short' });
+              
+              const tempDisplay = dayReport?.air_temp ? `${Math.round(dayReport.air_temp)}°` : '--';
+              const waveDisplay = dayReport?.wave_height || dayReport?.surf_height || '--';
+              const weatherDesc = dayReport?.weather_description || 'N/A';
+              
+              return (
+                <View key={index} style={[styles.forecastDay, { backgroundColor: theme.colors.background }]}>
+                  <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
+                    {dayName}
+                  </Text>
+                  <Text style={[styles.forecastWaveHeight, { color: colors.primary }]}>
+                    {waveDisplay}
+                  </Text>
+                  <Text style={[styles.forecastLabel, { color: colors.textSecondary }]}>
+                    swell
+                  </Text>
+                  <View style={styles.forecastTempRow}>
+                    <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
+                      {tempDisplay}
+                    </Text>
+                    <Text style={[styles.forecastTempLabel, { color: colors.textSecondary }]}>
+                      {dayReport?.air_temp ? `${Math.round(dayReport.air_temp - 6)}°` : '--'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.forecastWeather, { color: colors.textSecondary }]}>
+                    {weatherDesc}
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
         </View>
       )}
     </ScrollView>
@@ -713,21 +794,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 16,
   },
-  mainCondition: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  temperature: {
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  weatherDescription: {
-    fontSize: 16,
-    marginTop: 4,
-  },
   conditionsGrid: {
     gap: 12,
-    marginBottom: 20,
   },
   conditionItem: {
     flexDirection: 'row',
@@ -742,30 +810,6 @@ const styles = StyleSheet.create({
   conditionValue: {
     fontSize: 15,
     fontWeight: '600',
-  },
-  ratingSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  ratingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  ratingBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 70,
-    alignItems: 'center',
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
   reportNarrativeSection: {
     paddingTop: 24,
@@ -794,5 +838,63 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  forecastCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
+    elevation: 4,
+  },
+  forecastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  forecastTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  forecastScrollContent: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  forecastDay: {
+    width: 140,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  forecastDayName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  forecastWaveHeight: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  forecastLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  forecastTempRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  forecastTemp: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  forecastTempLabel: {
+    fontSize: 14,
+  },
+  forecastWeather: {
+    fontSize: 12,
+    textAlign: 'center',
   },
 });
