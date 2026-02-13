@@ -112,34 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [registerPushTokenIfNeeded]);
 
-  const refreshSession = useCallback(async () => {
-    try {
-      console.log('[AuthContext] 🔄 Refreshing session...');
-      const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
-      
-      if (error) {
-        console.error('[AuthContext] ❌ Session refresh error:', error);
-        
-        if (error.message.includes('Invalid Refresh Token') || error.message.includes('Refresh Token Not Found')) {
-          console.log('[AuthContext] Invalid refresh token - signing out');
-          await signOut();
-        }
-        return;
-      }
-      
-      if (newSession) {
-        console.log('[AuthContext] ✅ Session refreshed');
-        setSession(newSession);
-        
-        if (newSession.user) {
-          await loadUserProfile(newSession.user);
-        }
-      }
-    } catch (error) {
-      console.error('[AuthContext] Exception refreshing session:', error);
-    }
-  }, [loadUserProfile]);
-
   const signOut = useCallback(async () => {
     console.log('[AuthContext] ===== SIGN OUT STARTED =====');
     
@@ -173,6 +145,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   }, []);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      console.log('[AuthContext] 🔄 Refreshing session...');
+      const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.error('[AuthContext] ❌ Session refresh error:', error);
+        
+        if (error.message.includes('Invalid Refresh Token') || error.message.includes('Refresh Token Not Found')) {
+          console.log('[AuthContext] Invalid refresh token - signing out');
+          await signOut();
+        }
+        return;
+      }
+      
+      if (newSession) {
+        console.log('[AuthContext] ✅ Session refreshed');
+        setSession(newSession);
+        
+        if (newSession.user) {
+          await loadUserProfile(newSession.user);
+        }
+      }
+    } catch (error) {
+      console.error('[AuthContext] Exception refreshing session:', error);
+    }
+  }, [loadUserProfile, signOut]);
 
   useEffect(() => {
     if (isInitializingRef.current) {

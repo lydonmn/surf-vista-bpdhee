@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -46,7 +46,6 @@ export default function EditReportScreen() {
       
       let reportToEdit: SurfReport | null = null;
 
-      // If reportId is provided, try to load that specific report
       if (reportId) {
         console.log('[EditReportScreen] Loading specific report by ID:', reportId);
         
@@ -70,7 +69,6 @@ export default function EditReportScreen() {
         }
       }
 
-      // If no report loaded yet, try to load today's report for current location
       if (!reportToEdit) {
         console.log('[EditReportScreen] Loading today\'s report for current location:', currentLocation);
         
@@ -108,7 +106,6 @@ export default function EditReportScreen() {
         reportToEdit = data;
       }
 
-      // Verify the report is for the current location
       if (reportToEdit.location !== currentLocation) {
         console.warn('[EditReportScreen] Report location mismatch:', {
           reportLocation: reportToEdit.location,
@@ -119,7 +116,6 @@ export default function EditReportScreen() {
           `This report is for a different location. Switching to today's report for ${locationData.displayName}.`
         );
         
-        // Load today's report for current location instead
         const todayDate = getESTDate();
         const { data, error } = await supabase
           .from('surf_reports')
@@ -148,8 +144,6 @@ export default function EditReportScreen() {
 
       setReport(reportToEdit);
       
-      // CRITICAL: Use report_text if available (custom edit), otherwise use conditions (auto-generated)
-      // This ensures we're editing the custom text, not the auto-generated one
       const textToEdit = reportToEdit.report_text || reportToEdit.conditions || '';
       console.log('[EditReportScreen] Setting text to edit:', {
         length: textToEdit.length,
@@ -167,7 +161,6 @@ export default function EditReportScreen() {
     }
   }, [reportId, currentLocation, locationData.displayName]);
 
-  // ✅ CRITICAL FIX: Refresh data every time screen comes into focus
   useFocusEffect(
     useCallback(() => {
       console.log('[EditReportScreen] Screen focused - loading fresh report data');
@@ -176,9 +169,7 @@ export default function EditReportScreen() {
   );
 
   const showErrorModal = (title: string, message: string) => {
-    // Custom modal for cross-platform compatibility
     console.error('[EditReportScreen]', title, ':', message);
-    // For now, just log - we'll show in UI
   };
 
   const handleSave = async () => {
@@ -191,7 +182,6 @@ export default function EditReportScreen() {
       return;
     }
 
-    // Trim the report text to remove excessive whitespace
     const trimmedText = reportText.trim();
     
     if (!trimmedText) {
@@ -231,10 +221,8 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Saved rating:', data.rating);
       console.log('[EditReportScreen] Saved text preview:', data.report_text ? data.report_text.substring(0, 100) + '...' : 'none');
 
-      // ✅ CRITICAL FIX: Wait for database to propagate changes
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Verify the save by reading it back
       const { data: verifyData, error: verifyError } = await supabase
         .from('surf_reports')
         .select('report_text, rating, conditions')
@@ -251,7 +239,6 @@ export default function EditReportScreen() {
         console.log('[EditReportScreen] Verify text preview:', verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none');
       }
 
-      // ✅ Show success modal instead of Alert
       setShowSuccessModal(true);
     } catch (error) {
       console.error('[EditReportScreen] Exception saving report:', error);
@@ -292,10 +279,8 @@ export default function EditReportScreen() {
 
       console.log('[EditReportScreen] ✅ Report reset to auto-generated successfully');
 
-      // ✅ CRITICAL FIX: Wait for database to propagate changes
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Show success and go back
       setShowSuccessModal(true);
     } catch (error) {
       console.error('[EditReportScreen] Exception resetting report:', error);
@@ -306,7 +291,6 @@ export default function EditReportScreen() {
 
   const handleSuccessModalClose = () => {
     setShowSuccessModal(false);
-    // ✅ CRITICAL FIX: Navigate back to trigger refresh on report screen
     router.back();
   };
 
@@ -685,7 +669,6 @@ export default function EditReportScreen() {
         </View>
       </ScrollView>
 
-      {/* ✅ Success Modal - Cross-platform compatible */}
       <Modal
         visible={showSuccessModal}
         transparent={true}
@@ -718,7 +701,6 @@ export default function EditReportScreen() {
         </View>
       </Modal>
 
-      {/* ✅ Reset Confirmation Modal - Cross-platform compatible */}
       <Modal
         visible={showResetModal}
         transparent={true}

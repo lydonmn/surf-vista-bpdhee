@@ -75,7 +75,24 @@ export default function HomeScreen() {
         console.log('[HomeScreen] conditions length:', report.conditions?.length || 0);
         return report;
       } else {
-        console.log('[HomeScreen] ❌ No report found for today at', locationData.displayName);
+        console.log('[HomeScreen] No report for today, checking for most recent report...');
+        
+        const sortedReports = [...locationSurfReports].sort((a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateB - dateA;
+        });
+        
+        if (sortedReports.length > 0) {
+          const mostRecentReport = sortedReports[0];
+          console.log('[HomeScreen] ===== USING MOST RECENT REPORT =====');
+          console.log('[HomeScreen] Report ID:', mostRecentReport.id);
+          console.log('[HomeScreen] Report date:', mostRecentReport.date);
+          console.log('[HomeScreen] Report location:', mostRecentReport.location);
+          return mostRecentReport;
+        }
+        
+        console.log('[HomeScreen] ❌ No reports found at all for', locationData.displayName);
         return null;
       }
     } catch (error) {
@@ -216,6 +233,7 @@ export default function HomeScreen() {
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
+  const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
   console.log('[HomeScreen] ===== NARRATIVE DISPLAY =====');
   console.log('[HomeScreen] Location:', locationData.displayName);
@@ -223,6 +241,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
   console.log('[HomeScreen] Is custom (edited):', isCustomReport);
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
+  console.log('[HomeScreen] Is from today:', isReportFromToday);
 
   return (
     <ScrollView 
@@ -298,6 +317,19 @@ export default function HomeScreen() {
               <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
                 {locationData.displayName}
               </Text>
+              {!isReportFromToday && (
+                <View style={styles.oldDataBadge}>
+                  <IconSymbol
+                    ios_icon_name="clock"
+                    android_material_icon_name="schedule"
+                    size={12}
+                    color={colors.accent}
+                  />
+                  <Text style={[styles.oldDataText, { color: colors.accent }]}>
+                    Most recent report
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(todaysReport.rating ?? 5) }]}>
               <Text style={styles.ratingText}>{todaysReport.rating ?? 5}/10</Text>
@@ -340,7 +372,7 @@ export default function HomeScreen() {
                   Wave Height
                 </Text>
                 <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                  {todaysReport.wave_height || 'N/A'}
+                  {todaysReport.wave_height || todaysReport.surf_height || 'N/A'}
                 </Text>
               </View>
             </View>
@@ -612,6 +644,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 2,
+  },
+  oldDataBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  oldDataText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   ratingBadge: {
     paddingHorizontal: 12,

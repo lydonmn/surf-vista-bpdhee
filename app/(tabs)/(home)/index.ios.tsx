@@ -613,6 +613,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
+  oldDataBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  oldDataText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   ratingBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
