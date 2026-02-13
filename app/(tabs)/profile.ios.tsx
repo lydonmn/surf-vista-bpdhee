@@ -223,7 +223,7 @@ export default function ProfileScreen() {
         
         const statusText = value ? 'Enabled' : 'Disabled';
         const messageText = value 
-          ? 'You will receive a push notification each morning at 5 AM EST with your daily surf report summary!'
+          ? 'You will receive a push notification each morning at 6 AM EST with your daily surf report summary!'
           : 'Daily surf report notifications have been disabled.';
         
         Alert.alert(
@@ -779,7 +779,7 @@ export default function ProfileScreen() {
               Daily Surf Report
             </Text>
             <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
-              Get a push notification at 5 AM EST with your daily surf report summary
+              Get a push notification at 6 AM EST with your daily surf report summary
             </Text>
             {notificationPermissionStatus && (
               <Text style={[styles.permissionStatus, { 
@@ -1035,7 +1035,7 @@ export default function ProfileScreen() {
               Enable Notifications
             </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              To receive daily surf reports at 5 AM EST, you need to enable notifications for SurfVista.
+              To receive daily surf reports at 6 AM EST, you need to enable notifications for SurfVista.
               {'\n\n'}
               Please tap "Open Settings" below and enable notifications.
             </Text>

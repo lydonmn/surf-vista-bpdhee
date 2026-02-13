@@ -84,7 +84,7 @@ export default function ProfileScreen() {
   }, [dailyNotificationsEnabled]);
 
   // ✅ V8.0 AUTOMATIC FLOW: When screen loads, automatically check and register push token
-  // This ensures users who opt in will receive notifications when the 5AM report is generated
+  // This ensures users who opt in will receive notifications when the 6AM report is generated
   useEffect(() => {
     if (user?.id) {
       console.log('[ProfileScreen] 📲 Screen loaded - automatic push token check...');
@@ -96,7 +96,7 @@ export default function ProfileScreen() {
       
       // ✅ V8.0 AUTOMATIC: Ensure push token is registered (silent, no user interaction needed)
       // When user opts in, token is registered automatically
-      // When 5AM report is generated, notifications are sent automatically to opted-in users
+      // When 6AM report is generated, notifications are sent automatically to opted-in users
       ensurePushTokenRegistered(user.id).catch(error => {
         console.error('[ProfileScreen] ⚠️ Push token check error (non-critical):', error);
       });
@@ -216,19 +216,19 @@ export default function ProfileScreen() {
       // 2. Saves token to database
       // 3. Updates notification preference
       // 4. Clears token if disabling
-      // User doesn't need to do anything else - notifications will be sent at 5AM automatically
+      // User doesn't need to do anything else - notifications will be sent at 6AM automatically
       console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications (automatic token registration)...');
       const success = await setDailyReportNotifications(user.id, value);
       console.log('[ProfileScreen] 📝 Result:', success);
       
       if (success) {
         console.log('[ProfileScreen] ✅ Notifications updated successfully');
-        console.log('[ProfileScreen] ℹ️ AUTOMATIC: User will receive notifications at 5AM when reports are generated');
+        console.log('[ProfileScreen] ℹ️ AUTOMATIC: User will receive notifications at 6AM when reports are generated');
         setDailyNotificationsEnabled(value);
         
         const statusText = value ? 'Enabled' : 'Disabled';
         const messageText = value 
-          ? 'You will receive a push notification each morning at 5 AM EST with your daily surf report summary!'
+          ? 'You will receive a push notification each morning at 6 AM EST with your daily surf report summary!'
           : 'Daily surf report notifications have been disabled.';
         
         Alert.alert(
@@ -796,7 +796,7 @@ export default function ProfileScreen() {
               Daily Surf Report
             </Text>
             <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
-              Get a push notification at 5 AM EST with your daily surf report summary
+              Get a push notification at 6 AM EST with your daily surf report summary
             </Text>
             {notificationPermissionStatus && (
               <Text style={[styles.permissionStatus, { 
@@ -1051,7 +1051,7 @@ export default function ProfileScreen() {
               Enable Notifications
             </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              To receive daily surf reports at 5 AM EST, you need to enable notifications for SurfVista.
+              To receive daily surf reports at 6 AM EST, you need to enable notifications for SurfVista.
               {'\n\n'}
               Please tap "Open Settings" below and enable notifications.
             </Text>

@@ -245,7 +245,7 @@ export default function AdminDataScreen() {
     addLog(`Manual trigger: Will use most recent available data from today`, 'info');
 
     try {
-      const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
+      const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { location: locationId }
       });
       
@@ -348,7 +348,7 @@ export default function AdminDataScreen() {
       addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
       addLog(`Manual trigger: Will use most recent available data if new data is not ready`, 'info');
       
-      const response = await supabase.functions.invoke('daily-5am-report-with-retry', {
+      const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: {}
       });
       
@@ -470,7 +470,7 @@ export default function AdminDataScreen() {
   const countLabelSurf = 'Surf';
   const infoTitleText = 'System Status';
   const locationListText = locations.map(loc => `  • ${loc.displayName}`).join('\n');
-  const infoTextContent = `🔄 Automated Updates Active\n\n📊 Data Collection:\n• Buoy data: Every hour at :20 and :50\n• Weather: Hourly updates\n• Tides: Daily at 6 AM EST\n\n⏰ Report Generation:\n• Daily: 6:00 AM EST for all locations\n• Manual: Uses most recent available data\n\n📍 Next Data Window: ${nextCompleteDataTime}`;
+  const infoTextContent = `🔄 Automated Updates Active\n\n📊 Data Collection:\n• Background data pull: 5:00 AM EST\n• Buoy data: 5:20 AM & 5:50 AM EST\n• Weather: Hourly updates\n• Tides: Daily at 6 AM EST\n\n⏰ Report Generation:\n• Daily: 6:00 AM EST for all locations\n• Manual: Uses most recent available data\n\n📍 Next Data Window: ${nextCompleteDataTime}`;
   const sectionTitleText2 = 'Activity Log';
   const clearButtonText = 'Clear';
   const logEmptyText = 'No activity yet';

@@ -96,7 +96,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       return new Promise((resolve) => {
         Alert.alert(
           'Notification Permission Required',
-          'To receive daily surf reports, you need to enable notifications in your device settings.\n\nWould you like to open settings now?',
+          'To receive daily surf reports at 6 AM EST, you need to enable notifications in your device settings.\n\nWould you like to open settings now?',
           [
             {
               text: 'Cancel',
@@ -133,7 +133,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       console.warn('[Push Notifications] ❌ Permission denied by user');
       Alert.alert(
         'Permission Denied',
-        'You have denied notification permissions. To receive daily surf reports, please enable notifications in your device settings.',
+        'You have denied notification permissions. To receive daily surf reports at 6 AM EST, please enable notifications in your device settings.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -234,7 +234,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#0EA5E9',
-          description: 'Receive your daily surf report at 5 AM',
+          description: 'Receive your daily surf report at 6 AM EST',
         });
         console.log('[Push Notifications] Android notification channel configured');
       }
@@ -496,7 +496,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       console.error('[Push Notifications] ⚠️ User will NOT receive notifications!');
     } else if (enabled && data[0]?.push_token) {
       console.log('[Push Notifications] ✅ SUCCESS: Notifications enabled with valid token');
-      console.log('[Push Notifications] ✅ User WILL receive notifications at 5AM EST');
+      console.log('[Push Notifications] ✅ User WILL receive notifications at 6AM EST');
     }
     console.log('[Push Notifications] ===================================');
 
