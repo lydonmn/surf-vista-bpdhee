@@ -15,10 +15,14 @@ type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
 
 function getESTDate(): string {
   const now = new Date();
-  const estOffset = -5 * 60;
-  const localOffset = now.getTimezoneOffset();
-  const estTime = new Date(now.getTime() + (estOffset - localOffset) * 60 * 1000);
-  return estTime.toISOString().split('T')[0];
+  const estDateString = now.toLocaleDateString('en-US', { 
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const [month, day, year] = estDateString.split('/');
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
 export default function EditReportScreen() {
@@ -36,6 +40,9 @@ export default function EditReportScreen() {
   const [showPreview, setShowPreview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorModalTitle, setErrorModalTitle] = useState('');
+  const [errorModalMessage, setErrorModalMessage] = useState('');
 
   const loadReport = useCallback(async () => {
     try {
@@ -170,6 +177,9 @@ export default function EditReportScreen() {
 
   const showErrorModal = (title: string, message: string) => {
     console.error('[EditReportScreen]', title, ':', message);
+    setErrorModalTitle(title);
+    setErrorModalMessage(message);
+    setErrorModalVisible(true);
   };
 
   const handleSave = async () => {
@@ -179,12 +189,14 @@ export default function EditReportScreen() {
     const ratingValue = ratingNum;
     
     if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 10) {
+      showErrorModal('Invalid Rating', 'Please enter a rating between 0 and 10');
       return;
     }
 
     const trimmedText = reportText.trim();
     
     if (!trimmedText) {
+      showErrorModal('Empty Report', 'Please enter some text for the surf report');
       return;
     }
 
@@ -212,6 +224,7 @@ export default function EditReportScreen() {
 
       if (error) {
         console.error('[EditReportScreen] Error saving report:', error);
+        showErrorModal('Save Failed', error.message || 'Failed to save report');
         return;
       }
 
@@ -242,6 +255,7 @@ export default function EditReportScreen() {
       setShowSuccessModal(true);
     } catch (error) {
       console.error('[EditReportScreen] Exception saving report:', error);
+      showErrorModal('Error', 'An unexpected error occurred while saving');
     } finally {
       setSaving(false);
     }
@@ -274,6 +288,7 @@ export default function EditReportScreen() {
 
       if (error) {
         console.error('[EditReportScreen] Error resetting report:', error);
+        showErrorModal('Reset Failed', error.message || 'Failed to reset report');
         return;
       }
 
@@ -284,6 +299,7 @@ export default function EditReportScreen() {
       setShowSuccessModal(true);
     } catch (error) {
       console.error('[EditReportScreen] Exception resetting report:', error);
+      showErrorModal('Error', 'An unexpected error occurred while resetting');
     } finally {
       setSaving(false);
     }
@@ -359,9 +375,9 @@ export default function EditReportScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
-            onPress={() => router.back()}
+            onPress={() => router.push('/admin-data')}
           >
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Text style={styles.buttonText}>Go to Admin Data</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -742,6 +758,38 @@ export default function EditReportScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={errorModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.modalIconContainer, { backgroundColor: colors.errorBackground }]}>
+              <IconSymbol
+                ios_icon_name="exclamationmark.triangle.fill"
+                android_material_icon_name="warning"
+                size={48}
+                color="#FFFFFF"
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              {errorModalTitle}
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              {errorModalMessage}
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: colors.primary }]}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

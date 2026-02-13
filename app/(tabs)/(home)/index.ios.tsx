@@ -11,7 +11,7 @@ import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { formatWaterTemp, getESTDate } from "@/utils/surfDataFormatter";
+import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
@@ -21,22 +21,13 @@ export default function HomeScreen() {
   const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, weatherData, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const { surfReports, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
 
-  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    if (latestVideo?.video_url) {
-      console.log('[HomeScreen] Initializing video preview player with caching');
-      player.loop = true;
-      player.muted = true;
-      player.volume = 0;
-      console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
-    }
-  });
-
+  // ✅ CRITICAL FIX: Move all useMemo hooks BEFORE any conditional returns
   const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
@@ -74,7 +65,24 @@ export default function HomeScreen() {
         console.log('[HomeScreen] conditions length:', report.conditions?.length || 0);
         return report;
       } else {
-        console.log('[HomeScreen] ❌ No report found for today at', locationData.displayName);
+        console.log('[HomeScreen] No report for today, checking for most recent report...');
+        
+        const sortedReports = [...locationSurfReports].sort((a, b) => {
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          return dateB - dateA;
+        });
+        
+        if (sortedReports.length > 0) {
+          const mostRecentReport = sortedReports[0];
+          console.log('[HomeScreen] ===== USING MOST RECENT REPORT =====');
+          console.log('[HomeScreen] Report ID:', mostRecentReport.id);
+          console.log('[HomeScreen] Report date:', mostRecentReport.date);
+          console.log('[HomeScreen] Report location:', mostRecentReport.location);
+          return mostRecentReport;
+        }
+        
+        console.log('[HomeScreen] ❌ No reports found at all for', locationData.displayName);
         return null;
       }
     } catch (error) {
@@ -82,6 +90,22 @@ export default function HomeScreen() {
       return null;
     }
   }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
+
+  const locationWeatherForecast = useMemo(() => {
+    const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
+    console.log('[HomeScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
+    return filtered;
+  }, [weatherForecast, currentLocation]);
+
+  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
+    if (latestVideo?.video_url) {
+      console.log('[HomeScreen] Initializing video preview player with caching');
+      player.loop = true;
+      player.muted = true;
+      player.volume = 0;
+      console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
+    }
+  });
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -232,6 +256,7 @@ export default function HomeScreen() {
   const waterTempDisplay = formatWaterTemp(todaysReport?.water_temp);
   const ratingValue = todaysReport?.rating ?? 5;
   const ratingColorValue = getRatingColor(ratingValue);
+  const weatherDescDisplay = todaysReport?.weather_conditions || 'N/A';
 
   return (
     <ScrollView 
@@ -319,31 +344,30 @@ export default function HomeScreen() {
         <LocationSelector />
       </View>
 
-      {/* DATE - BELOW LOCATION SELECTOR */}
-      {todaysReport && (
-        <View style={styles.dateContainer}>
-          <Text style={[styles.dateText, { color: theme.colors.text }]}>
-            {new Date(todaysReport.date).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </Text>
-          {!isReportFromToday && (
-            <View style={styles.oldDataBadge}>
-              <IconSymbol
-                ios_icon_name="clock"
-                android_material_icon_name="schedule"
-                size={12}
-                color={colors.accent}
-              />
-              <Text style={[styles.oldDataText, { color: colors.accent }]}>
-                Most recent report
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
+      {/* DATE - BELOW LOCATION SELECTOR - ALWAYS SHOW TODAY'S DATE */}
+      <View style={styles.dateContainer}>
+        <Text style={[styles.dateText, { color: theme.colors.text }]}>
+          {new Date().toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </Text>
+        {todaysReport && !isReportFromToday && (
+          <View style={styles.oldDataBadge}>
+            <IconSymbol
+              ios_icon_name="clock"
+              android_material_icon_name="schedule"
+              size={12}
+              color={colors.accent}
+            />
+            <Text style={[styles.oldDataText, { color: colors.accent }]}>
+              Showing most recent report
+            </Text>
+          </View>
+        )}
+      </View>
 
       {/* CONSOLIDATED REPORT & CONDITIONS */}
       {surfLoading && !isRefreshing ? (
@@ -388,7 +412,22 @@ export default function HomeScreen() {
                   Temp
                 </Text>
                 <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                  {todaysReport.air_temp ? `${Math.round(todaysReport.air_temp)}°F` : '36°F'}
+                  {todaysReport.air_temp ? `${Math.round(Number(todaysReport.air_temp))}°F` : 'N/A'}
+                </Text>
+              </View>
+
+              <View style={styles.conditionItem}>
+                <IconSymbol
+                  ios_icon_name="cloud.fill"
+                  android_material_icon_name="cloud"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                  Weather
+                </Text>
+                <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                  {weatherDescDisplay}
                 </Text>
               </View>
 
@@ -515,31 +554,48 @@ export default function HomeScreen() {
             contentContainerStyle={styles.forecastScrollContent}
           >
             {Array.from({ length: 7 }).map((_, index) => {
-              const forecastDate = new Date();
-              forecastDate.setDate(forecastDate.getDate() + index);
-              const dateStr = forecastDate.toLocaleDateString('en-US', { 
-                timeZone: 'America/New_York',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-              });
-              const [month, day, year] = dateStr.split('/');
-              const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+              const forecastDateStr = getESTDateOffset(index);
               
-              const dayReport = locationSurfReports.find(r => r.date.split('T')[0] === formattedDate);
+              const dayReport = locationSurfReports.find(r => r.date.split('T')[0] === forecastDateStr);
+              const dayWeatherForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === forecastDateStr);
               
               const dayName = index === 0 ? 'Today' : 
                             index === 1 ? 'Tomorrow' : 
-                            forecastDate.toLocaleDateString('en-US', { weekday: 'short' });
+                            new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', { 
+                              timeZone: 'America/New_York',
+                              weekday: 'short' 
+                            });
               
-              const tempDisplay = dayReport?.air_temp ? `${Math.round(dayReport.air_temp)}°` : '--';
-              const waveDisplay = dayReport?.wave_height || dayReport?.surf_height || '--';
-              const weatherDesc = dayReport?.weather_description || 'N/A';
+              const monthDay = new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: 'numeric'
+              });
+              
+              const highTempDisplay = dayWeatherForecast?.high_temp ? `${Math.round(dayWeatherForecast.high_temp)}°` : dayReport?.air_temp ? `${Math.round(Number(dayReport.air_temp))}°` : '--';
+              const lowTempDisplay = dayWeatherForecast?.low_temp ? `${Math.round(dayWeatherForecast.low_temp)}°` : '--';
+              const waveDisplay = dayWeatherForecast?.swell_height_range || dayReport?.wave_height || dayReport?.surf_height || '--';
+              const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
+              
+              console.log('[HomeScreen] Forecast day', index, ':', {
+                date: forecastDateStr,
+                dayName,
+                monthDay,
+                hasReport: !!dayReport,
+                hasForecast: !!dayWeatherForecast,
+                waveDisplay,
+                highTemp: highTempDisplay,
+                lowTemp: lowTempDisplay,
+                weather: weatherDesc
+              });
               
               return (
                 <View key={index} style={[styles.forecastDay, { backgroundColor: theme.colors.background }]}>
                   <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
                     {dayName}
+                  </Text>
+                  <Text style={[styles.forecastDate, { color: colors.textSecondary }]}>
+                    {monthDay}
                   </Text>
                   <Text style={[styles.forecastWaveHeight, { color: colors.primary }]}>
                     {waveDisplay}
@@ -549,19 +605,30 @@ export default function HomeScreen() {
                   </Text>
                   <View style={styles.forecastTempRow}>
                     <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
-                      {tempDisplay}
+                      {highTempDisplay}
+                    </Text>
+                    <Text style={[styles.forecastTempDivider, { color: colors.textSecondary }]}>
+                      /
                     </Text>
                     <Text style={[styles.forecastTempLabel, { color: colors.textSecondary }]}>
-                      {dayReport?.air_temp ? `${Math.round(dayReport.air_temp - 6)}°` : '--'}
+                      {lowTempDisplay}
                     </Text>
                   </View>
-                  <Text style={[styles.forecastWeather, { color: colors.textSecondary }]}>
+                  <Text style={[styles.forecastWeather, { color: colors.textSecondary }]} numberOfLines={2}>
                     {weatherDesc}
                   </Text>
                 </View>
               );
             })}
           </ScrollView>
+          
+          {locationWeatherForecast.length === 0 && locationSurfReports.length === 0 && (
+            <View style={styles.noForecastContainer}>
+              <Text style={[styles.noForecastText, { color: colors.textSecondary }]}>
+                No forecast data available yet. Pull down to refresh or check back later.
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -592,6 +659,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   dateText: {
@@ -602,6 +670,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    borderRadius: 12,
   },
   oldDataText: {
     fontSize: 11,
@@ -778,21 +850,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   conditionsGrid: {
-    gap: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
   },
   conditionItem: {
-    flexDirection: 'row',
+    width: '30%',
     alignItems: 'center',
-    gap: 12,
+    gap: 6,
   },
   conditionLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    flex: 1,
+    textAlign: 'center',
   },
   conditionValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   reportNarrativeSection: {
     paddingTop: 24,
@@ -845,39 +920,56 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   forecastDay: {
-    width: 140,
+    width: 120,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   forecastDayName: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  forecastDate: {
+    fontSize: 12,
     marginBottom: 4,
   },
   forecastWaveHeight: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
   },
   forecastLabel: {
-    fontSize: 12,
-    marginBottom: 8,
+    fontSize: 11,
+    marginBottom: 6,
   },
   forecastTempRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
+    marginBottom: 6,
   },
   forecastTemp: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
+  },
+  forecastTempDivider: {
+    fontSize: 14,
   },
   forecastTempLabel: {
     fontSize: 14,
   },
   forecastWeather: {
-    fontSize: 12,
+    fontSize: 11,
     textAlign: 'center',
+    lineHeight: 14,
+  },
+  noForecastContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  noForecastText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
