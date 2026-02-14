@@ -1,68 +1,127 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
-import { IconSymbol } from "@/components/IconSymbol";
-import { supabase } from "@/app/integrations/supabase/client";
-import { colors } from "@/styles/commonStyles";
-import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
-import { LocationSelector } from "@/components/LocationSelector";
-import { openPaywall } from "@/utils/paywallHelper";
-import { router, useFocusEffect } from "expo-router";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLocation } from "@/contexts/LocationContext";
-import { ReportTextDisplay } from "@/components/ReportTextDisplay";
-import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
+import { router, useFocusEffect } from "expo-router";
+import { colors } from "@/styles/commonStyles";
+import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
+import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
+import { useLocation } from "@/contexts/LocationContext";
+import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
+import { LocationSelector } from "@/components/LocationSelector";
+import { openPaywall } from "@/utils/paywallHelper";
 
-// Helper function to calculate surf rating from surf conditions
+// 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
   
   const surfHeightStr = surfData.surf_height || surfData.wave_height || '0';
   const periodStr = surfData.wave_period || '0';
   const windSpeedStr = surfData.wind_speed || '0';
+  const windDirStr = surfData.wind_direction || '';
   
-  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
+  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr, windDirStr });
   
-  if (surfHeightStr === 'N/A' || surfHeightStr === '') {
+  if (surfHeightStr === 'N/A' || surfHeightStr === '' || surfHeightStr === 'null') {
     console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
     return 5;
   }
   
-  // Parse numeric values
+  // Parse wave height - handle ranges like "1.0-1.5 ft"
   const parseValue = (str: string): number => {
-    const match = str.match(/(\d+\.?\d*)/);
-    return match ? parseFloat(match[1]) : 0;
+    const cleaned = String(str).replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
   };
   
-  const surfHeight = parseValue(surfHeightStr);
+  let surfHeight = 0;
+  const cleanedStr = String(surfHeightStr).trim();
+  
+  if (cleanedStr.includes('-')) {
+    // It's a range, take the average
+    const parts = cleanedStr.split('-');
+    const low = parseValue(parts[0]);
+    const high = parseValue(parts[1]);
+    surfHeight = (low + high) / 2;
+    console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
+  } else {
+    surfHeight = parseValue(cleanedStr);
+    console.log('[calculateSurfRating] Parsed single value:', surfHeight);
+  }
+  
   const period = parseValue(periodStr);
   const windSpeed = parseValue(windSpeedStr);
+  const windDir = windDirStr.toLowerCase();
+  const isOffshore = windDir.includes('w') || windDir.includes('n');
 
-  let rating = 5;
+  console.log('[calculateSurfRating] Numeric values:', { surfHeight, period, windSpeed, isOffshore });
 
-  // Height contribution
-  if (surfHeight >= 6) rating += 4;
-  else if (surfHeight >= 4) rating += 3;
-  else if (surfHeight >= 3) rating += 2;
-  else if (surfHeight >= 2) rating += 1;
-  else if (surfHeight < 1) rating -= 2;
+  // 🚨 CRITICAL FIX: Start at 3 instead of 5 for more realistic ratings
+  let rating = 3;
 
-  // Period contribution
-  if (period >= 12) rating += 3;
-  else if (period >= 10) rating += 2;
-  else if (period >= 8) rating += 1;
-  else if (period < 6 && period > 0) rating -= 1;
+  // Height contribution (more conservative)
+  if (surfHeight >= 6) {
+    rating += 5; // 8/10 for overhead
+  } else if (surfHeight >= 4) {
+    rating += 4; // 7/10 for chest-head high
+  } else if (surfHeight >= 3) {
+    rating += 3; // 6/10 for waist-chest high
+  } else if (surfHeight >= 2) {
+    rating += 2; // 5/10 for waist high
+  } else if (surfHeight >= 1.5) {
+    rating += 1; // 4/10 for knee-waist
+  } else if (surfHeight >= 1) {
+    rating += 0; // 3/10 for ankle-knee (base rating)
+  } else {
+    rating -= 1; // 2/10 for less than 1 foot
+  }
 
-  // Wind contribution
-  if (windSpeed < 5) rating += 1;
-  else if (windSpeed > 15) rating -= 2;
+  // Period contribution (more conservative)
+  if (period >= 12) {
+    rating += 2; // Long period groundswell
+  } else if (period >= 10) {
+    rating += 1; // Good period
+  } else if (period >= 8) {
+    rating += 0; // Moderate period (no change)
+  } else if (period >= 6) {
+    rating -= 1; // Short period
+  } else if (period > 0) {
+    rating -= 2; // Very short period wind swell
+  }
+
+  // Wind contribution (check direction too)
+  if (isOffshore) {
+    // Offshore wind is good
+    if (windSpeed < 5) {
+      rating += 1; // Light offshore, glassy
+    } else if (windSpeed < 10) {
+      rating += 1; // Offshore grooming
+    } else if (windSpeed < 15) {
+      rating += 0; // Strong offshore (no change)
+    } else {
+      rating -= 1; // Too strong offshore
+    }
+  } else {
+    // Onshore wind is bad
+    if (windSpeed < 5) {
+      rating += 0; // Light onshore (no change)
+    } else if (windSpeed < 10) {
+      rating -= 1; // Moderate onshore
+    } else if (windSpeed < 15) {
+      rating -= 2; // Strong onshore
+    } else {
+      rating -= 3; // Very strong onshore, blown out
+    }
+  }
 
   const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
-  console.log(`[calculateSurfRating] Calculation: height=${surfHeight}, period=${period}, wind=${windSpeed} -> rating=${finalRating}`);
+  console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph ${isOffshore ? 'offshore' : 'onshore'})`);
   
   return finalRating;
 }
@@ -447,7 +506,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
-  console.log('[HomeScreen] 🎯 STOKE METER RATING:', ratingValue);
+  console.log('[HomeScreen] 🎯 STOKE METER:', ratingValue, '/10');
   console.log('[HomeScreen] ================================================');
 
   const errorTitleText = 'Unable to fetch surf data';
