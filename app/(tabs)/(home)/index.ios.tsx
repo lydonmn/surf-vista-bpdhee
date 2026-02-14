@@ -1,21 +1,71 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
-import { useTheme } from "@react-navigation/native";
-import { useAuth } from "@/contexts/AuthContext";
-import { router, useFocusEffect } from "expo-router";
-import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
-import { useSurfData } from "@/hooks/useSurfData";
-import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
-import { Video } from "@/types";
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { colors } from "@/styles/commonStyles";
 import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
-import { useLocation } from "@/contexts/LocationContext";
-import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
 import { openPaywall } from "@/utils/paywallHelper";
+import { router, useFocusEffect } from "expo-router";
+import { useTheme } from "@react-navigation/native";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLocation } from "@/contexts/LocationContext";
+import { ReportTextDisplay } from "@/components/ReportTextDisplay";
+import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
+import { useSurfData } from "@/hooks/useSurfData";
+import { Video } from "@/types";
+import { VideoView, useVideoPlayer } from 'expo-video';
+
+// Helper function to calculate surf rating from surf conditions
+function calculateSurfRating(surfData: any): number {
+  if (!surfData) return 5;
+  
+  const surfHeightStr = surfData.surf_height || surfData.wave_height || '0';
+  const periodStr = surfData.wave_period || '0';
+  const windSpeedStr = surfData.wind_speed || '0';
+  
+  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
+  
+  if (surfHeightStr === 'N/A' || surfHeightStr === '') {
+    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
+    return 5;
+  }
+  
+  // Parse numeric values
+  const parseValue = (str: string): number => {
+    const match = str.match(/(\d+\.?\d*)/);
+    return match ? parseFloat(match[1]) : 0;
+  };
+  
+  const surfHeight = parseValue(surfHeightStr);
+  const period = parseValue(periodStr);
+  const windSpeed = parseValue(windSpeedStr);
+
+  let rating = 5;
+
+  // Height contribution
+  if (surfHeight >= 6) rating += 4;
+  else if (surfHeight >= 4) rating += 3;
+  else if (surfHeight >= 3) rating += 2;
+  else if (surfHeight >= 2) rating += 1;
+  else if (surfHeight < 1) rating -= 2;
+
+  // Period contribution
+  if (period >= 12) rating += 3;
+  else if (period >= 10) rating += 2;
+  else if (period >= 8) rating += 1;
+  else if (period < 6 && period > 0) rating -= 1;
+
+  // Wind contribution
+  if (windSpeed < 5) rating += 1;
+  else if (windSpeed > 15) rating -= 2;
+
+  const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
+  console.log(`[calculateSurfRating] Calculation: height=${surfHeight}, period=${period}, wind=${windSpeed} -> rating=${finalRating}`);
+  
+  return finalRating;
+}
 
 export default function HomeScreen() {
   const theme = useTheme();
@@ -33,6 +83,7 @@ export default function HomeScreen() {
   // ✅ FIX: Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
 
+  // ✅ FIX: ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
@@ -40,6 +91,12 @@ export default function HomeScreen() {
     console.log('[HomeScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
     return filtered;
   }, [surfReports, currentLocation]);
+
+  const locationWeatherForecast = useMemo(() => {
+    const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
+    console.log('[HomeScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
+    return filtered;
+  }, [weatherForecast, currentLocation]);
 
   const todaysReport = useMemo(() => {
     try {
@@ -100,11 +157,35 @@ export default function HomeScreen() {
     }
   }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
 
-  const locationWeatherForecast = useMemo(() => {
-    const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
-    console.log('[HomeScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
-    return filtered;
-  }, [weatherForecast, currentLocation]);
+  // ✅ Calculate rating early (before conditional returns)
+  const ratingValue = useMemo(() => {
+    console.log('[HomeScreen] ===== CALCULATING CURRENT RATING =====');
+    console.log('[HomeScreen] Has surfConditions:', !!surfConditions);
+    console.log('[HomeScreen] Has todaysReport:', !!todaysReport);
+    
+    // ALWAYS use surf_conditions if available (most current data)
+    if (surfConditions) {
+      const rating = calculateSurfRating(surfConditions);
+      console.log('[HomeScreen] ✅ Using rating from surf_conditions (real-time):', rating);
+      return rating;
+    }
+    
+    // Fallback to report rating if no surf_conditions
+    if (todaysReport?.rating) {
+      console.log('[HomeScreen] Using rating from report (stored):', todaysReport.rating);
+      return todaysReport.rating;
+    }
+    
+    // Last resort: calculate from report data
+    if (todaysReport) {
+      const rating = calculateSurfRating(todaysReport);
+      console.log('[HomeScreen] Calculated rating from report data:', rating);
+      return rating;
+    }
+    
+    console.log('[HomeScreen] No data available, using default rating: 5');
+    return 5;
+  }, [surfConditions, todaysReport]);
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -357,7 +438,6 @@ export default function HomeScreen() {
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
   
-  const ratingValue = todaysReport?.rating ?? 5;
   const ratingColorValue = getRatingColor(ratingValue);
   const ratingLabel = 'Stoke Rating';
 
@@ -367,6 +447,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
+  console.log('[HomeScreen] 🎯 STOKE METER RATING:', ratingValue);
   console.log('[HomeScreen] ================================================');
 
   const errorTitleText = 'Unable to fetch surf data';

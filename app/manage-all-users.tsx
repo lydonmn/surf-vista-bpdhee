@@ -43,6 +43,12 @@ export default function ManageAllUsersScreen() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
   const [confirmMessage, setConfirmMessage] = useState('');
+  
+  // Month picker modal states
+  const [showMonthPickerModal, setShowMonthPickerModal] = useState(false);
+  const [selectedMonths, setSelectedMonths] = useState(3);
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
 
   // Check access
   useEffect(() => {
@@ -126,54 +132,71 @@ export default function ManageAllUsersScreen() {
   };
 
   const handleGrantFreeMonths = async (userId: string, userEmail: string) => {
-    showConfirm(
-      `Grant 3 free months to ${userEmail}?\n\nThis will extend their subscription by 3 months from today or their current end date.`,
-      async () => {
-        try {
-          console.log('[ManageAllUsers] Granting 3 free months to:', userEmail);
-          
-          // Calculate new end date (3 months from now or from current end date)
-          const user = users.find(u => u.id === userId);
-          let newEndDate: Date;
-          
-          if (user?.subscription_end_date && new Date(user.subscription_end_date) > new Date()) {
-            // Extend from current end date
-            newEndDate = new Date(user.subscription_end_date);
-          } else {
-            // Start from today
-            newEndDate = new Date();
-          }
-          
-          // Add 3 months
-          newEndDate.setMonth(newEndDate.getMonth() + 3);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              is_subscribed: true,
-              subscription_end_date: newEndDate.toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userId);
+    console.log('[ManageAllUsers] Opening month picker for:', userEmail);
+    setPendingUserId(userId);
+    setPendingUserEmail(userEmail);
+    setSelectedMonths(3); // Default to 3 months
+    setShowMonthPickerModal(true);
+  };
 
-          if (error) {
-            console.error('[ManageAllUsers] Error granting free months:', error);
-            showError('Error', `Failed to grant free months: ${error.message}`);
-            return;
-          }
+  const confirmGrantFreeMonths = async () => {
+    if (!pendingUserId || !pendingUserEmail) {
+      console.error('[ManageAllUsers] No pending user for free months');
+      return;
+    }
 
-          console.log('[ManageAllUsers] ✅ Free months granted');
-          showSuccess(
-            'Success',
-            `Granted 3 free months to ${userEmail}\n\nNew end date: ${newEndDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-          );
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
-        }
+    const userId = pendingUserId;
+    const userEmail = pendingUserEmail;
+    const months = selectedMonths;
+
+    // Close month picker
+    setShowMonthPickerModal(false);
+    setPendingUserId(null);
+    setPendingUserEmail(null);
+
+    try {
+      console.log(`[ManageAllUsers] Granting ${months} free months to:`, userEmail);
+      
+      // Calculate new end date (N months from now or from current end date)
+      const user = users.find(u => u.id === userId);
+      let newEndDate: Date;
+      
+      if (user?.subscription_end_date && new Date(user.subscription_end_date) > new Date()) {
+        // Extend from current end date
+        newEndDate = new Date(user.subscription_end_date);
+      } else {
+        // Start from today
+        newEndDate = new Date();
       }
-    );
+      
+      // Add N months
+      newEndDate.setMonth(newEndDate.getMonth() + months);
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_subscribed: true,
+          subscription_end_date: newEndDate.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('[ManageAllUsers] Error granting free months:', error);
+        showError('Error', `Failed to grant free months: ${error.message}`);
+        return;
+      }
+
+      console.log('[ManageAllUsers] ✅ Free months granted');
+      showSuccess(
+        'Success',
+        `Granted ${months} free month${months === 1 ? '' : 's'} to ${userEmail}\n\nNew end date: ${newEndDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+      );
+      await fetchUsers();
+    } catch (error: any) {
+      console.error('[ManageAllUsers] Error:', error);
+      showError('Error', error.message);
+    }
   };
 
   const handlePauseSubscription = async (userId: string, userEmail: string) => {
@@ -395,8 +418,10 @@ export default function ManageAllUsersScreen() {
           <View style={styles.userInfo}>
             <Text style={[styles.userEmail, { color: theme.colors.text }]}>
               {item.email}
-              {isCurrentUser && <Text style={styles.youBadge}> (You)</Text>}
             </Text>
+            {isCurrentUser && (
+              <Text style={styles.youBadge}>You</Text>
+            )}
             <Text style={[styles.joinedDate, { color: colors.textSecondary }]}>
               Joined {formatDate(item.created_at)}
             </Text>
@@ -551,6 +576,8 @@ export default function ManageAllUsersScreen() {
     return null;
   }
 
+  const monthsText = selectedMonths === 1 ? '1 month' : `${selectedMonths} months`;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Header */}
@@ -659,6 +686,119 @@ export default function ManageAllUsersScreen() {
           }
         />
       )}
+
+      {/* Month Picker Modal */}
+      <Modal
+        visible={showMonthPickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowMonthPickerModal(false);
+          setPendingUserId(null);
+          setPendingUserEmail(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.modalIcon, { backgroundColor: '#2196F3' }]}>
+              <IconSymbol
+                ios_icon_name="gift.fill"
+                android_material_icon_name="card_giftcard"
+                size={48}
+                color="#FFFFFF"
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Grant Free Months</Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              Select number of free months to grant to {pendingUserEmail}
+            </Text>
+            
+            {/* Month Selector */}
+            <View style={styles.monthSelector}>
+              <TouchableOpacity
+                style={styles.monthButton}
+                onPress={() => setSelectedMonths(Math.max(1, selectedMonths - 1))}
+              >
+                <IconSymbol
+                  ios_icon_name="minus.circle.fill"
+                  android_material_icon_name="remove_circle"
+                  size={32}
+                  color={colors.primary}
+                />
+              </TouchableOpacity>
+              
+              <View style={styles.monthDisplay}>
+                <Text style={[styles.monthNumber, { color: theme.colors.text }]}>
+                  {selectedMonths}
+                </Text>
+                <Text style={[styles.monthLabel, { color: colors.textSecondary }]}>
+                  {monthsText}
+                </Text>
+              </View>
+              
+              <TouchableOpacity
+                style={styles.monthButton}
+                onPress={() => setSelectedMonths(Math.min(24, selectedMonths + 1))}
+              >
+                <IconSymbol
+                  ios_icon_name="plus.circle.fill"
+                  android_material_icon_name="add_circle"
+                  size={32}
+                  color={colors.primary}
+                />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Quick Select Buttons */}
+            <View style={styles.quickSelectContainer}>
+              <Text style={[styles.quickSelectLabel, { color: colors.textSecondary }]}>
+                Quick select:
+              </Text>
+              <View style={styles.quickSelectButtons}>
+                {[1, 3, 6, 12].map((months) => {
+                  const isSelected = selectedMonths === months;
+                  return (
+                    <TouchableOpacity
+                      key={months}
+                      style={[
+                        styles.quickSelectBtn,
+                        isSelected && { backgroundColor: colors.primary }
+                      ]}
+                      onPress={() => setSelectedMonths(months)}
+                    >
+                      <Text style={[
+                        styles.quickSelectBtnText,
+                        { color: isSelected ? '#FFFFFF' : theme.colors.text }
+                      ]}>
+                        {months}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setShowMonthPickerModal(false);
+                  setPendingUserId(null);
+                  setPendingUserEmail(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={confirmGrantFreeMonths}
+              >
+                <Text style={styles.modalButtonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Success Modal */}
       <Modal
@@ -1018,6 +1158,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
+  },
+  monthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    marginBottom: 24,
+  },
+  monthButton: {
+    padding: 8,
+  },
+  monthDisplay: {
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  monthNumber: {
+    fontSize: 48,
+    fontWeight: 'bold',
+  },
+  monthLabel: {
+    fontSize: 16,
+    marginTop: 4,
+  },
+  quickSelectContainer: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  quickSelectLabel: {
+    fontSize: 13,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  quickSelectButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  quickSelectBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  quickSelectBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalButtons: {
     flexDirection: 'row',

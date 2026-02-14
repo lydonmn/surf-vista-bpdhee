@@ -16,6 +16,56 @@ import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { openPaywall } from "@/utils/paywallHelper";
 
+// Helper function to calculate surf rating from surf conditions
+function calculateSurfRating(surfData: any): number {
+  if (!surfData) return 5;
+  
+  const surfHeightStr = surfData.surf_height || surfData.wave_height || '0';
+  const periodStr = surfData.wave_period || '0';
+  const windSpeedStr = surfData.wind_speed || '0';
+  
+  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
+  
+  if (surfHeightStr === 'N/A' || surfHeightStr === '') {
+    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
+    return 5;
+  }
+  
+  // Parse numeric values
+  const parseValue = (str: string): number => {
+    const match = str.match(/(\d+\.?\d*)/);
+    return match ? parseFloat(match[1]) : 0;
+  };
+  
+  const surfHeight = parseValue(surfHeightStr);
+  const period = parseValue(periodStr);
+  const windSpeed = parseValue(windSpeedStr);
+
+  let rating = 5;
+
+  // Height contribution
+  if (surfHeight >= 6) rating += 4;
+  else if (surfHeight >= 4) rating += 3;
+  else if (surfHeight >= 3) rating += 2;
+  else if (surfHeight >= 2) rating += 1;
+  else if (surfHeight < 1) rating -= 2;
+
+  // Period contribution
+  if (period >= 12) rating += 3;
+  else if (period >= 10) rating += 2;
+  else if (period >= 8) rating += 1;
+  else if (period < 6 && period > 0) rating -= 1;
+
+  // Wind contribution
+  if (windSpeed < 5) rating += 1;
+  else if (windSpeed > 15) rating -= 2;
+
+  const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
+  console.log(`[calculateSurfRating] Calculation: height=${surfHeight}, period=${period}, wind=${windSpeed} -> rating=${finalRating}`);
+  
+  return finalRating;
+}
+
 export default function ReportScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
@@ -145,6 +195,36 @@ export default function ReportScreen() {
     console.log('[ReportScreen] ❌ No report to display for', locationData.displayName);
     return null;
   }, [todaysReport, lastValidReport, locationData.displayName]);
+
+  // 🚨 CRITICAL FIX: Calculate rating from most current surf_conditions data
+  const currentRating = useMemo(() => {
+    console.log('[ReportScreen] ===== CALCULATING CURRENT RATING =====');
+    console.log('[ReportScreen] Has surfConditions:', !!surfConditions);
+    console.log('[ReportScreen] Has todaysReport:', !!todaysReport);
+    
+    // ALWAYS use surf_conditions if available (most current data)
+    if (surfConditions) {
+      const rating = calculateSurfRating(surfConditions);
+      console.log('[ReportScreen] ✅ Using rating from surf_conditions (real-time):', rating);
+      return rating;
+    }
+    
+    // Fallback to report rating if no surf_conditions
+    if (todaysReport?.rating) {
+      console.log('[ReportScreen] Using rating from report (stored):', todaysReport.rating);
+      return todaysReport.rating;
+    }
+    
+    // Last resort: calculate from report data
+    if (todaysReport) {
+      const rating = calculateSurfRating(todaysReport);
+      console.log('[ReportScreen] Calculated rating from report data:', rating);
+      return rating;
+    }
+    
+    console.log('[ReportScreen] No data available, using default rating: 5');
+    return 5;
+  }, [surfConditions, todaysReport]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -388,7 +468,8 @@ export default function ReportScreen() {
   };
 
   const renderReportCard = (report: any, index: number) => {
-    const todayReportForRating = todaysReport || report;
+    // 🚨 CRITICAL FIX: Use current rating calculated from surf_conditions
+    const displayRating = currentRating;
     
     const displayData = surfConditions || report;
     const hasValidWaveData = hasValidSurfData(displayData);
@@ -407,6 +488,7 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Display data wave_height:', displayData.wave_height);
     console.log('[ReportScreen] Display data wind_speed:', displayData.wind_speed);
     console.log('[ReportScreen] Display data wind_direction:', displayData.wind_direction);
+    console.log('[ReportScreen] 🎯 STOKE METER RATING:', displayRating);
     
     const swellIcon = getSwellDirectionIcon(displayData.swell_direction);
     const reportKey = report.id ? `report-${report.id}` : `report-index-${index}`;
@@ -484,8 +566,8 @@ export default function ReportScreen() {
               </View>
             )}
           </View>
-          <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(todayReportForRating.rating ?? 5) }]}>
-            <Text style={styles.ratingText}>{todayReportForRating.rating ?? 5}/10</Text>
+          <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(displayRating) }]}>
+            <Text style={styles.ratingText}>{displayRating}/10</Text>
           </View>
         </View>
 
