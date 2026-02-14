@@ -217,6 +217,8 @@ export default function AdminDataScreen() {
         body: { location: locationId }
       });
       
+      console.log(`[AdminDataScreen] Pull data response for ${locationName}:`, response);
+      
       if (response.error) {
         addLog(`${locationName}: ${response.error.message}`, 'error');
         showErrorModal('Error', `Failed to pull data for ${locationName}: ${response.error.message}`);
@@ -231,6 +233,7 @@ export default function AdminDataScreen() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AdminDataScreen] Exception pulling data:`, error);
       addLog(`${locationName}: ${errorMsg}`, 'error');
       showErrorModal('Error', `Failed to pull data: ${errorMsg}`);
     } finally {
@@ -245,19 +248,21 @@ export default function AdminDataScreen() {
     addLog(`Manual trigger: Will use most recent available data from today`, 'info');
 
     try {
+      console.log(`[AdminDataScreen] Invoking daily-6am-report-with-retry for ${locationName}...`);
+      
       const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { location: locationId }
       });
       
-      console.log('Generate report response:', response);
-      console.log('Response data:', JSON.stringify(response.data, null, 2));
-      console.log('Response error:', response.error);
+      console.log(`[AdminDataScreen] Generate report response for ${locationName}:`, response);
+      console.log(`[AdminDataScreen] Response data:`, JSON.stringify(response.data, null, 2));
+      console.log(`[AdminDataScreen] Response error:`, response.error);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
         console.error(`[AdminDataScreen] Function invocation error:`, errorMsg);
         addLog(`${locationName}: Function error - ${errorMsg}`, 'error');
-        showErrorModal('Error', `Failed to invoke report function for ${locationName}:\n\n${errorMsg}\n\nCheck Edge Function logs for details.`);
+        showErrorModal('Error', `Failed to invoke report function for ${locationName}:\n\n${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for detailed error information.`);
         return;
       }
 
@@ -265,27 +270,32 @@ export default function AdminDataScreen() {
         const results = response.data.results || [];
         const locationResult = results.find((r: any) => r.locationId === locationId);
         
+        console.log(`[AdminDataScreen] Location result:`, locationResult);
+        
         if (locationResult?.success) {
           const waveStatus = locationResult.hasWaveData ? 'Wave sensors online ✅' : 'Wave sensors offline ⚠️';
           const dataSource = locationResult.usedFallbackData ? 'Used most recent available data' : 'Used fresh data';
           addLog(`${locationName}: Report generated successfully`, 'success');
           addLog(`${locationName}: ${waveStatus}`, locationResult.hasWaveData ? 'success' : 'warning');
           addLog(`${locationName}: ${dataSource}`, 'info');
+          addLog(`${locationName}: Rating ${locationResult.rating}/10`, 'info');
           
-          let alertMessage = `✅ Report generated for ${locationName}!\n\n${waveStatus}\n${dataSource}`;
+          let alertMessage = `✅ Report generated for ${locationName}!\n\n${waveStatus}\n${dataSource}\nRating: ${locationResult.rating}/10`;
           
           if (!locationResult.hasWaveData) {
             alertMessage += '\n\n⚠️ Note: Wave sensors are temporarily offline on the buoy, but wind and water temperature data are available. The report includes all available conditions.';
           }
           
           showErrorModal('Success', alertMessage);
+          
+          // Reload data to show updated report
+          await loadDataCounts();
         } else {
           const errorMsg = locationResult?.error || 'Unknown error';
+          console.error(`[AdminDataScreen] Location result failed:`, errorMsg);
           addLog(`${locationName}: ${errorMsg}`, 'error');
           showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
         }
-        
-        await loadDataCounts();
       } else if (response.data?.success === false) {
         const errorMsg = response.data?.error || response.data?.message || 'Report generation failed';
         console.error(`[AdminDataScreen] Function returned error:`, errorMsg);
@@ -299,7 +309,7 @@ export default function AdminDataScreen() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[AdminDataScreen] Exception:`, error);
+      console.error(`[AdminDataScreen] Exception generating report:`, error);
       addLog(`${locationName}: Exception - ${errorMsg}`, 'error');
       showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
     } finally {
@@ -325,6 +335,8 @@ export default function AdminDataScreen() {
             body: { location: loc.id }
           });
           
+          console.log(`[AdminDataScreen] Pull data response for ${loc.displayName}:`, response);
+          
           if (response.error) {
             addLog(`${loc.displayName}: ${response.error.message}`, 'error');
             dataResults.push({ location: loc.displayName, success: false, error: response.error.message });
@@ -338,6 +350,7 @@ export default function AdminDataScreen() {
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          console.error(`[AdminDataScreen] Exception pulling data for ${loc.displayName}:`, error);
           addLog(`${loc.displayName}: ${errorMsg}`, 'error');
           dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
         }
@@ -348,13 +361,15 @@ export default function AdminDataScreen() {
       addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
       addLog(`Manual trigger: Will use most recent available data if new data is not ready`, 'info');
       
+      console.log(`[AdminDataScreen] Invoking daily-6am-report-with-retry for all locations...`);
+      
       const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: {}
       });
       
-      console.log('Generate reports response:', response);
-      console.log('Response data:', JSON.stringify(response.data, null, 2));
-      console.log('Response error:', response.error);
+      console.log('[AdminDataScreen] Generate reports response:', response);
+      console.log('[AdminDataScreen] Response data:', JSON.stringify(response.data, null, 2));
+      console.log('[AdminDataScreen] Response error:', response.error);
 
       if (response.error) {
         const errorMsg = response.error.message || JSON.stringify(response.error);
@@ -365,10 +380,10 @@ export default function AdminDataScreen() {
         if (dataSuccessCount > 0) {
           showErrorModal(
             'Partial Success',
-            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}\n\nCheck Edge Function logs for details.`
+            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for details.`
           );
         } else {
-          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}\n\nCheck Edge Function logs for details.`);
+          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for details.`);
         }
         return;
       }
@@ -390,6 +405,7 @@ export default function AdminDataScreen() {
               addLog(`${result.location}: Report generated successfully`, 'success');
               addLog(`${result.location}: ${waveStatus}`, result.hasWaveData ? 'success' : 'warning');
               addLog(`${result.location}: ${dataSource}`, 'info');
+              addLog(`${result.location}: Rating ${result.rating}/10`, 'info');
             }
           } else {
             addLog(`${result.location}: ${result.error}`, 'error');
@@ -400,7 +416,8 @@ export default function AdminDataScreen() {
           if (r.success) {
             const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
             const dataIcon = r.usedFallbackData ? ' 📅' : ' 🆕';
-            return `${r.location}: ✅ ${waveIcon}${dataIcon}`;
+            const ratingText = r.rating ? ` (${r.rating}/10)` : '';
+            return `${r.location}: ✅ ${waveIcon}${dataIcon}${ratingText}`;
           }
           return `${r.location}: ❌`;
         }).join('\n');
@@ -433,7 +450,7 @@ export default function AdminDataScreen() {
         showErrorModal('Error', `${errorMsg}\n\nResponse: ${JSON.stringify(response.data)}`);
       }
     } catch (error) {
-      console.error('Error in pull and generate:', error);
+      console.error('[AdminDataScreen] Exception in pull and generate:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Exception: ${errorMsg}`, 'error');
       showErrorModal('Error', `Failed to complete operation: ${errorMsg}`);
@@ -720,7 +737,9 @@ export default function AdminDataScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{errorModalTitle}</Text>
-            <Text style={styles.modalMessage}>{errorModalMessage}</Text>
+            <ScrollView style={styles.modalMessageScroll} contentContainerStyle={styles.modalMessageContent}>
+              <Text style={styles.modalMessage}>{errorModalMessage}</Text>
+            </ScrollView>
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => setErrorModalVisible(false)}
@@ -1089,6 +1108,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 400,
+    maxHeight: '80%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -1101,11 +1121,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
+  modalMessageScroll: {
+    maxHeight: 400,
+    marginBottom: 20,
+  },
+  modalMessageContent: {
+    paddingRight: 4,
+  },
   modalMessage: {
     fontSize: 16,
     color: colors.text,
     lineHeight: 24,
-    marginBottom: 20,
   },
   modalButton: {
     backgroundColor: colors.primary,
