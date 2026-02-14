@@ -404,12 +404,105 @@ export default function AdminScreen() {
     ? `You can upload videos to your assigned locations. Videos are automatically tagged and will appear on the homepage when users select that location.`
     : `Videos are automatically tagged to locations. When users select a location on the homepage, they'll see the latest video for that location in the large video card.`;
 
-  const titleText = profile?.is_regional_admin && !profile.is_admin ? 'Regional Admin Panel' : 'Admin Panel';
+  const titleText = profile?.is_regional_admin && !profile.is_admin ? 'Regional Admin Panel' : 'Super Admin Panel';
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.colors.text }]}>{titleText}</Text>
+
+        {/* Only show admin actions for super admins - MOVED TO TOP */}
+        {profile?.is_admin && (
+          <View style={[styles.section, styles.adminActionsSection, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Super Admin Actions</Text>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Manage Regional Admins');
+                router.push('/admin-users');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="person.2.fill"
+                android_material_icon_name="group"
+                size={22}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Manage Regional Admins</Text>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Update Surf Data');
+                router.push('/admin-data');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.clockwise.circle.fill"
+                android_material_icon_name="refresh"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Update Surf Data (All Locations)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Manage Locations');
+                router.push('/admin-locations');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="map.fill"
+                android_material_icon_name="place"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Manage Locations</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Debug Tools');
+                router.push('/admin-debug');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="wrench.and.screwdriver.fill"
+                android_material_icon_name="settings"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Debug Tools</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to demo paywall for screenshots');
+                router.push('/demo-paywall');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="creditcard.fill"
+                android_material_icon_name="payment"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Show Demo Paywall</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Upload Video</Text>
@@ -560,81 +653,6 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Only show admin actions for super admins */}
-        {profile?.is_admin && (
-          <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Admin Actions</Text>
-            
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/admin-users')}
-            >
-              <IconSymbol
-                ios_icon_name="person.2.fill"
-                android_material_icon_name="group"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionButtonText}>Manage Regional Admins</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/admin-data')}
-            >
-              <IconSymbol
-                ios_icon_name="arrow.clockwise.circle.fill"
-                android_material_icon_name="refresh"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionButtonText}>Update Surf Data (All Locations)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/admin-locations')}
-            >
-              <IconSymbol
-                ios_icon_name="map.fill"
-                android_material_icon_name="place"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionButtonText}>Manage Locations</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/admin-debug')}
-            >
-              <IconSymbol
-                ios_icon_name="wrench.and.screwdriver.fill"
-                android_material_icon_name="settings"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionButtonText}>Debug Tools</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.accent }]}
-              onPress={() => {
-                console.log('[AdminScreen] Navigating to demo paywall for screenshots');
-                router.push('/demo-paywall');
-              }}
-            >
-              <IconSymbol
-                ios_icon_name="creditcard.fill"
-                android_material_icon_name="payment"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionButtonText}>Show Demo Paywall</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Regional admin actions */}
         {profile?.is_regional_admin && !profile.is_admin && (
           <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
@@ -686,6 +704,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
+  },
+  adminActionsSection: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   sectionTitle: {
     fontSize: 20,
@@ -824,9 +851,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
   },
+  primaryActionButton: {
+    paddingVertical: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   actionButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    flex: 1,
   },
 });
