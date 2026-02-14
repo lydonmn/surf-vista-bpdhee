@@ -15,10 +15,11 @@ import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataF
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
+import { openPaywall } from "@/utils/paywallHelper";
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
+  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
   const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
@@ -27,6 +28,7 @@ export default function HomeScreen() {
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
   
   // ✅ FIX: Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
@@ -227,6 +229,25 @@ export default function HomeScreen() {
     }
   }, [latestVideo]);
 
+  const handleSubscribeNow = async () => {
+    console.log('[HomeScreen] 🔘 Subscribe button pressed');
+    
+    if (!user) {
+      console.log('[HomeScreen] No user, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    setIsSubscribing(true);
+    
+    await openPaywall(user.id, user.email || undefined, async () => {
+      console.log('[HomeScreen] ✅ Subscription successful, refreshing profile');
+      await refreshProfile();
+    });
+    
+    setIsSubscribing(false);
+  };
+
   if (!isInitialized || isLoading) {
     const loadingTextContent = 'Loading your profile...';
     return (
@@ -270,11 +291,16 @@ export default function HomeScreen() {
           )}
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
+            onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <Text style={styles.subscribeButtonText}>
-              {buttonText}
-            </Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.subscribeButtonText}>
+                {buttonText}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

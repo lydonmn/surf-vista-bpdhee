@@ -14,10 +14,11 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
+import { openPaywall } from "@/utils/paywallHelper";
 
 export default function ReportScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
   const { surfReports, surfConditions, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
@@ -25,6 +26,7 @@ export default function ReportScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
   
   // ✅ FIX: Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
@@ -306,6 +308,25 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);
     router.push('/edit-report');
   }, [locationData.displayName]);
+
+  const handleSubscribeNow = async () => {
+    console.log('[ReportScreen] 🔘 Subscribe button pressed');
+    
+    if (!user) {
+      console.log('[ReportScreen] No user, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    setIsSubscribing(true);
+    
+    await openPaywall(user.id, user.email || undefined, async () => {
+      console.log('[ReportScreen] ✅ Subscription successful, refreshing profile');
+      await refreshProfile();
+    });
+    
+    setIsSubscribing(false);
+  };
 
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
@@ -747,11 +768,16 @@ export default function ReportScreen() {
           )}
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
+            onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <Text style={styles.subscribeButtonText}>
-              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-            </Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.subscribeButtonText}>
+                {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

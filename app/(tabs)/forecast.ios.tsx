@@ -8,8 +8,8 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useSurfData } from '@/hooks/useSurfData';
 import { SurfReport, WeatherForecast, TideData } from '@/types';
-
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
+import { openPaywall } from '@/utils/paywallHelper';
 
 interface DayForecast {
   date: string;
@@ -52,17 +52,37 @@ function formatDate(dateStr: string): string {
 
 export default function ForecastScreen() {
   const theme = useTheme();
-  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
   const isSubscribed = checkSubscription();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await refreshData();
     setIsRefreshing(false);
   }, [refreshData]);
+
+  const handleSubscribeNow = async () => {
+    console.log('[ForecastScreen] 🔘 Subscribe button pressed');
+    
+    if (!user) {
+      console.log('[ForecastScreen] No user, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    setIsSubscribing(true);
+    
+    await openPaywall(user.id, user.email || undefined, async () => {
+      console.log('[ForecastScreen] ✅ Subscription successful, refreshing profile');
+      await refreshProfile();
+    });
+    
+    setIsSubscribing(false);
+  };
 
   // Combine all data by date - ONLY INCLUDE TODAY AND FUTURE DATES
   const combinedForecast: DayForecast[] = React.useMemo(() => {
@@ -262,11 +282,16 @@ export default function ForecastScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
+            onPress={handleSubscribeNow}
+            disabled={isSubscribing}
           >
-            <Text style={styles.subscribeButtonText}>
-              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-            </Text>
+            {isSubscribing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.subscribeButtonText}>
+                {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
