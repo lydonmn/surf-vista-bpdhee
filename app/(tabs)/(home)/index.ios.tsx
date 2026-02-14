@@ -468,7 +468,14 @@ export default function HomeScreen() {
           </Text>
         </View>
       ) : (
-        <View style={[styles.reportCard, { backgroundColor: theme.colors.card }]}>
+        <View style={[
+          styles.reportCard, 
+          { 
+            backgroundColor: theme.colors.card,
+            borderWidth: 1,
+            borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
+          }
+        ]}>
           {/* CURRENT CONDITIONS SECTION - IMPROVED LAYOUT */}
           <View style={styles.conditionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
@@ -478,7 +485,11 @@ export default function HomeScreen() {
             <View style={styles.conditionsGrid}>
               {/* Row 1: Air Temp & Weather */}
               <View style={styles.conditionRow}>
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="thermometer"
                     android_material_icon_name="thermostat"
@@ -495,7 +506,11 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="cloud.fill"
                     android_material_icon_name="cloud"
@@ -515,7 +530,11 @@ export default function HomeScreen() {
 
               {/* Row 2: Wave Height & Wind */}
               <View style={styles.conditionRow}>
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="water.waves"
                     android_material_icon_name="waves"
@@ -532,7 +551,11 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="wind"
                     android_material_icon_name="air"
@@ -552,7 +575,11 @@ export default function HomeScreen() {
 
               {/* Row 3: Water Temp & Stoke Rating */}
               <View style={styles.conditionRow}>
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="drop.fill"
                     android_material_icon_name="water-drop"
@@ -569,7 +596,11 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <View style={styles.conditionItem}>
+                <View style={[styles.conditionItem, {
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                }]}>
                   <IconSymbol
                     ios_icon_name="star.fill"
                     android_material_icon_name="star"
@@ -592,11 +623,28 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* SURF REPORT NARRATIVE */}
-          <View style={[styles.reportNarrativeSection, { borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              {surfReportTitle}
-            </Text>
+          {/* SURF REPORT NARRATIVE - ENHANCED CONTRAST */}
+          <View style={[
+            styles.reportNarrativeSection, 
+            { 
+              borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+              backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+              borderRadius: 12,
+              padding: 16,
+              marginTop: 8
+            }
+          ]}>
+            <View style={styles.reportTitleRow}>
+              <IconSymbol
+                ios_icon_name="doc.text.fill"
+                android_material_icon_name="description"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                {surfReportTitle}
+              </Text>
+            </View>
             
             {narrativeText ? (
               <>
@@ -950,8 +998,8 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 16,
     marginBottom: 16,
-    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
-    elevation: 4,
+    boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.15)',
+    elevation: 6,
   },
   conditionsSection: {
     marginBottom: 20,
@@ -974,7 +1022,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     padding: 12,
-    backgroundColor: 'rgba(0, 122, 255, 0.06)',
     borderRadius: 12,
   },
   conditionTextContainer: {
@@ -996,9 +1043,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   reportNarrativeSection: {
-    paddingTop: 20,
     borderTopWidth: 1,
     marginBottom: 16,
+  },
+  reportTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   noReportText: {
     fontSize: 14,
