@@ -11,7 +11,7 @@ export const colors = {
   card: '#FFFFFF',
   highlight: '#ADD8E6',
   reportBackground: '#E8F4F8',
-  reportText: '#1A3A4A',
+  reportText: '#5A7A8A',
   reportBoldText: '#E8F4F8',
   reportLabel: '#B8D4E0',
   errorBackground: '#FF6B6B',
