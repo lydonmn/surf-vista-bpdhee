@@ -416,6 +416,31 @@ export default function AdminScreen() {
           <View style={[styles.section, styles.adminActionsSection, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Super Admin Actions</Text>
             
+            {/* Manage All Users - Only for lydonmn@gmail.com */}
+            {user?.email === 'lydonmn@gmail.com' && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#EF4444' }]}
+                onPress={() => {
+                  console.log('[AdminScreen] Navigating to Manage All Users');
+                  router.push('/manage-all-users');
+                }}
+              >
+                <IconSymbol
+                  ios_icon_name="person.3.fill"
+                  android_material_icon_name="supervisor_account"
+                  size={22}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.actionButtonText}>Manage All Users (Super Admin Only)</Text>
+                <IconSymbol
+                  ios_icon_name="chevron.right"
+                  android_material_icon_name="chevron-right"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: colors.primary }]}
               onPress={() => {

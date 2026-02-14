@@ -145,129 +145,49 @@ function generateWittyNarrative(
     const rating = calculateSurfRating(surfConditions);
     const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
 
+    // NEW NARRATIVE STYLE - Concise, bullet-point format like the screenshot
     let report = '';
 
-    if (rating >= 8) {
-      const openings = [
-        `${personality.excited[seed % personality.excited.length]} today!`,
-        `Epic session at ${personality.nickname} right now.`,
-        `You need to see ${personality.nickname} today - it's incredible.`,
-      ];
-      report += openings[seed % openings.length];
-    } else if (rating >= 6) {
-      const openings = [
-        `${personality.casual[seed % personality.casual.length]} is looking fun today.`,
-        `Solid conditions at ${personality.nickname}.`,
-        `Worth checking out ${personality.nickname} today.`,
-      ];
-      report += openings[seed % openings.length];
-    } else if (rating >= 4) {
-      const openings = [
-        `Small but rideable at ${personality.nickname}.`,
-        `Mellow day at ${personality.nickname}.`,
-        `${personality.nickname} has some small waves.`,
-      ];
-      report += openings[seed % openings.length];
-    } else {
-      const openings = [
-        `${personality.disappointed[seed % personality.disappointed.length]} today.`,
-        `Pretty quiet at ${personality.nickname}.`,
-        `Minimal surf at ${personality.nickname} right now.`,
-      ];
-      report += openings[seed % openings.length];
-    }
-
-    report += '\n\n';
-
-    if (waveHeight >= 7) {
-      report += `Overhead sets rolling in from the ${swellDir}`;
-      if (waveHeight >= 10) {
-        report += ` - we're talking ${waveHeight.toFixed(1)} feet, well overhead`;
+    // Opening line - concise assessment
+    if (waveHeight >= 4) {
+      if (period >= 10) {
+        report += `${waveHeight.toFixed(1)}-foot ${swellDir} swell with ${period.toFixed(0)}-second period, solid power.`;
       } else {
-        report += ` with ${waveHeight.toFixed(1)} foot faces`;
+        report += `${waveHeight.toFixed(1)}-foot ${swellDir} swell, ${period.toFixed(0)}-second period.`;
       }
-    } else if (waveHeight >= 4.5) {
-      report += `Chest to head high ${swellDir} swell, ${waveHeight.toFixed(1)} feet`;
-    } else if (waveHeight >= 2.5) {
-      report += `Waist to chest high waves from the ${swellDir}, around ${waveHeight.toFixed(1)} feet`;
-    } else if (waveHeight >= 1.5) {
-      report += `Knee to waist high surf, ${waveHeight.toFixed(1)} feet from the ${swellDir}`;
-    } else if (waveHeight >= 0.5) {
-      report += `Ankle to knee high ripples, barely ${waveHeight.toFixed(1)} feet`;
+    } else if (waveHeight >= 2) {
+      report += `${waveHeight.toFixed(1)}-foot ${swellDir} swell, ${period.toFixed(0)}-second period.`;
+    } else if (waveHeight >= 1) {
+      report += `Small ${waveHeight.toFixed(1)}-foot ${swellDir} swell, ${period.toFixed(0)}-second period.`;
     } else {
-      report += `Essentially flat, less than a foot`;
-    }
-    
-    report += '. ';
-
-    if (period >= 12) {
-      report += `Long ${period.toFixed(0)}-second intervals mean powerful groundswell with clean sets and long rides.`;
-    } else if (period >= 10) {
-      report += `${period.toFixed(0)}-second period brings decent power and organized sets.`;
-    } else if (period >= 8) {
-      report += `${period.toFixed(0)}-second period gives moderate energy with reasonably spaced waves.`;
-    } else if (period >= 6) {
-      report += `Shorter ${period.toFixed(0)}-second period means more frequent but weaker waves.`;
-    } else if (period > 0) {
-      report += `Quick ${period.toFixed(0)}-second period, choppy wind swell with limited power.`;
+      report += `Minimal surf, under 1 foot.`;
     }
 
     report += '\n\n';
 
+    // Wind assessment - concise
     if (isOffshore) {
-      if (windSpeed < 5) {
-        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze, glassy conditions.`;
-      } else if (windSpeed < 10) {
-        report += `${windSpeed.toFixed(0)} mph offshore ${windDir} wind grooming the faces nicely.`;
+      if (windSpeed < 8) {
+        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore, clean conditions.`;
       } else if (windSpeed < 15) {
-        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore holding up the faces but getting strong.`;
-      } else if (windSpeed < 20) {
-        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore making it tough to paddle out.`;
+        report += `${windSpeed.toFixed(0)} mph ${windDir} offshore, grooming the faces.`;
       } else {
-        report += `Howling ${windSpeed.toFixed(0)} mph ${windDir} offshore blowing the tops off.`;
+        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore, challenging paddle out.`;
       }
     } else {
-      if (windSpeed < 5) {
-        report += `Calm ${windSpeed.toFixed(0)} mph ${windDir} wind, minimal texture.`;
-      } else if (windSpeed < 8) {
-        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} onshore adding slight chop.`;
-      } else if (windSpeed < 12) {
-        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore creating bumpy conditions.`;
-      } else if (windSpeed < 18) {
-        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore, pretty choppy out there.`;
+      if (windSpeed < 8) {
+        report += `Light ${windSpeed.toFixed(0)} mph ${windDir} onshore, slight texture.`;
+      } else if (windSpeed < 15) {
+        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore, choppy.`;
       } else {
-        report += `Strong ${windSpeed.toFixed(0)} mph ${windDir} onshore, blown out and messy.`;
+        report += `${windSpeed.toFixed(0)} mph ${windDir} onshore, blown out.`;
       }
     }
 
     report += '\n\n';
 
-    const airTempText = airTemp > 0 ? `${airTemp.toFixed(0)}°F` : '';
-    const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : '';
-    
-    if (airTempText && waterTempText) {
-      report += `${weatherConditions} with ${airTempText} air and ${waterTempText} water. `;
-    } else if (waterTempText) {
-      report += `${weatherConditions}, water is ${waterTempText}. `;
-    } else {
-      report += `${weatherConditions}. `;
-    }
-    
-    if (waterTemp >= 75) {
-      report += `Boardshorts weather.`;
-    } else if (waterTemp >= 68) {
-      report += `Spring suit or thin wetsuit recommended.`;
-    } else if (waterTemp >= 60) {
-      report += `3/2mm wetsuit will keep you comfortable.`;
-    } else if (waterTemp >= 50) {
-      report += `4/3mm wetsuit with booties needed.`;
-    } else if (waterTemp > 0) {
-      report += `5/4mm with hood, gloves, and booties, it's cold.`;
-    }
-
+    // Tide timing - concise
     if (tideData && tideData.length > 0) {
-      report += '\n\n';
-      
       const now = new Date();
       const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
       const currentTimeStr = estNow.toLocaleTimeString('en-US', { 
@@ -284,9 +204,9 @@ function generateWittyNarrative(
         
         if (currentTimeStr >= currentTide.time && currentTimeStr < nextTide.time) {
           if (currentTide.type.toLowerCase() === 'low') {
-            tidePhase = `Tide is coming in`;
+            tidePhase = `Tide coming in`;
           } else {
-            tidePhase = `Tide is going out`;
+            tidePhase = `Tide going out`;
           }
           break;
         }
@@ -296,52 +216,29 @@ function generateWittyNarrative(
         report += `${tidePhase}. `;
       }
       
-      const tideList = tideData.map(t => {
-        const height = parseNumericValue(t.height, 0);
-        return `${t.type} at ${t.time} (${height.toFixed(1)}ft)`;
-      }).join(', ');
-      
-      report += `Tides today: ${tideList}.`;
-      
+      // Best tide recommendation
       if (waveHeight >= 4) {
-        report += ` Mid to high tide will be best for this size.`;
+        report += `Mid to high tide best for this size.`;
       } else if (waveHeight >= 2) {
-        report += ` Mid tide usually works best.`;
+        report += `Mid tide usually works best.`;
       } else {
-        report += ` Low to mid tide might give you the best shot.`;
+        report += `Low to mid tide might give you the best shot.`;
       }
     }
 
     report += '\n\n';
 
+    // Bottom line recommendation - concise
     if (rating >= 8) {
-      const recs = [
-        `Get out there! This is what you've been waiting for.`,
-        `Drop everything - these conditions are prime.`,
-        `Don't miss this one. Everything is lining up.`,
-      ];
-      report += recs[seed % recs.length];
+      report += `Get out there!`;
     } else if (rating >= 6) {
-      const recs = [
-        `Worth the paddle out. Should be a fun session.`,
-        `Definitely surf-worthy if you've got time.`,
-        `Good enough to make it worth your while.`,
-      ];
-      report += recs[seed % recs.length];
+      report += `Worth the paddle out.`;
     } else if (rating >= 4) {
-      const recs = [
-        `Decent for beginners or longboarders. Mellow session vibes.`,
-        `Small but rideable. Good for working on technique.`,
-        `Not epic but you can catch waves. Perfect for learning.`,
-      ];
-      report += recs[seed % recs.length];
+      report += `Small but rideable.`;
+    } else if (rating >= 2) {
+      report += `Good for working on technique.`;
     } else {
-      const recs = [
-        `Save your energy for a better swell. Not much out there today.`,
-        `Probably not worth it. Check back tomorrow or later this week.`,
-        `Pretty minimal. Check back tomorrow or later this week.`,
-      ];
-      report += recs[seed % recs.length];
+      report += `Check back later.`;
     }
 
     return report;

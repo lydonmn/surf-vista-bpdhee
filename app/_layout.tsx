@@ -73,6 +73,7 @@ export default function RootLayout() {
             <Stack.Screen name="admin" options={{ headerShown: false }} />
             <Stack.Screen name="admin-data" options={{ headerShown: false }} />
             <Stack.Screen name="admin-users" options={{ headerShown: false }} />
+            <Stack.Screen name="manage-all-users" options={{ headerShown: false }} />
             <Stack.Screen name="admin-locations" options={{ headerShown: false }} />
             <Stack.Screen name="admin-debug" options={{ headerShown: false }} />
             <Stack.Screen name="admin-predictions" options={{ headerShown: false }} />
