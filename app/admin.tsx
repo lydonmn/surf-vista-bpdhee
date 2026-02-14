@@ -155,7 +155,7 @@ export default function AdminScreen() {
 
       const videoAsset = result.assets[0];
       console.log('[AdminScreen] Video selected:', videoAsset.uri);
-      console.log('[AdminScreen] Video duration:', videoAsset.duration, 'seconds');
+      console.log('[AdminScreen] Raw video duration from picker:', videoAsset.duration);
       console.log('[AdminScreen] Video dimensions:', videoAsset.width, 'x', videoAsset.height);
 
       const metadata = await validateVideoMetadata(videoAsset.uri);
@@ -164,7 +164,11 @@ export default function AdminScreen() {
         return;
       }
 
-      metadata.duration = videoAsset.duration || 0;
+      // CRITICAL FIX: ImagePicker returns duration in MILLISECONDS, convert to seconds
+      const durationInSeconds = videoAsset.duration ? Math.floor(videoAsset.duration / 1000) : 0;
+      console.log('[AdminScreen] Converted duration to seconds:', durationInSeconds);
+
+      metadata.duration = durationInSeconds;
       metadata.width = videoAsset.width || 3840;
       metadata.height = videoAsset.height || 2160;
 
