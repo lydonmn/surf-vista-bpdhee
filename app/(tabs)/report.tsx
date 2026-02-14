@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +25,10 @@ export default function ReportScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  
+  // ✅ FIX: Track if we've loaded data to prevent reload on every focus
+  const hasLoadedDataRef = useRef(false);
+  const hasLoadedVideoRef = useRef(false);
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -159,6 +163,7 @@ export default function ReportScreen() {
       } else if (videoData) {
         console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
         setLatestVideo(videoData);
+        hasLoadedVideoRef.current = true;
       } else {
         console.log('[ReportScreen] No videos found for location:', currentLocation, locationData.displayName);
         setLatestVideo(null);
@@ -170,15 +175,54 @@ export default function ReportScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
+  // ✅ FIX: Only load data once on mount, not on every focus
   useFocusEffect(
     useCallback(() => {
-      console.log('[ReportScreen] Screen focused - refreshing data for', locationData.displayName);
-      if (isInitialized && !authLoading && user && profile && isSubscribed) {
-        refreshData();
-        loadLatestVideo();
+      console.log('[ReportScreen] Screen focused');
+      
+      // Resume video playback if we have a video loaded
+      if (latestVideo?.video_url && videoPlayer && videoReady) {
+        console.log('[ReportScreen] Resuming video preview playback');
+        videoPlayer.play();
       }
-    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
+      
+      // Only load data if we haven't loaded it yet
+      if (isInitialized && !authLoading && user && profile && isSubscribed) {
+        if (!hasLoadedDataRef.current) {
+          console.log('[ReportScreen] First load - fetching data for', locationData.displayName);
+          refreshData();
+          hasLoadedDataRef.current = true;
+        } else {
+          console.log('[ReportScreen] Data already loaded, skipping refresh');
+        }
+        
+        if (!hasLoadedVideoRef.current) {
+          console.log('[ReportScreen] First load - fetching video');
+          loadLatestVideo();
+        }
+      }
+
+      // Cleanup: Pause video when screen loses focus
+      return () => {
+        console.log('[ReportScreen] Screen blurred - pausing video playback');
+        if (videoPlayer && videoReady) {
+          videoPlayer.pause();
+        }
+      };
+    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
   );
+
+  // ✅ FIX: Only reload data when location changes
+  useEffect(() => {
+    if (isInitialized && !authLoading && user && profile && isSubscribed) {
+      console.log('[ReportScreen] Location changed to:', currentLocation, locationData.displayName);
+      console.log('[ReportScreen] Reloading data and video for new location');
+      hasLoadedDataRef.current = false;
+      hasLoadedVideoRef.current = false;
+      refreshData();
+      loadLatestVideo();
+    }
+  }, [currentLocation]);
 
   useEffect(() => {
     console.log('[ReportScreen] Auth state:', {
@@ -189,13 +233,6 @@ export default function ReportScreen() {
       isInitialized
     });
   }, [user, profile, isSubscribed, authLoading, isInitialized]);
-
-  useEffect(() => {
-    if (isInitialized && !authLoading && user && profile && isSubscribed) {
-      console.log('[ReportScreen] Loading data for location:', currentLocation, locationData.displayName);
-      loadLatestVideo();
-    }
-  }, [isInitialized, authLoading, user, profile, isSubscribed, loadLatestVideo, currentLocation, locationData.displayName]);
 
   const handleRefresh = async () => {
     console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
@@ -332,8 +369,6 @@ export default function ReportScreen() {
   const renderReportCard = (report: any, index: number) => {
     const todayReportForRating = todaysReport || report;
     
-    // ✅ CRITICAL FIX: Use surf_conditions as primary source for all current data
-    // This ensures both home and report pages show the same data
     const displayData = surfConditions || report;
     const hasValidWaveData = hasValidSurfData(displayData);
     

@@ -27,6 +27,9 @@ export default function HomeScreen() {
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
+  
+  // ✅ FIX: Track if we've loaded data to prevent reload on every focus
+  const hasLoadedDataRef = useRef(false);
 
   const todayDate = useMemo(() => getESTDate(), []);
 
@@ -142,10 +145,10 @@ export default function HomeScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
-  // ✅ FIX: Handle screen focus/blur to prevent video reload loop
+  // ✅ FIX: Handle screen focus/blur to prevent data reload loop
   useFocusEffect(
     useCallback(() => {
-      console.log('[HomeScreen] Screen focused - resuming video playback');
+      console.log('[HomeScreen] Screen focused');
       
       // Resume video playback if we have a video loaded
       if (latestVideo?.video_url && videoPlayer && videoReady) {
@@ -153,11 +156,16 @@ export default function HomeScreen() {
         videoPlayer.play();
       }
       
-      // Only refresh data, don't reload video unless it's the first time
+      // Only load data if we haven't loaded it yet
       if (isInitialized && !isLoading && user && profile && isSubscribed) {
-        refreshData();
+        if (!hasLoadedDataRef.current) {
+          console.log('[HomeScreen] First load - fetching data');
+          refreshData();
+          hasLoadedDataRef.current = true;
+        } else {
+          console.log('[HomeScreen] Data already loaded, skipping refresh');
+        }
         
-        // Only load video if we haven't loaded it yet
         if (!hasLoadedVideoRef.current) {
           console.log('[HomeScreen] First load - fetching video');
           loadLatestVideo();
@@ -174,12 +182,14 @@ export default function HomeScreen() {
     }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
   );
 
-  // ✅ FIX: Only reload video when location changes, not on every mount
+  // ✅ FIX: Only reload data and video when location changes
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
       console.log('[HomeScreen] Location changed to:', currentLocation, locationData.displayName);
-      console.log('[HomeScreen] Reloading video for new location');
+      console.log('[HomeScreen] Reloading data and video for new location');
+      hasLoadedDataRef.current = false;
       hasLoadedVideoRef.current = false;
+      refreshData();
       loadLatestVideo();
     }
   }, [currentLocation]);
