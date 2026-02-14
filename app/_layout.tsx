@@ -65,6 +65,8 @@ export default function RootLayout() {
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+            <Stack.Screen name="verification-success" options={{ headerShown: false }} />
             <Stack.Screen name="video-player" options={{ headerShown: false }} />
             <Stack.Screen name="video-player-simple" options={{ headerShown: false }} />
             <Stack.Screen name="edit-report" options={{ headerShown: false }} />

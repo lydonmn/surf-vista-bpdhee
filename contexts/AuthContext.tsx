@@ -326,9 +326,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AuthContext] Sign up:', email);
       
+      // Determine the redirect URL based on platform
+      const getRedirectUrl = () => {
+        if (Platform.OS === 'web') {
+          // For web, use the current origin
+          if (typeof window !== 'undefined') {
+            return `${window.location.origin}/verification-success`;
+          }
+          return undefined;
+        } else {
+          // For mobile, use deep link
+          return 'surfvista://verification-success';
+        }
+      };
+
+      const redirectTo = getRedirectUrl();
+      console.log('[AuthContext] Redirect URL:', redirectTo);
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
       });
 
       if (error) {
