@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,6 +26,7 @@ export default function HomeScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const hasLoadedVideoRef = useRef(false);
 
   const todayDate = useMemo(() => getESTDate(), []);
 
@@ -129,6 +130,7 @@ export default function HomeScreen() {
       } else if (videoData) {
         console.log('[HomeScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
         setLatestVideo(videoData);
+        hasLoadedVideoRef.current = true;
       } else {
         console.log('[HomeScreen] No videos found for location:', currentLocation, locationData.displayName);
         setLatestVideo(null);
@@ -140,22 +142,47 @@ export default function HomeScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
+  // ✅ FIX: Handle screen focus/blur to prevent video reload loop
   useFocusEffect(
     useCallback(() => {
-      console.log('[HomeScreen] Screen focused - refreshing data for', locationData.displayName);
+      console.log('[HomeScreen] Screen focused - resuming video playback');
+      
+      // Resume video playback if we have a video loaded
+      if (latestVideo?.video_url && videoPlayer && videoReady) {
+        console.log('[HomeScreen] Resuming video preview playback');
+        videoPlayer.play();
+      }
+      
+      // Only refresh data, don't reload video unless it's the first time
       if (isInitialized && !isLoading && user && profile && isSubscribed) {
         refreshData();
-        loadLatestVideo();
+        
+        // Only load video if we haven't loaded it yet
+        if (!hasLoadedVideoRef.current) {
+          console.log('[HomeScreen] First load - fetching video');
+          loadLatestVideo();
+        }
       }
-    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
+
+      // Cleanup: Pause video when screen loses focus
+      return () => {
+        console.log('[HomeScreen] Screen blurred - pausing video playback');
+        if (videoPlayer && videoReady) {
+          videoPlayer.pause();
+        }
+      };
+    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
   );
 
+  // ✅ FIX: Only reload video when location changes, not on every mount
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
-      console.log('[HomeScreen] Loading data for location:', currentLocation, locationData.displayName);
+      console.log('[HomeScreen] Location changed to:', currentLocation, locationData.displayName);
+      console.log('[HomeScreen] Reloading video for new location');
+      hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, currentLocation, locationData.displayName]);
+  }, [currentLocation]);
 
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
@@ -262,8 +289,6 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
-  // ✅ CRITICAL FIX: Use surf_conditions as primary source, fall back to report
-  // This ensures we always show the most recent data
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
@@ -276,7 +301,6 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
   console.log('[HomeScreen] ===========================');
   
-  // Use surf_height if available and valid, otherwise fall back to wave_height
   const waveHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
     : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
@@ -285,18 +309,15 @@ export default function HomeScreen() {
   
   console.log('[HomeScreen] Final wave height display:', waveHeightDisplay);
   
-  // ✅ FIX: Use surf_conditions for wind data (most recent), fall back to weatherData, then report
   const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
   const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
   const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
   
-  // ✅ FIX: Use weatherData for air temp and conditions (most accurate for current weather)
   const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
   const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
   
   const weatherDescDisplay = weatherData?.conditions || todaysReport?.weather_conditions || 'N/A';
   
-  // ✅ FIX: Use surf_conditions for water temp (most recent buoy reading)
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
   
@@ -367,7 +388,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* VIDEO CARD - AT THE VERY TOP */}
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         {isLoadingVideo ? (
           <View style={styles.loadingContainer}>
@@ -419,12 +439,10 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* LOCATION SELECTOR - BELOW VIDEO */}
       <View style={styles.locationSelectorContainer}>
         <LocationSelector />
       </View>
 
-      {/* DATE - BELOW LOCATION SELECTOR - ALWAYS SHOW TODAY'S DATE */}
       <View style={styles.dateContainer}>
         <Text style={[styles.dateText, { color: theme.colors.text }]}>
           {currentDateText}
@@ -444,7 +462,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* CONSOLIDATED REPORT & CONDITIONS */}
       {surfLoading && !isRefreshing ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -476,14 +493,12 @@ export default function HomeScreen() {
             borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
           }
         ]}>
-          {/* CURRENT CONDITIONS SECTION - IMPROVED LAYOUT */}
           <View style={styles.conditionsSection}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               {currentConditionsTitle}
             </Text>
             
             <View style={styles.conditionsGrid}>
-              {/* Row 1: Air Temp & Weather */}
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
                   backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
@@ -528,7 +543,6 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              {/* Row 2: Wave Height & Wind */}
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
                   backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
@@ -573,7 +587,6 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              {/* Row 3: Water Temp & Stoke Rating */}
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
                   backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
@@ -623,7 +636,6 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* SURF REPORT NARRATIVE - ENHANCED CONTRAST */}
           <View style={[
             styles.reportNarrativeSection, 
             { 
@@ -680,7 +692,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* 7-DAY FORECAST SECTION - IMPROVED CONTRAST */}
       {!surfLoading && (
         <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
           <View style={styles.forecastHeader}>
@@ -722,7 +733,6 @@ export default function HomeScreen() {
               const highTempDisplay = dayWeatherForecast?.high_temp ? `${Math.round(dayWeatherForecast.high_temp)}°` : dayReport?.air_temp ? `${Math.round(Number(dayReport.air_temp))}°` : '--';
               const lowTempDisplay = dayWeatherForecast?.low_temp ? `${Math.round(dayWeatherForecast.low_temp)}°` : '--';
               
-              // ✅ CRITICAL FIX: Use surf_height if available, otherwise wave_height
               const daySurfHeight = (dayReport as any)?.surf_height;
               const dayWaveHeight = dayReport?.wave_height;
               const waveDisplay = dayWeatherForecast?.swell_height_range || 
