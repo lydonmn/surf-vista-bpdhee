@@ -301,13 +301,19 @@ export default function AdminDataScreen() {
 
   const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
     setIsLoading(true);
-    addLog(`Generating report for ${locationName}...`, 'info');
+    addLog(`Generating report narrative for ${locationName}...`, 'info');
 
     try {
-      console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId}`);
+      console.log(`[AdminData] ✅ REVERTED: Manual report generator now uses existing data from home page`);
+      console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId} with isManualTrigger=true`);
       
+      // ✅ REVERTED: The manual report generator now just regenerates the narrative
+      // using the data that's already been fetched and is displayed on the home page
       const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
-        body: { location: locationId },
+        body: { 
+          location: locationId,
+          isManualTrigger: true // This tells the backend to use existing data, not fetch new data
+        },
       });
 
       console.log('[AdminData] Report generation response:', { data, error });
@@ -321,11 +327,12 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
-      addLog(`✅ Report generated successfully for ${locationName}`, 'success');
+      addLog(`✅ Report narrative generated for ${locationName}`, 'success');
+      addLog(`  • Used existing data from home page`, 'info');
       
-      // 🚨 CRITICAL FIX: Wait a moment for the database to update, then reload
+      // Wait for database to update
       console.log('[AdminData] Waiting for database to update...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       console.log('[AdminData] Reloading location reports to show new narrative...');
       await loadLocationReports();
@@ -496,7 +503,7 @@ export default function AdminDataScreen() {
                       size={16}
                       color={colors.primary}
                     />
-                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Generate Report</Text>
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Generate Narrative</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -523,7 +530,7 @@ export default function AdminDataScreen() {
                   color="#FFFFFF"
                 />
                 <Text style={styles.fullWidthButtonText}>
-                  Update All Locations (Data + Forecast + Report)
+                  Update All Locations (Data + Forecast + Narrative)
                 </Text>
               </>
             )}

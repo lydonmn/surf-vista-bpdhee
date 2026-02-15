@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useSurfData } from "@/hooks/useSurfData";
@@ -138,9 +138,6 @@ export default function HomeScreen() {
   const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-  
-  // ✅ FIX: Track if we've loaded data to prevent reload on every focus
-  const hasLoadedDataRef = useRef(false);
 
   // ✅ FIX: ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const todayDate = useMemo(() => getESTDate(), []);
@@ -288,79 +285,18 @@ export default function HomeScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
-  // 🚨 FIX: Add real-time subscription to detect when reports are updated
-  useEffect(() => {
-    console.log('[HomeScreen] Setting up real-time subscription for surf_reports updates');
-    
-    const channel = supabase
-      .channel(`home_surf_reports_${currentLocation}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'surf_reports',
-          filter: `location=eq.${currentLocation}`,
-        },
-        (payload) => {
-          console.log('[HomeScreen] 🔔 Surf report updated in database, refreshing data...');
-          console.log('[HomeScreen] Updated report:', payload.new);
-          
-          // Force refresh data to get the new narrative
-          hasLoadedDataRef.current = false;
-          refreshData();
-        }
-      )
-      .subscribe();
+  // ✅ REVERTED: Removed real-time subscription - data refreshes on schedule only
+  // Data will be updated by the scheduled CRON jobs aligned with buoy schedule
 
-    return () => {
-      console.log('[HomeScreen] Cleaning up real-time subscription');
-      channel.unsubscribe();
-    };
-  }, [currentLocation, refreshData]);
-
-  // ✅ FIX: Handle screen focus/blur to prevent data reload loop
-  useFocusEffect(
-    useCallback(() => {
-      console.log('[HomeScreen] Screen focused');
-      
-      // Resume video playback if we have a video loaded
-      if (latestVideo?.video_url && videoPlayer && videoReady) {
-        console.log('[HomeScreen] Resuming video preview playback');
-        videoPlayer.play();
-      }
-      
-      // 🚨 FIX: Always refresh data when screen comes into focus
-      // This ensures we show the latest narrative after manual report generation
-      if (isInitialized && !isLoading && user && profile && isSubscribed) {
-        console.log('[HomeScreen] Screen focused - refreshing data to show latest narrative');
-        refreshData();
-        
-        if (!hasLoadedVideoRef.current) {
-          console.log('[HomeScreen] First load - fetching video');
-          loadLatestVideo();
-        }
-      }
-
-      // Cleanup: Pause video when screen loses focus
-      return () => {
-        console.log('[HomeScreen] Screen blurred - pausing video playback');
-        if (videoPlayer && videoReady) {
-          videoPlayer.pause();
-        }
-      };
-    }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
-  );
-
-  // ✅ FIX: Only reload video when location changes
+  // ✅ REVERTED: Only load video when location changes, not on every focus
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
       console.log('[HomeScreen] Location changed to:', currentLocation, locationData.displayName);
-      console.log('[HomeScreen] Reloading video for new location');
+      console.log('[HomeScreen] Loading video for location');
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [currentLocation]);
+  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, locationData.displayName]);
 
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
@@ -372,7 +308,7 @@ export default function HomeScreen() {
   }, [latestVideo?.video_url, videoPlayer]);
 
   const handleRefresh = async () => {
-    console.log('[HomeScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
+    console.log('[HomeScreen] User initiated manual refresh for location:', currentLocation, locationData.displayName);
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
