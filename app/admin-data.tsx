@@ -11,8 +11,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
-import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { colors } from '@/styles/commonStyles';
 import { useLocation } from '@/contexts/LocationContext';
 import { PushNotificationTester } from '@/components/PushNotificationTester';
 import { getESTDate } from '@/utils/surfDataFormatter';
@@ -47,9 +47,7 @@ interface LocationReport {
 
 export default function AdminDataScreen() {
   const router = useRouter();
-  const { currentLocation, locationData, locations } = useLocation();
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingLocationId, setLoadingLocationId] = useState<string | null>(null);
+  const { currentLocation, locations } = useLocation();
   const [dataCounts, setDataCounts] = useState<DataCounts>({
     tides: 0,
     weather: 0,
@@ -58,18 +56,12 @@ export default function AdminDataScreen() {
     external: 0,
   });
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [nextCompleteDataTime, setNextCompleteDataTime] = useState<string>('');
   const [locationReports, setLocationReports] = useState<LocationReport[]>([]);
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
-  const [nextCompleteDataTime, setNextCompleteDataTime] = useState('');
-
-  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
-    console.log(`[AdminDataScreen] ${type.toUpperCase()}: ${message}`);
-    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-    const id = `${Date.now()}-${Math.random()}`;
-    setActivityLog(prev => [{ id, timestamp, message, type }, ...prev].slice(0, 50));
-  }, []);
 
   const showErrorModal = (title: string, message: string) => {
     setErrorModalTitle(title);
@@ -77,83 +69,76 @@ export default function AdminDataScreen() {
     setErrorModalVisible(true);
   };
 
-  // Calculate next complete data window (:20 or :50)
-  const calculateNextCompleteDataTime = useCallback(() => {
-    const now = new Date();
-    const currentMinutes = now.getMinutes();
-    
-    let nextMinute: number;
-    if (currentMinutes < 20) {
-      nextMinute = 20;
-    } else if (currentMinutes < 50) {
-      nextMinute = 50;
-    } else {
-      nextMinute = 20; // Next hour
-    }
-    
-    const nextTime = new Date(now);
-    if (nextMinute === 20 && currentMinutes >= 50) {
-      nextTime.setHours(nextTime.getHours() + 1);
-      nextTime.setMinutes(20);
-    } else {
-      nextTime.setMinutes(nextMinute);
-    }
-    nextTime.setSeconds(0);
-    
-    const timeString = nextTime.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'America/New_York'
-    });
-    
-    const minutesUntil = Math.round((nextTime.getTime() - now.getTime()) / 60000);
-    
-    return `${timeString} (in ${minutesUntil} min)`;
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+    const newLog: ActivityLog = {
+      id: Date.now().toString(),
+      timestamp: new Date().toLocaleTimeString(),
+      message,
+      type,
+    };
+    setActivityLog(prev => [newLog, ...prev].slice(0, 50));
   }, []);
 
-  useEffect(() => {
-    const updateNextDataTime = () => {
-      setNextCompleteDataTime(calculateNextCompleteDataTime());
-    };
-    
-    updateNextDataTime();
-    const interval = setInterval(updateNextDataTime, 60000); // Update every minute
-    
-    return () => clearInterval(interval);
-  }, [calculateNextCompleteDataTime]);
-
-  const loadLocationReports = useCallback(async (today: string) => {
+  const loadDataCounts = useCallback(async () => {
     try {
+      const today = getESTDate();
+      
+      const [tidesResult, weatherResult, forecastResult, surfResult] = await Promise.all([
+        supabase.from('tide_data').select('id', { count: 'exact', head: true }).eq('location', currentLocation).eq('date', today),
+        supabase.from('weather_data').select('id', { count: 'exact', head: true }).eq('location', currentLocation).eq('date', today),
+        supabase.from('weather_forecast').select('id', { count: 'exact', head: true }).eq('location', currentLocation).gte('date', today),
+        supabase.from('surf_conditions').select('id', { count: 'exact', head: true }).eq('location', currentLocation).eq('date', today),
+      ]);
+
+      setDataCounts({
+        tides: tidesResult.count || 0,
+        weather: weatherResult.count || 0,
+        forecast: forecastResult.count || 0,
+        surf: surfResult.count || 0,
+        external: 0,
+      });
+    } catch (error) {
+      console.error('Error loading data counts:', error);
+    }
+  }, [currentLocation]);
+
+  const loadLocationReports = useCallback(async () => {
+    try {
+      const today = getESTDate();
       const reports: LocationReport[] = [];
 
-      for (const loc of locations) {
-        const { data: locConfig } = await supabase
-          .from('locations')
-          .select('buoy_id')
-          .eq('id', loc.id)
-          .single();
+      for (const location of locations) {
+        const [reportResult, conditionsResult] = await Promise.all([
+          supabase
+            .from('surf_reports')
+            .select('*')
+            .eq('location', location.id)
+            .eq('date', today)
+            .maybeSingle(),
+          supabase
+            .from('surf_conditions')
+            .select('*')
+            .eq('location', location.id)
+            .eq('date', today)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
 
-        const { data: report } = await supabase
-          .from('surf_reports')
-          .select('*')
-          .eq('date', today)
-          .eq('location', loc.id)
-          .maybeSingle();
-
-        const waveSensorsOnline = report?.wave_height && report.wave_height !== 'N/A' && report.wave_height !== '';
+        const report = reportResult.data;
+        const conditions = conditionsResult.data;
 
         reports.push({
-          location: loc.displayName,
-          locationId: loc.id,
+          location: location.display_name,
+          locationId: location.id,
           date: today,
           hasReport: !!report,
-          hasNarrative: !!(report?.conditions && report.conditions.length > 100),
-          narrativeLength: report?.conditions?.length || 0,
-          waveHeight: report?.wave_height || 'N/A',
-          waveSensorsOnline: waveSensorsOnline,
-          lastUpdated: report?.updated_at || 'Never',
-          buoyId: locConfig?.buoy_id || 'Unknown',
+          hasNarrative: !!(report?.narrative || report?.report_text),
+          narrativeLength: (report?.narrative || report?.report_text || '').length,
+          waveHeight: conditions?.wave_height || report?.wave_height || 'N/A',
+          waveSensorsOnline: !!conditions?.wave_height,
+          lastUpdated: conditions?.updated_at || report?.updated_at || 'Never',
+          buoyId: location.buoy_id,
         });
       }
 
@@ -163,562 +148,375 @@ export default function AdminDataScreen() {
     }
   }, [locations]);
 
-  const loadDataCounts = useCallback(async () => {
-    try {
-      addLog(`Loading data counts for ${locationData.displayName}...`);
-      
-      // 🚨 CRITICAL FIX: Use getESTDate() utility for consistent date handling
-      const today = getESTDate();
-      console.log('[AdminDataScreen] Using EST date:', today);
-
-      const [tidesResult, weatherResult, forecastResult, surfResult, externalResult] = await Promise.all([
-        supabase.from('tide_data').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
-        supabase.from('weather_data').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
-        supabase.from('weather_forecast').select('id', { count: 'exact', head: true }).eq('location', currentLocation),
-        supabase.from('surf_conditions').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
-        supabase.from('external_surf_reports').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
-      ]);
-
-      setDataCounts({
-        tides: tidesResult.count || 0,
-        weather: weatherResult.count || 0,
-        forecast: forecastResult.count || 0,
-        surf: surfResult.count || 0,
-        external: externalResult.count || 0,
-      });
-
-      addLog(`Data counts loaded for ${locationData.displayName}: Tides=${tidesResult.count}, Weather=${weatherResult.count}, Forecast=${forecastResult.count}, Surf=${surfResult.count}, External=${externalResult.count}`, 'success');
-      
-      await loadLocationReports(today);
-    } catch (error) {
-      console.error('Error loading data counts:', error);
-      addLog(`Error loading data counts: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+  const calculateNextCompleteDataTime = useCallback(() => {
+    const now = new Date();
+    const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    
+    const next6AM = new Date(estNow);
+    next6AM.setHours(6, 0, 0, 0);
+    
+    if (estNow.getHours() >= 6) {
+      next6AM.setDate(next6AM.getDate() + 1);
     }
-  }, [addLog, currentLocation, locationData, loadLocationReports]);
+    
+    const hoursUntil = Math.floor((next6AM.getTime() - estNow.getTime()) / (1000 * 60 * 60));
+    const minutesUntil = Math.floor(((next6AM.getTime() - estNow.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
+    
+    setNextCompleteDataTime(`${hoursUntil}h ${minutesUntil}m`);
+  }, []);
 
   useEffect(() => {
-    console.log('[AdminDataScreen] Component mounted, loading data counts');
     loadDataCounts();
-  }, [loadDataCounts]);
+    loadLocationReports();
+    calculateNextCompleteDataTime();
+    
+    const interval = setInterval(() => {
+      calculateNextCompleteDataTime();
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [loadDataCounts, loadLocationReports, calculateNextCompleteDataTime]);
 
   const handlePullDataForLocation = async (locationId: string, locationName: string) => {
-    console.log(`[AdminDataScreen] Pulling data for ${locationName}`);
-    setLoadingLocationId(locationId);
-    addLog(`Pulling fresh NOAA data for ${locationName}...`, 'info');
+    setIsLoading(true);
+    addLog(`Pulling data for ${locationName}...`, 'info');
 
     try {
-      const response = await supabase.functions.invoke('update-all-surf-data', {
-        body: { location: locationId }
+      console.log(`[AdminData] Invoking update-all-surf-data for ${locationId}`);
+      
+      const { data, error } = await supabase.functions.invoke('update-all-surf-data', {
+        body: { location: locationId },
       });
-      
-      console.log(`[AdminDataScreen] Pull data response for ${locationName}:`, response);
-      
-      if (response.error) {
-        addLog(`${locationName}: ${response.error.message}`, 'error');
-        showErrorModal('Error', `Failed to pull data for ${locationName}: ${response.error.message}`);
-      } else if (response.data?.success) {
-        addLog(`${locationName}: Data pulled successfully`, 'success');
-        showErrorModal('Success', `Fresh data pulled for ${locationName}!`);
-        await loadDataCounts();
-      } else {
-        const errorMsg = response.data?.error || 'Unknown error';
-        addLog(`${locationName}: ${errorMsg}`, 'warning');
-        showErrorModal('Warning', `${locationName}: ${errorMsg}`);
+
+      console.log('[AdminData] Update response:', { data, error });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to update data');
       }
+
+      if (data && !data.success) {
+        const errorMsg = data.errors?.join(', ') || data.error || 'Update failed';
+        throw new Error(errorMsg);
+      }
+
+      addLog(`✅ Data updated successfully for ${locationName}`, 'success');
+      
+      await loadDataCounts();
+      await loadLocationReports();
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[AdminDataScreen] Exception pulling data:`, error);
-      addLog(`${locationName}: ${errorMsg}`, 'error');
-      showErrorModal('Error', `Failed to pull data: ${errorMsg}`);
+      console.error('[AdminData] Error pulling data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Failed to update ${locationName}: ${errorMessage}`, 'error');
+      showErrorModal('Update Failed', errorMessage);
     } finally {
-      setLoadingLocationId(null);
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateForecast = async (locationId: string, locationName: string) => {
+    setIsLoading(true);
+    addLog(`Updating 7-day forecast for ${locationName}...`, 'info');
+
+    try {
+      console.log(`[AdminData] Invoking fetch-surf-forecast for ${locationId}`);
+      
+      const { data, error } = await supabase.functions.invoke('fetch-surf-forecast', {
+        body: { location: locationId },
+      });
+
+      console.log('[AdminData] Forecast update response:', { data, error });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to update forecast');
+      }
+
+      if (data && !data.success) {
+        const errorMsg = data.error || 'Forecast update failed';
+        throw new Error(errorMsg);
+      }
+
+      addLog(`✅ 7-day forecast updated for ${locationName}`, 'success');
+      
+      if (data.has_buoy_data) {
+        addLog(`  • Using live buoy data`, 'success');
+      } else {
+        addLog(`  • Using baseline estimates (no buoy data)`, 'warning');
+      }
+      
+      if (data.has_historical_data) {
+        addLog(`  • Trend analysis applied`, 'success');
+      }
+      
+      if (data.trend) {
+        addLog(`  • Detected trend: ${data.trend.trend} (${data.trend.rate.toFixed(1)}%)`, 'info');
+      }
+      
+      await loadDataCounts();
+      await loadLocationReports();
+    } catch (error) {
+      console.error('[AdminData] Error updating forecast:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Failed to update forecast for ${locationName}: ${errorMessage}`, 'error');
+      showErrorModal('Forecast Update Failed', errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
-    console.log(`[AdminDataScreen] Generating report for ${locationName} (manual trigger)`);
-    setLoadingLocationId(locationId);
+    setIsLoading(true);
     addLog(`Generating report for ${locationName}...`, 'info');
-    addLog(`Manual trigger: Will use most recent available data from today`, 'info');
 
     try {
-      console.log(`[AdminDataScreen] Invoking daily-6am-report-with-retry for ${locationName}...`);
+      console.log(`[AdminData] Invoking generate-daily-report for ${locationId}`);
       
-      const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
-        body: { location: locationId }
+      const { data, error } = await supabase.functions.invoke('generate-daily-report', {
+        body: { location: locationId },
       });
+
+      console.log('[AdminData] Report generation response:', { data, error });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to generate report');
+      }
+
+      if (data && !data.success) {
+        const errorMsg = data.error || 'Report generation failed';
+        throw new Error(errorMsg);
+      }
+
+      addLog(`✅ Report generated successfully for ${locationName}`, 'success');
       
-      console.log(`[AdminDataScreen] Generate report response for ${locationName}:`, response);
-      console.log(`[AdminDataScreen] Response data:`, JSON.stringify(response.data, null, 2));
-      console.log(`[AdminDataScreen] Response error:`, response.error);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        console.error(`[AdminDataScreen] Function invocation error:`, errorMsg);
-        addLog(`${locationName}: Function error - ${errorMsg}`, 'error');
-        showErrorModal('Error', `Failed to invoke report function for ${locationName}:\n\n${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for detailed error information.`);
-        return;
-      }
-
-      if (response.data?.success) {
-        const results = response.data.results || [];
-        const locationResult = results.find((r: any) => r.locationId === locationId);
-        
-        console.log(`[AdminDataScreen] Location result:`, locationResult);
-        
-        if (locationResult?.success) {
-          const waveStatus = locationResult.hasWaveData ? 'Wave sensors online ✅' : 'Wave sensors offline ⚠️';
-          const dataSource = locationResult.usedFallbackData ? 'Used most recent available data' : 'Used fresh data';
-          addLog(`${locationName}: Report generated successfully`, 'success');
-          addLog(`${locationName}: ${waveStatus}`, locationResult.hasWaveData ? 'success' : 'warning');
-          addLog(`${locationName}: ${dataSource}`, 'info');
-          addLog(`${locationName}: Rating ${locationResult.rating}/10`, 'info');
-          
-          let alertMessage = `✅ Report generated for ${locationName}!\n\n${waveStatus}\n${dataSource}\nRating: ${locationResult.rating}/10`;
-          
-          if (!locationResult.hasWaveData) {
-            alertMessage += '\n\n⚠️ Note: Wave sensors are temporarily offline on the buoy, but wind and water temperature data are available. The report includes all available conditions.';
-          }
-          
-          showErrorModal('Success', alertMessage);
-          
-          // Reload data to show updated report
-          await loadDataCounts();
-        } else {
-          const errorMsg = locationResult?.error || 'Unknown error';
-          console.error(`[AdminDataScreen] Location result failed:`, errorMsg);
-          addLog(`${locationName}: ${errorMsg}`, 'error');
-          showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
-        }
-      } else if (response.data?.success === false) {
-        const errorMsg = response.data?.error || response.data?.message || 'Report generation failed';
-        console.error(`[AdminDataScreen] Function returned error:`, errorMsg);
-        addLog(`${locationName}: ${errorMsg}`, 'error');
-        showErrorModal('Error', `Report generation failed for ${locationName}:\n\n${errorMsg}`);
-      } else {
-        console.error(`[AdminDataScreen] Unexpected response format:`, response.data);
-        const errorMsg = 'Unexpected response format from Edge Function';
-        addLog(`${locationName}: ${errorMsg}`, 'error');
-        showErrorModal('Error', `${errorMsg}\n\nResponse: ${JSON.stringify(response.data)}`);
-      }
+      await loadLocationReports();
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[AdminDataScreen] Exception generating report:`, error);
-      addLog(`${locationName}: Exception - ${errorMsg}`, 'error');
-      showErrorModal('Error', `Failed to generate report: ${errorMsg}`);
+      console.error('[AdminData] Error generating report:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Failed to generate report for ${locationName}: ${errorMessage}`, 'error');
+      showErrorModal('Report Generation Failed', errorMessage);
     } finally {
-      setLoadingLocationId(null);
+      setIsLoading(false);
     }
   };
 
   const handlePullAndGenerateAllLocations = async () => {
     setIsLoading(true);
-    addLog(`Pulling new data and generating reports for ALL locations...`);
-    addLog(`This may take 2-3 minutes due to NOAA server response times...`, 'warning');
-    addLog(`Processing: ${locations.map(l => l.displayName).join(', ')}`, 'info');
+    addLog('Starting full update for all locations...', 'info');
 
     try {
-      addLog(`Step 1/2: Pulling fresh NOAA data for all locations...`, 'info');
-      
-      const dataResults = [];
-      for (const loc of locations) {
-        addLog(`Fetching data for ${loc.displayName}...`, 'info');
+      for (const location of locations) {
+        addLog(`Processing ${location.display_name}...`, 'info');
         
-        try {
-          const response = await supabase.functions.invoke('update-all-surf-data', {
-            body: { location: loc.id }
-          });
-          
-          console.log(`[AdminDataScreen] Pull data response for ${loc.displayName}:`, response);
-          
-          if (response.error) {
-            addLog(`${loc.displayName}: ${response.error.message}`, 'error');
-            dataResults.push({ location: loc.displayName, success: false, error: response.error.message });
-          } else if (response.data?.success) {
-            addLog(`${loc.displayName}: Data pulled successfully`, 'success');
-            dataResults.push({ location: loc.displayName, success: true });
-          } else {
-            const errorMsg = response.data?.error || 'Unknown error';
-            addLog(`${loc.displayName}: ${errorMsg}`, 'warning');
-            dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          console.error(`[AdminDataScreen] Exception pulling data for ${loc.displayName}:`, error);
-          addLog(`${loc.displayName}: ${errorMsg}`, 'error');
-          dataResults.push({ location: loc.displayName, success: false, error: errorMsg });
-        }
+        await handlePullDataForLocation(location.id, location.display_name);
         
         await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      addLog(`Step 2/2: Generating narrative reports for all locations...`, 'info');
-      addLog(`Manual trigger: Will use most recent available data if new data is not ready`, 'info');
-      
-      console.log(`[AdminDataScreen] Invoking daily-6am-report-with-retry for all locations...`);
-      
-      const response = await supabase.functions.invoke('daily-6am-report-with-retry', {
-        body: {}
-      });
-      
-      console.log('[AdminDataScreen] Generate reports response:', response);
-      console.log('[AdminDataScreen] Response data:', JSON.stringify(response.data, null, 2));
-      console.log('[AdminDataScreen] Response error:', response.error);
-
-      if (response.error) {
-        const errorMsg = response.error.message || JSON.stringify(response.error);
-        console.error(`[AdminDataScreen] Function invocation error:`, errorMsg);
-        addLog(`Report generation error: ${errorMsg}`, 'error');
         
-        const dataSuccessCount = dataResults.filter(r => r.success).length;
-        if (dataSuccessCount > 0) {
-          showErrorModal(
-            'Partial Success',
-            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for details.`
-          );
-        } else {
-          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}\n\nCheck Edge Function logs in Supabase Dashboard for details.`);
-        }
-        return;
-      }
-
-      if (response.data?.success) {
-        const results = response.data.results || [];
-        const successCount = results.filter((r: any) => r.success).length;
-        const totalCount = results.length;
-        
-        addLog(`Complete! Data pulled and reports generated: ${successCount}/${totalCount} locations`, 'success');
-        
-        results.forEach((result: any) => {
-          if (result.success) {
-            if (result.skipped) {
-              addLog(`${result.location}: Report already exists`, 'info');
-            } else {
-              const waveStatus = result.hasWaveData ? 'Wave sensors online ✅' : 'Wave sensors offline ⚠️';
-              const dataSource = result.usedFallbackData ? 'Used most recent data' : 'Used fresh data';
-              addLog(`${result.location}: Report generated successfully`, 'success');
-              addLog(`${result.location}: ${waveStatus}`, result.hasWaveData ? 'success' : 'warning');
-              addLog(`${result.location}: ${dataSource}`, 'info');
-              addLog(`${result.location}: Rating ${result.rating}/10`, 'info');
-            }
-          } else {
-            addLog(`${result.location}: ${result.error}`, 'error');
-          }
-        });
-        
-        const resultDetails = results.map((r: any) => {
-          if (r.success) {
-            const waveIcon = r.hasWaveData ? '🌊' : '⚠️';
-            const dataIcon = r.usedFallbackData ? ' 📅' : ' 🆕';
-            const ratingText = r.rating ? ` (${r.rating}/10)` : '';
-            return `${r.location}: ✅ ${waveIcon}${dataIcon}${ratingText}`;
-          }
-          return `${r.location}: ❌`;
-        }).join('\n');
-        
-        showErrorModal(
-          'Success!',
-          `✅ Data pulled and reports generated for all locations!\n\nResults: ${successCount}/${totalCount}\n\n${resultDetails}\n\n🌊 = Wave sensors online\n⚠️ = Wave sensors offline (wind/temp available)\n🆕 = Fresh data\n📅 = Most recent data`
-        );
+        await handleUpdateForecast(location.id, location.display_name);
         
         await new Promise(resolve => setTimeout(resolve, 2000));
-        await loadDataCounts();
-      } else if (response.data?.success === false) {
-        const errorMsg = response.data?.error || response.data?.message || 'Report generation failed';
-        console.error(`[AdminDataScreen] Function returned error:`, errorMsg);
-        addLog(`Report generation failed: ${errorMsg}`, 'error');
         
-        const dataSuccessCount = dataResults.filter(r => r.success).length;
-        if (dataSuccessCount > 0) {
-          showErrorModal(
-            'Partial Success',
-            `Data pulled for ${dataSuccessCount}/${locations.length} locations, but report generation failed.\n\nError: ${errorMsg}`
-          );
-        } else {
-          showErrorModal('Error', `Report generation failed:\n\n${errorMsg}`);
-        }
-      } else {
-        console.error(`[AdminDataScreen] Unexpected response format:`, response.data);
-        const errorMsg = 'Unexpected response format from Edge Function';
-        addLog(`${errorMsg}`, 'error');
-        showErrorModal('Error', `${errorMsg}\n\nResponse: ${JSON.stringify(response.data)}`);
+        await handleGenerateReportForLocation(location.id, location.display_name);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
+
+      addLog('✅ All locations updated successfully', 'success');
     } catch (error) {
-      console.error('[AdminDataScreen] Exception in pull and generate:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Exception: ${errorMsg}`, 'error');
-      showErrorModal('Error', `Failed to complete operation: ${errorMsg}`);
+      console.error('[AdminData] Error in full update:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`❌ Full update failed: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleClearLog = () => {
-    console.log('[AdminDataScreen] Clearing activity log');
     setActivityLog([]);
-    addLog('Activity log cleared');
+    addLog('Activity log cleared', 'info');
   };
 
   const handleGoBack = () => {
-    console.log('[AdminDataScreen] Navigating back...');
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/(home)');
-    }
+    router.back();
   };
-
-  const backIconName = 'chevron.left';
-  const backMaterialIconName = 'chevron-left';
-  const backButtonTextContent = 'Back';
-  const headerTitleText = 'Surf Data Manager';
-  const locationCountText = locations.length === 1 ? '1 Location' : `${locations.length} Locations`;
-  const mainButtonText = `Update All Locations`;
-  const sectionTitleText1 = `Data Summary - ${locationData.displayName}`;
-  const countLabelTides = 'Tides';
-  const countLabelWeather = 'Weather';
-  const countLabelForecast = 'Forecast';
-  const countLabelSurf = 'Surf';
-  const infoTitleText = 'System Status';
-  const locationListText = locations.map(loc => `  • ${loc.displayName}`).join('\n');
-  const infoTextContent = `🔄 Automated Updates Active\n\n📊 Data Collection:\n• Background data pull: 5:00 AM EST\n• Buoy data: 5:20 AM & 5:50 AM EST\n• Weather: Hourly updates\n• Tides: Daily at 6 AM EST\n\n⏰ Report Generation:\n• Daily: 6:00 AM EST for all locations\n• Manual: Uses most recent available data\n\n📍 Next Data Window: ${nextCompleteDataTime}`;
-  const sectionTitleText2 = 'Activity Log';
-  const clearButtonText = 'Clear';
-  const logEmptyText = 'No activity yet';
-  const locationStatusTitle = 'Location Status';
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={handleGoBack}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
           <IconSymbol
-            ios_icon_name={backIconName}
-            android_material_icon_name={backMaterialIconName}
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow-back"
             size={24}
             color={colors.primary}
           />
-          <Text style={[styles.backButtonText, { color: colors.primary }]}>
-            {backButtonTextContent}
-          </Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{headerTitleText}</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerTitle}>Data Management</Text>
+        <View style={styles.backButton} />
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <PushNotificationTester />
-
-        <View style={styles.locationSelectorCard}>
-          <Text style={styles.locationSelectorTitle}>Select Location</Text>
-          <View style={styles.locationButtons}>
-            {locations.map((loc) => {
-              const isActive = currentLocation === loc.id;
-              return (
-                <TouchableOpacity
-                  key={loc.id}
-                  style={[
-                    styles.locationButton,
-                    isActive && styles.locationButtonActive
-                  ]}
-                  onPress={() => {
-                    console.log('[AdminDataScreen] Switching to', loc.name);
-                    router.setParams({ location: loc.id });
-                  }}
-                >
-                  <Text style={[
-                    styles.locationButtonText,
-                    isActive && styles.locationButtonTextActive
-                  ]}>
-                    {loc.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Status</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{dataCounts.tides}</Text>
+              <Text style={styles.statLabel}>Tides</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{dataCounts.weather}</Text>
+              <Text style={styles.statLabel}>Weather</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{dataCounts.forecast}</Text>
+              <Text style={styles.statLabel}>Forecast</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{dataCounts.surf}</Text>
+              <Text style={styles.statLabel}>Surf</Text>
+            </View>
           </View>
-          <Text style={styles.locationSelectorSubtitle}>
-            Currently viewing: {locationData.displayName}
-          </Text>
         </View>
 
-        <View style={styles.mainActionCard}>
-          <Text style={styles.mainActionTitle}>Bulk Actions</Text>
-          <Text style={styles.mainActionDescription}>
-            This will pull fresh NOAA data (weather, tides, buoy) for all locations, then generate narrative reports for each location. Manual triggers will use the most recent available data from today if new data is not ready yet.
-          </Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Location Reports</Text>
+          {locationReports.map((report) => (
+            <View key={report.locationId} style={styles.locationCard}>
+              <View style={styles.locationHeader}>
+                <Text style={styles.locationName}>{report.location}</Text>
+                <View style={styles.statusBadge}>
+                  <View style={[styles.statusDot, { backgroundColor: report.waveSensorsOnline ? '#4CAF50' : '#FF9800' }]} />
+                  <Text style={styles.statusText}>
+                    {report.waveSensorsOnline ? 'Live' : 'Offline'}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.locationDetails}>
+                <Text style={styles.locationDetail}>
+                  Wave Height: {report.waveHeight}
+                </Text>
+                <Text style={styles.locationDetail}>
+                  Buoy: {report.buoyId}
+                </Text>
+                <Text style={styles.locationDetail}>
+                  Report: {report.hasReport ? '✅' : '❌'}
+                </Text>
+                <Text style={styles.locationDetail}>
+                  Narrative: {report.hasNarrative ? `✅ (${report.narrativeLength} chars)` : '❌'}
+                </Text>
+              </View>
+
+              <View style={styles.locationActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.primaryButton]}
+                  onPress={() => handlePullDataForLocation(report.locationId, report.location)}
+                  disabled={isLoading}
+                >
+                  <IconSymbol
+                    ios_icon_name="arrow.clockwise"
+                    android_material_icon_name="refresh"
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.actionButtonText}>Update Data</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.secondaryButton]}
+                  onPress={() => handleUpdateForecast(report.locationId, report.location)}
+                  disabled={isLoading}
+                >
+                  <IconSymbol
+                    ios_icon_name="chart.line.uptrend.xyaxis"
+                    android_material_icon_name="trending-up"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.actionButtonText, { color: colors.primary }]}>Update Forecast</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.secondaryButton]}
+                  onPress={() => handleGenerateReportForLocation(report.locationId, report.location)}
+                  disabled={isLoading}
+                >
+                  <IconSymbol
+                    ios_icon_name="doc.text"
+                    android_material_icon_name="description"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.actionButtonText, { color: colors.primary }]}>Generate Report</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          
           <TouchableOpacity
-            style={[styles.button, styles.primaryButton, isLoading && styles.buttonDisabled]}
+            style={[styles.fullWidthButton, styles.primaryButton]}
             onPress={handlePullAndGenerateAllLocations}
             disabled={isLoading}
           >
             {isLoading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
                 <IconSymbol
-                  ios_icon_name="arrow.clockwise.circle.fill"
+                  ios_icon_name="arrow.triangle.2.circlepath"
                   android_material_icon_name="sync"
-                  size={24}
-                  color="#fff"
+                  size={20}
+                  color="#FFFFFF"
                 />
-                <Text style={styles.buttonText}>{mainButtonText}</Text>
+                <Text style={styles.fullWidthButtonText}>
+                  Update All Locations (Data + Forecast + Report)
+                </Text>
               </>
             )}
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{sectionTitleText1}</Text>
-          <View style={styles.countsGrid}>
-            <View style={styles.countCard} key="tides-count">
-              <Text style={styles.countValue}>{dataCounts.tides}</Text>
-              <Text style={styles.countLabel}>{countLabelTides}</Text>
-            </View>
-            <View style={styles.countCard} key="weather-count">
-              <Text style={styles.countValue}>{dataCounts.weather}</Text>
-              <Text style={styles.countLabel}>{countLabelWeather}</Text>
-            </View>
-            <View style={styles.countCard} key="forecast-count">
-              <Text style={styles.countValue}>{dataCounts.forecast}</Text>
-              <Text style={styles.countLabel}>{countLabelForecast}</Text>
-            </View>
-            <View style={styles.countCard} key="surf-count">
-              <Text style={styles.countValue}>{dataCounts.surf}</Text>
-              <Text style={styles.countLabel}>{countLabelSurf}</Text>
-            </View>
+          <View style={styles.infoBox}>
+            <IconSymbol
+              ios_icon_name="clock"
+              android_material_icon_name="schedule"
+              size={16}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.infoText}>
+              Next automatic update: {nextCompleteDataTime}
+            </Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{locationStatusTitle}</Text>
-          {locationReports.map((report) => {
-            const statusIcon = report.hasReport && report.hasNarrative ? '✅' : report.hasReport ? '⚠️' : '❌';
-            const statusText = report.hasReport && report.hasNarrative 
-              ? 'Report with narrative' 
-              : report.hasReport 
-                ? 'Report without narrative' 
-                : 'No report';
-            const lastUpdatedText = report.lastUpdated !== 'Never' 
-              ? new Date(report.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-              : 'Never';
-            const sensorStatus = report.waveSensorsOnline ? 'Wave sensors online' : 'Wave sensors offline';
-            const isLoadingThisLocation = loadingLocationId === report.locationId;
-            
-            return (
-              <View style={styles.locationCard} key={report.locationId}>
-                <View style={styles.locationHeader}>
-                  <Text style={styles.locationName}>{report.location}</Text>
-                  <Text style={styles.locationStatus}>{statusIcon}</Text>
-                </View>
-                <View style={styles.locationDetails}>
-                  <Text style={styles.locationDetailText}>Status: {statusText}</Text>
-                  <Text style={styles.locationDetailText}>Buoy: {report.buoyId}</Text>
-                  <Text style={[
-                    styles.locationDetailText,
-                    !report.waveSensorsOnline && styles.locationDetailWarning
-                  ]}>
-                    {sensorStatus}
-                  </Text>
-                  <Text style={styles.locationDetailText}>Wave Height: {report.waveHeight}</Text>
-                  <Text style={styles.locationDetailText}>Narrative: {report.narrativeLength} chars</Text>
-                  <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
-                </View>
-                
-                <View style={styles.locationActions}>
-                  <TouchableOpacity
-                    style={[styles.locationActionButton, styles.pullDataButton, isLoadingThisLocation && styles.buttonDisabled]}
-                    onPress={() => handlePullDataForLocation(report.locationId, report.location)}
-                    disabled={isLoadingThisLocation || isLoading}
-                  >
-                    {isLoadingThisLocation ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <IconSymbol
-                          ios_icon_name="arrow.down.circle"
-                          android_material_icon_name="download"
-                          size={18}
-                          color="#fff"
-                        />
-                        <Text style={styles.locationActionText}>Pull Data</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.locationActionButton, styles.generateReportButton, isLoadingThisLocation && styles.buttonDisabled]}
-                    onPress={() => handleGenerateReportForLocation(report.locationId, report.location)}
-                    disabled={isLoadingThisLocation || isLoading}
-                  >
-                    {isLoadingThisLocation ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <IconSymbol
-                          ios_icon_name="doc.text"
-                          android_material_icon_name="description"
-                          size={18}
-                          color="#fff"
-                        />
-                        <Text style={styles.locationActionText}>Generate Report</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-                
-                {!report.waveSensorsOnline && (
-                  <View style={styles.warningBanner}>
-                    <Text style={styles.warningText}>
-                      NOAA buoy {report.buoyId} wave sensors are currently offline. This is a hardware issue with the buoy, not the app. Reports will show wind/water temp data only until sensors come back online. Manual triggers will use the most recent available data.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>{infoTitleText}</Text>
-          <Text style={styles.infoText}>
-            {infoTextContent}
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.logHeader}>
-            <Text style={styles.sectionTitle}>{sectionTitleText2}</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Activity Log</Text>
             <TouchableOpacity onPress={handleClearLog}>
-              <Text style={styles.clearButton}>{clearButtonText}</Text>
+              <Text style={styles.clearButton}>Clear</Text>
             </TouchableOpacity>
           </View>
           
           <View style={styles.logContainer}>
             {activityLog.length === 0 ? (
-              <Text style={styles.logEmpty}>{logEmptyText}</Text>
+              <Text style={styles.emptyLog}>No activity yet</Text>
             ) : (
-              <>
-                {activityLog.map((log) => {
-                  const logTimestampText = `[${log.timestamp}]`;
-                  return (
-                    <View key={log.id} style={styles.logEntry}>
-                      <Text style={styles.logTimestamp}>{logTimestampText}</Text>
-                      <Text style={[
-                        styles.logMessage,
-                        log.type === 'error' && styles.logError,
-                        log.type === 'success' && styles.logSuccess,
-                        log.type === 'warning' && styles.logWarning,
-                      ]}>
-                        {log.message}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </>
+              activityLog.map((log) => (
+                <View key={log.id} style={styles.logItem}>
+                  <Text style={styles.logTimestamp}>{log.timestamp}</Text>
+                  <Text style={[styles.logMessage, { color: getLogColor(log.type) }]}>
+                    {log.message}
+                  </Text>
+                </View>
+              ))
             )}
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Push Notification Testing</Text>
+          <PushNotificationTester />
         </View>
       </ScrollView>
 
@@ -730,10 +528,16 @@ export default function AdminDataScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{errorModalTitle}</Text>
-            <ScrollView style={styles.modalMessageScroll} contentContainerStyle={styles.modalMessageContent}>
-              <Text style={styles.modalMessage}>{errorModalMessage}</Text>
-            </ScrollView>
+            <View style={styles.modalHeader}>
+              <IconSymbol
+                ios_icon_name="exclamationmark.triangle.fill"
+                android_material_icon_name="warning"
+                size={32}
+                color="#FF3B30"
+              />
+              <Text style={styles.modalTitle}>{errorModalTitle}</Text>
+            </View>
+            <Text style={styles.modalMessage}>{errorModalMessage}</Text>
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => setErrorModalVisible(false)}
@@ -747,6 +551,19 @@ export default function AdminDataScreen() {
   );
 }
 
+function getLogColor(type: 'info' | 'success' | 'error' | 'warning'): string {
+  switch (type) {
+    case 'success':
+      return '#4CAF50';
+    case 'error':
+      return '#FF3B30';
+    case 'warning':
+      return '#FF9800';
+    default:
+      return colors.text;
+  }
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -756,36 +573,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 48,
     paddingBottom: 16,
-    backgroundColor: colors.card,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   backButton: {
-    flexDirection: 'row',
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingRight: 8,
-  },
-  backButtonText: {
-    fontSize: 17,
-    fontWeight: '600',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
-  },
-  headerSpacer: {
-    width: 70,
   },
   scrollView: {
     flex: 1,
@@ -795,88 +598,18 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 12,
-    marginLeft: 4,
-  },
-  mainActionCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  mainActionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 8,
-  },
-  mainActionDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  countsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  countCard: {
-    flex: 1,
-    minWidth: '47%',
-    backgroundColor: colors.card,
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  countValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginBottom: 4,
-  },
-  countLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  button: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  logHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 12,
   },
   clearButton: {
@@ -884,210 +617,159 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  logContainer: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 12,
-    maxHeight: 400,
-  },
-  logEmpty: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    padding: 20,
-  },
-  logEntry: {
+  statsGrid: {
     flexDirection: 'row',
-    marginBottom: 8,
     flexWrap: 'wrap',
+    gap: 12,
   },
-  logTimestamp: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginRight: 8,
-    fontFamily: 'monospace',
-  },
-  logMessage: {
-    color: colors.text,
-    fontSize: 12,
+  statCard: {
     flex: 1,
-    fontFamily: 'monospace',
-  },
-  logError: {
-    color: '#ff4444',
-  },
-  logSuccess: {
-    color: '#44ff44',
-  },
-  logWarning: {
-    color: '#ffaa00',
-  },
-  infoCard: {
+    minWidth: '45%',
     backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 2,
   },
-  infoTitle: {
-    fontSize: 17,
+  statValue: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 10,
+    color: colors.primary,
+    marginBottom: 4,
   },
-  infoText: {
-    fontSize: 14,
+  statLabel: {
+    fontSize: 12,
     color: colors.textSecondary,
-    lineHeight: 22,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   locationCard: {
     backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
   },
   locationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: 12,
   },
   locationName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
   },
-  locationStatus: {
-    fontSize: 26,
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: colors.highlight,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
   },
   locationDetails: {
     gap: 6,
-    marginBottom: 14,
-    paddingLeft: 4,
+    marginBottom: 12,
   },
-  locationDetailText: {
-    fontSize: 14,
+  locationDetail: {
+    fontSize: 13,
     color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  locationDetailWarning: {
-    color: '#ff9500',
-    fontWeight: '600',
   },
   locationActions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
+    gap: 8,
+    flexWrap: 'wrap',
   },
-  locationActionButton: {
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
     flex: 1,
+    minWidth: '30%',
+    justifyContent: 'center',
+  },
+  primaryButton: {
+    backgroundColor: colors.primary,
+  },
+  secondaryButton: {
+    backgroundColor: colors.highlight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  fullWidthButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  pullDataButton: {
-    backgroundColor: '#3B82F6',
-  },
-  generateReportButton: {
-    backgroundColor: '#10B981',
-  },
-  locationActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  warningBanner: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#ffaa00',
-  },
-  warningText: {
-    fontSize: 12,
-    color: '#856404',
-    lineHeight: 18,
-  },
-  locationSelectorCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  locationSelectorTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 14,
-  },
-  locationButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
     marginBottom: 12,
   },
-  locationButton: {
-    minWidth: '47%',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 12,
-    backgroundColor: colors.background,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  locationButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  locationButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  locationButtonTextActive: {
+  fullWidthButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  locationSelectorSubtitle: {
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: colors.highlight,
+    borderRadius: 8,
+  },
+  infoText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  logContainer: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 12,
+    maxHeight: 300,
+  },
+  emptyLog: {
+    fontSize: 14,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: 4,
+    paddingVertical: 20,
+  },
+  logItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  logTimestamp: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  logMessage: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,
@@ -1102,41 +784,36 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 400,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
     elevation: 5,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 12,
-  },
-  modalMessageScroll: {
-    maxHeight: 400,
-    marginBottom: 20,
-  },
-  modalMessageContent: {
-    paddingRight: 4,
+    textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 16,
-    color: colors.text,
-    lineHeight: 24,
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
   },
   modalButton: {
     backgroundColor: colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
   modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

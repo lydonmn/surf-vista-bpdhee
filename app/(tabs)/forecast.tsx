@@ -60,6 +60,7 @@ export default function ForecastScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
+    console.log('[ForecastScreen] 🔄 Manual refresh triggered');
     setIsRefreshing(true);
     await refreshData();
     setIsRefreshing(false);
@@ -89,7 +90,13 @@ export default function ForecastScreen() {
     const forecastMap = new Map<string, DayForecast>();
     const today = getTodayDateString();
 
-    console.log('[ForecastScreen] Building forecast, today:', today);
+    console.log('[ForecastScreen] 📊 Building forecast, today:', today);
+    console.log('[ForecastScreen] 📊 Raw weatherForecast data:', weatherForecast.map(f => ({
+      date: f.date,
+      swell_height_range: f.swell_height_range,
+      prediction_source: f.prediction_source,
+      prediction_confidence: f.prediction_confidence,
+    })));
 
     // Add surf reports (only today and future)
     surfReports.forEach(report => {
@@ -112,6 +119,12 @@ export default function ForecastScreen() {
     // Add weather forecasts (only today and future)
     weatherForecast.forEach(forecast => {
       if (forecast.date >= today) {
+        console.log(`[ForecastScreen] 📊 Adding forecast for ${forecast.date}:`, {
+          swell_height_range: forecast.swell_height_range,
+          source: forecast.prediction_source,
+          confidence: forecast.prediction_confidence,
+        });
+        
         if (!forecastMap.has(forecast.date)) {
           forecastMap.set(forecast.date, {
             date: forecast.date,
@@ -137,12 +150,13 @@ export default function ForecastScreen() {
 
     // If we don't have enough data, generate placeholder entries for the next 7 days
     const existingDates = Array.from(forecastMap.keys());
-    console.log('[ForecastScreen] Existing forecast dates:', existingDates);
+    console.log('[ForecastScreen] 📊 Existing forecast dates:', existingDates);
 
     // Generate dates for the next 7 days starting from today
     for (let i = 0; i < 7; i++) {
       const date = getDateNDaysFromNow(i);
       if (!forecastMap.has(date)) {
+        console.log(`[ForecastScreen] ⚠️ Missing forecast data for ${date}, adding placeholder`);
         forecastMap.set(date, {
           date,
           dayName: getDayName(date),
@@ -158,12 +172,16 @@ export default function ForecastScreen() {
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 7); // Limit to 7 days
 
-    console.log('[ForecastScreen] Final forecast dates:', result.map(f => `${f.date} (${f.dayName})`));
+    console.log('[ForecastScreen] 📊 Final forecast summary:');
+    result.forEach(f => {
+      console.log(`  ${f.date} (${f.dayName}): ${f.weatherForecast?.swell_height_range || 'No data'} - Source: ${f.weatherForecast?.prediction_source || 'N/A'}`);
+    });
 
     return result;
   }, [surfReports, weatherForecast, tideData]);
 
   const toggleDay = (date: string) => {
+    console.log('[ForecastScreen] 🔽 Toggling day:', date);
     setExpandedDay(expandedDay === date ? null : date);
   };
 
@@ -257,7 +275,7 @@ export default function ForecastScreen() {
           >
             <IconSymbol
               ios_icon_name="chevron.left"
-              android_material_icon_name="arrow_back"
+              android_material_icon_name="arrow-back"
               size={24}
               color={colors.primary}
             />
@@ -308,7 +326,7 @@ export default function ForecastScreen() {
           >
             <IconSymbol
               ios_icon_name="chevron.left"
-              android_material_icon_name="arrow_back"
+              android_material_icon_name="arrow-back"
               size={24}
               color={colors.primary}
             />
@@ -337,7 +355,7 @@ export default function ForecastScreen() {
         >
           <IconSymbol
             ios_icon_name="chevron.left"
-            android_material_icon_name="arrow_back"
+            android_material_icon_name="arrow-back"
             size={24}
             color={colors.primary}
           />
@@ -561,7 +579,7 @@ export default function ForecastScreen() {
                       <View style={styles.sectionHeader}>
                         <IconSymbol
                           ios_icon_name="cloud.sun.fill"
-                          android_material_icon_name="wb_sunny"
+                          android_material_icon_name="wb-sunny"
                           size={20}
                           color={colors.primary}
                         />
@@ -632,7 +650,7 @@ export default function ForecastScreen() {
                       <View style={styles.sectionHeader}>
                         <IconSymbol
                           ios_icon_name="arrow.up.arrow.down"
-                          android_material_icon_name="swap_vert"
+                          android_material_icon_name="swap-vert"
                           size={20}
                           color={colors.primary}
                         />
