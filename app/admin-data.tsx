@@ -83,7 +83,7 @@ export default function AdminDataScreen() {
 
   const loadDataCounts = useCallback(async () => {
     try {
-      const dateStr = getESTDate(); // ✅ FIXED: getESTDate() now returns a string (YYYY-MM-DD)
+      const dateStr = getESTDate();
       
       console.log('[AdminData] Loading data counts for date:', dateStr, 'location:', currentLocation);
       
@@ -115,7 +115,7 @@ export default function AdminDataScreen() {
 
   const loadLocationReports = useCallback(async () => {
     try {
-      const dateStr = getESTDate(); // ✅ FIXED: getESTDate() now returns a string (YYYY-MM-DD)
+      const dateStr = getESTDate();
       const reports: LocationReport[] = [];
 
       console.log('[AdminData] Loading location reports for date:', dateStr);
@@ -149,12 +149,12 @@ export default function AdminDataScreen() {
         const conditions = conditionsResult.data;
 
         const locationReport: LocationReport = {
-          location: location.displayName, // ✅ FIXED: Use displayName (camelCase) from LocationContext
+          location: location.displayName,
           locationId: location.id,
           date: dateStr,
           hasReport: !!report,
-          hasNarrative: !!(report?.narrative || report?.report_text),
-          narrativeLength: (report?.narrative || report?.report_text || '').length,
+          hasNarrative: !!(report?.conditions || report?.report_text),
+          narrativeLength: (report?.conditions || report?.report_text || '').length,
           waveHeight: conditions?.wave_height || report?.wave_height || 'N/A',
           waveSensorsOnline: !!conditions?.wave_height,
           lastUpdated: conditions?.updated_at || report?.updated_at || 'Never',
@@ -245,7 +245,6 @@ export default function AdminDataScreen() {
     try {
       console.log(`[AdminData] Invoking fetch-surf-forecast for location: ${locationId}`);
       
-      // ✅ FIXED: Ensure body is properly formatted
       const requestBody = { location: locationId };
       console.log('[AdminData] Request body:', requestBody);
       
@@ -255,13 +254,11 @@ export default function AdminDataScreen() {
 
       console.log('[AdminData] Forecast update response:', { data, error });
 
-      // ✅ FIXED: Better error handling
       if (error) {
         console.error('[AdminData] Edge function error:', error);
         throw new Error(error.message || 'Failed to update forecast');
       }
 
-      // ✅ FIXED: Check for success field in response
       if (!data) {
         throw new Error('No response data received from forecast function');
       }
@@ -272,7 +269,6 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
-      // ✅ Success - log details
       addLog(`✅ 7-day forecast updated for ${locationName}`, 'success');
       
       if (data.has_buoy_data) {
@@ -308,9 +304,9 @@ export default function AdminDataScreen() {
     addLog(`Generating report for ${locationName}...`, 'info');
 
     try {
-      console.log(`[AdminData] Invoking generate-daily-report for ${locationId}`);
+      console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId}`);
       
-      const { data, error } = await supabase.functions.invoke('generate-daily-report', {
+      const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { location: locationId },
       });
 
@@ -327,7 +323,14 @@ export default function AdminDataScreen() {
 
       addLog(`✅ Report generated successfully for ${locationName}`, 'success');
       
+      // 🚨 CRITICAL FIX: Wait a moment for the database to update, then reload
+      console.log('[AdminData] Waiting for database to update...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('[AdminData] Reloading location reports to show new narrative...');
       await loadLocationReports();
+      
+      addLog(`✅ Report data refreshed for ${locationName}`, 'success');
     } catch (error) {
       console.error('[AdminData] Error generating report:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -344,7 +347,7 @@ export default function AdminDataScreen() {
 
     try {
       for (const location of locations) {
-        const locationName = location.displayName; // ✅ FIXED: Use displayName
+        const locationName = location.displayName;
         addLog(`Processing ${locationName}...`, 'info');
         
         await handlePullDataForLocation(location.id, locationName);
