@@ -304,11 +304,10 @@ export default function AdminDataScreen() {
     addLog(`Generating report narrative for ${locationName}...`, 'info');
 
     try {
-      console.log(`[AdminData] ✅ REVERTED: Manual report generator now uses existing data from home page`);
+      console.log(`[AdminData] ✅ Manual report generator: Using existing data from database`);
       console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId} with isManualTrigger=true`);
       
-      // ✅ REVERTED: The manual report generator now just regenerates the narrative
-      // using the data that's already been fetched and is displayed on the home page
+      // ✅ The manual report generator uses existing data from the database
       const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { 
           location: locationId,
@@ -328,13 +327,27 @@ export default function AdminDataScreen() {
       }
 
       addLog(`✅ Report narrative generated for ${locationName}`, 'success');
-      addLog(`  • Used existing data from home page`, 'info');
+      addLog(`  • Used existing data from database`, 'info');
       
-      // Wait for database to update
-      console.log('[AdminData] Waiting for database to update...');
+      if (data.results && data.results.length > 0) {
+        const result = data.results[0];
+        if (result.narrativeLength) {
+          addLog(`  • Generated ${result.narrativeLength} character narrative`, 'success');
+        }
+      }
+      
+      // 🚨 CRITICAL FIX: Wait longer and force multiple refreshes to ensure data appears
+      console.log('[AdminData] Waiting for database to propagate changes...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('[AdminData] First refresh: Reloading location reports...');
+      await loadLocationReports();
+      
+      // Second refresh after another delay to ensure real-time subscriptions have fired
+      console.log('[AdminData] Waiting for real-time subscriptions to fire...');
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      console.log('[AdminData] Reloading location reports to show new narrative...');
+      console.log('[AdminData] Second refresh: Reloading location reports again...');
       await loadLocationReports();
       
       addLog(`✅ Report data refreshed for ${locationName}`, 'success');

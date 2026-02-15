@@ -405,8 +405,8 @@ serve(async (req) => {
       const body = await req.json();
       if (body.location) {
         targetLocationId = body.location;
-        isManualTrigger = true;
-        console.log('[Daily 6AM Report] Manual trigger mode - target:', targetLocationId);
+        isManualTrigger = body.isManualTrigger === true;
+        console.log('[Daily 6AM Report] Manual trigger mode - target:', targetLocationId, 'isManualTrigger:', isManualTrigger);
       }
     } catch (e) {
       console.log('[Daily 6AM Report] Scheduled mode - processing all locations');
@@ -414,7 +414,7 @@ serve(async (req) => {
 
     console.log('[Daily 6AM Report] ═══════════════════════════════════════');
     console.log('[Daily 6AM Report] 🌅 REPORT GENERATION STARTED');
-    console.log(`[Daily 6AM Report] Mode: ${isManualTrigger ? 'MANUAL TRIGGER' : 'SCHEDULED 6AM RUN'}`);
+    console.log(`[Daily 6AM Report] Mode: ${isManualTrigger ? 'MANUAL TRIGGER (use existing data)' : 'SCHEDULED 6AM RUN (fetch fresh data)'}`);
     console.log('[Daily 6AM Report] ═══════════════════════════════════════');
 
     let locationsQuery = supabase
@@ -600,7 +600,7 @@ async function processLocation(
       .eq('location', locationId)
       .maybeSingle();
 
-    if (existingReport && existingReport.conditions && existingReport.conditions.length > 100) {
+    if (existingReport && existingReport.conditions && existingReport.conditions.length > 100 && !isManualTrigger) {
       console.log(`[${locationName}] ✅ Valid report already exists for today - skipping`);
       return {
         success: true,
@@ -611,79 +611,120 @@ async function processLocation(
       };
     }
 
-    console.log(`[${locationName}] Generating new report for ${dateStr}...`);
+    console.log(`[${locationName}] Generating ${isManualTrigger ? 'updated' : 'new'} report for ${dateStr}...`);
 
-    // Step 1: Fetch weather data (with retry)
-    console.log(`[${locationName}] Step 1: Fetching weather data...`);
+    // 🚨 CRITICAL FIX: For manual triggers, fetch existing data from database
     let weatherData = null;
-    for (let weatherAttempt = 1; weatherAttempt <= 3; weatherAttempt++) {
-      try {
-        const { data: weatherResult, error: weatherError } = await supabase.functions.invoke('fetch-weather-data', {
-          body: { location: locationId },
-        });
-
-        if (weatherError) {
-          console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} warning:`, weatherError);
-        } else if (weatherResult?.success) {
-          console.log(`[${locationName}] ✅ Weather data fetched on attempt ${weatherAttempt}`);
-          
-          await delay(1000);
-          
-          const { data: weatherDbData } = await supabase
-            .from('weather_data')
-            .select('*')
-            .eq('date', dateStr)
-            .eq('location', locationId)
-            .maybeSingle();
-          
-          if (weatherDbData) {
-            weatherData = weatherDbData;
-            break;
-          }
-        }
-        
-        if (weatherAttempt < 3) {
-          await delay(2000);
-        }
-      } catch (weatherError: any) {
-        console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} failed:`, weatherError);
+    let tideDataArray: any[] = [];
+    
+    if (isManualTrigger) {
+      console.log(`[${locationName}] 🔍 Manual trigger: Fetching existing weather and tide data from database...`);
+      
+      // Fetch weather data from database
+      const { data: weatherDbData, error: weatherDbError } = await supabase
+        .from('weather_data')
+        .select('*')
+        .eq('date', dateStr)
+        .eq('location', locationId)
+        .maybeSingle();
+      
+      if (weatherDbError) {
+        console.warn(`[${locationName}] ⚠️ Error fetching weather data:`, weatherDbError);
+      } else if (weatherDbData) {
+        console.log(`[${locationName}] ✅ Found weather data in database`);
+        weatherData = weatherDbData;
+      } else {
+        console.log(`[${locationName}] ⚠️ No weather data found for today, will use defaults`);
       }
-    }
+      
+      // Fetch tide data from database
+      const { data: tideDbData, error: tideDbError } = await supabase
+        .from('tide_data')
+        .select('*')
+        .eq('date', dateStr)
+        .eq('location', locationId)
+        .order('time');
+      
+      if (tideDbError) {
+        console.warn(`[${locationName}] ⚠️ Error fetching tide data:`, tideDbError);
+      } else if (tideDbData && tideDbData.length > 0) {
+        console.log(`[${locationName}] ✅ Found ${tideDbData.length} tide entries in database`);
+        tideDataArray = tideDbData;
+      } else {
+        console.log(`[${locationName}] ⚠️ No tide data found for today`);
+      }
+    } else {
+      // SCHEDULED MODE: Fetch fresh data from APIs
+      // Step 1: Fetch weather data (with retry)
+      console.log(`[${locationName}] Step 1: Fetching weather data...`);
+      for (let weatherAttempt = 1; weatherAttempt <= 3; weatherAttempt++) {
+        try {
+          const { data: weatherResult, error: weatherError } = await supabase.functions.invoke('fetch-weather-data', {
+            body: { location: locationId },
+          });
 
-    // Step 2: Fetch tide data (with retry)
-    console.log(`[${locationName}] Step 2: Fetching tide data...`);
-    let tideDataArray = [];
-    for (let tideAttempt = 1; tideAttempt <= 3; tideAttempt++) {
-      try {
-        const { data: tideResult, error: tideError } = await supabase.functions.invoke('fetch-tide-data', {
-          body: { location: locationId },
-        });
-
-        if (tideError) {
-          console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} warning:`, tideError);
-        } else if (tideResult?.success) {
-          console.log(`[${locationName}] ✅ Tide data fetched on attempt ${tideAttempt}`);
-          
-          await delay(1000);
-          
-          const { data: tideDbData } = await supabase
-            .from('tide_data')
-            .select('*')
-            .eq('date', dateStr)
-            .eq('location', locationId)
-            .order('time');
-          
-          if (tideDbData && tideDbData.length > 0) {
-            tideDataArray = tideDbData;
-            break;
+          if (weatherError) {
+            console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} warning:`, weatherError);
+          } else if (weatherResult?.success) {
+            console.log(`[${locationName}] ✅ Weather data fetched on attempt ${weatherAttempt}`);
+            
+            await delay(1000);
+            
+            const { data: weatherDbData } = await supabase
+              .from('weather_data')
+              .select('*')
+              .eq('date', dateStr)
+              .eq('location', locationId)
+              .maybeSingle();
+            
+            if (weatherDbData) {
+              weatherData = weatherDbData;
+              break;
+            }
           }
+          
+          if (weatherAttempt < 3) {
+            await delay(2000);
+          }
+        } catch (weatherError: any) {
+          console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} failed:`, weatherError);
         }
-        
-        if (tideAttempt < 3) {
-          await delay(2000);
+      }
+
+      // Step 2: Fetch tide data (with retry)
+      console.log(`[${locationName}] Step 2: Fetching tide data...`);
+      for (let tideAttempt = 1; tideAttempt <= 3; tideAttempt++) {
+        try {
+          const { data: tideResult, error: tideError } = await supabase.functions.invoke('fetch-tide-data', {
+            body: { location: locationId },
+          });
+
+          if (tideError) {
+            console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} warning:`, tideError);
+          } else if (tideResult?.success) {
+            console.log(`[${locationName}] ✅ Tide data fetched on attempt ${tideAttempt}`);
+            
+            await delay(1000);
+            
+            const { data: tideDbData } = await supabase
+              .from('tide_data')
+              .select('*')
+              .eq('date', dateStr)
+              .eq('location', locationId)
+              .order('time');
+            
+            if (tideDbData && tideDbData.length > 0) {
+              tideDataArray = tideDbData;
+              break;
+            }
+          }
+          
+          if (tideAttempt < 3) {
+            await delay(2000);
+          }
+        } catch (tideError: any) {
+          console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} failed:`, tideError);
         }
-      } catch (tideError: any) {
-        console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} failed:`, tideError);
       }
     }
 
@@ -848,6 +889,8 @@ async function processLocation(
     console.log(`[${locationName}] Step 4: Generating daily report...`);
     console.log(`[${locationName}] Data source: ${usedFallbackData ? 'Most recent available data' : 'Fresh data'}`);
     console.log(`[${locationName}] Wave sensors status: ${hasValidWaveData ? 'ONLINE ✅' : 'OFFLINE ⚠️'}`);
+    console.log(`[${locationName}] Weather data available:`, !!weatherData);
+    console.log(`[${locationName}] Tide data entries:`, tideDataArray.length);
     console.log(`[${locationName}] Surf conditions to use:`, {
       wave_height: surfConditions.wave_height,
       surf_height: surfConditions.surf_height,
@@ -864,6 +907,13 @@ async function processLocation(
           hour12: true 
         })
       : '6:00 AM';
+
+    console.log(`[${locationName}] 📝 Generating narrative with:`, {
+      hasWeatherData: !!weatherData,
+      hasTideData: tideDataArray.length > 0,
+      hasSurfData: !!surfConditions,
+      captureTime: captureTime,
+    });
 
     const narrative = generateWittyNarrative(
       surfConditions, 
@@ -896,16 +946,39 @@ async function processLocation(
     };
 
     console.log(`[${locationName}] Upserting report to database for date: ${dateStr}...`);
+    console.log(`[${locationName}] Report data to save:`, {
+      date: reportData.date,
+      location: reportData.location,
+      conditions_length: reportData.conditions.length,
+      rating: reportData.rating,
+    });
 
     const { error: upsertError } = await supabase
       .from('surf_reports')
       .upsert(reportData, { onConflict: 'date,location' });
 
     if (upsertError) {
+      console.error(`[${locationName}] ❌ Failed to save report:`, upsertError);
       throw new Error(`Failed to save report: ${upsertError.message}`);
     }
 
-    console.log(`[${locationName}] ✅ Report created successfully for ${dateStr}`);
+    console.log(`[${locationName}] ✅ Report saved successfully to database`);
+    
+    // Verify the save
+    const { data: verifyData, error: verifyError } = await supabase
+      .from('surf_reports')
+      .select('id, date, location, conditions')
+      .eq('date', dateStr)
+      .eq('location', locationId)
+      .maybeSingle();
+    
+    if (verifyError) {
+      console.error(`[${locationName}] ⚠️ Could not verify save:`, verifyError);
+    } else if (verifyData) {
+      console.log(`[${locationName}] ✅ Verified: Report exists in database with ${verifyData.conditions?.length || 0} character narrative`);
+    } else {
+      console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);
+    }
 
     return {
       success: true,
@@ -916,6 +989,7 @@ async function processLocation(
       rating: rating,
       hasWaveData: hasValidWaveData,
       usedFallbackData: usedFallbackData,
+      narrativeLength: narrative.length,
     };
 
   } catch (error: any) {

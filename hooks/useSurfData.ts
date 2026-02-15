@@ -166,8 +166,24 @@ export function useSurfData() {
       }
 
       console.log('[useSurfData] Data fetched successfully for location:', location);
+      console.log('[useSurfData] Surf reports count:', surfReportsResult.data?.length || 0);
       console.log('[useSurfData] Today\'s surf conditions:', surfConditionsResult.data);
       console.log('[useSurfData] Today\'s weather data:', weatherResult.data);
+      
+      // 🚨 CRITICAL FIX: Log the narrative from today's report
+      const todayReport = surfReportsResult.data?.find(r => r.date.split('T')[0] === today);
+      if (todayReport) {
+        console.log('[useSurfData] ===== TODAY\'S REPORT NARRATIVE =====');
+        console.log('[useSurfData] Report ID:', todayReport.id);
+        console.log('[useSurfData] Has conditions:', !!todayReport.conditions);
+        console.log('[useSurfData] Has report_text:', !!todayReport.report_text);
+        console.log('[useSurfData] Conditions length:', todayReport.conditions?.length || 0);
+        console.log('[useSurfData] Report_text length:', todayReport.report_text?.length || 0);
+        console.log('[useSurfData] Narrative preview:', (todayReport.conditions || todayReport.report_text || '').substring(0, 100));
+        console.log('[useSurfData] =====================================');
+      } else {
+        console.log('[useSurfData] ⚠️ No report found for today:', today);
+      }
 
       // CRITICAL FIX: Merge surf_conditions data into surf_reports for today
       // This ensures we always show the most recent wave data
@@ -467,7 +483,9 @@ export function useSurfData() {
           filter: `location=eq.${currentLocation}`,
         },
         (payload) => {
-          console.log('[useSurfData] Surf report updated for current location, refreshing data...');
+          console.log('[useSurfData] 🔔 Surf report updated for current location via real-time subscription!');
+          console.log('[useSurfData] Payload:', payload);
+          console.log('[useSurfData] Refreshing data to show new narrative...');
           if (!isFetchingRef.current) {
             lastFetchTimeRef.current = 0; // Reset debounce for real-time update
             fetchDataRef.current?.();
