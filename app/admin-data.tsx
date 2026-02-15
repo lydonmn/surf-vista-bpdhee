@@ -83,8 +83,7 @@ export default function AdminDataScreen() {
 
   const loadDataCounts = useCallback(async () => {
     try {
-      const today = getESTDate();
-      const dateStr = today.toISOString().split('T')[0];
+      const dateStr = getESTDate(); // ✅ FIXED: getESTDate() now returns a string (YYYY-MM-DD)
       
       console.log('[AdminData] Loading data counts for date:', dateStr, 'location:', currentLocation);
       
@@ -116,8 +115,7 @@ export default function AdminDataScreen() {
 
   const loadLocationReports = useCallback(async () => {
     try {
-      const today = getESTDate();
-      const dateStr = today.toISOString().split('T')[0];
+      const dateStr = getESTDate(); // ✅ FIXED: getESTDate() now returns a string (YYYY-MM-DD)
       const reports: LocationReport[] = [];
 
       console.log('[AdminData] Loading location reports for date:', dateStr);
