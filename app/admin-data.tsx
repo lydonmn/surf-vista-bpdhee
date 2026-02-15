@@ -304,14 +304,23 @@ export default function AdminDataScreen() {
     addLog(`Generating report narrative for ${locationName}...`, 'info');
 
     try {
-      console.log(`[AdminData] ✅ Manual report generator: Using existing data from database`);
+      console.log(`[AdminData] ═══════════════════════════════════════`);
+      console.log(`[AdminData] 📝 MANUAL REPORT GENERATION`);
+      console.log(`[AdminData] ✅ Using EXISTING data from database`);
+      console.log(`[AdminData] ❌ NOT pulling fresh data from buoy`);
+      console.log(`[AdminData] 📊 Data source: surf_conditions, weather_data, tide_data tables`);
+      console.log(`[AdminData] 🎯 Purpose: Regenerate narrative text only`);
+      console.log(`[AdminData] ═══════════════════════════════════════`);
       console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId} with isManualTrigger=true`);
       
-      // ✅ The manual report generator uses existing data from the database
+      // 🚨 CRITICAL: The manual report generator ONLY uses existing database data
+      // It does NOT fetch fresh data from the buoy or external APIs
+      // The report page already has the most up-to-date data from scheduled updates
+      // This function ONLY regenerates the narrative text using that existing data
       const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { 
           location: locationId,
-          isManualTrigger: true // This tells the backend to use existing data, not fetch new data
+          isManualTrigger: true // ✅ This tells backend: Use database data ONLY, no fresh API calls
         },
       });
 
@@ -326,13 +335,17 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
-      addLog(`✅ Report narrative generated for ${locationName}`, 'success');
-      addLog(`  • Used existing data from database`, 'info');
+      addLog(`✅ Report narrative regenerated for ${locationName}`, 'success');
+      addLog(`  • Used existing data from database (no fresh buoy pull)`, 'info');
+      addLog(`  • Data source: Most recent surf_conditions, weather_data, tide_data`, 'info');
       
       if (data.results && data.results.length > 0) {
         const result = data.results[0];
         if (result.narrativeLength) {
           addLog(`  • Generated ${result.narrativeLength} character narrative`, 'success');
+        }
+        if (result.usedFallbackData) {
+          addLog(`  • Used most recent available data from scheduled updates`, 'info');
         }
       }
       
@@ -443,6 +456,21 @@ export default function AdminDataScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location Reports</Text>
+          
+          <View style={[styles.infoBox, { marginBottom: 16, backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="info.circle.fill"
+              android_material_icon_name="info"
+              size={16}
+              color="#2196F3"
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoText, { color: '#2196F3', fontWeight: '600' }]}>
+                Data Flow: Scheduled updates pull fresh buoy data → Report page displays it → Regenerate Text uses that data
+              </Text>
+            </View>
+          </View>
+          
           {locationReports.length === 0 ? (
             <View style={styles.emptyState}>
               <ActivityIndicator size="large" color={colors.primary} />
@@ -516,7 +544,7 @@ export default function AdminDataScreen() {
                       size={16}
                       color={colors.primary}
                     />
-                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Generate Narrative</Text>
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Regenerate Text</Text>
                   </TouchableOpacity>
                 </View>
               </View>

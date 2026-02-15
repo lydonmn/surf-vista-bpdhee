@@ -214,16 +214,22 @@ export default function HomeScreen() {
     }
   }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
 
+  // 🚨 DATA FLOW ARCHITECTURE:
+  // 1. Scheduled CRON job (6 AM daily) pulls fresh data from buoy → surf_conditions table
+  // 2. Home page displays data from surf_conditions table (most up-to-date)
+  // 3. Manual "Regenerate Text" button uses this SAME surf_conditions data (no fresh pull)
+  // 4. This ensures report generator always uses the data that's already on the home/report pages
+  
   // ✅ Calculate rating early (before conditional returns)
   const ratingValue = useMemo(() => {
     console.log('[HomeScreen] ===== CALCULATING CURRENT RATING =====');
     console.log('[HomeScreen] Has surfConditions:', !!surfConditions);
     console.log('[HomeScreen] Has todaysReport:', !!todaysReport);
     
-    // ALWAYS use surf_conditions if available (most current data)
+    // ALWAYS use surf_conditions if available (most current data from scheduled updates)
     if (surfConditions) {
       const rating = calculateSurfRating(surfConditions);
-      console.log('[HomeScreen] ✅ Using rating from surf_conditions (real-time):', rating);
+      console.log('[HomeScreen] ✅ Using rating from surf_conditions (from scheduled updates):', rating);
       return rating;
     }
     

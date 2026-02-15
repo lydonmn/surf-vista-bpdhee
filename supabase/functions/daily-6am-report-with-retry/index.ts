@@ -736,11 +736,15 @@ async function processLocation(
     console.log(`[${locationName}] Step 3: Fetching surf/buoy data...`);
     console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (use most recent available data)' : 'SCHEDULED (retry for fresh data)'}`);
     
-    // 🚨 CRITICAL FIX: MANUAL TRIGGER - Use most recent data from surf_conditions table
+    // 🚨 CRITICAL: MANUAL TRIGGER MODE - ONLY USE DATABASE DATA (NO FRESH API CALLS)
     if (isManualTrigger) {
-      console.log(`[${locationName}] 🔍 Manual trigger: Querying most recent surf_conditions from database...`);
+      console.log(`[${locationName}] ═══════════════════════════════════════`);
+      console.log(`[${locationName}] 🔍 MANUAL TRIGGER MODE ACTIVATED`);
+      console.log(`[${locationName}] ✅ Using EXISTING data from database`);
+      console.log(`[${locationName}] ❌ NOT fetching fresh data from buoy`);
+      console.log(`[${locationName}] ═══════════════════════════════════════`);
       
-      // Query the most recent surf_conditions for today
+      // Query the most recent surf_conditions for today from DATABASE ONLY
       const { data: mostRecentData, error: recentError } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -751,13 +755,14 @@ async function processLocation(
         .maybeSingle();
       
       if (recentError) {
-        console.error(`[${locationName}] ❌ Error fetching surf_conditions:`, recentError);
-        throw new Error(`Failed to fetch surf conditions: ${recentError.message}`);
+        console.error(`[${locationName}] ❌ Error fetching surf_conditions from database:`, recentError);
+        throw new Error(`Failed to fetch surf conditions from database: ${recentError.message}`);
       }
       
       if (mostRecentData) {
-        console.log(`[${locationName}] ✅ Found most recent surf_conditions (updated: ${mostRecentData.updated_at})`);
-        console.log(`[${locationName}] Data snapshot:`, {
+        console.log(`[${locationName}] ✅ Found most recent surf_conditions in database`);
+        console.log(`[${locationName}] 📊 Data last updated: ${mostRecentData.updated_at}`);
+        console.log(`[${locationName}] 📊 Data snapshot:`, {
           wave_height: mostRecentData.wave_height,
           surf_height: mostRecentData.surf_height,
           wind_speed: mostRecentData.wind_speed,
@@ -765,11 +770,13 @@ async function processLocation(
           wind_direction: mostRecentData.wind_direction,
           wave_period: mostRecentData.wave_period,
         });
+        console.log(`[${locationName}] ✅ Using this data to regenerate narrative (NO NEW API CALLS)`);
         surfConditions = mostRecentData;
         usedFallbackData = true;
       } else {
         // No data for today - try yesterday as last resort
-        console.log(`[${locationName}] ⚠️ No surf_conditions found for today, checking yesterday...`);
+        console.log(`[${locationName}] ⚠️ No surf_conditions found for today in database`);
+        console.log(`[${locationName}] 🔍 Checking yesterday's data as fallback...`);
         
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
@@ -785,16 +792,22 @@ async function processLocation(
           .maybeSingle();
         
         if (yesterdayError) {
-          console.error(`[${locationName}] Error fetching yesterday's data:`, yesterdayError);
+          console.error(`[${locationName}] ❌ Error fetching yesterday's data:`, yesterdayError);
         }
         
         if (yesterdayData) {
           console.log(`[${locationName}] ✅ Using yesterday's data as fallback`);
+          console.log(`[${locationName}] 📊 Yesterday's data:`, {
+            wave_height: yesterdayData.wave_height,
+            surf_height: yesterdayData.surf_height,
+            wind_speed: yesterdayData.wind_speed,
+          });
           surfConditions = yesterdayData;
           usedFallbackData = true;
         } else {
-          console.error(`[${locationName}] ❌ No surf data available for today or yesterday`);
-          throw new Error('No surf data available - please pull fresh data first');
+          console.error(`[${locationName}] ❌ No surf data available in database for today or yesterday`);
+          console.error(`[${locationName}] 💡 SOLUTION: Use "Update Data" button to pull fresh data from buoy first`);
+          throw new Error('No surf data available in database - please pull fresh data using "Update Data" button first');
         }
       }
     } 
