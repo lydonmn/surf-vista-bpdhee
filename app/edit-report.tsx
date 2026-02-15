@@ -38,10 +38,14 @@ export default function EditReportScreen() {
       setLoading(true);
       console.log('[EditReportScreen] ===== LOADING FRESH REPORT =====');
       console.log('[EditReportScreen] Current location:', currentLocation, locationData.displayName);
-      console.log('[EditReportScreen] Today\'s date (EST):', getESTDate());
+      
+      // 🚨 CRITICAL FIX: Always use getESTDate() for today's date
+      const todayDate = getESTDate();
+      console.log('[EditReportScreen] Today\'s date (EST):', todayDate);
       
       let reportToEdit: SurfReport | null = null;
 
+      // If a specific report ID is provided, load that report
       if (reportId) {
         console.log('[EditReportScreen] Loading specific report by ID:', reportId);
         
@@ -65,10 +69,11 @@ export default function EditReportScreen() {
         }
       }
 
+      // If no specific report ID or loading failed, load TODAY's report for current location
       if (!reportToEdit) {
-        console.log('[EditReportScreen] Loading today\'s report for current location:', currentLocation);
+        console.log('[EditReportScreen] Loading TODAY\'S report for current location:', currentLocation);
+        console.log('[EditReportScreen] Using date:', todayDate);
         
-        const todayDate = getESTDate();
         const { data, error } = await supabase
           .from('surf_reports')
           .select('*')
@@ -87,7 +92,7 @@ export default function EditReportScreen() {
           console.log('[EditReportScreen] No report found for today at', locationData.displayName);
           showErrorModal(
             'No Report Found',
-            `No surf report exists for today at ${locationData.displayName}. Please generate a report first from the Admin Data screen.`
+            `No surf report exists for today (${todayDate}) at ${locationData.displayName}. Please generate a report first from the Admin Data screen.`
           );
           return;
         }
@@ -102,6 +107,7 @@ export default function EditReportScreen() {
         reportToEdit = data;
       }
 
+      // Verify the report is for the current location
       if (reportToEdit.location !== currentLocation) {
         console.warn('[EditReportScreen] Report location mismatch:', {
           reportLocation: reportToEdit.location,
@@ -112,7 +118,6 @@ export default function EditReportScreen() {
           `This report is for a different location. Switching to today's report for ${locationData.displayName}.`
         );
         
-        const todayDate = getESTDate();
         const { data, error } = await supabase
           .from('surf_reports')
           .select('*')
@@ -310,23 +315,28 @@ export default function EditReportScreen() {
   const ratingColor = getRatingColor(ratingNum);
 
   if (!profile?.is_admin) {
+    const lockIconName = 'lock.fill';
+    const lockMaterialIconName = 'lock';
+    const accessDeniedText = 'Admin access required';
+    const goBackButtonText = 'Go Back';
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
+            ios_icon_name={lockIconName}
+            android_material_icon_name={lockMaterialIconName}
             size={64}
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            Admin access required
+            {accessDeniedText}
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => router.back()}
           >
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Text style={styles.buttonText}>{goBackButtonText}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -334,12 +344,14 @@ export default function EditReportScreen() {
   }
 
   if (loading) {
+    const loadingMessageText = `Loading latest report for ${locationData.displayName}...`;
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading latest report for {locationData.displayName}...
+            {loadingMessageText}
           </Text>
         </View>
       </View>
@@ -347,26 +359,32 @@ export default function EditReportScreen() {
   }
 
   if (!report) {
+    const warningIconName = 'exclamationmark.triangle';
+    const warningMaterialIconName = 'warning';
+    const noReportText = `No report found for today at ${locationData.displayName}`;
+    const noReportSubtext = 'Please generate a report first from the Admin Data screen.';
+    const goToAdminButtonText = 'Go to Admin Data';
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
           <IconSymbol
-            ios_icon_name="exclamationmark.triangle"
-            android_material_icon_name="warning"
+            ios_icon_name={warningIconName}
+            android_material_icon_name={warningMaterialIconName}
             size={64}
             color={colors.textSecondary}
           />
           <Text style={[styles.errorText, { color: theme.colors.text }]}>
-            No report found for today at {locationData.displayName}
+            {noReportText}
           </Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            Please generate a report first from the Admin Data screen.
+            {noReportSubtext}
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/admin-data')}
           >
-            <Text style={styles.buttonText}>Go to Admin Data</Text>
+            <Text style={styles.buttonText}>{goToAdminButtonText}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -375,6 +393,60 @@ export default function EditReportScreen() {
 
   // 🚨 CRITICAL FIX: Use formatDateString utility to ensure correct year display
   const reportDateFormatted = formatDateString(report.date);
+  const backIconName = 'chevron.left';
+  const backMaterialIconName = 'chevron-left';
+  const titleText = 'Edit Surf Report';
+  const infoIconName = 'info.circle.fill';
+  const infoMaterialIconName = 'info';
+  const infoMessageText = `Your edited narrative will appear on both the home page and report page for ${locationData.displayName}.`;
+  const reportDataTitle = 'Report Data';
+  const locationLabelText = 'Location:';
+  const waveHeightLabelText = 'Wave Height:';
+  const wavePeriodLabelText = 'Wave Period:';
+  const windLabelText = 'Wind:';
+  const waterTempLabelText = 'Water Temp:';
+  const stokeRatingTitle = 'Stoke Rating';
+  const ratingBadgeText = `${rating}/10`;
+  const ratingHelperText = 'Rate the surf conditions from 0 (flat) to 10 (epic). This helps surfers quickly assess if it&apos;s worth paddling out.';
+  const ratingPlaceholder = '5';
+  const ratingScaleFlat = 'Flat';
+  const ratingScaleSmall = 'Small';
+  const ratingScaleFair = 'Fair';
+  const ratingScaleGood = 'Good';
+  const ratingScaleEpic = 'Epic';
+  const reportTextTitle = 'Report Text';
+  const editedBadgeText = 'Edited';
+  const previewButtonText = showPreview ? 'Edit' : 'Preview';
+  const previewIconName = showPreview ? 'pencil' : 'eye';
+  const previewMaterialIconName = showPreview ? 'edit' : 'visibility';
+  const reportTextHelperText = `Write a detailed description of the surf conditions. This narrative will be displayed on both the home page and report page for ${locationData.displayName}.`;
+  const textInputPlaceholder = 'Enter detailed surf report...';
+  const noTextPreview = 'No text entered yet...';
+  const characterCountText = `${reportText.length} characters`;
+  const autoGeneratedTitle = 'Auto-Generated Text';
+  const autoGeneratedNote = '(Reference only - not displayed if you save custom text)';
+  const saveButtonIconName = 'checkmark.circle.fill';
+  const saveMaterialIconName = 'check-circle';
+  const saveButtonText = 'Save Changes';
+  const resetButtonIconName = 'arrow.counterclockwise';
+  const resetMaterialIconName = 'refresh';
+  const resetButtonText = 'Reset to Auto-Generated';
+  const successIconName = 'checkmark.circle.fill';
+  const successMaterialIconName = 'check-circle';
+  const successTitle = 'Success!';
+  const successMessage = 'Report updated successfully! The updated narrative will now appear on both the home page and report page.';
+  const doneButtonText = 'Done';
+  const resetModalIconName = 'arrow.counterclockwise';
+  const resetModalMaterialIconName = 'refresh';
+  const resetModalTitle = 'Reset to Auto-Generated?';
+  const resetModalMessage = 'This will remove your custom text and rating, and use the auto-generated report. The auto-generated narrative will then appear on both the home page and report page. Continue?';
+  const cancelButtonText = 'Cancel';
+  const resetConfirmButtonText = 'Reset';
+  const errorIconName = 'exclamationmark.triangle.fill';
+  const errorMaterialIconName = 'warning';
+  const okButtonText = 'OK';
+  const wavePeriodValue = report.wave_period || 'N/A';
+  const windValue = `${report.wind_speed} ${report.wind_direction}`;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -385,15 +457,15 @@ export default function EditReportScreen() {
             onPress={() => router.back()}
           >
             <IconSymbol
-              ios_icon_name="chevron.left"
-              android_material_icon_name="chevron-left"
+              ios_icon_name={backIconName}
+              android_material_icon_name={backMaterialIconName}
               size={24}
               color={colors.primary}
             />
           </TouchableOpacity>
           <View style={styles.headerTextContainer}>
             <Text style={[styles.title, { color: theme.colors.text }]}>
-              Edit Surf Report
+              {titleText}
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               {reportDateFormatted}
@@ -406,24 +478,24 @@ export default function EditReportScreen() {
 
         <View style={[styles.infoCard, { backgroundColor: colors.primary + '20' }]}>
           <IconSymbol
-            ios_icon_name="info.circle.fill"
-            android_material_icon_name="info"
+            ios_icon_name={infoIconName}
+            android_material_icon_name={infoMaterialIconName}
             size={20}
             color={colors.primary}
           />
           <Text style={[styles.infoText, { color: theme.colors.text }]}>
-            Your edited narrative will appear on both the home page and report page for {locationData.displayName}.
+            {infoMessageText}
           </Text>
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-            Report Data
+            {reportDataTitle}
           </Text>
           <View style={styles.dataGrid}>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Location:
+                {locationLabelText}
               </Text>
               <Text style={[styles.dataValue, { color: theme.colors.text }]}>
                 {locationData.displayName}
@@ -431,7 +503,7 @@ export default function EditReportScreen() {
             </View>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Wave Height:
+                {waveHeightLabelText}
               </Text>
               <Text style={[styles.dataValue, { color: theme.colors.text }]}>
                 {report.wave_height}
@@ -439,23 +511,23 @@ export default function EditReportScreen() {
             </View>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Wave Period:
+                {wavePeriodLabelText}
               </Text>
               <Text style={[styles.dataValue, { color: theme.colors.text }]}>
-                {report.wave_period || 'N/A'}
+                {wavePeriodValue}
               </Text>
             </View>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Wind:
+                {windLabelText}
               </Text>
               <Text style={[styles.dataValue, { color: theme.colors.text }]}>
-                {report.wind_speed} {report.wind_direction}
+                {windValue}
               </Text>
             </View>
             <View style={styles.dataRow}>
               <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>
-                Water Temp:
+                {waterTempLabelText}
               </Text>
               <Text style={[styles.dataValue, { color: theme.colors.text }]}>
                 {report.water_temp}
@@ -467,17 +539,17 @@ export default function EditReportScreen() {
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.ratingHeader}>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-              Stoke Rating
+              {stokeRatingTitle}
             </Text>
             <View style={[styles.ratingBadge, { backgroundColor: ratingColor }]}>
               <Text style={styles.ratingBadgeText}>
-                {rating}/10
+                {ratingBadgeText}
               </Text>
             </View>
           </View>
           
           <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-            Rate the surf conditions from 0 (flat) to 10 (epic). This helps surfers quickly assess if it&apos;s worth paddling out.
+            {ratingHelperText}
           </Text>
 
           <View style={styles.ratingInputContainer}>
@@ -494,7 +566,7 @@ export default function EditReportScreen() {
               onChangeText={setRating}
               keyboardType="number-pad"
               maxLength={2}
-              placeholder="5"
+              placeholder={ratingPlaceholder}
               placeholderTextColor={colors.textSecondary}
             />
             <View style={styles.ratingScale}>
@@ -503,7 +575,7 @@ export default function EditReportScreen() {
                   0
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
-                  Flat
+                  {ratingScaleFlat}
                 </Text>
               </View>
               <View style={styles.ratingScaleItem}>
@@ -511,7 +583,7 @@ export default function EditReportScreen() {
                   3
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
-                  Small
+                  {ratingScaleSmall}
                 </Text>
               </View>
               <View style={styles.ratingScaleItem}>
@@ -519,7 +591,7 @@ export default function EditReportScreen() {
                   5
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
-                  Fair
+                  {ratingScaleFair}
                 </Text>
               </View>
               <View style={styles.ratingScaleItem}>
@@ -527,7 +599,7 @@ export default function EditReportScreen() {
                   7
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
-                  Good
+                  {ratingScaleGood}
                 </Text>
               </View>
               <View style={styles.ratingScaleItem}>
@@ -535,7 +607,7 @@ export default function EditReportScreen() {
                   10
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
-                  Epic
+                  {ratingScaleEpic}
                 </Text>
               </View>
             </View>
@@ -545,12 +617,12 @@ export default function EditReportScreen() {
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
           <View style={styles.editorHeader}>
             <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-              Report Text
+              {reportTextTitle}
             </Text>
             <View style={styles.editorActions}>
               {report.report_text && (
                 <View style={[styles.editedBadge, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.editedBadgeText}>Edited</Text>
+                  <Text style={styles.editedBadgeText}>{editedBadgeText}</Text>
                 </View>
               )}
               <TouchableOpacity
@@ -558,8 +630,8 @@ export default function EditReportScreen() {
                 onPress={() => setShowPreview(!showPreview)}
               >
                 <IconSymbol
-                  ios_icon_name={showPreview ? "pencil" : "eye"}
-                  android_material_icon_name={showPreview ? "edit" : "visibility"}
+                  ios_icon_name={previewIconName}
+                  android_material_icon_name={previewMaterialIconName}
                   size={16}
                   color={showPreview ? "#FFFFFF" : colors.primary}
                 />
@@ -567,19 +639,19 @@ export default function EditReportScreen() {
                   styles.previewButtonText,
                   { color: showPreview ? "#FFFFFF" : colors.primary }
                 ]}>
-                  {showPreview ? 'Edit' : 'Preview'}
+                  {previewButtonText}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
           
           <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-            Write a detailed description of the surf conditions. This narrative will be displayed on both the home page and report page for {locationData.displayName}.
+            {reportTextHelperText}
           </Text>
 
           {showPreview ? (
             <View style={[styles.previewContainer, { backgroundColor: theme.colors.background }]}>
-              <ReportTextDisplay text={reportText || 'No text entered yet...'} isCustom={true} />
+              <ReportTextDisplay text={reportText || noTextPreview} isCustom={true} />
             </View>
           ) : (
             <TextInput
@@ -595,7 +667,7 @@ export default function EditReportScreen() {
               onChangeText={setReportText}
               multiline
               numberOfLines={10}
-              placeholder="Enter detailed surf report..."
+              placeholder={textInputPlaceholder}
               placeholderTextColor={colors.textSecondary}
               textAlignVertical="top"
             />
@@ -603,7 +675,7 @@ export default function EditReportScreen() {
 
           <View style={styles.characterCount}>
             <Text style={[styles.characterCountText, { color: colors.textSecondary }]}>
-              {reportText.length} characters
+              {characterCountText}
             </Text>
           </View>
         </View>
@@ -612,10 +684,10 @@ export default function EditReportScreen() {
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
             <View style={styles.autoGeneratedHeader}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-                Auto-Generated Text
+                {autoGeneratedTitle}
               </Text>
               <Text style={[styles.autoGeneratedNote, { color: colors.textSecondary }]}>
-                (Reference only - not displayed if you save custom text)
+                {autoGeneratedNote}
               </Text>
             </View>
             <Text style={[styles.autoGeneratedText, { color: colors.textSecondary }]}>
@@ -639,12 +711,12 @@ export default function EditReportScreen() {
             ) : (
               <React.Fragment>
                 <IconSymbol
-                  ios_icon_name="checkmark.circle.fill"
-                  android_material_icon_name="check-circle"
+                  ios_icon_name={saveButtonIconName}
+                  android_material_icon_name={saveMaterialIconName}
                   size={20}
                   color="#FFFFFF"
                 />
-                <Text style={styles.buttonText}>Save Changes</Text>
+                <Text style={styles.buttonText}>{saveButtonText}</Text>
               </React.Fragment>
             )}
           </TouchableOpacity>
@@ -660,12 +732,12 @@ export default function EditReportScreen() {
               disabled={saving}
             >
               <IconSymbol
-                ios_icon_name="arrow.counterclockwise"
-                android_material_icon_name="refresh"
+                ios_icon_name={resetButtonIconName}
+                android_material_icon_name={resetMaterialIconName}
                 size={20}
                 color="#FFFFFF"
               />
-              <Text style={styles.buttonText}>Reset to Auto-Generated</Text>
+              <Text style={styles.buttonText}>{resetButtonText}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -681,23 +753,23 @@ export default function EditReportScreen() {
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
             <View style={[styles.modalIconContainer, { backgroundColor: colors.primary + '20' }]}>
               <IconSymbol
-                ios_icon_name="checkmark.circle.fill"
-                android_material_icon_name="check-circle"
+                ios_icon_name={successIconName}
+                android_material_icon_name={successMaterialIconName}
                 size={48}
                 color={colors.primary}
               />
             </View>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              Success!
+              {successTitle}
             </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              Report updated successfully! The updated narrative will now appear on both the home page and report page.
+              {successMessage}
             </Text>
             <TouchableOpacity
               style={[styles.modalButton, { backgroundColor: colors.primary }]}
               onPress={handleSuccessModalClose}
             >
-              <Text style={styles.modalButtonText}>Done</Text>
+              <Text style={styles.modalButtonText}>{doneButtonText}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -713,24 +785,24 @@ export default function EditReportScreen() {
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
             <View style={[styles.modalIconContainer, { backgroundColor: '#FF9800' + '20' }]}>
               <IconSymbol
-                ios_icon_name="arrow.counterclockwise"
-                android_material_icon_name="refresh"
+                ios_icon_name={resetModalIconName}
+                android_material_icon_name={resetModalMaterialIconName}
                 size={48}
                 color="#FF9800"
               />
             </View>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              Reset to Auto-Generated?
+              {resetModalTitle}
             </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              This will remove your custom text and rating, and use the auto-generated report. The auto-generated narrative will then appear on both the home page and report page. Continue?
+              {resetModalMessage}
             </Text>
             <View style={styles.modalButtonRow}>
               <TouchableOpacity
                 style={[styles.modalButtonHalf, { backgroundColor: colors.textSecondary }]}
                 onPress={() => setShowResetModal(false)}
               >
-                <Text style={styles.modalButtonText}>Cancel</Text>
+                <Text style={styles.modalButtonText}>{cancelButtonText}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButtonHalf, { backgroundColor: '#FF9800' }]}
@@ -740,7 +812,7 @@ export default function EditReportScreen() {
                 {saving ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.modalButtonText}>Reset</Text>
+                  <Text style={styles.modalButtonText}>{resetConfirmButtonText}</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -758,8 +830,8 @@ export default function EditReportScreen() {
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
             <View style={[styles.modalIconContainer, { backgroundColor: colors.errorBackground }]}>
               <IconSymbol
-                ios_icon_name="exclamationmark.triangle.fill"
-                android_material_icon_name="warning"
+                ios_icon_name={errorIconName}
+                android_material_icon_name={errorMaterialIconName}
                 size={48}
                 color="#FFFFFF"
               />
@@ -774,7 +846,7 @@ export default function EditReportScreen() {
               style={[styles.modalButton, { backgroundColor: colors.primary }]}
               onPress={() => setErrorModalVisible(false)}
             >
-              <Text style={styles.modalButtonText}>OK</Text>
+              <Text style={styles.modalButtonText}>{okButtonText}</Text>
             </TouchableOpacity>
           </View>
         </View>
