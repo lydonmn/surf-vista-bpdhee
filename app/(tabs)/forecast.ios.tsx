@@ -50,6 +50,74 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend and home screen
+function calculateSurfRating(surfData: any): number {
+  if (!surfData) return 5;
+  
+  const surfHeightStr = surfData.surf_height || surfData.wave_height || '0';
+  const periodStr = surfData.wave_period || '0';
+  const windSpeedStr = surfData.wind_speed || '0';
+  const windDirStr = surfData.wind_direction || '';
+  
+  if (surfHeightStr === 'N/A' || surfHeightStr === '' || surfHeightStr === 'null') {
+    return 5;
+  }
+  
+  // Parse wave height - handle ranges like "1.0-1.5 ft"
+  const parseValue = (str: string): number => {
+    const cleaned = String(str).replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+  
+  let surfHeight = 0;
+  const cleanedStr = String(surfHeightStr).trim();
+  
+  if (cleanedStr.includes('-')) {
+    const parts = cleanedStr.split('-');
+    const low = parseValue(parts[0]);
+    const high = parseValue(parts[1]);
+    surfHeight = (low + high) / 2;
+  } else {
+    surfHeight = parseValue(cleanedStr);
+  }
+  
+  const period = parseValue(periodStr);
+  const windSpeed = parseValue(windSpeedStr);
+  const windDir = windDirStr.toLowerCase();
+  const isOffshore = windDir.includes('w') || windDir.includes('n');
+
+  let rating = 3;
+
+  if (surfHeight >= 6) rating += 5;
+  else if (surfHeight >= 4) rating += 4;
+  else if (surfHeight >= 3) rating += 3;
+  else if (surfHeight >= 2) rating += 2;
+  else if (surfHeight >= 1.5) rating += 1;
+  else if (surfHeight >= 1) rating += 0;
+  else rating -= 1;
+
+  if (period >= 12) rating += 2;
+  else if (period >= 10) rating += 1;
+  else if (period >= 8) rating += 0;
+  else if (period >= 6) rating -= 1;
+  else if (period > 0) rating -= 2;
+
+  if (isOffshore) {
+    if (windSpeed < 5) rating += 1;
+    else if (windSpeed < 10) rating += 1;
+    else if (windSpeed < 15) rating += 0;
+    else rating -= 1;
+  } else {
+    if (windSpeed < 5) rating += 0;
+    else if (windSpeed < 10) rating -= 1;
+    else if (windSpeed < 15) rating -= 2;
+    else rating -= 3;
+  }
+
+  return Math.max(1, Math.min(10, Math.round(rating)));
+}
+
 export default function ForecastScreen() {
   const theme = useTheme();
   const { user, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
@@ -196,11 +264,10 @@ export default function ForecastScreen() {
 
   const getStokeColor = (rating: number | null) => {
     if (!rating) return colors.textSecondary;
-    if (rating >= 8) return '#4CAF50'; // Green
-    if (rating >= 6) return '#8BC34A'; // Light green
-    if (rating >= 4) return '#FFC107'; // Yellow
-    if (rating >= 2) return '#FF9800'; // Orange
-    return '#F44336'; // Red
+    if (rating >= 8) return '#22C55E';
+    if (rating >= 6) return '#FFC107';
+    if (rating >= 4) return '#FF9800';
+    return '#F44336';
   };
 
   const formatTemp = (temp: any): string => {
@@ -235,6 +302,7 @@ export default function ForecastScreen() {
 
   // ✅ V6.0.2 FIX: Show loading only during initial auth check
   if (!isInitialized || authLoading) {
+    const loadingText = 'Loading...';
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.header}>
@@ -257,7 +325,7 @@ export default function ForecastScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading...
+            {loadingText}
           </Text>
         </View>
       </View>
@@ -266,6 +334,10 @@ export default function ForecastScreen() {
 
   // ✅ V6.0.2 FIX: Check subscription status
   if (!user || !isSubscribed) {
+    const subscriberOnlyText = 'Subscriber Only Content';
+    const subscribeDescText = 'Subscribe to access 7-day surf forecasts';
+    const buttonText = user ? 'Subscribe Now' : 'Sign In / Subscribe';
+    
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.header}>
@@ -293,10 +365,10 @@ export default function ForecastScreen() {
             color={colors.textSecondary}
           />
           <Text style={[styles.emptyText, { color: theme.colors.text }]}>
-            Subscriber Only Content
+            {subscriberOnlyText}
           </Text>
           <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-            Subscribe to access 7-day surf forecasts
+            {subscribeDescText}
           </Text>
           <TouchableOpacity
             style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
@@ -307,7 +379,7 @@ export default function ForecastScreen() {
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Text style={styles.subscribeButtonText}>
-                {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+                {buttonText}
               </Text>
             )}
           </TouchableOpacity>
@@ -317,6 +389,7 @@ export default function ForecastScreen() {
   }
 
   if (isLoading && combinedForecast.length === 0) {
+    const loadingForecastText = 'Loading forecast data...';
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.header}>
@@ -339,12 +412,15 @@ export default function ForecastScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading forecast data...
+            {loadingForecastText}
           </Text>
         </View>
       </View>
     );
   }
+
+  const noForecastText = 'No forecast data available';
+  const pullToRefreshText = 'Pull down to refresh';
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -411,10 +487,10 @@ export default function ForecastScreen() {
               color={colors.textSecondary}
             />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No forecast data available
+              {noForecastText}
             </Text>
             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-              Pull down to refresh
+              {pullToRefreshText}
             </Text>
           </View>
         ) : (
@@ -425,11 +501,42 @@ export default function ForecastScreen() {
               day.weatherForecast?.prediction_confidence || null,
               day.weatherForecast?.prediction_source || null
             );
+            
+            // 🚨 CRITICAL FIX: Calculate rating using the same logic as home screen
+            const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : (day.surfReport?.rating || null);
+            const ratingColor = getStokeColor(dayRating);
+
+            const surfForecastTitle = 'Surf Forecast';
+            const predictedSurfHeightLabel = 'Predicted Surf Height';
+            const sourcePrefix = 'Source: ';
+            const liveDataText = 'Live Buoy Data';
+            const buoyEstimationText = 'Buoy Estimation';
+            const aiPredictionText = 'AI Prediction';
+            const baselineText = 'Baseline';
+            const waveHeightLabel = 'Wave Height';
+            const wavePeriodLabel = 'Wave Period';
+            const windLabel = 'Wind';
+            const stokeRatingLabel = 'Stoke Rating';
+            const surfForecastSoonText = 'Surf forecast data will be available soon';
+            const weatherTitle = 'Weather';
+            const highLowLabel = 'High / Low';
+            const humidityLabel = 'Humidity';
+            const rainChanceLabel = 'Rain Chance';
+            const noWeatherText = 'No weather data available for this day';
+            const tideScheduleTitle = 'Tide Schedule';
+            const highTideText = 'High';
+            const lowTideText = 'Low';
+            const tideText = 'Tide';
+            const noTideText = 'No tide data available for this day';
 
             return (
               <View
                 key={day.date}
-                style={[styles.dayCard, { backgroundColor: theme.colors.card }]}
+                style={[styles.dayCard, { 
+                  backgroundColor: theme.colors.card,
+                  borderWidth: 1,
+                  borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
+                }]}
               >
                 <TouchableOpacity
                   style={styles.dayHeader}
@@ -486,7 +593,7 @@ export default function ForecastScreen() {
 
                 {isExpanded && (
                   <View style={styles.dayDetails}>
-                    {/* Surf Forecast Section - ENHANCED */}
+                    {/* Surf Forecast Section - ENHANCED WITH HOME SCREEN IMPROVEMENTS */}
                     <View style={styles.section}>
                       <View style={styles.sectionHeader}>
                         <IconSymbol
@@ -496,7 +603,7 @@ export default function ForecastScreen() {
                           color={colors.primary}
                         />
                         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                          Surf Forecast
+                          {surfForecastTitle}
                         </Text>
                         {confidenceBadge && (
                           <View style={[styles.confidenceBadge, { backgroundColor: confidenceBadge.color }]}>
@@ -511,16 +618,16 @@ export default function ForecastScreen() {
                         <React.Fragment>
                           <View style={styles.surfHeightDisplay}>
                             <Text style={[styles.surfHeightLabel, { color: colors.textSecondary }]}>
-                              Predicted Surf Height
+                              {predictedSurfHeightLabel}
                             </Text>
                             <Text style={[styles.surfHeightValue, { color: colors.primary }]}>
                               {day.weatherForecast?.swell_height_range}
                             </Text>
                             {day.weatherForecast?.prediction_source && (
                               <Text style={[styles.surfSource, { color: colors.textSecondary }]}>
-                                Source: {day.weatherForecast.prediction_source === 'actual' ? 'Live Buoy Data' : 
-                                         day.weatherForecast.prediction_source === 'buoy_estimation' ? 'Buoy Estimation' : 
-                                         day.weatherForecast.prediction_source === 'ai_prediction' ? 'AI Prediction' : 'Baseline'}
+                                {sourcePrefix}{day.weatherForecast.prediction_source === 'actual' ? liveDataText : 
+                                         day.weatherForecast.prediction_source === 'buoy_estimation' ? buoyEstimationText : 
+                                         day.weatherForecast.prediction_source === 'ai_prediction' ? aiPredictionText : baselineText}
                               </Text>
                             )}
                           </View>
@@ -529,7 +636,7 @@ export default function ForecastScreen() {
                             <View style={styles.detailsGrid}>
                               <View style={styles.detailItem}>
                                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                  Wave Height
+                                  {waveHeightLabel}
                                 </Text>
                                 <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                                   {day.surfReport.wave_height || 'N/A'}
@@ -538,7 +645,7 @@ export default function ForecastScreen() {
 
                               <View style={styles.detailItem}>
                                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                  Wave Period
+                                  {wavePeriodLabel}
                                 </Text>
                                 <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                                   {day.surfReport.wave_period || 'N/A'}
@@ -547,19 +654,25 @@ export default function ForecastScreen() {
 
                               <View style={styles.detailItem}>
                                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                  Wind
+                                  {windLabel}
                                 </Text>
                                 <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                  {day.surfReport.wind_speed || 'N/A'} {day.surfReport.wind_direction || ''}
+                                  {day.surfReport.wind_speed || 'N/A'}
+                                </Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                  {day.surfReport.wind_direction || ''}
                                 </Text>
                               </View>
 
                               <View style={styles.detailItem}>
                                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                  Stoke Rating
+                                  {stokeRatingLabel}
                                 </Text>
-                                <Text style={[styles.detailValue, { color: getStokeColor(day.surfReport.rating || null) }]}>
-                                  {day.surfReport.rating || 'N/A'} / 10
+                                <Text style={[styles.detailValue, { color: ratingColor }]}>
+                                  {dayRating || 'N/A'}
+                                </Text>
+                                <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>
+                                  / 10
                                 </Text>
                               </View>
                             </View>
@@ -568,7 +681,7 @@ export default function ForecastScreen() {
                       ) : (
                         <View style={styles.noDataContainer}>
                           <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            Surf forecast data will be available soon
+                            {surfForecastSoonText}
                           </Text>
                         </View>
                       )}
@@ -584,7 +697,7 @@ export default function ForecastScreen() {
                           color={colors.primary}
                         />
                         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                          Weather
+                          {weatherTitle}
                         </Text>
                       </View>
 
@@ -593,25 +706,34 @@ export default function ForecastScreen() {
                           <View style={styles.detailsGrid}>
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                High / Low
+                                {highLowLabel}
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {formatTemp(day.weatherForecast.high_temp)} / {formatTemp(day.weatherForecast.low_temp)}
+                                {formatTemp(day.weatherForecast.high_temp)}
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                /
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {formatTemp(day.weatherForecast.low_temp)}
                               </Text>
                             </View>
 
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Wind
+                                {windLabel}
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
-                                {day.weatherForecast.wind_speed ? `${day.weatherForecast.wind_speed} mph` : 'N/A'} {day.weatherForecast.wind_direction || ''}
+                                {day.weatherForecast.wind_speed ? `${day.weatherForecast.wind_speed} mph` : 'N/A'}
+                              </Text>
+                              <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                {day.weatherForecast.wind_direction || ''}
                               </Text>
                             </View>
 
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Humidity
+                                {humidityLabel}
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                                 {day.weatherForecast.humidity ? `${day.weatherForecast.humidity}%` : 'N/A'}
@@ -620,7 +742,7 @@ export default function ForecastScreen() {
 
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                                Rain Chance
+                                {rainChanceLabel}
                               </Text>
                               <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                                 {day.weatherForecast.precipitation_chance !== null && day.weatherForecast.precipitation_chance !== undefined ? `${day.weatherForecast.precipitation_chance}%` : 'N/A'}
@@ -639,7 +761,7 @@ export default function ForecastScreen() {
                       ) : (
                         <View style={styles.noDataContainer}>
                           <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            No weather data available for this day
+                            {noWeatherText}
                           </Text>
                         </View>
                       )}
@@ -655,7 +777,7 @@ export default function ForecastScreen() {
                           color={colors.primary}
                         />
                         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                          Tide Schedule
+                          {tideScheduleTitle}
                         </Text>
                       </View>
 
@@ -664,6 +786,7 @@ export default function ForecastScreen() {
                           {day.tides.map((tide, tideIndex) => {
                             const isHighTide = tide.type === 'high' || tide.type === 'High';
                             const iconColor = isHighTide ? '#2196F3' : '#FF9800';
+                            const tideTypeText = isHighTide ? highTideText : lowTideText;
 
                             return (
                               <View key={tideIndex} style={styles.tideItem}>
@@ -675,14 +798,20 @@ export default function ForecastScreen() {
                                 />
                                 <View style={styles.tideInfo}>
                                   <Text style={[styles.tideType, { color: theme.colors.text }]}>
-                                    {tide.type.charAt(0).toUpperCase() + tide.type.slice(1)} Tide
+                                    {tideTypeText}
+                                  </Text>
+                                  <Text style={[styles.tideTypeLabel, { color: theme.colors.text }]}>
+                                    {tideText}
                                   </Text>
                                   <Text style={[styles.tideTime, { color: colors.textSecondary }]}>
                                     {formatTime(tide.time)}
                                   </Text>
                                 </View>
                                 <Text style={[styles.tideHeight, { color: theme.colors.text }]}>
-                                  {Number(tide.height).toFixed(1)} ft
+                                  {Number(tide.height).toFixed(1)}
+                                </Text>
+                                <Text style={[styles.tideHeightUnit, { color: theme.colors.text }]}>
+                                  ft
                                 </Text>
                               </View>
                             );
@@ -691,7 +820,7 @@ export default function ForecastScreen() {
                       ) : (
                         <View style={styles.noDataContainer}>
                           <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            No tide data available for this day
+                            {noTideText}
                           </Text>
                         </View>
                       )}
@@ -903,6 +1032,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  ratingOutOf: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
   conditionsBox: {
     padding: 12,
     borderRadius: 8,
@@ -928,10 +1061,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 2,
   },
+  tideTypeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
   tideTime: {
     fontSize: 12,
   },
   tideHeight: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  tideHeightUnit: {
     fontSize: 14,
     fontWeight: 'bold',
   },
