@@ -14,5 +14,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Suppress refresh token errors in console
+    debug: false,
+  },
+  global: {
+    headers: {
+      'x-client-info': 'supabase-js-react-native',
+    },
   },
 })

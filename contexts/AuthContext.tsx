@@ -1,6 +1,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
@@ -156,8 +157,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('[AuthContext] ❌ Session refresh error:', error);
         
-        if (error.message.includes('Invalid Refresh Token') || error.message.includes('Refresh Token Not Found')) {
-          console.log('[AuthContext] Invalid refresh token - signing out');
+        // Handle invalid/expired refresh tokens by clearing the session
+        if (error.message.includes('Invalid Refresh Token') || 
+            error.message.includes('Refresh Token Not Found') ||
+            error.message.includes('refresh_token_not_found')) {
+          console.log('[AuthContext] Invalid refresh token detected - clearing session');
+          
+          // Clear the session from storage to prevent repeated errors
+          await AsyncStorage.removeItem('supabase.auth.token');
+          
+          // Sign out to clear all state
           await signOut();
         }
         return;
@@ -173,6 +182,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('[AuthContext] Exception refreshing session:', error);
+      
+      // If there's an exception, also try to clear the session
+      try {
+        await AsyncStorage.removeItem('supabase.auth.token');
+        await signOut();
+      } catch (clearError) {
+        console.error('[AuthContext] Error clearing session:', clearError);
+      }
     }
   }, [loadUserProfile, signOut]);
 
@@ -195,8 +212,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (sessionError) {
           console.error('[AuthContext] Session error:', sessionError);
           
-          if (sessionError.message.includes('Invalid Refresh Token') || sessionError.message.includes('Refresh Token Not Found')) {
-            console.log('[AuthContext] Invalid refresh token on init - clearing');
+          // Handle invalid/expired refresh tokens
+          if (sessionError.message.includes('Invalid Refresh Token') || 
+              sessionError.message.includes('Refresh Token Not Found') ||
+              sessionError.message.includes('refresh_token_not_found')) {
+            console.log('[AuthContext] Invalid refresh token on init - clearing storage');
+            
+            // Clear the invalid token from storage
+            try {
+              await AsyncStorage.removeItem('supabase.auth.token');
+            } catch (clearError) {
+              console.error('[AuthContext] Error clearing token:', clearError);
+            }
+            
             if (mounted) {
               setUser(null);
               setProfile(null);
