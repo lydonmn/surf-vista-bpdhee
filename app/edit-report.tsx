@@ -10,20 +10,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Database } from '@/app/integrations/supabase/types';
 import { ReportTextDisplay } from '@/components/ReportTextDisplay';
 import { useLocation } from '@/contexts/LocationContext';
+import { getESTDate, formatDateString } from '@/utils/surfDataFormatter';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
-
-function getESTDate(): string {
-  const now = new Date();
-  const estDateString = now.toLocaleDateString('en-US', { 
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const [month, day, year] = estDateString.split('/');
-  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-}
 
 export default function EditReportScreen() {
   const theme = useTheme();
@@ -384,11 +373,8 @@ export default function EditReportScreen() {
     );
   }
 
-  const reportDateFormatted = new Date(report.date).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric'
-  });
+  // 🚨 CRITICAL FIX: Use formatDateString utility to ensure correct year display
+  const reportDateFormatted = formatDateString(report.date);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

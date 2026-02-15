@@ -15,6 +15,7 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useLocation } from '@/contexts/LocationContext';
 import { PushNotificationTester } from '@/components/PushNotificationTester';
+import { getESTDate } from '@/utils/surfDataFormatter';
 
 interface DataCounts {
   tides: number;
@@ -166,16 +167,9 @@ export default function AdminDataScreen() {
     try {
       addLog(`Loading data counts for ${locationData.displayName}...`);
       
-      const now = new Date();
-      const estDateString = now.toLocaleString('en-US', { 
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      
-      const [month, day, year] = estDateString.split('/');
-      const today = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      // 🚨 CRITICAL FIX: Use getESTDate() utility for consistent date handling
+      const today = getESTDate();
+      console.log('[AdminDataScreen] Using EST date:', today);
 
       const [tidesResult, weatherResult, forecastResult, surfResult, externalResult] = await Promise.all([
         supabase.from('tide_data').select('id', { count: 'exact', head: true }).eq('date', today).eq('location', currentLocation),
