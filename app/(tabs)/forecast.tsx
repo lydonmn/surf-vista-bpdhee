@@ -231,6 +231,13 @@ export default function ForecastScreen() {
     return '#F44336';
   };
 
+  const getConfidenceColor = (confidence: number | null) => {
+    if (!confidence) return colors.textSecondary;
+    if (confidence >= 80) return '#22C55E';
+    if (confidence >= 60) return '#FFC107';
+    return '#FF9800';
+  };
+
   const formatTemp = (temp: any): string => {
     if (temp === null || temp === undefined) return 'N/A';
     const numTemp = Number(temp);
@@ -338,13 +345,23 @@ export default function ForecastScreen() {
         ) : (
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
-            const hasSurfData = day.weatherForecast?.swell_height_range;
+            
+            // 🚨 FIX: Prioritize surf_height over wave_height
+            const surfHeightValue = (day.surfReport as any)?.surf_height || day.weatherForecast?.swell_height_range;
+            const waveHeightValue = day.surfReport?.wave_height;
+            const displayHeight = surfHeightValue || waveHeightValue || 'N/A';
+            
+            const hasSurfData = displayHeight !== 'N/A';
             const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
             const ratingColor = getStokeColor(dayRating);
+            
+            // 🚨 FIX: Get confidence level from weather_forecast
+            const confidenceValue = day.weatherForecast?.prediction_confidence;
+            const confidenceColor = getConfidenceColor(confidenceValue);
+            const confidenceText = confidenceValue ? `${Math.round(confidenceValue)}%` : 'N/A';
 
             const highTempText = formatTemp(day.weatherForecast?.high_temp);
             const lowTempText = formatTemp(day.weatherForecast?.low_temp);
-            const surfHeightText = day.weatherForecast?.swell_height_range || 'N/A';
 
             return (
               <View key={day.date} style={[styles.dayCard, { backgroundColor: theme.colors.card }]}>
@@ -358,7 +375,7 @@ export default function ForecastScreen() {
                     {hasSurfData && (
                       <View style={styles.surfBadge}>
                         <IconSymbol ios_icon_name="water.waves" android_material_icon_name="waves" size={14} color={colors.primary} />
-                        <Text style={[styles.surfBadgeText, { color: colors.primary }]}>{surfHeightText}</Text>
+                        <Text style={[styles.surfBadgeText, { color: colors.primary }]}>{displayHeight}</Text>
                       </View>
                     )}
                     <View style={styles.tempContainer}>
@@ -381,8 +398,8 @@ export default function ForecastScreen() {
                       <View style={styles.detailSection}>
                         <View style={styles.detailRow}>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Wave Height</Text>
-                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>{day.surfReport.wave_height || 'N/A'}</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Surf Height</Text>
+                            <Text style={[styles.detailValue, { color: theme.colors.text }]}>{displayHeight}</Text>
                           </View>
                           <View style={styles.detailItem}>
                             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Period</Text>
@@ -405,6 +422,14 @@ export default function ForecastScreen() {
                             </View>
                           )}
                         </View>
+                        
+                        {confidenceValue !== null && confidenceValue !== undefined && (
+                          <View style={[styles.confidenceBadge, { backgroundColor: `${confidenceColor}20` }]}>
+                            <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={14} color={confidenceColor} />
+                            <Text style={[styles.confidenceLabel, { color: colors.textSecondary }]}>Confidence:</Text>
+                            <Text style={[styles.confidenceValue, { color: confidenceColor }]}>{confidenceText}</Text>
+                          </View>
+                        )}
                       </View>
                     )}
 
@@ -561,46 +586,46 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   dayCard: {
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 16,
+    marginBottom: 16,
     overflow: 'hidden',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.1)',
-    elevation: 3,
+    boxShadow: '0px 2px 12px rgba(0, 0, 0, 0.08)',
+    elevation: 4,
   },
   dayHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: 18,
   },
   dayHeaderLeft: {
     flex: 1,
   },
   dayName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   dayDate: {
-    fontSize: 13,
+    fontSize: 14,
   },
   dayHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   surfBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(0, 122, 255, 0.1)',
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    borderRadius: 10,
   },
   surfBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   tempContainer: {
     flexDirection: 'row',
@@ -608,45 +633,51 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   highTemp: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   tempSlash: {
-    fontSize: 16,
+    fontSize: 18,
   },
   lowTemp: {
-    fontSize: 16,
+    fontSize: 18,
   },
   dayDetails: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 12,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    paddingTop: 12,
+    gap: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(128, 128, 128, 0.2)',
+    borderTopColor: 'rgba(128, 128, 128, 0.15)',
   },
   detailSection: {
-    gap: 8,
+    gap: 12,
   },
   detailRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 14,
   },
   detailItem: {
     flex: 1,
+    backgroundColor: 'rgba(0, 122, 255, 0.06)',
+    padding: 12,
+    borderRadius: 10,
   },
   detailLabel: {
     fontSize: 11,
-    marginBottom: 4,
+    marginBottom: 6,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  detailValue: {
-    fontSize: 16,
+    letterSpacing: 0.8,
     fontWeight: '600',
   },
+  detailValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
   detailSubvalue: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '500',
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -654,54 +685,79 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   ratingOutOf: {
-    fontSize: 12,
-  },
-  conditionsBox: {
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  conditionsText: {
     fontSize: 13,
-    lineHeight: 18,
   },
-  tidesSection: {
-    gap: 8,
-  },
-  tidesHeader: {
+  confidenceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 4,
   },
-  tidesTitle: {
-    fontSize: 13,
+  confidenceLabel: {
+    fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  confidenceValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  conditionsBox: {
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  conditionsText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  tidesSection: {
+    gap: 10,
+    marginTop: 4,
+  },
+  tidesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tidesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   tidesGrid: {
-    gap: 6,
+    gap: 8,
   },
   tideItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(0, 122, 255, 0.06)',
+    borderRadius: 8,
   },
   tideType: {
-    fontSize: 13,
-    fontWeight: '600',
-    width: 40,
+    fontSize: 14,
+    fontWeight: '700',
+    width: 45,
   },
   tideTime: {
-    fontSize: 13,
+    fontSize: 14,
     flex: 1,
+    fontWeight: '500',
   },
   tideHeight: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   tideUnit: {
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

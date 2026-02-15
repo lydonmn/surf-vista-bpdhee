@@ -186,6 +186,7 @@ export default function HomeScreen() {
         console.log('[HomeScreen] wind_direction:', report.wind_direction);
         console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
         console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
+        console.log('[HomeScreen] Conditions length:', report.conditions?.length || 0);
         return report;
       } else {
         console.log('[HomeScreen] No report for today, checking for most recent report...');
@@ -287,6 +288,37 @@ export default function HomeScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
+  // 🚨 FIX: Add real-time subscription to detect when reports are updated
+  useEffect(() => {
+    console.log('[HomeScreen] Setting up real-time subscription for surf_reports updates');
+    
+    const channel = supabase
+      .channel(`home_surf_reports_${currentLocation}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'surf_reports',
+          filter: `location=eq.${currentLocation}`,
+        },
+        (payload) => {
+          console.log('[HomeScreen] 🔔 Surf report updated in database, refreshing data...');
+          console.log('[HomeScreen] Updated report:', payload.new);
+          
+          // Force refresh data to get the new narrative
+          hasLoadedDataRef.current = false;
+          refreshData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[HomeScreen] Cleaning up real-time subscription');
+      channel.unsubscribe();
+    };
+  }, [currentLocation, refreshData]);
+
   // ✅ FIX: Handle screen focus/blur to prevent data reload loop
   useFocusEffect(
     useCallback(() => {
@@ -298,15 +330,11 @@ export default function HomeScreen() {
         videoPlayer.play();
       }
       
-      // Only load data if we haven't loaded it yet
+      // 🚨 FIX: Always refresh data when screen comes into focus
+      // This ensures we show the latest narrative after manual report generation
       if (isInitialized && !isLoading && user && profile && isSubscribed) {
-        if (!hasLoadedDataRef.current) {
-          console.log('[HomeScreen] First load - fetching data');
-          refreshData();
-          hasLoadedDataRef.current = true;
-        } else {
-          console.log('[HomeScreen] Data already loaded, skipping refresh');
-        }
+        console.log('[HomeScreen] Screen focused - refreshing data to show latest narrative');
+        refreshData();
         
         if (!hasLoadedVideoRef.current) {
           console.log('[HomeScreen] First load - fetching video');
@@ -324,14 +352,12 @@ export default function HomeScreen() {
     }, [isInitialized, isLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
   );
 
-  // ✅ FIX: Only reload data and video when location changes
+  // ✅ FIX: Only reload video when location changes
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
       console.log('[HomeScreen] Location changed to:', currentLocation, locationData.displayName);
-      console.log('[HomeScreen] Reloading data and video for new location');
-      hasLoadedDataRef.current = false;
+      console.log('[HomeScreen] Reloading video for new location');
       hasLoadedVideoRef.current = false;
-      refreshData();
       loadLatestVideo();
     }
   }, [currentLocation]);
@@ -461,6 +487,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Location:', locationData.displayName);
   console.log('[HomeScreen] Report location:', todaysReport?.location);
   console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
+  console.log('[HomeScreen] Narrative preview:', narrativeText?.substring(0, 100));
   console.log('[HomeScreen] Is custom (edited):', isCustomReport);
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
