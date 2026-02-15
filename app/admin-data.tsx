@@ -39,6 +39,7 @@ interface LocationReport {
   hasReport: boolean;
   hasNarrative: boolean;
   narrativeLength: number;
+  narrativePreview: string;
   waveHeight: string;
   waveSensorsOnline: boolean;
   lastUpdated: string;
@@ -118,8 +119,11 @@ export default function AdminDataScreen() {
       const dateStr = getESTDate();
       const reports: LocationReport[] = [];
 
-      console.log('[AdminData] Loading location reports for date:', dateStr);
+      console.log('[AdminData] ═══════════════════════════════════════');
+      console.log('[AdminData] 🔄 LOADING LOCATION REPORTS');
+      console.log('[AdminData] Date:', dateStr);
       console.log('[AdminData] Available locations:', locations.length);
+      console.log('[AdminData] ═══════════════════════════════════════');
 
       for (const location of locations) {
         console.log('[AdminData] Processing location:', {
@@ -128,6 +132,8 @@ export default function AdminDataScreen() {
           displayName: location.displayName,
         });
 
+        // 🚨 CRITICAL FIX: Force fresh query with cache bypass
+        const timestamp = Date.now();
         const [reportResult, conditionsResult] = await Promise.all([
           supabase
             .from('surf_reports')
@@ -148,13 +154,29 @@ export default function AdminDataScreen() {
         const report = reportResult.data;
         const conditions = conditionsResult.data;
 
+        console.log('[AdminData] ═══════════════════════════════════════');
+        console.log('[AdminData] 📊 REPORT DATA FOR', location.displayName);
+        console.log('[AdminData] Has report:', !!report);
+        console.log('[AdminData] Report ID:', report?.id);
+        console.log('[AdminData] Report date:', report?.date);
+        console.log('[AdminData] Has conditions field:', !!report?.conditions);
+        console.log('[AdminData] Has report_text field:', !!report?.report_text);
+        console.log('[AdminData] Conditions length:', report?.conditions?.length || 0);
+        console.log('[AdminData] Report_text length:', report?.report_text?.length || 0);
+        console.log('[AdminData] Conditions preview:', report?.conditions?.substring(0, 100));
+        console.log('[AdminData] Report_text preview:', report?.report_text?.substring(0, 100));
+        console.log('[AdminData] ═══════════════════════════════════════');
+
+        const narrativeText = report?.report_text || report?.conditions || '';
+        
         const locationReport: LocationReport = {
           location: location.displayName,
           locationId: location.id,
           date: dateStr,
           hasReport: !!report,
-          hasNarrative: !!(report?.conditions || report?.report_text),
-          narrativeLength: (report?.conditions || report?.report_text || '').length,
+          hasNarrative: narrativeText.length > 50,
+          narrativeLength: narrativeText.length,
+          narrativePreview: narrativeText.substring(0, 100),
           waveHeight: conditions?.wave_height || report?.wave_height || 'N/A',
           waveSensorsOnline: !!conditions?.wave_height,
           lastUpdated: conditions?.updated_at || report?.updated_at || 'Never',
@@ -324,23 +346,31 @@ export default function AdminDataScreen() {
         },
       });
 
-      console.log('[AdminData] Report generation response:', { data, error });
+      console.log('[AdminData] ═══════════════════════════════════════');
+      console.log('[AdminData] 📥 EDGE FUNCTION RESPONSE');
+      console.log('[AdminData] Success:', data?.success);
+      console.log('[AdminData] Error:', error);
+      console.log('[AdminData] Data:', JSON.stringify(data, null, 2));
+      console.log('[AdminData] ═══════════════════════════════════════');
 
       if (error) {
+        console.error('[AdminData] Error invoking Edge Function:', error);
         throw new Error(error.message || 'Failed to generate report');
       }
 
-      if (data && !data.success) {
-        const errorMsg = data.error || 'Report generation failed';
+      if (data && data.success === false) {
+        const errorMsg = data.error || data.message || 'Report generation failed';
+        console.error('[AdminData] Edge Function reported failure:', errorMsg);
         throw new Error(errorMsg);
       }
 
       addLog(`✅ Report narrative regenerated for ${locationName}`, 'success');
       addLog(`  • Used existing data from database (no fresh buoy pull)`, 'info');
-      addLog(`  • Data source: Most recent surf_conditions, weather_data, tide_data`, 'info');
       
       if (data.results && data.results.length > 0) {
         const result = data.results[0];
+        console.log('[AdminData] Result details:', result);
+        
         if (result.narrativeLength) {
           addLog(`  • Generated ${result.narrativeLength} character narrative`, 'success');
         }
@@ -349,19 +379,33 @@ export default function AdminDataScreen() {
         }
       }
       
-      // 🚨 CRITICAL FIX: Wait longer and force multiple refreshes to ensure data appears
-      console.log('[AdminData] Waiting for database to propagate changes...');
+      // 🚨 CRITICAL FIX: Aggressive multi-stage refresh to ensure UI updates
+      console.log('[AdminData] ═══════════════════════════════════════');
+      console.log('[AdminData] 🔄 STARTING AGGRESSIVE REFRESH SEQUENCE');
+      console.log('[AdminData] ═══════════════════════════════════════');
+      
+      // Stage 1: Immediate refresh
+      console.log('[AdminData] Stage 1: Immediate refresh...');
+      await loadLocationReports();
+      
+      // Stage 2: Wait for database propagation
+      console.log('[AdminData] Stage 2: Waiting 2s for database propagation...');
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log('[AdminData] First refresh: Reloading location reports...');
       await loadLocationReports();
       
-      // Second refresh after another delay to ensure real-time subscriptions have fired
-      console.log('[AdminData] Waiting for real-time subscriptions to fire...');
+      // Stage 3: Wait for real-time subscriptions
+      console.log('[AdminData] Stage 3: Waiting 1.5s for real-time subscriptions...');
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      console.log('[AdminData] Second refresh: Reloading location reports again...');
       await loadLocationReports();
+      
+      // Stage 4: Final verification refresh
+      console.log('[AdminData] Stage 4: Final verification refresh...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await loadLocationReports();
+      
+      console.log('[AdminData] ═══════════════════════════════════════');
+      console.log('[AdminData] ✅ REFRESH SEQUENCE COMPLETE');
+      console.log('[AdminData] ═══════════════════════════════════════');
       
       addLog(`✅ Report data refreshed for ${locationName}`, 'success');
     } catch (error) {
@@ -502,6 +546,11 @@ export default function AdminDataScreen() {
                   <Text style={styles.locationDetail}>
                     Narrative: {report.hasNarrative ? `✅ (${report.narrativeLength} chars)` : '❌'}
                   </Text>
+                  {report.narrativePreview && (
+                    <Text style={[styles.locationDetail, { fontStyle: 'italic', marginTop: 4 }]}>
+                      Preview: {report.narrativePreview}...
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.locationActions}>
