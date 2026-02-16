@@ -83,13 +83,13 @@ function selectRandom<T>(array: T[]): T {
 function generateNoWaveDataReportText(weatherData: any, surfData: any, locationId: string): string {
   const personality = getLocationPersonality(locationId);
   const windSpeed = parseNumericValue(surfData.wind_speed, 0);
-  // 🚨 FIX: Remove degrees, parentheses, and any "feet" from wind direction for narrative
+  // 🚨 CRITICAL FIX: Aggressively remove "feet" from wind direction
+  // The issue is "feet" appearing between number and degree symbol: "20 feet°"
   const windDirRaw = surfData.wind_direction || 'variable';
   const windDir = windDirRaw
-    .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists anywhere
-    .replace(/\s*\d+\s*feet\s*/gi, '') // Remove "20 feet" pattern
-    .replace(/\s*\([^)]*feet[^)]*\)/gi, '') // Remove parentheses containing "feet"
-    .replace(/\s*\([^)]*\)/g, '') // Remove any remaining parentheses like "(20°)"
+    .replace(/feet/gi, '') // Remove "feet" anywhere (case insensitive)
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/\s*\([^)]*\)/g, '') // Remove all parentheses and their contents
     .trim();
   const waterTemp = parseNumericValue(surfData.water_temp, 0);
   const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'conditions unknown';
@@ -154,13 +154,13 @@ function generateWittyNarrative(
     }
     
     const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
-    // 🚨 FIX: Remove degrees, parentheses, and any "feet" from wind direction for narrative
+    // 🚨 CRITICAL FIX: Aggressively remove "feet" from wind direction
+    // The issue is "feet" appearing between number and degree symbol: "20 feet°"
     const windDirRaw = surfConditions.wind_direction || 'variable';
     const windDir = windDirRaw
-      .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists anywhere
-      .replace(/\s*\d+\s*feet\s*/gi, '') // Remove "20 feet" pattern
-      .replace(/\s*\([^)]*feet[^)]*\)/gi, '') // Remove parentheses containing "feet"
-      .replace(/\s*\([^)]*\)/g, '') // Remove any remaining parentheses like "(20°)"
+      .replace(/feet/gi, '') // Remove "feet" anywhere (case insensitive)
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\s*\([^)]*\)/g, '') // Remove all parentheses and their contents
       .trim();
     const swellDir = formatSwellDirection(surfConditions.swell_direction);
     const period = parseNumericValue(surfConditions.wave_period, 0);

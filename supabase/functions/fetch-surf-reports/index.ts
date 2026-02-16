@@ -96,9 +96,14 @@ function getDirectionFromDegrees(degrees: number): string {
   const index = Math.round(degrees / 22.5) % 16;
   // 🚨 CRITICAL FIX: Return ONLY direction and degrees - NO "feet" anywhere
   const degreesValue = Math.round(degrees);
+  // Build the result string carefully - NEVER include "feet"
   const result = `${directions[index]} (${degreesValue}°)`;
-  // Extra safeguard: ensure "feet" never appears
-  return result.replace(/\s*feet\s*/gi, '').replace(/\s*ft\s*/gi, '');
+  // Multiple safeguards to ensure "feet" never appears in any form
+  return result
+    .replace(/feet/gi, '') // Remove "feet" (case insensitive)
+    .replace(/ft/gi, '') // Remove "ft" abbreviation
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
 }
 
 Deno.serve(async (req) => {
@@ -325,8 +330,13 @@ Deno.serve(async (req) => {
       ? getDirectionFromDegrees(meanWaveDirection)
       : 'N/A';
     
+    // 🚨 CRITICAL: Clean wind direction - remove any "feet" that might have been inserted
     const windDir = windDirection !== 999.0 && !isNaN(windDirection)
-      ? getDirectionFromDegrees(windDirection).replace(/\s*feet\s*/gi, '').replace(/\s*ft\s*/gi, '')
+      ? getDirectionFromDegrees(windDirection)
+          .replace(/feet/gi, '') // Remove "feet" anywhere
+          .replace(/ft/gi, '') // Remove "ft" abbreviation
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim()
       : 'N/A';
     
     const windSpeedMph = hasWindData
