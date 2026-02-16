@@ -421,6 +421,11 @@ serve(async (req) => {
     console.log('[Daily 6AM Report] ═══════════════════════════════════════');
     console.log('[Daily 6AM Report] 🌅 REPORT GENERATION STARTED');
     console.log(`[Daily 6AM Report] Mode: ${isManualTrigger ? 'MANUAL TRIGGER (use existing data)' : 'SCHEDULED 6AM RUN (fetch fresh data)'}`);
+    console.log('[Daily 6AM Report] 📊 BUOY DATA SCHEDULE AWARENESS:');
+    console.log('[Daily 6AM Report]    • Edisto Buoy (41004): Publishes at :20 and :50');
+    console.log('[Daily 6AM Report]    • Frying Pan Shoals (41013): Publishes at :20 and :50');
+    console.log('[Daily 6AM Report]    • 4:45 AM collection captures 4:20 AM and 4:50 AM readings');
+    console.log('[Daily 6AM Report]    • 6:00 AM report uses most recent data from collection');
     console.log('[Daily 6AM Report] ═══════════════════════════════════════');
 
     let locationsQuery = supabase
