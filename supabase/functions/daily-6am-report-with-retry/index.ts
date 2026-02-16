@@ -290,12 +290,14 @@ function generateWittyNarrative(
     const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : '';
     
     if (airTempText && waterTempText) {
-      report += `${weatherConditions} with ${airTempText} air and ${waterTempText} water. `;
+      report += `${weatherConditions} with ${airTempText} air and ${waterTempText} water.`;
     } else if (waterTempText) {
-      report += `${weatherConditions}, water is ${waterTempText}. `;
+      report += `${weatherConditions}, water is ${waterTempText}.`;
     } else {
-      report += `${weatherConditions}. `;
+      report += `${weatherConditions}.`;
     }
+    
+    report += '\n\n';
     
     // Wetsuit recommendation
     if (waterTemp >= 75) {
