@@ -10,15 +10,21 @@ interface ReportTextDisplayProps {
 
 export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
   // Split the narrative by double newlines to create paragraphs
-  const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
+  // Also handle single newlines and normalize whitespace
+  const paragraphs = text
+    .split('\n\n')
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+
+  console.log('[ReportTextDisplay] Total paragraphs:', paragraphs.length);
+  console.log('[ReportTextDisplay] Paragraph lengths:', paragraphs.map(p => p.length));
 
   return (
     <View style={[styles.container, style]}>
       {paragraphs.map((paragraph, index) => {
-        const trimmedParagraph = paragraph.trim();
         return (
           <Text key={index} style={styles.paragraph}>
-            {trimmedParagraph}
+            {paragraph}
           </Text>
         );
       })}

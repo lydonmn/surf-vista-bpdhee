@@ -217,6 +217,7 @@ function generateWittyNarrative(
       report += openings[seed % openings.length];
     }
 
+    // 🚨 PARAGRAPH BREAK: After opening statement
     report += '\n\n';
 
     // Wave height and swell description
@@ -241,7 +242,7 @@ function generateWittyNarrative(
     
     report += '. ';
 
-    // Period description
+    // Period description (same paragraph as wave height)
     if (period >= 12) {
       report += `Long ${period.toFixed(0)}-second intervals mean powerful groundswell with clean sets and long rides.`;
     } else if (period >= 10) {
@@ -254,6 +255,7 @@ function generateWittyNarrative(
       report += `Quick ${period.toFixed(0)}-second period, choppy wind swell with limited power.`;
     }
 
+    // 🚨 PARAGRAPH BREAK: After wave/swell description
     report += '\n\n';
 
     // Wind conditions (windDir already cleaned of "feet" and parentheses above)
@@ -283,6 +285,7 @@ function generateWittyNarrative(
       }
     }
 
+    // 🚨 PARAGRAPH BREAK: After wind conditions
     report += '\n\n';
 
     // Weather and water temperature
@@ -310,6 +313,7 @@ function generateWittyNarrative(
       report += `5/4mm with hood, gloves, and booties, it's cold.`;
     }
 
+    // 🚨 PARAGRAPH BREAK: After weather/temperature
     report += '\n\n';
 
     // Final recommendation based on rating
