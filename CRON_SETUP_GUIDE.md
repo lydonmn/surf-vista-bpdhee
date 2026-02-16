@@ -1,42 +1,49 @@
 
 # 🚨 CRITICAL: CRON Job Configuration Required
 
-## Issue Fixed
-✅ Video uploader now uses direct Supabase Storage upload (no TUS) - instant uploads with paid Supabase
-✅ 6AM report function redeployed with enhanced error handling and logging
-✅ App version updated to 10.0.1 build 10
+## ✅ Background Functions Deployed
 
-## ⚠️ ACTION REQUIRED: Update CRON Job in Supabase Dashboard
+✅ **4:45 AM Data Collection** - `background-445am-data-collection` deployed
+✅ **6:00 AM Report Generation** - `daily-6am-report-with-retry` deployed
+✅ App version updated to 11.0.0 build 15
 
-The 6AM automated report is NOT running because the CRON job is still calling the OLD function name.
+## ⚠️ ACTION REQUIRED: Configure CRON Jobs in Supabase Dashboard
 
-### Steps to Fix:
+Both functions are deployed but need CRON schedules configured to run automatically in the background.
+
+### Steps to Configure Background Automation:
 
 1. **Go to Supabase Dashboard**: https://supabase.com/dashboard/project/ucbilksfpnmltrkwvzft
 
 2. **Navigate to Database → Cron Jobs** (or Extensions → pg_cron)
 
-3. **Find the existing CRON job** that calls `daily-5am-report-with-retry`
-
-4. **UPDATE the CRON job** to call the NEW function:
+3. **Delete OLD 5 AM CRON jobs** (if they exist):
    ```sql
-   -- Old (currently running):
+   -- Remove old 5 AM jobs
+   SELECT cron.unschedule('daily-5am-report');
+   SELECT cron.unschedule('background-5am-data-collection');
+   ```
+
+4. **Create NEW 4:45 AM Data Collection CRON job**:
+   ```sql
    SELECT cron.schedule(
-     'daily-6am-report',
-     '0 11 * * *',  -- 6:00 AM EST (11:00 UTC)
+     'background-445am-data-collection',
+     '45 9 * * *',  -- 4:45 AM EST (9:45 AM UTC)
      $$
      SELECT net.http_post(
-       url:='https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/daily-5am-report-with-retry',
+       url:='https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/background-445am-data-collection',
        headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb,
        body:='{}'::jsonb
      ) as request_id;
      $$
    );
-   
-   -- New (should be):
+   ```
+
+5. **Create NEW 6:00 AM Report Generation CRON job**:
+   ```sql
    SELECT cron.schedule(
      'daily-6am-report',
-     '0 11 * * *',  -- 6:00 AM EST (11:00 UTC)
+     '0 11 * * *',  -- 6:00 AM EST (11:00 AM UTC)
      $$
      SELECT net.http_post(
        url:='https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/daily-6am-report-with-retry',
@@ -47,54 +54,85 @@ The 6AM automated report is NOT running because the CRON job is still calling th
    );
    ```
 
-5. **Verify the CRON job is scheduled**:
+6. **Verify both CRON jobs are scheduled**:
    ```sql
-   SELECT * FROM cron.job;
+   SELECT jobid, schedule, command, jobname FROM cron.job;
    ```
 
-## What Was Fixed
+   You should see:
+   - `background-445am-data-collection` scheduled for `45 9 * * *`
+   - `daily-6am-report` scheduled for `0 11 * * *`
 
-### 1. Video Uploader
-- **Problem**: TUS upload was failing with "neither an endpoint or an upload URL is provided"
-- **Solution**: Removed TUS completely and switched to direct Supabase Storage upload
-- **Result**: Instant uploads with paid Supabase - no chunking needed, full quality preserved
+## What Was Implemented
 
-### 2. 6AM Report Function
-- **Problem**: Function exists but CRON job is calling the old `daily-5am-report-with-retry` name
-- **Solution**: 
-  - Redeployed `daily-6am-report-with-retry` with enhanced logging
-  - Added error stack traces for better debugging
-  - Improved data fetching logic for manual triggers
-- **Result**: Function is ready, just needs CRON job update
+### 1. Background Data Collection (4:45 AM)
+- **Function:** `background-445am-data-collection`
+- **Purpose:** Collects multiple buoy readings 15 minutes before report generation
+- **Features:**
+  - Fetches surf/buoy data for all active locations
+  - Fetches weather data for all active locations
+  - Runs in background via Supabase CRON (app can be closed)
+  - 2-second delays between API calls to avoid rate limiting
+  - Comprehensive logging for debugging
+- **Result:** Fresh data available when 6 AM report runs
+
+### 2. Background Report Generation (6:00 AM)
+- **Function:** `daily-6am-report-with-retry`
+- **Purpose:** Generates daily surf reports and sends push notifications
+- **Features:**
+  - Uses data collected at 4:45 AM
+  - Generates witty narrative reports
+  - Sends push notifications to subscribers
+  - Runs in background via Supabase CRON (app can be closed)
+  - Supports manual triggers from admin panel
+- **Result:** Automated daily reports without user interaction
 
 ## Testing
 
-### Test Video Upload:
-1. Open admin panel in app
-2. Select a video
-3. Upload should complete instantly with progress bar
-4. Check console logs for detailed upload progress
+### Test 4:45 AM Data Collection (Manual):
+1. Go to Supabase Dashboard → Edge Functions
+2. Find `background-445am-data-collection`
+3. Click "Invoke" to test manually
+4. Check logs to verify data collection for all locations
 
-### Test 6AM Report (Manual):
+### Test 6 AM Report (Manual):
 1. Go to Admin Data screen in app
 2. Tap "Generate Report" for any location
 3. Should generate report using most recent data
 4. Check logs in Supabase Edge Functions
 
-### Test 6AM Report (Automated):
-1. Update CRON job as described above
-2. Wait until 6:00 AM EST tomorrow
-3. Check Edge Function logs at 6:05 AM EST
-4. Should see `daily-6am-report-with-retry` execution logs
+### Test Automated Background Runs:
+1. Configure CRON jobs as described above
+2. Wait until 4:45 AM EST to verify data collection runs
+3. Wait until 6:00 AM EST to verify report generation runs
+4. Check Edge Function logs after each run
+5. Verify push notifications are sent to subscribers
 
 ## Current Status
-- ✅ Video uploader: FIXED - using instant Supabase Storage upload
-- ✅ 6AM report function: DEPLOYED - version 4 with enhanced logging
-- ⚠️ CRON job: NEEDS UPDATE - still calling old function name
-- ✅ App version: Updated to 10.0.1 build 10
+- ✅ 4:45 AM data collection function: DEPLOYED - version 1
+- ✅ 6:00 AM report function: DEPLOYED - version 14
+- ⚠️ CRON jobs: NEED CONFIGURATION - see steps above
+- ✅ App version: Updated to 11.0.0 build 15
+- ✅ Background execution: READY - functions run server-side via CRON
 
 ## Next Steps
-1. Update CRON job in Supabase Dashboard (see steps above)
-2. Test video upload in TestFlight
-3. Wait for 6AM tomorrow to verify automated report runs
-4. Check Edge Function logs after 6AM to confirm success
+1. **Delete old 5 AM functions** from Supabase Dashboard
+2. **Configure CRON jobs** for 4:45 AM and 6:00 AM (see steps above)
+3. **Test automated runs** by waiting for scheduled times
+4. **Monitor Edge Function logs** to verify successful execution
+5. **Verify push notifications** are sent to subscribers at 6 AM
+
+## 🎯 KEY BENEFITS
+
+### True Background Execution:
+- ✅ Functions run on Supabase servers (not on user's device)
+- ✅ App does NOT need to be open
+- ✅ No battery drain on user's device
+- ✅ Reliable execution every day at scheduled times
+- ✅ Works even if user hasn't opened the app in days
+
+### Data Collection Strategy:
+- ✅ 4:45 AM: Collect multiple buoy readings
+- ✅ 6:00 AM: Generate reports using collected data
+- ✅ 15-minute window ensures fresh, accurate data
+- ✅ Handles buoy reporting schedule variations
