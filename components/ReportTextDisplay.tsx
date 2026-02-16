@@ -38,36 +38,9 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     return parts.length > 0 ? parts : [{ text: inputText, bold: false }];
   };
 
-  const getCondensedReport = (fullText: string): string => {
-    if (isCustom) {
-      return fullText;
-    }
-
-    const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
-    
-    const relevantKeywords = [
-      'rideable', 'ride', 'surfable', 'surf',
-      'wave', 'swell', 'conditions',
-      'good', 'fair', 'poor', 'excellent',
-      'clean', 'choppy', 'glassy',
-      'beginner', 'intermediate', 'advanced',
-      'recommend', 'best', 'ideal'
-    ];
-
-    const relevantSentences = sentences.filter(sentence => {
-      const lowerSentence = sentence.toLowerCase();
-      return relevantKeywords.some(keyword => lowerSentence.includes(keyword));
-    });
-
-    if (relevantSentences.length === 0) {
-      return sentences.slice(0, 3).join(' ').trim();
-    }
-
-    return relevantSentences.slice(0, 4).join(' ').trim();
-  };
-
-  const condensedText = getCondensedReport(text);
-  const sentences = condensedText.match(/[^.!?]+[.!?]+/g) || [condensedText];
+  // 🚨 CRITICAL FIX: Always display the FULL narrative text without condensing
+  // This ensures the superior report narrative (visible on edit report page) is displayed everywhere
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
 
   return (
     <View style={styles.container}>
