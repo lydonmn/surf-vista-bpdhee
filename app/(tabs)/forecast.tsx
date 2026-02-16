@@ -148,11 +148,22 @@ export default function ForecastScreen() {
   };
 
   const combinedForecast: DayForecast[] = React.useMemo(() => {
+    console.log('[ForecastScreen] 🔍 Building combined forecast...');
+    console.log('[ForecastScreen] Surf reports count:', surfReports.length);
+    console.log('[ForecastScreen] Weather forecast count:', weatherForecast.length);
+    console.log('[ForecastScreen] Tide data count:', tideData.length);
+    
     const forecastMap = new Map<string, DayForecast>();
     const today = getTodayDateString();
 
     surfReports.forEach(report => {
       if (report.date >= today) {
+        console.log(`[ForecastScreen] Adding surf report for ${report.date}:`, {
+          surf_height: report.surf_height,
+          wave_height: report.wave_height,
+          wind_speed: report.wind_speed,
+        });
+        
         if (!forecastMap.has(report.date)) {
           forecastMap.set(report.date, {
             date: report.date,
@@ -170,6 +181,14 @@ export default function ForecastScreen() {
 
     weatherForecast.forEach(forecast => {
       if (forecast.date >= today) {
+        console.log(`[ForecastScreen] Adding weather forecast for ${forecast.date}:`, {
+          high_temp: forecast.high_temp,
+          low_temp: forecast.low_temp,
+          conditions: forecast.conditions,
+          prediction_confidence: forecast.prediction_confidence,
+          swell_height_range: forecast.swell_height_range,
+        });
+        
         if (!forecastMap.has(forecast.date)) {
           forecastMap.set(forecast.date, {
             date: forecast.date,
@@ -205,12 +224,23 @@ export default function ForecastScreen() {
       }
     }
 
-    return Array.from(forecastMap.values())
+    const result = Array.from(forecastMap.values())
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 7);
+    
+    console.log('[ForecastScreen] 📊 Final combined forecast:', result.map(d => ({
+      date: d.date,
+      dayName: d.dayName,
+      hasSurfReport: !!d.surfReport,
+      hasWeatherForecast: !!d.weatherForecast,
+      confidence: d.weatherForecast?.prediction_confidence,
+    })));
+    
+    return result;
   }, [surfReports, weatherForecast, tideData]);
 
   const toggleDay = (date: string) => {
+    console.log('[ForecastScreen] Toggling day:', date);
     setExpandedDay(expandedDay === date ? null : date);
   };
 
@@ -233,8 +263,8 @@ export default function ForecastScreen() {
 
   const getConfidenceColor = (confidence: number | null) => {
     if (!confidence) return colors.textSecondary;
-    if (confidence >= 80) return '#22C55E';
-    if (confidence >= 60) return '#FFC107';
+    if (confidence >= 0.8) return '#22C55E';
+    if (confidence >= 0.6) return '#FFC107';
     return '#FF9800';
   };
 
@@ -346,17 +376,27 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
-            const surfHeightValue = (day.surfReport as any)?.surf_height || day.weatherForecast?.swell_height_range;
+            const forecastSwellHeight = day.weatherForecast?.swell_height_range;
+            const surfHeightValue = (day.surfReport as any)?.surf_height;
             const waveHeightValue = day.surfReport?.wave_height;
-            const displayHeight = surfHeightValue || waveHeightValue || 'N/A';
+            const displayHeight = forecastSwellHeight || surfHeightValue || waveHeightValue || 'N/A';
             
             const hasSurfData = displayHeight !== 'N/A';
             const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
             const ratingColor = getStokeColor(dayRating);
             
-            const confidenceValue = day.weatherForecast?.prediction_confidence;
-            const confidenceColor = getConfidenceColor(confidenceValue);
-            const confidenceText = confidenceValue ? `${Math.round(confidenceValue)}%` : 'N/A';
+            const confidenceDecimal = day.weatherForecast?.prediction_confidence;
+            const confidencePercentage = confidenceDecimal ? Math.round(Number(confidenceDecimal) * 100) : null;
+            const confidenceColor = getConfidenceColor(confidenceDecimal);
+            const confidenceText = confidencePercentage ? `${confidencePercentage}%` : 'N/A';
+            
+            console.log(`[ForecastScreen] Rendering ${day.date}:`, {
+              forecastSwellHeight,
+              displayHeight,
+              confidenceDecimal,
+              confidencePercentage,
+              confidenceText,
+            });
 
             const highTempText = formatTemp(day.weatherForecast?.high_temp);
             const lowTempText = formatTemp(day.weatherForecast?.low_temp);
@@ -396,23 +436,23 @@ export default function ForecastScreen() {
                       <View style={styles.detailSection}>
                         <View style={styles.detailRow}>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Surf Height</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>SURF HEIGHT</Text>
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>{displayHeight}</Text>
                           </View>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Period</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>PERIOD</Text>
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>{day.surfReport.wave_period || 'N/A'}</Text>
                           </View>
                         </View>
                         <View style={styles.detailRow}>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Wind</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>WIND</Text>
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>{day.surfReport.wind_speed || 'N/A'}</Text>
                             <Text style={[styles.detailSubvalue, { color: colors.textSecondary }]}>{day.surfReport.wind_direction || ''}</Text>
                           </View>
                           {dayRating && (
                             <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Stoke</Text>
+                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>STOKE</Text>
                               <View style={styles.ratingContainer}>
                                 <Text style={[styles.detailValue, { color: ratingColor }]}>{dayRating}</Text>
                                 <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>/10</Text>
@@ -420,14 +460,14 @@ export default function ForecastScreen() {
                             </View>
                           )}
                         </View>
-                        
-                        {confidenceValue !== null && confidenceValue !== undefined && (
-                          <View style={[styles.confidenceBadge, { backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
-                            <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={16} color={confidenceColor} />
-                            <Text style={[styles.confidenceLabel, { color: theme.colors.text }]}>Forecast Confidence:</Text>
-                            <Text style={[styles.confidenceValue, { color: confidenceColor, fontWeight: 'bold' }]}>{confidenceText}</Text>
-                          </View>
-                        )}
+                      </View>
+                    )}
+                    
+                    {day.weatherForecast && (
+                      <View style={[styles.confidenceBadge, { backgroundColor: confidencePercentage ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
+                        <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={18} color={confidenceColor} />
+                        <Text style={[styles.confidenceLabel, { color: theme.colors.text }]}>Forecast Confidence:</Text>
+                        <Text style={[styles.confidenceValue, { color: confidenceColor }]}>{confidenceText}</Text>
                       </View>
                     )}
 
@@ -435,14 +475,14 @@ export default function ForecastScreen() {
                       <View style={styles.detailSection}>
                         <View style={styles.detailRow}>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Wind</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>WIND</Text>
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                               {day.weatherForecast.wind_speed ? `${day.weatherForecast.wind_speed} mph` : 'N/A'}
                             </Text>
                             <Text style={[styles.detailSubvalue, { color: colors.textSecondary }]}>{day.weatherForecast.wind_direction || ''}</Text>
                           </View>
                           <View style={styles.detailItem}>
-                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Rain</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>RAIN</Text>
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>
                               {day.weatherForecast.precipitation_chance !== null ? `${day.weatherForecast.precipitation_chance}%` : 'N/A'}
                             </Text>
@@ -450,7 +490,7 @@ export default function ForecastScreen() {
                         </View>
                         {day.weatherForecast.conditions && (
                           <View style={[styles.conditionsBox, { backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 122, 255, 0.08)' }]}>
-                            <Text style={[styles.conditionsText, { color: theme.colors.text, fontWeight: '500' }]}>{day.weatherForecast.conditions}</Text>
+                            <Text style={[styles.conditionsText, { color: theme.dark ? '#FFFFFF' : '#1A1A1A' }]}>{day.weatherForecast.conditions}</Text>
                           </View>
                         )}
                       </View>
@@ -460,7 +500,7 @@ export default function ForecastScreen() {
                       <View style={styles.tidesSection}>
                         <View style={styles.tidesHeader}>
                           <IconSymbol ios_icon_name="arrow.up.arrow.down" android_material_icon_name="swap-vert" size={16} color={colors.primary} />
-                          <Text style={[styles.tidesTitle, { color: theme.colors.text }]}>Tides</Text>
+                          <Text style={[styles.tidesTitle, { color: theme.colors.text }]}>TIDES</Text>
                         </View>
                         <View style={styles.tidesGrid}>
                           {day.tides.map((tide, tideIndex) => {
@@ -689,21 +729,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(128, 128, 128, 0.2)',
   },
   confidenceLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   confidenceValue: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     marginLeft: 'auto',
   },
   conditionsBox: {
@@ -716,6 +756,7 @@ const styles = StyleSheet.create({
   conditionsText: {
     fontSize: 15,
     lineHeight: 22,
+    fontWeight: '600',
   },
   tidesSection: {
     gap: 10,
