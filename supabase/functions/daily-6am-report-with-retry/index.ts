@@ -426,6 +426,11 @@ serve(async (req) => {
     console.log('[Daily 6AM Report]    • Frying Pan Shoals (41013): Publishes at :20 and :50');
     console.log('[Daily 6AM Report]    • 4:45 AM collection captures 4:20 AM and 4:50 AM readings');
     console.log('[Daily 6AM Report]    • 6:00 AM report uses most recent data from collection');
+    console.log('[Daily 6AM Report] 📲 PUSH NOTIFICATION INTEGRATION:');
+    console.log('[Daily 6AM Report]    • After report generation, push notifications are sent');
+    console.log('[Daily 6AM Report]    • Only users with daily_report_notifications=true receive them');
+    console.log('[Daily 6AM Report]    • Users can select which locations they want notifications for');
+    console.log('[Daily 6AM Report]    • Notifications include wave height, rating, and summary');
     console.log('[Daily 6AM Report] ═══════════════════════════════════════');
 
     let locationsQuery = supabase
@@ -491,8 +496,12 @@ serve(async (req) => {
       if (result.success) {
         console.log(`[Daily 6AM Report] ✅ ${location.display_name}: SUCCESS`);
         
+        // 🚨 CRITICAL: Send push notifications ONLY for scheduled runs (not manual triggers)
         if (!result.skipped && !isManualTrigger) {
-          console.log(`[Daily 6AM Report] 📲 Sending push notifications for ${location.display_name}...`);
+          console.log(`[Daily 6AM Report] ═══════════════════════════════════════`);
+          console.log(`[Daily 6AM Report] 📲 PUSH NOTIFICATION PHASE`);
+          console.log(`[Daily 6AM Report] 📲 Sending notifications for ${location.display_name}...`);
+          console.log(`[Daily 6AM Report] ═══════════════════════════════════════`);
           
           try {
             const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
@@ -503,15 +512,34 @@ serve(async (req) => {
             });
 
             if (notificationResult.data?.success) {
-              console.log(`[Daily 6AM Report] ✅ Notifications sent: ${notificationResult.data.notificationsSent} users`);
+              console.log(`[Daily 6AM Report] ✅ PUSH NOTIFICATIONS SENT SUCCESSFULLY`);
+              console.log(`[Daily 6AM Report]    • Location: ${location.display_name}`);
+              console.log(`[Daily 6AM Report]    • Date: ${dateStr}`);
+              console.log(`[Daily 6AM Report]    • Users notified: ${notificationResult.data.notificationsSent}`);
+              console.log(`[Daily 6AM Report]    • Total opted-in: ${notificationResult.data.totalOptedIn}`);
+              console.log(`[Daily 6AM Report]    • Eligible users: ${notificationResult.data.eligibleUsers}`);
+              console.log(`[Daily 6AM Report]    • Users without tokens: ${notificationResult.data.usersWithoutValidTokens}`);
+              
+              if (notificationResult.data.notificationsFailed > 0) {
+                console.warn(`[Daily 6AM Report] ⚠️ Some notifications failed: ${notificationResult.data.notificationsFailed}`);
+                if (notificationResult.data.failedUsers && notificationResult.data.failedUsers.length > 0) {
+                  console.warn(`[Daily 6AM Report] Failed users:`, notificationResult.data.failedUsers);
+                }
+              }
             } else {
               console.warn(`[Daily 6AM Report] ⚠️ Notification send failed:`, notificationResult.error);
+              console.warn(`[Daily 6AM Report] ⚠️ Report was generated but notifications were not sent`);
             }
           } catch (notifError) {
             console.error(`[Daily 6AM Report] ❌ Notification error:`, notifError);
+            console.error(`[Daily 6AM Report] ❌ Report was generated but notifications failed`);
           }
+          
+          console.log(`[Daily 6AM Report] ═══════════════════════════════════════`);
         } else if (isManualTrigger) {
-          console.log(`[Daily 6AM Report] ℹ️ Skipping notifications (manual trigger)`);
+          console.log(`[Daily 6AM Report] ℹ️ Skipping notifications (manual trigger from admin panel)`);
+        } else if (result.skipped) {
+          console.log(`[Daily 6AM Report] ℹ️ Skipping notifications (report already existed)`);
         }
       } else {
         console.log(`[Daily 6AM Report] ❌ ${location.display_name}: FAILED - ${result.error}`);

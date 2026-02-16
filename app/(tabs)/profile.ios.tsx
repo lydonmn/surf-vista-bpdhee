@@ -781,6 +781,19 @@ export default function ProfileScreen() {
             <Text style={[styles.notificationDescription, { color: colors.textSecondary }]}>
               Get a push notification at 6 AM EST with your daily surf report summary
             </Text>
+            {dailyNotificationsEnabled && (
+              <View style={[styles.integrationBadge, { backgroundColor: 'rgba(52, 199, 89, 0.1)' }]}>
+                <IconSymbol
+                  ios_icon_name="link.circle.fill"
+                  android_material_icon_name="link"
+                  size={14}
+                  color="#34C759"
+                />
+                <Text style={[styles.integrationBadgeText, { color: '#34C759' }]}>
+                  Linked to 6AM reports
+                </Text>
+              </View>
+            )}
             {notificationPermissionStatus && (
               <Text style={[styles.permissionStatus, { 
                 color: notificationPermissionStatus.granted ? colors.primary : colors.textSecondary 
@@ -1406,6 +1419,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 4,
+  },
+  integrationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  integrationBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   dividerSmall: {
     height: 1,

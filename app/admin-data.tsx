@@ -15,6 +15,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { useLocation } from '@/contexts/LocationContext';
 import { PushNotificationTester } from '@/components/PushNotificationTester';
+import { NotificationIntegrationStatus } from '@/components/NotificationIntegrationStatus';
 import { getESTDate } from '@/utils/surfDataFormatter';
 
 interface DataCounts {
