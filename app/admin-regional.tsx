@@ -38,7 +38,7 @@ interface LocationReport {
 
 export default function RegionalAdminScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const { locations } = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLocationId, setLoadingLocationId] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export default function RegionalAdminScreen() {
       showErrorModal('Access Denied', 'You do not have regional admin privileges');
       router.back();
     }
-  }, [profile]);
+  }, [profile, router]);
 
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     console.log(`[RegionalAdminScreen] ${type.toUpperCase()}: ${message}`);
@@ -354,6 +354,7 @@ export default function RegionalAdminScreen() {
                   <Text style={styles.locationName}>{report.location}</Text>
                   <Text style={styles.locationStatus}>{statusIcon}</Text>
                 </View>
+                
                 <View style={styles.locationDetails}>
                   <Text style={styles.locationDetailText}>Status: {statusText}</Text>
                   <Text style={styles.locationDetailText}>Buoy: {report.buoyId}</Text>
@@ -367,7 +368,7 @@ export default function RegionalAdminScreen() {
                   <Text style={styles.locationDetailText}>Narrative: {report.narrativeLength} chars</Text>
                   <Text style={styles.locationDetailText}>Last Updated: {lastUpdatedText}</Text>
                 </View>
-                
+
                 <View style={styles.locationActions}>
                   <TouchableOpacity
                     style={[styles.locationActionButton, styles.pullDataButton, isLoadingThisLocation && styles.buttonDisabled]}

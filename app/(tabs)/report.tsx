@@ -369,17 +369,7 @@ export default function ReportScreen() {
       refreshData();
       loadLatestVideo();
     }
-  }, [currentLocation]);
-
-  useEffect(() => {
-    console.log('[ReportScreen] Auth state:', {
-      hasUser: !!user,
-      hasProfile: !!profile,
-      isSubscribed,
-      authLoading,
-      isInitialized
-    });
-  }, [user, profile, isSubscribed, authLoading, isInitialized]);
+  }, [currentLocation, isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName]);
 
   const handleRefresh = async () => {
     console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);

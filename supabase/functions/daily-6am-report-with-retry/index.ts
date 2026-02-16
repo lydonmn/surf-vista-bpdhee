@@ -102,6 +102,7 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, locationI
   return messages[seed % messages.length];
 }
 
+// 🚨 CRITICAL FIX: Use surf_height (rideable face) for narrative generation
 function generateWittyNarrative(
   surfConditions: any, 
   captureTime: string, 
@@ -112,16 +113,39 @@ function generateWittyNarrative(
     const locationId = surfConditions.location || 'folly-beach';
     const personality = getLocationPersonality(locationId);
     
+    // 🚨 CRITICAL: Prioritize surf_height (rideable face) over wave_height
     const rideableFaceStr = surfConditions.surf_height || surfConditions.wave_height;
+    
+    console.log('[generateWittyNarrative] ===== NARRATIVE GENERATION =====');
+    console.log('[generateWittyNarrative] Location:', locationId);
+    console.log('[generateWittyNarrative] surf_height:', surfConditions.surf_height);
+    console.log('[generateWittyNarrative] wave_height:', surfConditions.wave_height);
+    console.log('[generateWittyNarrative] Using for narrative:', rideableFaceStr);
+    console.log('[generateWittyNarrative] ===============================');
     
     const waveSensorsOffline = !rideableFaceStr || rideableFaceStr === 'N/A';
     
     if (waveSensorsOffline) {
-      console.log('Wave sensors offline - generating fallback narrative');
+      console.log('[generateWittyNarrative] Wave sensors offline - generating fallback narrative');
       return generateNoWaveDataReportText(weatherData, surfConditions, locationId);
     }
     
-    const waveHeight = parseNumericValue(rideableFaceStr, 0);
+    // Parse the surf height value (handle ranges like "2.5-3.5 ft")
+    let waveHeight = 0;
+    const cleanedStr = String(rideableFaceStr).trim();
+    
+    if (cleanedStr.includes('-')) {
+      // It's a range, take the average
+      const parts = cleanedStr.split('-');
+      const low = parseNumericValue(parts[0], 0);
+      const high = parseNumericValue(parts[1], 0);
+      waveHeight = (low + high) / 2;
+      console.log('[generateWittyNarrative] Parsed range:', { low, high, average: waveHeight });
+    } else {
+      waveHeight = parseNumericValue(rideableFaceStr, 0);
+      console.log('[generateWittyNarrative] Parsed single value:', waveHeight);
+    }
+    
     const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
     const windDir = surfConditions.wind_direction || 'variable';
     const swellDir = formatSwellDirection(surfConditions.swell_direction);
@@ -134,6 +158,17 @@ function generateWittyNarrative(
     
     const rating = calculateSurfRating(surfConditions);
     const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
+
+    console.log('[generateWittyNarrative] Narrative inputs:', {
+      waveHeight,
+      period,
+      windSpeed,
+      windDir,
+      isOffshore,
+      rating,
+      waterTemp,
+      airTemp
+    });
 
     let report = '';
 
@@ -294,26 +329,47 @@ function generateWittyNarrative(
       report += recs[seed % recs.length];
     }
 
+    console.log('[generateWittyNarrative] ✅ Generated narrative:', report.length, 'characters');
+    console.log('[generateWittyNarrative] Preview:', report.substring(0, 150));
+
     return report;
   } catch (error) {
-    console.error('Error generating narrative:', error);
+    console.error('[generateWittyNarrative] ❌ Error generating narrative:', error);
     return 'Unable to generate surf report at this time. Please check back later.';
   }
 }
 
 function calculateSurfRating(surfConditions: any): number {
+  // 🚨 CRITICAL: Use surf_height (rideable face) for rating calculation
   const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height || '0';
   const periodStr = surfConditions.wave_period || '0';
   const windSpeedStr = surfConditions.wind_speed || '0';
   
+  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
+  
   if (surfHeightStr === 'N/A' || surfHeightStr === '') {
-    console.log('Wave sensors offline - returning neutral rating of 5');
+    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
     return 5;
   }
   
-  const surfHeight = parseFloat(surfHeightStr);
-  const period = parseFloat(periodStr);
-  const windSpeed = parseFloat(windSpeedStr);
+  // Parse surf height - handle ranges like "2.5-3.5 ft"
+  let surfHeight = 0;
+  const cleanedStr = String(surfHeightStr).trim();
+  
+  if (cleanedStr.includes('-')) {
+    // It's a range, take the average
+    const parts = cleanedStr.split('-');
+    const low = parseNumericValue(parts[0], 0);
+    const high = parseNumericValue(parts[1], 0);
+    surfHeight = (low + high) / 2;
+    console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
+  } else {
+    surfHeight = parseNumericValue(surfHeightStr, 0);
+    console.log('[calculateSurfRating] Parsed single value:', surfHeight);
+  }
+  
+  const period = parseNumericValue(periodStr, 0);
+  const windSpeed = parseNumericValue(windSpeedStr, 0);
 
   let rating = 3;
 
@@ -333,7 +389,7 @@ function calculateSurfRating(surfConditions: any): number {
   else if (windSpeed > 15) rating -= 2;
 
   const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
-  console.log(`Rating calculation: height=${surfHeight}, period=${period}, wind=${windSpeed} -> rating=${finalRating}`);
+  console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (surf_height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph)`);
   
   return finalRating;
 }
@@ -404,7 +460,6 @@ serve(async (req) => {
     console.log(`[Daily 6AM Report] Processing ${modeText}:`, locationsData.map(l => l.display_name).join(', '));
 
     // 🚨 CRITICAL FIX: Use consistent date calculation method
-    // Get current date in EST timezone using toLocaleDateString for reliability
     const now = new Date();
     const estDateString = now.toLocaleDateString('en-US', { 
       timeZone: 'America/New_York',
@@ -413,12 +468,9 @@ serve(async (req) => {
       day: '2-digit'
     });
     
-    // Parse the date string (format: "MM/DD/YYYY")
     const [month, day, year] = estDateString.split('/');
     const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     
-    console.log('[Daily 6AM Report] 📅 Raw EST date string:', estDateString);
-    console.log('[Daily 6AM Report] 📅 Parsed components:', { month, day, year });
     console.log('[Daily 6AM Report] 📅 Target date (YYYY-MM-DD):', dateStr);
 
     const results = [];
@@ -550,6 +602,7 @@ async function processLocation(
       .eq('location', locationId)
       .maybeSingle();
 
+    // 🚨 CRITICAL FIX: For manual triggers, ALWAYS regenerate (skip the "already exists" check)
     if (existingReport && existingReport.conditions && existingReport.conditions.length > 100 && !isManualTrigger) {
       console.log(`[${locationName}] ✅ Valid report already exists for today - skipping`);
       return {
@@ -569,7 +622,6 @@ async function processLocation(
     if (isManualTrigger) {
       console.log(`[${locationName}] 🔍 Manual trigger: Fetching existing weather data from database...`);
       
-      // 🚨 FIX: Use gte() and order by updated_at to get most recent data
       const { data: weatherDbData, error: weatherDbError } = await supabase
         .from('weather_data')
         .select('*')
@@ -589,7 +641,6 @@ async function processLocation(
       }
     } else {
       // SCHEDULED MODE: Fetch fresh data from APIs
-      // Step 1: Fetch weather data (with retry)
       console.log(`[${locationName}] Step 1: Fetching weather data...`);
       for (let weatherAttempt = 1; weatherAttempt <= 3; weatherAttempt++) {
         try {
@@ -642,7 +693,6 @@ async function processLocation(
       console.log(`[${locationName}] ❌ NOT fetching fresh data from buoy`);
       console.log(`[${locationName}] ═══════════════════════════════════════`);
       
-      // 🚨 FIX: Use gte() instead of eq() to get most recent data, even if from yesterday
       const { data: mostRecentData, error: recentError } = await supabase
         .from('surf_conditions')
         .select('*')
@@ -673,7 +723,6 @@ async function processLocation(
         surfConditions = mostRecentData;
         usedFallbackData = true;
       } else {
-        // No data at all - try looking back further
         console.log(`[${locationName}] ⚠️ No surf_conditions found with gte(), trying any recent data...`);
         
         const { data: anyRecentData, error: anyRecentError } = await supabase
@@ -819,7 +868,6 @@ async function processLocation(
       captureTime: captureTime,
     });
 
-    // 🚨 REMOVED: No longer passing tide data to narrative generation
     const narrative = generateWittyNarrative(
       surfConditions, 
       captureTime, 
@@ -827,17 +875,18 @@ async function processLocation(
       weatherData
     );
 
-    console.log(`[${locationName}] Generated narrative (${narrative.length} characters)`);
+    console.log(`[${locationName}] ✅ Generated narrative (${narrative.length} characters)`);
     console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
 
     const rating = calculateSurfRating(surfConditions);
     console.log(`[${locationName}] Calculated rating: ${rating}/10`);
 
+    // 🚨 CRITICAL FIX: Ensure surf_height is saved to surf_reports table
     const reportData = {
       date: dateStr,
       location: locationId,
       wave_height: surfConditions.wave_height || 'N/A',
-      surf_height: surfConditions.surf_height || surfConditions.wave_height || 'N/A',
+      surf_height: surfConditions.surf_height || surfConditions.wave_height || 'N/A', // ✅ Always save surf_height
       wave_period: surfConditions.wave_period || 'N/A',
       swell_direction: surfConditions.swell_direction || 'N/A',
       wind_speed: surfConditions.wind_speed || 'N/A',
@@ -853,6 +902,8 @@ async function processLocation(
     console.log(`[${locationName}] Report data to save:`, {
       date: reportData.date,
       location: reportData.location,
+      surf_height: reportData.surf_height,
+      wave_height: reportData.wave_height,
       conditions_length: reportData.conditions.length,
       rating: reportData.rating,
     });
@@ -871,7 +922,7 @@ async function processLocation(
     // Verify the save
     const { data: verifyData, error: verifyError } = await supabase
       .from('surf_reports')
-      .select('id, date, location, conditions')
+      .select('id, date, location, surf_height, wave_height, conditions')
       .eq('date', dateStr)
       .eq('location', locationId)
       .maybeSingle();
@@ -879,7 +930,10 @@ async function processLocation(
     if (verifyError) {
       console.error(`[${locationName}] ⚠️ Could not verify save:`, verifyError);
     } else if (verifyData) {
-      console.log(`[${locationName}] ✅ Verified: Report exists in database with ${verifyData.conditions?.length || 0} character narrative`);
+      console.log(`[${locationName}] ✅ Verified: Report exists in database`);
+      console.log(`[${locationName}] ✅ surf_height: ${verifyData.surf_height}`);
+      console.log(`[${locationName}] ✅ wave_height: ${verifyData.wave_height}`);
+      console.log(`[${locationName}] ✅ Narrative: ${verifyData.conditions?.length || 0} characters`);
     } else {
       console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);
     }

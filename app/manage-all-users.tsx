@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TextInput, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { supabase } from '@/app/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@react-navigation/native';
-import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TextInput, TouchableOpacity, Modal } from 'react-native';
 import { router } from 'expo-router';
+import { IconSymbol } from '@/components/IconSymbol';
+import { useState, useEffect, useCallback } from 'react';
+import { useTheme } from '@react-navigation/native';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/app/integrations/supabase/client';
 
 interface UserProfile {
   id: string;
@@ -26,593 +26,321 @@ interface UserStats {
 }
 
 export default function ManageAllUsersScreen() {
-  const { profile, user } = useAuth();
   const theme = useTheme();
+  const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<UserStats>({ total: 0, subscribed: 0, admins: 0 });
-  const [refreshing, setRefreshing] = useState(false);
-  
-  // Modal states
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
-  const [confirmMessage, setConfirmMessage] = useState('');
-  
-  // Month picker modal states
-  const [showMonthPickerModal, setShowMonthPickerModal] = useState(false);
-  const [selectedMonths, setSelectedMonths] = useState(3);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
-  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
-
-  // Check access
-  useEffect(() => {
-    if (user?.email !== 'lydonmn@gmail.com') {
-      console.log('[ManageAllUsers] Access denied - not super admin');
-      showError('Access Denied', 'Only the super admin can access this page.');
-      router.back();
-    }
-  }, [user]);
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmModalMessage, setConfirmModalMessage] = useState('');
+  const [confirmModalAction, setConfirmModalAction] = useState<(() => void) | null>(null);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [successModalTitle, setSuccessModalTitle] = useState('');
+  const [successModalMessage, setSuccessModalMessage] = useState('');
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorModalTitle, setErrorModalTitle] = useState('');
+  const [errorModalMessage, setErrorModalMessage] = useState('');
 
   const fetchUsers = useCallback(async () => {
     try {
-      console.log('[ManageAllUsers] Fetching all users...');
-      setLoading(true);
+      console.log('[ManageAllUsersScreen] Fetching all users...');
+      setIsLoading(true);
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, is_admin, is_regional_admin, is_subscribed, subscription_end_date, created_at, managed_locations')
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[ManageAllUsers] Error fetching users:', error);
-        showError('Error', `Failed to fetch users: ${error.message}`);
+        console.error('[ManageAllUsersScreen] Error fetching users:', error);
+        showError('Error', `Failed to load users: ${error.message}`);
         return;
       }
 
-      console.log('[ManageAllUsers] Fetched users:', data?.length);
+      console.log('[ManageAllUsersScreen] Loaded', data?.length || 0, 'users');
       setUsers(data || []);
       setFilteredUsers(data || []);
-      
-      // Calculate stats
-      const totalUsers = data?.length || 0;
-      const subscribedUsers = data?.filter(u => u.is_subscribed).length || 0;
-      const adminUsers = data?.filter(u => u.is_admin || u.is_regional_admin).length || 0;
-      
+
+      const subscribedCount = data?.filter(u => u.is_subscribed).length || 0;
+      const adminCount = data?.filter(u => u.is_admin || u.is_regional_admin).length || 0;
+
       setStats({
-        total: totalUsers,
-        subscribed: subscribedUsers,
-        admins: adminUsers,
+        total: data?.length || 0,
+        subscribed: subscribedCount,
+        admins: adminCount,
       });
-    } catch (error: any) {
-      console.error('[ManageAllUsers] Error:', error);
-      showError('Error', error.message);
+    } catch (error) {
+      console.error('[ManageAllUsersScreen] Exception fetching users:', error);
+      showError('Error', 'Failed to load users');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    if (!user) {
+      console.log('[ManageAllUsersScreen] No user, redirecting to login');
+      router.replace('/login');
+      return;
+    }
 
-  // Search filter
+    fetchUsers();
+  }, [user, fetchUsers]);
+
   useEffect(() => {
     if (searchTerm.trim() === '') {
       setFilteredUsers(users);
     } else {
-      const lowercaseSearch = searchTerm.toLowerCase();
-      const filtered = users.filter(user =>
-        user.email.toLowerCase().includes(lowercaseSearch)
+      const filtered = users.filter(u =>
+        u.email.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredUsers(filtered);
     }
   }, [searchTerm, users]);
 
   const showSuccess = (title: string, message: string) => {
-    setSuccessMessage(`${title}\n\n${message}`);
-    setShowSuccessModal(true);
+    setSuccessModalTitle(title);
+    setSuccessModalMessage(message);
+    setSuccessModalVisible(true);
   };
 
   const showError = (title: string, message: string) => {
-    setErrorMessage(`${title}\n\n${message}`);
-    setShowErrorModal(true);
+    setErrorModalTitle(title);
+    setErrorModalMessage(message);
+    setErrorModalVisible(true);
   };
 
   const showConfirm = (message: string, action: () => void) => {
-    setConfirmMessage(message);
-    setConfirmAction(() => action);
-    setShowConfirmModal(true);
+    setConfirmModalMessage(message);
+    setConfirmModalAction(() => action);
+    setConfirmModalVisible(true);
   };
 
-  const handleGrantFreeMonths = async (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsers] Opening month picker for:', userEmail);
-    setPendingUserId(userId);
-    setPendingUserEmail(userEmail);
-    setSelectedMonths(3); // Default to 3 months
-    setShowMonthPickerModal(true);
+  const handleGrantFreeMonths = (userId: string, userEmail: string) => {
+    console.log('[ManageAllUsersScreen] Grant free months for:', userEmail);
+    showError('Not Implemented', 'This feature is coming soon');
   };
 
-  const confirmGrantFreeMonths = async () => {
-    if (!pendingUserId || !pendingUserEmail) {
-      console.error('[ManageAllUsers] No pending user for free months');
-      return;
-    }
-
-    const userId = pendingUserId;
-    const userEmail = pendingUserEmail;
-    const months = selectedMonths;
-
-    // Close month picker
-    setShowMonthPickerModal(false);
-    setPendingUserId(null);
-    setPendingUserEmail(null);
-
-    try {
-      console.log(`[ManageAllUsers] Granting ${months} free months to:`, userEmail);
-      
-      // Calculate new end date (N months from now or from current end date)
-      const user = users.find(u => u.id === userId);
-      let newEndDate: Date;
-      
-      if (user?.subscription_end_date && new Date(user.subscription_end_date) > new Date()) {
-        // Extend from current end date
-        newEndDate = new Date(user.subscription_end_date);
-      } else {
-        // Start from today
-        newEndDate = new Date();
-      }
-      
-      // Add N months
-      newEndDate.setMonth(newEndDate.getMonth() + months);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: true,
-          subscription_end_date: newEndDate.toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('[ManageAllUsers] Error granting free months:', error);
-        showError('Error', `Failed to grant free months: ${error.message}`);
-        return;
-      }
-
-      console.log('[ManageAllUsers] ✅ Free months granted');
-      showSuccess(
-        'Success',
-        `Granted ${months} free month${months === 1 ? '' : 's'} to ${userEmail}\n\nNew end date: ${newEndDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-      );
-      await fetchUsers();
-    } catch (error: any) {
-      console.error('[ManageAllUsers] Error:', error);
-      showError('Error', error.message);
-    }
+  const confirmGrantFreeMonths = () => {
+    console.log('[ManageAllUsersScreen] Confirm grant free months');
   };
 
-  const handlePauseSubscription = async (userId: string, userEmail: string) => {
-    showConfirm(
-      `Pause subscription for ${userEmail}?\n\nThis will set is_subscribed to false but keep their end date. They can resume later.`,
-      async () => {
-        try {
-          console.log('[ManageAllUsers] Pausing subscription for:', userEmail);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              is_subscribed: false,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userId);
-
-          if (error) {
-            console.error('[ManageAllUsers] Error pausing subscription:', error);
-            showError('Error', `Failed to pause subscription: ${error.message}`);
-            return;
-          }
-
-          console.log('[ManageAllUsers] ✅ Subscription paused');
-          showSuccess('Success', `Subscription paused for ${userEmail}`);
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
-        }
-      }
-    );
+  const handlePauseSubscription = (userId: string, userEmail: string) => {
+    console.log('[ManageAllUsersScreen] Pause subscription for:', userEmail);
+    showError('Not Implemented', 'This feature is coming soon');
   };
 
-  const handleCancelSubscription = async (userId: string, userEmail: string) => {
-    showConfirm(
-      `Cancel subscription for ${userEmail}?\n\nThis will immediately revoke their access and clear their end date.`,
-      async () => {
-        try {
-          console.log('[ManageAllUsers] Canceling subscription for:', userEmail);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              is_subscribed: false,
-              subscription_end_date: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userId);
-
-          if (error) {
-            console.error('[ManageAllUsers] Error canceling subscription:', error);
-            showError('Error', `Failed to cancel subscription: ${error.message}`);
-            return;
-          }
-
-          console.log('[ManageAllUsers] ✅ Subscription canceled');
-          showSuccess('Success', `Subscription canceled for ${userEmail}`);
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
-        }
-      }
-    );
+  const handleCancelSubscription = (userId: string, userEmail: string) => {
+    console.log('[ManageAllUsersScreen] Cancel subscription for:', userEmail);
+    showError('Not Implemented', 'This feature is coming soon');
   };
 
-  const handleIssueRefund = async (userId: string, userEmail: string) => {
-    showConfirm(
-      `Issue refund for ${userEmail}?\n\nNote: This will mark them as unsubscribed in the app. You must process the actual refund through RevenueCat/Apple/Google separately.`,
-      async () => {
-        try {
-          console.log('[ManageAllUsers] Issuing refund for:', userEmail);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              is_subscribed: false,
-              subscription_end_date: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userId);
-
-          if (error) {
-            console.error('[ManageAllUsers] Error issuing refund:', error);
-            showError('Error', `Failed to issue refund: ${error.message}`);
-            return;
-          }
-
-          console.log('[ManageAllUsers] ✅ Refund processed in app');
-          showSuccess(
-            'Refund Processed',
-            `${userEmail} has been marked as unsubscribed.\n\n⚠️ Remember to process the actual refund through RevenueCat/Apple/Google.`
-          );
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
-        }
-      }
-    );
+  const handleIssueRefund = (userId: string, userEmail: string) => {
+    console.log('[ManageAllUsersScreen] Issue refund for:', userEmail);
+    showError('Not Implemented', 'This feature is coming soon');
   };
 
   const handleToggleAdmin = async (userId: string, userEmail: string, currentStatus: boolean) => {
-    const action = currentStatus ? 'revoke admin' : 'grant admin';
-    showConfirm(
-      `${action.charAt(0).toUpperCase() + action.slice(1)} privileges for ${userEmail}?`,
-      async () => {
-        try {
-          console.log(`[ManageAllUsers] ${action} for:`, userEmail);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .update({
-              is_admin: !currentStatus,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userId);
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Toggling admin status for:', userEmail);
 
-          if (error) {
-            console.error(`[ManageAllUsers] Error ${action}:`, error);
-            showError('Error', `Failed to ${action}: ${error.message}`);
-            return;
-          }
+        const { error } = await supabase
+          .from('profiles')
+          .update({ is_admin: !currentStatus })
+          .eq('id', userId);
 
-          console.log(`[ManageAllUsers] ✅ Admin ${action} successful`);
-          showSuccess('Success', `Admin privileges ${currentStatus ? 'revoked from' : 'granted to'} ${userEmail}`);
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error toggling admin:', error);
+          showError('Error', `Failed to update admin status: ${error.message}`);
+          return;
         }
+
+        showSuccess('Success', `Admin status ${!currentStatus ? 'granted' : 'removed'} for ${userEmail}`);
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception toggling admin:', error);
+        showError('Error', 'Failed to update admin status');
       }
+    };
+
+    showConfirm(
+      `Are you sure you want to ${currentStatus ? 'remove' : 'grant'} admin privileges for ${userEmail}?`,
+      action
     );
   };
 
   const handleDeleteUser = async (userId: string, userEmail: string) => {
-    showConfirm(
-      `⚠️ DELETE USER: ${userEmail}?\n\nThis action CANNOT be undone. All user data will be permanently deleted.`,
-      async () => {
-        try {
-          console.log('[ManageAllUsers] Deleting user:', userEmail);
-          
-          const { error } = await supabase
-            .from('profiles')
-            .delete()
-            .eq('id', userId);
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Deleting user:', userEmail);
 
-          if (error) {
-            console.error('[ManageAllUsers] Error deleting user:', error);
-            showError('Error', `Failed to delete user: ${error.message}`);
-            return;
-          }
+        const { error } = await supabase.auth.admin.deleteUser(userId);
 
-          console.log('[ManageAllUsers] ✅ User deleted');
-          showSuccess('Success', `User ${userEmail} has been permanently deleted.`);
-          await fetchUsers();
-        } catch (error: any) {
-          console.error('[ManageAllUsers] Error:', error);
-          showError('Error', error.message);
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error deleting user:', error);
+          showError('Error', `Failed to delete user: ${error.message}`);
+          return;
         }
+
+        showSuccess('Success', `User ${userEmail} has been deleted`);
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception deleting user:', error);
+        showError('Error', 'Failed to delete user');
       }
+    };
+
+    showConfirm(
+      `Are you sure you want to permanently delete ${userEmail}? This action cannot be undone.`,
+      action
     );
   };
 
   const handleRefresh = () => {
-    setRefreshing(true);
+    console.log('[ManageAllUsersScreen] Refreshing user list');
     fetchUsers();
   };
 
-  const formatDate = (dateString: string | null) => {
+  const formatDate = (dateString: string | null): string => {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return new Date(dateString).toLocaleDateString();
   };
 
-  const getDaysLeft = (endDate: string | null) => {
-    if (!endDate) return null;
+  const getDaysLeft = (endDate: string | null): number => {
+    if (!endDate) return 0;
     const end = new Date(endDate);
     const now = new Date();
     const diffTime = end.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    return Math.max(0, diffDays);
   };
 
-  const getSubscriptionStatus = (user: UserProfile) => {
-    if (!user.is_subscribed) {
-      return { text: 'No Subscription', color: '#9E9E9E' };
-    }
-    
+  const getSubscriptionStatus = (user: UserProfile): string => {
+    if (!user.is_subscribed) return 'Not Subscribed';
     const daysLeft = getDaysLeft(user.subscription_end_date);
-    if (daysLeft === null) {
-      return { text: 'Active', color: '#4CAF50' };
-    }
-    
-    if (daysLeft < 0) {
-      return { text: 'Expired', color: '#F44336' };
-    }
-    
-    return { text: `Active (${daysLeft} days left)`, color: '#4CAF50' };
+    if (daysLeft === 0) return 'Expired';
+    return `Active (${daysLeft} days left)`;
   };
 
   const renderUserCard = ({ item }: { item: UserProfile }) => {
     const subscriptionStatus = getSubscriptionStatus(item);
-    const isCurrentUser = item.id === user?.id;
-    
+    const isActive = item.is_subscribed && getDaysLeft(item.subscription_end_date) > 0;
+    const statusColor = isActive ? '#4CAF50' : item.is_subscribed ? '#FF9800' : '#9E9E9E';
+
     return (
       <View style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
-        {/* User Header */}
         <View style={styles.userHeader}>
-          <View style={styles.userAvatar}>
-            <IconSymbol
-              ios_icon_name="person.fill"
-              android_material_icon_name="person"
-              size={24}
-              color={colors.primary}
-            />
-          </View>
           <View style={styles.userInfo}>
             <Text style={[styles.userEmail, { color: theme.colors.text }]}>
               {item.email}
             </Text>
-            {isCurrentUser && (
-              <Text style={styles.youBadge}>You</Text>
-            )}
-            <Text style={[styles.joinedDate, { color: colors.textSecondary }]}>
-              Joined {formatDate(item.created_at)}
-            </Text>
+            <View style={styles.userBadges}>
+              {item.is_admin && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>Admin</Text>
+                </View>
+              )}
+              {item.is_regional_admin && (
+                <View style={[styles.badge, { backgroundColor: '#9C27B0' }]}>
+                  <Text style={styles.badgeText}>Regional Admin</Text>
+                </View>
+              )}
+            </View>
           </View>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
         </View>
 
-        {/* Subscription Status */}
-        <View style={styles.statusRow}>
-          <View style={[styles.statusBadge, { backgroundColor: subscriptionStatus.color + '20' }]}>
-            <Text style={[styles.statusText, { color: subscriptionStatus.color }]}>
-              {subscriptionStatus.text}
-            </Text>
-          </View>
+        <View style={styles.userDetails}>
+          <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
+            Status: {subscriptionStatus}
+          </Text>
           {item.subscription_end_date && (
-            <Text style={[styles.endDateText, { color: colors.textSecondary }]}>
+            <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
               Ends: {formatDate(item.subscription_end_date)}
             </Text>
           )}
-        </View>
-
-        {/* Admin Badges */}
-        {(item.is_admin || item.is_regional_admin) && (
-          <View style={styles.adminBadges}>
-            {item.is_admin && (
-              <View style={[styles.badge, { backgroundColor: '#9C27B0' }]}>
-                <IconSymbol
-                  ios_icon_name="star.fill"
-                  android_material_icon_name="star"
-                  size={14}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.badgeText}>Super Admin</Text>
-              </View>
-            )}
-            {item.is_regional_admin && (
-              <View style={[styles.badge, { backgroundColor: '#FF9800' }]}>
-                <IconSymbol
-                  ios_icon_name="location.fill"
-                  android_material_icon_name="place"
-                  size={14}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.badgeText}>Regional Admin</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Notifications Status */}
-        <View style={styles.notificationRow}>
-          <IconSymbol
-            ios_icon_name="bell.fill"
-            android_material_icon_name="notifications"
-            size={16}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.notificationText, { color: colors.textSecondary }]}>
-            Notifications: Enabled
+          <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
+            Joined: {formatDate(item.created_at)}
           </Text>
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          {/* Free Months Button */}
+        <View style={styles.userActions}>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#2196F3' }]}
-            onPress={() => handleGrantFreeMonths(item.id, item.email)}
+            style={styles.actionButton}
+            onPress={() => handleToggleAdmin(item.id, item.email, item.is_admin)}
           >
             <IconSymbol
-              ios_icon_name="gift.fill"
-              android_material_icon_name="card_giftcard"
-              size={18}
-              color="#FFFFFF"
+              ios_icon_name={item.is_admin ? 'person.badge.minus' : 'person.badge.plus'}
+              android_material_icon_name={item.is_admin ? 'person-remove' : 'person-add'}
+              size={16}
+              color={colors.primary}
             />
-            <Text style={styles.actionBtnText}>Free Months</Text>
+            <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+              {item.is_admin ? 'Remove Admin' : 'Make Admin'}
+            </Text>
           </TouchableOpacity>
 
-          {/* Pause Button */}
-          {item.is_subscribed && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#FF9800' }]}
-              onPress={() => handlePauseSubscription(item.id, item.email)}
-            >
-              <IconSymbol
-                ios_icon_name="pause.circle.fill"
-                android_material_icon_name="pause"
-                size={18}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionBtnText}>Pause</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Cancel Button */}
-          {item.is_subscribed && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#F44336' }]}
-              onPress={() => handleCancelSubscription(item.id, item.email)}
-            >
-              <IconSymbol
-                ios_icon_name="xmark.circle.fill"
-                android_material_icon_name="cancel"
-                size={18}
-                color="#FFFFFF"
-              />
-              <Text style={styles.actionBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Refund Button */}
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#9C27B0' }]}
-            onPress={() => handleIssueRefund(item.id, item.email)}
+            style={styles.actionButton}
+            onPress={() => handleDeleteUser(item.id, item.email)}
           >
             <IconSymbol
-              ios_icon_name="dollarsign.circle.fill"
-              android_material_icon_name="attach_money"
-              size={18}
-              color="#FFFFFF"
+              ios_icon_name="trash"
+              android_material_icon_name="delete"
+              size={16}
+              color="#FF3B30"
             />
-            <Text style={styles.actionBtnText}>Refund</Text>
+            <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>
+              Delete
+            </Text>
           </TouchableOpacity>
-        </View>
-
-        {/* Secondary Actions */}
-        <View style={styles.secondaryActions}>
-          {!isCurrentUser && (
-            <>
-              <TouchableOpacity
-                style={[styles.secondaryBtn, { borderColor: colors.border }]}
-                onPress={() => handleToggleAdmin(item.id, item.email, item.is_admin)}
-              >
-                <Text style={[styles.secondaryBtnText, { color: theme.colors.text }]}>
-                  {item.is_admin ? 'Revoke Admin' : 'Grant Admin'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.secondaryBtn, styles.deleteBtnBorder]}
-                onPress={() => handleDeleteUser(item.id, item.email)}
-              >
-                <Text style={styles.deleteBtnText}>Delete User</Text>
-              </TouchableOpacity>
-            </>
-          )}
         </View>
       </View>
     );
   };
 
-  if (user?.email !== 'lydonmn@gmail.com') {
-    return null;
-  }
-
-  const monthsText = selectedMonths === 1 ? '1 month' : `${selectedMonths} months`;
-
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.card }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <IconSymbol
             ios_icon_name="chevron.left"
-            android_material_icon_name="arrow-back"
+            android_material_icon_name="chevron-left"
             size={24}
-            color={theme.colors.text}
+            color={colors.primary}
           />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>User Management</Text>
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={handleRefresh}
-          disabled={refreshing}
-        >
-          {refreshing ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
-              size={24}
-              color={colors.primary}
-            />
-          )}
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+          Manage All Users
+        </Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
+          <IconSymbol
+            ios_icon_name="arrow.clockwise"
+            android_material_icon_name="refresh"
+            size={24}
+            color={colors.primary}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: theme.colors.text }]}>{stats.total}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Users</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: '#4CAF50' }]}>{stats.subscribed}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Subscribed</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: colors.primary }]}>{stats.admins}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Admins</Text>
+        </View>
+      </View>
+
       <View style={styles.searchContainer}>
         <IconSymbol
           ios_icon_name="magnifyingglass"
@@ -627,41 +355,11 @@ export default function ManageAllUsersScreen() {
           value={searchTerm}
           onChangeText={setSearchTerm}
         />
-        {searchTerm.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchTerm('')}>
-            <IconSymbol
-              ios_icon_name="xmark.circle.fill"
-              android_material_icon_name="cancel"
-              size={20}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        )}
       </View>
 
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{stats.total}</Text>
-          <Text style={styles.statLabel}>Total Users</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: '#4CAF50' }]}>{stats.subscribed}</Text>
-          <Text style={styles.statLabel}>Subscribed</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statNumber, { color: '#9C27B0' }]}>{stats.admins}</Text>
-          <Text style={styles.statLabel}>Admins</Text>
-        </View>
-      </View>
-
-      {/* User List */}
-      {loading ? (
+      {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading users...
-          </Text>
         </View>
       ) : (
         <FlatList
@@ -669,16 +367,8 @@ export default function ManageAllUsersScreen() {
           renderItem={renderUserCard}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <IconSymbol
-                ios_icon_name="person.slash"
-                android_material_icon_name="person_off"
-                size={48}
-                color={colors.textSecondary}
-              />
+            <View style={styles.emptyState}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                 No users found
               </Text>
@@ -687,113 +377,38 @@ export default function ManageAllUsersScreen() {
         />
       )}
 
-      {/* Month Picker Modal */}
+      {/* Confirm Modal */}
       <Modal
-        visible={showMonthPickerModal}
-        transparent
+        visible={confirmModalVisible}
+        transparent={true}
         animationType="fade"
-        onRequestClose={() => {
-          setShowMonthPickerModal(false);
-          setPendingUserId(null);
-          setPendingUserEmail(null);
-        }}
+        onRequestClose={() => setConfirmModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={[styles.modalIcon, { backgroundColor: '#2196F3' }]}>
-              <IconSymbol
-                ios_icon_name="gift.fill"
-                android_material_icon_name="card_giftcard"
-                size={48}
-                color="#FFFFFF"
-              />
-            </View>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Grant Free Months</Text>
-            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              Select number of free months to grant to {pendingUserEmail}
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Confirm Action
             </Text>
-            
-            {/* Month Selector */}
-            <View style={styles.monthSelector}>
-              <TouchableOpacity
-                style={styles.monthButton}
-                onPress={() => setSelectedMonths(Math.max(1, selectedMonths - 1))}
-              >
-                <IconSymbol
-                  ios_icon_name="minus.circle.fill"
-                  android_material_icon_name="remove_circle"
-                  size={32}
-                  color={colors.primary}
-                />
-              </TouchableOpacity>
-              
-              <View style={styles.monthDisplay}>
-                <Text style={[styles.monthNumber, { color: theme.colors.text }]}>
-                  {selectedMonths}
-                </Text>
-                <Text style={[styles.monthLabel, { color: colors.textSecondary }]}>
-                  {monthsText}
-                </Text>
-              </View>
-              
-              <TouchableOpacity
-                style={styles.monthButton}
-                onPress={() => setSelectedMonths(Math.min(24, selectedMonths + 1))}
-              >
-                <IconSymbol
-                  ios_icon_name="plus.circle.fill"
-                  android_material_icon_name="add_circle"
-                  size={32}
-                  color={colors.primary}
-                />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Quick Select Buttons */}
-            <View style={styles.quickSelectContainer}>
-              <Text style={[styles.quickSelectLabel, { color: colors.textSecondary }]}>
-                Quick select:
-              </Text>
-              <View style={styles.quickSelectButtons}>
-                {[1, 3, 6, 12].map((months) => {
-                  const isSelected = selectedMonths === months;
-                  return (
-                    <TouchableOpacity
-                      key={months}
-                      style={[
-                        styles.quickSelectBtn,
-                        isSelected && { backgroundColor: colors.primary }
-                      ]}
-                      onPress={() => setSelectedMonths(months)}
-                    >
-                      <Text style={[
-                        styles.quickSelectBtnText,
-                        { color: isSelected ? '#FFFFFF' : theme.colors.text }
-                      ]}>
-                        {months}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-            
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              {confirmModalMessage}
+            </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => {
-                  setShowMonthPickerModal(false);
-                  setPendingUserId(null);
-                  setPendingUserEmail(null);
-                }}
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setConfirmModalVisible(false)}
               >
-                <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={confirmGrantFreeMonths}
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => {
+                  setConfirmModalVisible(false);
+                  if (confirmModalAction) {
+                    confirmModalAction();
+                  }
+                }}
               >
-                <Text style={styles.modalButtonText}>Confirm</Text>
+                <Text style={styles.confirmButtonText}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -802,30 +417,30 @@ export default function ManageAllUsersScreen() {
 
       {/* Success Modal */}
       <Modal
-        visible={showSuccessModal}
-        transparent
+        visible={successModalVisible}
+        transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowSuccessModal(false)}
+        onRequestClose={() => setSuccessModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={[styles.modalIcon, { backgroundColor: '#4CAF50' }]}>
-              <IconSymbol
-                ios_icon_name="checkmark.circle.fill"
-                android_material_icon_name="check_circle"
-                size={48}
-                color="#FFFFFF"
-              />
-            </View>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Success</Text>
+            <IconSymbol
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
+              size={48}
+              color="#4CAF50"
+            />
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              {successModalTitle}
+            </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              {successMessage}
+              {successModalMessage}
             </Text>
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: '#4CAF50' }]}
-              onPress={() => setShowSuccessModal(false)}
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={() => setSuccessModalVisible(false)}
             >
-              <Text style={styles.modalButtonText}>OK</Text>
+              <Text style={styles.confirmButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -833,79 +448,31 @@ export default function ManageAllUsersScreen() {
 
       {/* Error Modal */}
       <Modal
-        visible={showErrorModal}
-        transparent
+        visible={errorModalVisible}
+        transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowErrorModal(false)}
+        onRequestClose={() => setErrorModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={[styles.modalIcon, { backgroundColor: '#F44336' }]}>
-              <IconSymbol
-                ios_icon_name="exclamationmark.triangle.fill"
-                android_material_icon_name="error"
-                size={48}
-                color="#FFFFFF"
-              />
-            </View>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Error</Text>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={48}
+              color="#FF3B30"
+            />
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              {errorModalTitle}
+            </Text>
             <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              {errorMessage}
+              {errorModalMessage}
             </Text>
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: '#F44336' }]}
-              onPress={() => setShowErrorModal(false)}
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={() => setErrorModalVisible(false)}
             >
-              <Text style={styles.modalButtonText}>OK</Text>
+              <Text style={styles.confirmButtonText}>OK</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Confirm Modal */}
-      <Modal
-        visible={showConfirmModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowConfirmModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={[styles.modalIcon, { backgroundColor: '#FF9800' }]}>
-              <IconSymbol
-                ios_icon_name="questionmark.circle.fill"
-                android_material_icon_name="help"
-                size={48}
-                color="#FFFFFF"
-              />
-            </View>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Confirm Action</Text>
-            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              {confirmMessage}
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => {
-                  setShowConfirmModal(false);
-                  setConfirmAction(null);
-                }}
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  setShowConfirmModal(false);
-                  if (confirmAction) {
-                    confirmAction();
-                  }
-                  setConfirmAction(null);
-                }}
-              >
-                <Text style={styles.modalButtonText}>Confirm</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -924,207 +491,142 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 48,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    flex: 1,
-    textAlign: 'center',
   },
-  refreshButton: {
-    padding: 8,
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: colors.card,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.card,
     marginHorizontal: 16,
-    marginTop: 16,
+    marginBottom: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     borderRadius: 12,
     gap: 8,
   },
   searchInput: {
     flex: 1,
+    paddingVertical: 12,
     fontSize: 16,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: colors.cardBackground,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  statNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  userCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  userHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  userAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userEmail: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  youBadge: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: 'bold',
-  },
-  joinedDate: {
-    fontSize: 13,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  endDateText: {
-    fontSize: 12,
-  },
-  adminBadges: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  notificationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
-  },
-  notificationText: {
-    fontSize: 13,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  actionBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  secondaryActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  secondaryBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  secondaryBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  deleteBtnBorder: {
-    borderColor: '#F44336',
-  },
-  deleteBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F44336',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    fontSize: 16,
-    marginTop: 12,
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
-  emptyContainer: {
+  emptyState: {
+    padding: 40,
     alignItems: 'center',
-    paddingVertical: 48,
   },
   emptyText: {
     fontSize: 16,
-    marginTop: 12,
+  },
+  userCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+    elevation: 2,
+  },
+  userHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userEmail: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  userBadges: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  badge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  userDetails: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  userDetailText: {
+    fontSize: 13,
+  },
+  userActions: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.highlight,
+    borderRadius: 8,
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -1134,79 +636,22 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    width: '100%',
-    maxWidth: 400,
     borderRadius: 16,
     padding: 24,
+    width: '100%',
+    maxWidth: 400,
     alignItems: 'center',
-  },
-  modalIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    gap: 16,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 12,
+    textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  monthSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
-    marginBottom: 24,
-  },
-  monthButton: {
-    padding: 8,
-  },
-  monthDisplay: {
-    alignItems: 'center',
-    minWidth: 100,
-  },
-  monthNumber: {
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  monthLabel: {
-    fontSize: 16,
-    marginTop: 4,
-  },
-  quickSelectContainer: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  quickSelectLabel: {
-    fontSize: 13,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  quickSelectButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  quickSelectBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 50,
-    alignItems: 'center',
-  },
-  quickSelectBtnText: {
     fontSize: 14,
-    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1215,20 +660,23 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   cancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
+    backgroundColor: colors.highlight,
   },
   cancelButtonText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    backgroundColor: colors.primary,
+  },
+  confirmButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },

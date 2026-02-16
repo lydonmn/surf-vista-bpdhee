@@ -43,7 +43,7 @@ function calculateSurfRating(surfData: any): number {
   let surfHeight = 0;
   const cleanedStr = String(surfHeightStr).trim();
   
-  if (cleanedStr.includes('-')) {{
+  if (cleanedStr.includes('-')) {
     // It's a range, take the average
     const parts = cleanedStr.split('-');
     const low = parseValue(parts[0]);

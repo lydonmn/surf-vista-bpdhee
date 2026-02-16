@@ -30,7 +30,7 @@ interface RegionalAdmin {
 
 export default function AdminUsersScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const { locations } = useLocation();
   const [regionalAdmins, setRegionalAdmins] = useState<RegionalAdmin[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -81,7 +81,7 @@ export default function AdminUsersScreen() {
     }
 
     loadRegionalAdmins();
-  }, [profile, loadRegionalAdmins]);
+  }, [profile, loadRegionalAdmins, router]);
 
   const showErrorModal = (title: string, message: string) => {
     setErrorModalTitle(title);
@@ -157,7 +157,6 @@ export default function AdminUsersScreen() {
         .update({
           is_regional_admin: true,
           managed_locations: selectedLocations,
-          created_by: user?.id || null,
         })
         .eq('id', authData.user.id);
 
