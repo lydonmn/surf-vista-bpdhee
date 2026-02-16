@@ -86,8 +86,10 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, locationI
   // 🚨 FIX: Remove degrees, parentheses, and any "feet" from wind direction for narrative
   const windDirRaw = surfData.wind_direction || 'variable';
   const windDir = windDirRaw
-    .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists
-    .replace(/\s*\([^)]*\)/g, '') // Remove "(20°)" part
+    .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists anywhere
+    .replace(/\s*\d+\s*feet\s*/gi, '') // Remove "20 feet" pattern
+    .replace(/\s*\([^)]*feet[^)]*\)/gi, '') // Remove parentheses containing "feet"
+    .replace(/\s*\([^)]*\)/g, '') // Remove any remaining parentheses like "(20°)"
     .trim();
   const waterTemp = parseNumericValue(surfData.water_temp, 0);
   const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'conditions unknown';
@@ -155,8 +157,10 @@ function generateWittyNarrative(
     // 🚨 FIX: Remove degrees, parentheses, and any "feet" from wind direction for narrative
     const windDirRaw = surfConditions.wind_direction || 'variable';
     const windDir = windDirRaw
-      .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists
-      .replace(/\s*\([^)]*\)/g, '') // Remove "(20°)" part
+      .replace(/\s*feet\s*/gi, '') // Remove "feet" if it exists anywhere
+      .replace(/\s*\d+\s*feet\s*/gi, '') // Remove "20 feet" pattern
+      .replace(/\s*\([^)]*feet[^)]*\)/gi, '') // Remove parentheses containing "feet"
+      .replace(/\s*\([^)]*\)/g, '') // Remove any remaining parentheses like "(20°)"
       .trim();
     const swellDir = formatSwellDirection(surfConditions.swell_direction);
     const period = parseNumericValue(surfConditions.wave_period, 0);
@@ -252,7 +256,7 @@ function generateWittyNarrative(
 
     report += '\n\n';
 
-    // Wind conditions
+    // Wind conditions (windDir already cleaned of "feet" and parentheses above)
     if (isOffshore) {
       if (windSpeed < 5) {
         report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze, glassy conditions.`;

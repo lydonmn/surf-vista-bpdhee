@@ -94,9 +94,11 @@ async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT, re
 function getDirectionFromDegrees(degrees: number): string {
   const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const index = Math.round(degrees / 22.5) % 16;
-  // 🚨 FIX: Ensure only degrees symbol is used, never "feet"
+  // 🚨 CRITICAL FIX: Return ONLY direction and degrees - NO "feet" anywhere
   const degreesValue = Math.round(degrees);
-  return `${directions[index]} (${degreesValue}°)`;
+  const result = `${directions[index]} (${degreesValue}°)`;
+  // Extra safeguard: ensure "feet" never appears
+  return result.replace(/\s*feet\s*/gi, '').replace(/\s*ft\s*/gi, '');
 }
 
 Deno.serve(async (req) => {
@@ -324,7 +326,7 @@ Deno.serve(async (req) => {
       : 'N/A';
     
     const windDir = windDirection !== 999.0 && !isNaN(windDirection)
-      ? getDirectionFromDegrees(windDirection)
+      ? getDirectionFromDegrees(windDirection).replace(/\s*feet\s*/gi, '').replace(/\s*ft\s*/gi, '')
       : 'N/A';
     
     const windSpeedMph = hasWindData
