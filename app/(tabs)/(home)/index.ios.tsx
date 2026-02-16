@@ -434,27 +434,32 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
-  // 🚨 CRITICAL FIX: Display surf_height (rideable face height), not wave_height
+  // 🚨 CRITICAL FIX: Always display surf_height (rideable face height), not wave_height
+  // Priority: surf_conditions (most recent) > todaysReport (stored)
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
   console.log('[HomeScreen] ===== WAVE DATA CHECK =====');
   console.log('[HomeScreen] surfConditions surf_height:', surfConditions?.surf_height);
   console.log('[HomeScreen] surfConditions wave_height:', surfConditions?.wave_height);
+  console.log('[HomeScreen] surfConditions updated_at:', surfConditions?.updated_at);
   console.log('[HomeScreen] todaysReport surf_height:', (todaysReport as any)?.surf_height);
   console.log('[HomeScreen] todaysReport wave_height:', todaysReport?.wave_height);
+  console.log('[HomeScreen] todaysReport updated_at:', todaysReport?.updated_at);
   console.log('[HomeScreen] Final surfHeightValue:', surfHeightValue);
   console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
   console.log('[HomeScreen] ===========================');
   
-  // 🚨 CRITICAL FIX: Prioritize surf_height over wave_height
+  // 🚨 CRITICAL FIX: ALWAYS prioritize surf_height over wave_height for display
+  // Surf height is the rideable face height that surfers care about
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
     : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
       ? waveHeightValue 
       : 'N/A';
   
-  console.log('[HomeScreen] Final surf height display:', surfHeightDisplay);
+  console.log('[HomeScreen] 🏄 Final surf height display:', surfHeightDisplay);
+  console.log('[HomeScreen] Data source:', surfConditions ? 'surf_conditions (real-time buoy)' : 'todaysReport (stored)');
   
   const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
   const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
@@ -472,7 +477,7 @@ export default function HomeScreen() {
   const ratingLabel = 'Stoke Rating';
 
   console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
-  console.log('[HomeScreen] Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
+  console.log('[HomeScreen] 🏄 Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)', ')');
   console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');

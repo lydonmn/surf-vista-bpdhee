@@ -551,6 +551,7 @@ export default function ReportScreen() {
     const labelColor = isDarkMode ? colors.reportLabel : colors.textSecondary;
     const valueColor = isDarkMode ? colors.reportBoldText : colors.text;
     
+    // 🚨 CRITICAL: Always prioritize surf_height over wave_height for display
     const surfHeightValue = displayData.surf_height || displayData.wave_height;
     const surfHeightDisplay = isValidValue(surfHeightValue) ? surfHeightValue : null;
     
@@ -569,8 +570,15 @@ export default function ReportScreen() {
     const swellDirectionValue = displayData.swell_direction;
     const swellDirectionDisplay = isValidValue(swellDirectionValue) ? swellDirectionValue : null;
     
-    console.log('[ReportScreen] Surf height to display:', surfHeightDisplay);
+    console.log('[ReportScreen] ===== DISPLAY DATA CHECK =====');
+    console.log('[ReportScreen] 🏄 Surf height to display:', surfHeightDisplay);
     console.log('[ReportScreen] Wind to display:', windSpeedDisplay, windDirectionDisplay);
+    console.log('[ReportScreen] Water temp to display:', waterTempFormatted);
+    console.log('[ReportScreen] Wave period to display:', wavePeriodDisplay);
+    console.log('[ReportScreen] Swell direction to display:', swellDirectionDisplay);
+    console.log('[ReportScreen] Data source:', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)');
+    console.log('[ReportScreen] Data updated at:', displayData.updated_at);
+    console.log('[ReportScreen] ================================');
     
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
