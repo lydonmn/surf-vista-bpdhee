@@ -94,7 +94,9 @@ async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT, re
 function getDirectionFromDegrees(degrees: number): string {
   const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const index = Math.round(degrees / 22.5) % 16;
-  return `${directions[index]} (${degrees.toFixed(0)}°)`;
+  // 🚨 FIX: Ensure only degrees symbol is used, never "feet"
+  const degreesValue = Math.round(degrees);
+  return `${directions[index]} (${degreesValue}°)`;
 }
 
 Deno.serve(async (req) => {
