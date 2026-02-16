@@ -43,7 +43,7 @@ function calculateSurfRating(surfData: any): number {
   let surfHeight = 0;
   const cleanedStr = String(surfHeightStr).trim();
   
-  if (cleanedStr.includes('-')) {
+  if (cleanedStr.includes('-')) {{
     // It's a range, take the average
     const parts = cleanedStr.split('-');
     const low = parseValue(parts[0]);
@@ -434,6 +434,7 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
   console.log('[HomeScreen] Is from today:', isReportFromToday);
 
+  // 🚨 CRITICAL FIX: Display surf_height (rideable face height), not wave_height
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
@@ -446,13 +447,14 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
   console.log('[HomeScreen] ===========================');
   
-  const waveHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
+  // 🚨 CRITICAL FIX: Prioritize surf_height over wave_height
+  const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
     : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
       ? waveHeightValue 
       : 'N/A';
   
-  console.log('[HomeScreen] Final wave height display:', waveHeightDisplay);
+  console.log('[HomeScreen] Final surf height display:', surfHeightDisplay);
   
   const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
   const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
@@ -470,7 +472,7 @@ export default function HomeScreen() {
   const ratingLabel = 'Stoke Rating';
 
   console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
-  console.log('[HomeScreen] Wave height:', waveHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
+  console.log('[HomeScreen] Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
   console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
   console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
@@ -493,7 +495,7 @@ export default function HomeScreen() {
   const currentConditionsTitle = 'Current Conditions';
   const airTempLabel = 'Air Temp';
   const weatherLabel = 'Weather';
-  const waveHeightLabel = 'Wave Height';
+  const surfHeightLabel = 'Surf Height';
   const windLabel = 'Wind';
   const waterTempLabel = 'Water Temp';
   const surfReportTitle = 'Surf Report';
@@ -702,10 +704,10 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {waveHeightLabel}
+                      {surfHeightLabel}
                     </Text>
                     <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {waveHeightDisplay}
+                      {surfHeightDisplay}
                     </Text>
                   </View>
                 </View>
