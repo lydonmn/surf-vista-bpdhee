@@ -38,15 +38,44 @@ export function selectNarrativeText(report: SurfReport | null | undefined): stri
   console.log('[reportNarrativeSelector] Selected source:', report.report_text ? 'report_text (EDITED)' : report.conditions ? 'conditions (AUTO)' : 'NONE');
   console.log('[reportNarrativeSelector] Selected narrative length:', narrativeText?.length || 0);
   
-  // ✅ CRITICAL FIX: Ensure all numeric values have units
+  // ✅ CRITICAL FIX: Clean up any erroneous "feet" that appears before degree symbols
+  // This fixes the issue where "20°" becomes "20 feet°"
+  if (narrativeText) {
+    // Remove "feet" that appears right before degree symbols (the main bug)
+    narrativeText = narrativeText.replace(/\s*feet\s*°/gi, '°');
+    narrativeText = narrativeText.replace(/\s*ft\s*°/gi, '°');
+    
+    // Remove "feet" from parenthetical degree notations like "(20 feet°)"
+    narrativeText = narrativeText.replace(/\((\d+)\s*feet\s*°\)/gi, '($1°)');
+    narrativeText = narrativeText.replace(/\((\d+)\s*ft\s*°\)/gi, '($1°)');
+    
+    // Clean up any double spaces that might have been created
+    narrativeText = narrativeText.replace(/\s+/g, ' ');
+    
+    console.log('[reportNarrativeSelector] ✅ Cleaned narrative - removed erroneous "feet" before degree symbols');
+  }
+  
+  // ✅ CRITICAL FIX: Ensure all numeric values have units (but NOT for degrees!)
   if (narrativeText) {
     // Fix "surf is 2" -> "surf is 2 feet"
-    narrativeText = narrativeText.replace(/\b(\d+(\.\d+)?)\s*(ft|foot|feet)?\b(?!\s*(ft|foot|feet|mph|seconds|°F|°C|%))/gi, (match, num, decimal, unit) => {
+    // BUT: Exclude numbers followed by ° (degree symbol) or inside parentheses with °
+    narrativeText = narrativeText.replace(/\b(\d+(\.\d+)?)\s*(ft|foot|feet)?\b(?!\s*(ft|foot|feet|mph|seconds|°F|°C|%|°|\)))/gi, (match, num, decimal, unit) => {
       // If unit is already present, keep it
       if (unit) return match;
       
+      // Check if this number is part of a degree notation (e.g., "20°" or "(20°)")
+      const fullText = narrativeText!;
+      const matchIndex = fullText.indexOf(match);
+      const afterMatch = fullText.substring(matchIndex + match.length, matchIndex + match.length + 5);
+      
+      // Skip if followed by degree symbol or closing parenthesis + degree
+      if (afterMatch.match(/^\s*°/) || afterMatch.match(/^\s*\)/) || afterMatch.match(/^\s*\)°/)) {
+        console.log('[reportNarrativeSelector] Skipping unit addition for degree notation:', match);
+        return match;
+      }
+      
       // Check context to determine appropriate unit
-      const beforeMatch = narrativeText!.substring(Math.max(0, narrativeText!.indexOf(match) - 50), narrativeText!.indexOf(match)).toLowerCase();
+      const beforeMatch = fullText.substring(Math.max(0, matchIndex - 50), matchIndex).toLowerCase();
       
       // Wave/surf height context
       if (beforeMatch.includes('wave') || beforeMatch.includes('surf') || beforeMatch.includes('swell') || 
@@ -80,6 +109,15 @@ export function selectNarrativeText(report: SurfReport | null | undefined): stri
     narrativeText = narrativeText.replace(/surf is (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'surf is $1 feet');
     narrativeText = narrativeText.replace(/waves? at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'wave at $1 feet');
     narrativeText = narrativeText.replace(/swell at (\d+(\.\d+)?)\b(?!\s*(ft|foot|feet))/gi, 'swell at $1 feet');
+    
+    // Final cleanup: Remove any remaining "feet" before degree symbols that might have slipped through
+    narrativeText = narrativeText.replace(/\s*feet\s*°/gi, '°');
+    narrativeText = narrativeText.replace(/\s*ft\s*°/gi, '°');
+    narrativeText = narrativeText.replace(/\((\d+)\s*feet\s*°\)/gi, '($1°)');
+    narrativeText = narrativeText.replace(/\((\d+)\s*ft\s*°\)/gi, '($1°)');
+    
+    // Clean up any double spaces
+    narrativeText = narrativeText.replace(/\s+/g, ' ');
   }
   
   console.log('[reportNarrativeSelector] Narrative preview:', narrativeText ? narrativeText.substring(0, 150) + '...' : 'none');
