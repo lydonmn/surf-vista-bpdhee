@@ -346,7 +346,6 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
-            // 🚨 FIX: Prioritize surf_height over wave_height
             const surfHeightValue = (day.surfReport as any)?.surf_height || day.weatherForecast?.swell_height_range;
             const waveHeightValue = day.surfReport?.wave_height;
             const displayHeight = surfHeightValue || waveHeightValue || 'N/A';
@@ -355,7 +354,6 @@ export default function ForecastScreen() {
             const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
             const ratingColor = getStokeColor(dayRating);
             
-            // 🚨 FIX: Get confidence level from weather_forecast
             const confidenceValue = day.weatherForecast?.prediction_confidence;
             const confidenceColor = getConfidenceColor(confidenceValue);
             const confidenceText = confidenceValue ? `${Math.round(confidenceValue)}%` : 'N/A';
@@ -424,10 +422,10 @@ export default function ForecastScreen() {
                         </View>
                         
                         {confidenceValue !== null && confidenceValue !== undefined && (
-                          <View style={[styles.confidenceBadge, { backgroundColor: `${confidenceColor}20` }]}>
-                            <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={14} color={confidenceColor} />
-                            <Text style={[styles.confidenceLabel, { color: colors.textSecondary }]}>Confidence:</Text>
-                            <Text style={[styles.confidenceValue, { color: confidenceColor }]}>{confidenceText}</Text>
+                          <View style={[styles.confidenceBadge, { backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                            <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={16} color={confidenceColor} />
+                            <Text style={[styles.confidenceLabel, { color: theme.colors.text }]}>Forecast Confidence:</Text>
+                            <Text style={[styles.confidenceValue, { color: confidenceColor, fontWeight: 'bold' }]}>{confidenceText}</Text>
                           </View>
                         )}
                       </View>
@@ -451,8 +449,8 @@ export default function ForecastScreen() {
                           </View>
                         </View>
                         {day.weatherForecast.conditions && (
-                          <View style={[styles.conditionsBox, { backgroundColor: colors.highlight }]}>
-                            <Text style={[styles.conditionsText, { color: theme.colors.text }]}>{day.weatherForecast.conditions}</Text>
+                          <View style={[styles.conditionsBox, { backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 122, 255, 0.08)' }]}>
+                            <Text style={[styles.conditionsText, { color: theme.colors.text, fontWeight: '500' }]}>{day.weatherForecast.conditions}</Text>
                           </View>
                         )}
                       </View>
@@ -690,30 +688,34 @@ const styles = StyleSheet.create({
   confidenceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 10,
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(128, 128, 128, 0.2)',
   },
   confidenceLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   confidenceValue: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
+    marginLeft: 'auto',
   },
   conditionsBox: {
-    padding: 12,
+    padding: 14,
     borderRadius: 10,
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(128, 128, 128, 0.15)',
   },
   conditionsText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
   tidesSection: {
     gap: 10,
