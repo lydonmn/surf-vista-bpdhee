@@ -17,6 +17,11 @@ interface UserProfile {
   subscription_end_date: string | null;
   created_at: string;
   managed_locations?: string[];
+  subscription_paused?: boolean;
+  subscription_paused_days?: number;
+  subscription_paused_at?: string;
+  subscription_refunded?: boolean;
+  subscription_refunded_at?: string;
 }
 
 interface UserStats {
@@ -42,6 +47,10 @@ export default function ManageAllUsersScreen() {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
+  const [freeMonthsModalVisible, setFreeMonthsModalVisible] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedUserEmail, setSelectedUserEmail] = useState<string>('');
+  const [freeMonthsInput, setFreeMonthsInput] = useState('');
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -119,27 +128,255 @@ export default function ManageAllUsersScreen() {
   };
 
   const handleGrantFreeMonths = (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsersScreen] Grant free months for:', userEmail);
-    showError('Not Implemented', 'This feature is coming soon');
+    console.log('[ManageAllUsersScreen] Opening free months modal for:', userEmail);
+    setSelectedUserId(userId);
+    setSelectedUserEmail(userEmail);
+    setFreeMonthsInput('');
+    setFreeMonthsModalVisible(true);
   };
 
-  const confirmGrantFreeMonths = () => {
-    console.log('[ManageAllUsersScreen] Confirm grant free months');
+  const confirmGrantFreeMonths = async () => {
+    const months = parseInt(freeMonthsInput);
+    
+    if (isNaN(months) || months <= 0) {
+      showError('Invalid Input', 'Please enter a valid number of months (1 or greater)');
+      return;
+    }
+
+    if (months > 120) {
+      showError('Invalid Input', 'Maximum 120 months (10 years) allowed');
+      return;
+    }
+
+    try {
+      console.log('[ManageAllUsersScreen] Granting', months, 'free months to:', selectedUserEmail);
+      setFreeMonthsModalVisible(false);
+
+      // Get current subscription end date or use today
+      const user = users.find(u => u.id === selectedUserId);
+      let currentEndDate = new Date();
+      
+      if (user?.subscription_end_date) {
+        const existingEndDate = new Date(user.subscription_end_date);
+        // If subscription is still active, extend from end date
+        if (existingEndDate > currentEndDate) {
+          currentEndDate = existingEndDate;
+        }
+      }
+
+      // Add the free months
+      const newEndDate = new Date(currentEndDate);
+      newEndDate.setMonth(newEndDate.getMonth() + months);
+
+      // Update the user's subscription
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_subscribed: true,
+          subscription_end_date: newEndDate.toISOString(),
+        })
+        .eq('id', selectedUserId);
+
+      if (error) {
+        console.error('[ManageAllUsersScreen] Error granting free months:', error);
+        showError('Error', `Failed to grant free months: ${error.message}`);
+        return;
+      }
+
+      showSuccess(
+        'Free Months Granted',
+        `Successfully granted ${months} free month${months > 1 ? 's' : ''} to ${selectedUserEmail}.\n\nNew subscription end date: ${newEndDate.toLocaleDateString()}`
+      );
+      await fetchUsers();
+    } catch (error) {
+      console.error('[ManageAllUsersScreen] Exception granting free months:', error);
+      showError('Error', 'Failed to grant free months');
+    }
   };
 
-  const handlePauseSubscription = (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsersScreen] Pause subscription for:', userEmail);
-    showError('Not Implemented', 'This feature is coming soon');
+  const handlePauseSubscription = async (userId: string, userEmail: string) => {
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Pausing subscription for:', userEmail);
+
+        // Get current subscription end date
+        const user = users.find(u => u.id === userId);
+        if (!user?.subscription_end_date) {
+          showError('Error', 'User does not have an active subscription');
+          return;
+        }
+
+        const endDate = new Date(user.subscription_end_date);
+        const now = new Date();
+        const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (daysRemaining <= 0) {
+          showError('Error', 'Subscription has already expired');
+          return;
+        }
+
+        // Store the paused state and remaining days
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            subscription_paused: true,
+            subscription_paused_days: daysRemaining,
+            subscription_paused_at: now.toISOString(),
+          })
+          .eq('id', userId);
+
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error pausing subscription:', error);
+          showError('Error', `Failed to pause subscription: ${error.message}`);
+          return;
+        }
+
+        showSuccess(
+          'Subscription Paused',
+          `Subscription paused for ${userEmail}.\n\n${daysRemaining} days will be preserved and can be resumed later.`
+        );
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception pausing subscription:', error);
+        showError('Error', 'Failed to pause subscription');
+      }
+    };
+
+    showConfirm(
+      `Are you sure you want to pause the subscription for ${userEmail}?\n\nThe remaining subscription time will be preserved and can be resumed later.`,
+      action
+    );
   };
 
-  const handleCancelSubscription = (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsersScreen] Cancel subscription for:', userEmail);
-    showError('Not Implemented', 'This feature is coming soon');
+  const handleResumeSubscription = async (userId: string, userEmail: string) => {
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Resuming subscription for:', userEmail);
+
+        const user = users.find(u => u.id === userId);
+        if (!user?.subscription_paused || !user.subscription_paused_days) {
+          showError('Error', 'User does not have a paused subscription');
+          return;
+        }
+
+        // Calculate new end date by adding the paused days to today
+        const now = new Date();
+        const newEndDate = new Date(now);
+        newEndDate.setDate(newEndDate.getDate() + user.subscription_paused_days);
+
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            is_subscribed: true,
+            subscription_end_date: newEndDate.toISOString(),
+            subscription_paused: false,
+            subscription_paused_days: null,
+            subscription_paused_at: null,
+          })
+          .eq('id', userId);
+
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error resuming subscription:', error);
+          showError('Error', `Failed to resume subscription: ${error.message}`);
+          return;
+        }
+
+        showSuccess(
+          'Subscription Resumed',
+          `Subscription resumed for ${userEmail}.\n\n${user.subscription_paused_days} days have been restored.\nNew end date: ${newEndDate.toLocaleDateString()}`
+        );
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception resuming subscription:', error);
+        showError('Error', 'Failed to resume subscription');
+      }
+    };
+
+    showConfirm(
+      `Resume subscription for ${userEmail}?\n\nTheir preserved subscription time will be restored starting from today.`,
+      action
+    );
   };
 
-  const handleIssueRefund = (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsersScreen] Issue refund for:', userEmail);
-    showError('Not Implemented', 'This feature is coming soon');
+  const handleCancelSubscription = async (userId: string, userEmail: string) => {
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Cancelling subscription for:', userEmail);
+
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            is_subscribed: false,
+            subscription_end_date: null,
+            subscription_paused: false,
+            subscription_paused_days: null,
+            subscription_paused_at: null,
+          })
+          .eq('id', userId);
+
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error cancelling subscription:', error);
+          showError('Error', `Failed to cancel subscription: ${error.message}`);
+          return;
+        }
+
+        showSuccess(
+          'Subscription Cancelled',
+          `Subscription cancelled for ${userEmail}.\n\nThe user will no longer have access to premium features.`
+        );
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception cancelling subscription:', error);
+        showError('Error', 'Failed to cancel subscription');
+      }
+    };
+
+    showConfirm(
+      `Are you sure you want to cancel the subscription for ${userEmail}?\n\nThis will immediately revoke their premium access.`,
+      action
+    );
+  };
+
+  const handleIssueRefund = async (userId: string, userEmail: string) => {
+    const action = async () => {
+      try {
+        console.log('[ManageAllUsersScreen] Issuing refund for:', userEmail);
+
+        // Cancel the subscription and mark as refunded
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            is_subscribed: false,
+            subscription_end_date: null,
+            subscription_paused: false,
+            subscription_paused_days: null,
+            subscription_paused_at: null,
+            subscription_refunded: true,
+            subscription_refunded_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+
+        if (error) {
+          console.error('[ManageAllUsersScreen] Error issuing refund:', error);
+          showError('Error', `Failed to issue refund: ${error.message}`);
+          return;
+        }
+
+        showSuccess(
+          'Refund Issued',
+          `Refund processed for ${userEmail}.\n\nTheir subscription has been cancelled and marked as refunded.\n\nNote: You must manually process the actual refund through your payment provider (RevenueCat/Stripe/Apple/Google).`
+        );
+        await fetchUsers();
+      } catch (error) {
+        console.error('[ManageAllUsersScreen] Exception issuing refund:', error);
+        showError('Error', 'Failed to issue refund');
+      }
+    };
+
+    showConfirm(
+      `Are you sure you want to issue a refund for ${userEmail}?\n\nThis will cancel their subscription and mark it as refunded.\n\nIMPORTANT: You must manually process the actual refund through your payment provider.`,
+      action
+    );
   };
 
   const handleToggleAdmin = async (userId: string, userEmail: string, currentStatus: boolean) => {
@@ -218,17 +455,34 @@ export default function ManageAllUsersScreen() {
     return Math.max(0, diffDays);
   };
 
-  const getSubscriptionStatus = (userProfile: UserProfile): string => {
-    if (!userProfile.is_subscribed) return 'Not Subscribed';
-    const daysLeft = getDaysLeft(userProfile.subscription_end_date);
+  const getSubscriptionStatus = (user: UserProfile): string => {
+    if (user.subscription_paused) {
+      const pausedDays = user.subscription_paused_days || 0;
+      return `Paused (${pausedDays} days saved)`;
+    }
+    if (user.subscription_refunded) {
+      return 'Refunded';
+    }
+    if (!user.is_subscribed) return 'Not Subscribed';
+    const daysLeft = getDaysLeft(user.subscription_end_date);
     if (daysLeft === 0) return 'Expired';
     return `Active (${daysLeft} days left)`;
   };
 
   const renderUserCard = ({ item }: { item: UserProfile }) => {
     const subscriptionStatus = getSubscriptionStatus(item);
-    const isActive = item.is_subscribed && getDaysLeft(item.subscription_end_date) > 0;
-    const statusColor = isActive ? '#4CAF50' : item.is_subscribed ? '#FF9800' : '#9E9E9E';
+    const isActive = item.is_subscribed && getDaysLeft(item.subscription_end_date) > 0 && !item.subscription_paused;
+    const isPaused = item.subscription_paused;
+    const isRefunded = item.subscription_refunded;
+    
+    let statusColor = '#9E9E9E'; // Default: Not subscribed
+    if (isRefunded) {
+      statusColor = '#9C27B0'; // Purple for refunded
+    } else if (isPaused) {
+      statusColor = '#FF9800'; // Orange for paused
+    } else if (isActive) {
+      statusColor = '#4CAF50'; // Green for active
+    }
 
     return (
       <View style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
@@ -257,9 +511,19 @@ export default function ManageAllUsersScreen() {
           <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
             Status: {subscriptionStatus}
           </Text>
-          {item.subscription_end_date && (
+          {item.subscription_end_date && !item.subscription_paused && (
             <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
               Ends: {formatDate(item.subscription_end_date)}
+            </Text>
+          )}
+          {item.subscription_paused_at && (
+            <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
+              Paused: {formatDate(item.subscription_paused_at)}
+            </Text>
+          )}
+          {item.subscription_refunded_at && (
+            <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
+              Refunded: {formatDate(item.subscription_refunded_at)}
             </Text>
           )}
           <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
@@ -268,6 +532,92 @@ export default function ManageAllUsersScreen() {
         </View>
 
         <View style={styles.userActions}>
+          {/* Subscription Management Actions */}
+          {item.subscription_paused ? (
+            // Show Resume button for paused subscriptions
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleResumeSubscription(item.id, item.email)}
+            >
+              <IconSymbol
+                ios_icon_name="play.circle"
+                android_material_icon_name="play-circle"
+                size={16}
+                color="#4CAF50"
+              />
+              <Text style={[styles.actionButtonText, { color: '#4CAF50' }]}>
+                Resume
+              </Text>
+            </TouchableOpacity>
+          ) : item.is_subscribed && !item.subscription_refunded ? (
+            // Show Pause, Cancel, Refund for active subscriptions
+            <>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handlePauseSubscription(item.id, item.email)}
+              >
+                <IconSymbol
+                  ios_icon_name="pause.circle"
+                  android_material_icon_name="pause-circle"
+                  size={16}
+                  color="#FF9800"
+                />
+                <Text style={[styles.actionButtonText, { color: '#FF9800' }]}>
+                  Pause
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleCancelSubscription(item.id, item.email)}
+              >
+                <IconSymbol
+                  ios_icon_name="xmark.circle"
+                  android_material_icon_name="cancel"
+                  size={16}
+                  color="#FF3B30"
+                />
+                <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleIssueRefund(item.id, item.email)}
+              >
+                <IconSymbol
+                  ios_icon_name="dollarsign.circle"
+                  android_material_icon_name="payment"
+                  size={16}
+                  color="#9C27B0"
+                />
+                <Text style={[styles.actionButtonText, { color: '#9C27B0' }]}>
+                  Refund
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          {/* Free Months Action - Available for all users except refunded */}
+          {!item.subscription_refunded && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleGrantFreeMonths(item.id, item.email)}
+            >
+              <IconSymbol
+                ios_icon_name="gift"
+                android_material_icon_name="card-giftcard"
+                size={16}
+                color="#4CAF50"
+              />
+              <Text style={[styles.actionButtonText, { color: '#4CAF50' }]}>
+                Free Months
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Admin Management Actions */}
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleToggleAdmin(item.id, item.email, item.is_admin)}
@@ -476,6 +826,73 @@ export default function ManageAllUsersScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Free Months Modal */}
+      <Modal
+        visible={freeMonthsModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setFreeMonthsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.freeMonthsModalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.freeMonthsHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                Grant Free Months
+              </Text>
+              <TouchableOpacity onPress={() => setFreeMonthsModalVisible(false)}>
+                <IconSymbol
+                  ios_icon_name="xmark.circle.fill"
+                  android_material_icon_name="close"
+                  size={28}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.freeMonthsUserEmail, { color: colors.textSecondary }]}>
+              {selectedUserEmail}
+            </Text>
+
+            <Text style={[styles.freeMonthsLabel, { color: theme.colors.text }]}>
+              Number of Free Months
+            </Text>
+            <TextInput
+              style={[styles.freeMonthsInput, { 
+                color: theme.colors.text,
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+              }]}
+              placeholder="Enter number (1-120)"
+              placeholderTextColor={colors.textSecondary}
+              value={freeMonthsInput}
+              onChangeText={setFreeMonthsInput}
+              keyboardType="number-pad"
+              autoFocus
+            />
+
+            <Text style={[styles.freeMonthsHelperText, { color: colors.textSecondary }]}>
+              This will extend their subscription by the specified number of months.
+              If they already have an active subscription, the time will be added to their current end date.
+            </Text>
+
+            <View style={styles.freeMonthsActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setFreeMonthsModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={confirmGrantFreeMonths}
+              >
+                <Text style={styles.confirmButtonText}>Grant</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -679,5 +1096,43 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  freeMonthsModalContent: {
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  freeMonthsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  freeMonthsUserEmail: {
+    fontSize: 14,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  freeMonthsLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  freeMonthsInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  freeMonthsHelperText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  freeMonthsActions: {
+    flexDirection: 'row',
+    gap: 12,
   },
 });
