@@ -83,7 +83,9 @@ function selectRandom<T>(array: T[]): T {
 function generateNoWaveDataReportText(weatherData: any, surfData: any, locationId: string): string {
   const personality = getLocationPersonality(locationId);
   const windSpeed = parseNumericValue(surfData.wind_speed, 0);
-  const windDir = surfData.wind_direction || 'variable';
+  // 🚨 FIX: Remove degrees and parentheses from wind direction for narrative
+  const windDirRaw = surfData.wind_direction || 'variable';
+  const windDir = windDirRaw.replace(/\s*\([^)]*\)/g, '').trim(); // Remove "(20°)" part
   const waterTemp = parseNumericValue(surfData.water_temp, 0);
   const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'conditions unknown';
   
@@ -147,7 +149,9 @@ function generateWittyNarrative(
     }
     
     const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
-    const windDir = surfConditions.wind_direction || 'variable';
+    // 🚨 FIX: Remove degrees and parentheses from wind direction for narrative
+    const windDirRaw = surfConditions.wind_direction || 'variable';
+    const windDir = windDirRaw.replace(/\s*\([^)]*\)/g, '').trim(); // Remove "(20°)" part
     const swellDir = formatSwellDirection(surfConditions.swell_direction);
     const period = parseNumericValue(surfConditions.wave_period, 0);
     const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
