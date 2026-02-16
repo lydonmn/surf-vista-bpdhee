@@ -36,27 +36,28 @@ export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
     const singleParagraph = paragraphs[0];
     const sections: string[] = [];
     
-    // Try to split by common transition phrases
+    // 🚨 CRITICAL FIX: Use lookbehind to capture the period with the sentence
+    // This prevents periods from being carried to the next paragraph
     const transitionPatterns = [
-      /\.\s+(?=Waist|Chest|Overhead|Knee|Ankle|Essentially)/,
-      /\.\s+(?=Long|Short|Quick|\d+-second)/,
-      /\.\s+(?=Light|Calm|Strong|Howling|\d+\s*mph)/,
-      /\.\s+(?=Mostly|Partly|Clear|Sunny|Cloudy)/,
-      /\.\s+(?=Worth|Get|Drop|Don't|Save|Decent|Small)/,
+      /(?<=\.)\s+(?=Waist|Chest|Overhead|Knee|Ankle|Essentially)/,
+      /(?<=\.)\s+(?=Long|Short|Quick|\d+-second)/,
+      /(?<=\.)\s+(?=Light|Calm|Strong|Howling|\d+\s*mph)/,
+      /(?<=\.)\s+(?=Mostly|Partly|Clear|Sunny|Cloudy)/,
+      /(?<=\.)\s+(?=Worth|Get|Drop|Don't|Save|Decent|Small)/,
     ];
     
     let remainingText = singleParagraph;
-    let lastSplit = 0;
     
     for (const pattern of transitionPatterns) {
       const match = remainingText.match(pattern);
       if (match && match.index !== undefined) {
-        const splitPoint = match.index + match[0].length - match[0].trimStart().length;
-        const section = remainingText.substring(0, splitPoint).trim();
+        // Split at the match position (which is after the period)
+        const section = remainingText.substring(0, match.index).trim();
         if (section.length > 0) {
           sections.push(section);
         }
-        remainingText = remainingText.substring(splitPoint).trim();
+        // Continue with the rest of the text (after the whitespace)
+        remainingText = remainingText.substring(match.index + match[0].length).trim();
       }
     }
     
@@ -68,6 +69,8 @@ export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
     if (sections.length > 1) {
       console.log('[ReportTextDisplay] ✅ Split into', sections.length, 'sections using pattern matching');
       console.log('[ReportTextDisplay] Section lengths:', sections.map(s => s.length));
+      console.log('[ReportTextDisplay] First section ends with:', sections[0].slice(-20));
+      console.log('[ReportTextDisplay] Second section starts with:', sections[1].slice(0, 20));
       
       return (
         <View style={[styles.container, style]}>
