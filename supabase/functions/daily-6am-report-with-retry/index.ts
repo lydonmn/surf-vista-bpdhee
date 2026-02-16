@@ -80,16 +80,7 @@ function selectRandom<T>(array: T[]): T {
   return array[index];
 }
 
-function generateTideSummary(tideData: any[]): string {
-  if (tideData.length === 0) {
-    return 'Tide data unavailable';
-  }
-
-  const tides = tideData.map(t => `${t.type} at ${t.time} (${t.height}${t.height_unit})`);
-  return tides.join(', ');
-}
-
-function generateNoWaveDataReportText(weatherData: any, surfData: any, tideData: any[], locationId: string): string {
+function generateNoWaveDataReportText(weatherData: any, surfData: any, locationId: string): string {
   const personality = getLocationPersonality(locationId);
   const windSpeed = parseNumericValue(surfData.wind_speed, 0);
   const windDir = surfData.wind_direction || 'variable';
@@ -115,8 +106,7 @@ function generateWittyNarrative(
   surfConditions: any, 
   captureTime: string, 
   date: string,
-  weatherData: any = null,
-  tideData: any[] = []
+  weatherData: any = null
 ): string {
   try {
     const locationId = surfConditions.location || 'folly-beach';
@@ -128,7 +118,7 @@ function generateWittyNarrative(
     
     if (waveSensorsOffline) {
       console.log('Wave sensors offline - generating fallback narrative');
-      return generateNoWaveDataReportText(weatherData, surfConditions, tideData, locationId);
+      return generateNoWaveDataReportText(weatherData, surfConditions, locationId);
     }
     
     const waveHeight = parseNumericValue(rideableFaceStr, 0);
@@ -147,6 +137,7 @@ function generateWittyNarrative(
 
     let report = '';
 
+    // Opening statement based on rating
     if (rating >= 8) {
       const openings = [
         `${personality.excited[seed % personality.excited.length]} today!`,
@@ -179,6 +170,7 @@ function generateWittyNarrative(
 
     report += '\n\n';
 
+    // Wave height and swell description
     if (waveHeight >= 7) {
       report += `Overhead sets rolling in from the ${swellDir}`;
       if (waveHeight >= 10) {
@@ -200,6 +192,7 @@ function generateWittyNarrative(
     
     report += '. ';
 
+    // Period description
     if (period >= 12) {
       report += `Long ${period.toFixed(0)}-second intervals mean powerful groundswell with clean sets and long rides.`;
     } else if (period >= 10) {
@@ -214,6 +207,7 @@ function generateWittyNarrative(
 
     report += '\n\n';
 
+    // Wind conditions
     if (isOffshore) {
       if (windSpeed < 5) {
         report += `Light ${windSpeed.toFixed(0)} mph ${windDir} breeze, glassy conditions.`;
@@ -242,6 +236,7 @@ function generateWittyNarrative(
 
     report += '\n\n';
 
+    // Weather and water temperature
     const airTempText = airTemp > 0 ? `${airTemp.toFixed(0)}°F` : '';
     const waterTempText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : '';
     
@@ -253,6 +248,7 @@ function generateWittyNarrative(
       report += `${weatherConditions}. `;
     }
     
+    // Wetsuit recommendation
     if (waterTemp >= 75) {
       report += `Boardshorts weather.`;
     } else if (waterTemp >= 68) {
@@ -265,55 +261,9 @@ function generateWittyNarrative(
       report += `5/4mm with hood, gloves, and booties, it's cold.`;
     }
 
-    if (tideData && tideData.length > 0) {
-      report += '\n\n';
-      
-      const now = new Date();
-      const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-      const currentTimeStr = estNow.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false,
-        timeZone: 'America/New_York'
-      });
-      
-      let tidePhase = '';
-      for (let i = 0; i < tideData.length - 1; i++) {
-        const currentTide = tideData[i];
-        const nextTide = tideData[i + 1];
-        
-        if (currentTimeStr >= currentTide.time && currentTimeStr < nextTide.time) {
-          if (currentTide.type.toLowerCase() === 'low') {
-            tidePhase = `Tide is coming in`;
-          } else {
-            tidePhase = `Tide is going out`;
-          }
-          break;
-        }
-      }
-      
-      if (tidePhase) {
-        report += `${tidePhase}. `;
-      }
-      
-      const tideList = tideData.map(t => {
-        const height = parseNumericValue(t.height, 0);
-        return `${t.type} at ${t.time} (${height.toFixed(1)}ft)`;
-      }).join(', ');
-      
-      report += `Tides today: ${tideList}.`;
-      
-      if (waveHeight >= 4) {
-        report += ` Mid to high tide will be best for this size.`;
-      } else if (waveHeight >= 2) {
-        report += ` Mid tide usually works best.`;
-      } else {
-        report += ` Low to mid tide might give you the best shot.`;
-      }
-    }
-
     report += '\n\n';
 
+    // Final recommendation based on rating
     if (rating >= 8) {
       const recs = [
         `Get out there! This is what you've been waiting for.`,
@@ -615,10 +565,9 @@ async function processLocation(
 
     // 🚨 CRITICAL FIX: For manual triggers, fetch existing data from database
     let weatherData = null;
-    let tideDataArray: any[] = [];
     
     if (isManualTrigger) {
-      console.log(`[${locationName}] 🔍 Manual trigger: Fetching existing weather and tide data from database...`);
+      console.log(`[${locationName}] 🔍 Manual trigger: Fetching existing weather data from database...`);
       
       // Fetch weather data from database
       const { data: weatherDbData, error: weatherDbError } = await supabase
@@ -635,23 +584,6 @@ async function processLocation(
         weatherData = weatherDbData;
       } else {
         console.log(`[${locationName}] ⚠️ No weather data found for today, will use defaults`);
-      }
-      
-      // Fetch tide data from database
-      const { data: tideDbData, error: tideDbError } = await supabase
-        .from('tide_data')
-        .select('*')
-        .eq('date', dateStr)
-        .eq('location', locationId)
-        .order('time');
-      
-      if (tideDbError) {
-        console.warn(`[${locationName}] ⚠️ Error fetching tide data:`, tideDbError);
-      } else if (tideDbData && tideDbData.length > 0) {
-        console.log(`[${locationName}] ✅ Found ${tideDbData.length} tide entries in database`);
-        tideDataArray = tideDbData;
-      } else {
-        console.log(`[${locationName}] ⚠️ No tide data found for today`);
       }
     } else {
       // SCHEDULED MODE: Fetch fresh data from APIs
@@ -688,42 +620,6 @@ async function processLocation(
           }
         } catch (weatherError: any) {
           console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} failed:`, weatherError);
-        }
-      }
-
-      // Step 2: Fetch tide data (with retry)
-      console.log(`[${locationName}] Step 2: Fetching tide data...`);
-      for (let tideAttempt = 1; tideAttempt <= 3; tideAttempt++) {
-        try {
-          const { data: tideResult, error: tideError } = await supabase.functions.invoke('fetch-tide-data', {
-            body: { location: locationId },
-          });
-
-          if (tideError) {
-            console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} warning:`, tideError);
-          } else if (tideResult?.success) {
-            console.log(`[${locationName}] ✅ Tide data fetched on attempt ${tideAttempt}`);
-            
-            await delay(1000);
-            
-            const { data: tideDbData } = await supabase
-              .from('tide_data')
-              .select('*')
-              .eq('date', dateStr)
-              .eq('location', locationId)
-              .order('time');
-            
-            if (tideDbData && tideDbData.length > 0) {
-              tideDataArray = tideDbData;
-              break;
-            }
-          }
-          
-          if (tideAttempt < 3) {
-            await delay(2000);
-          }
-        } catch (tideError: any) {
-          console.warn(`[${locationName}] Tide fetch attempt ${tideAttempt} failed:`, tideError);
         }
       }
     }
@@ -903,7 +799,6 @@ async function processLocation(
     console.log(`[${locationName}] Data source: ${usedFallbackData ? 'Most recent available data' : 'Fresh data'}`);
     console.log(`[${locationName}] Wave sensors status: ${hasValidWaveData ? 'ONLINE ✅' : 'OFFLINE ⚠️'}`);
     console.log(`[${locationName}] Weather data available:`, !!weatherData);
-    console.log(`[${locationName}] Tide data entries:`, tideDataArray.length);
     console.log(`[${locationName}] Surf conditions to use:`, {
       wave_height: surfConditions.wave_height,
       surf_height: surfConditions.surf_height,
@@ -923,17 +818,16 @@ async function processLocation(
 
     console.log(`[${locationName}] 📝 Generating narrative with:`, {
       hasWeatherData: !!weatherData,
-      hasTideData: tideDataArray.length > 0,
       hasSurfData: !!surfConditions,
       captureTime: captureTime,
     });
 
+    // 🚨 REMOVED: No longer passing tide data to narrative generation
     const narrative = generateWittyNarrative(
       surfConditions, 
       captureTime, 
       dateStr,
-      weatherData,
-      tideDataArray
+      weatherData
     );
 
     console.log(`[${locationName}] Generated narrative (${narrative.length} characters)`);

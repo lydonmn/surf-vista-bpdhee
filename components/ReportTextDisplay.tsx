@@ -38,27 +38,27 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
     return parts.length > 0 ? parts : [{ text: inputText, bold: false }];
   };
 
-  // 🚨 CRITICAL FIX: Always display the FULL narrative text without condensing
-  // This ensures the superior report narrative (visible on edit report page) is displayed everywhere
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  // Split text into paragraphs (separated by double newlines)
+  const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
 
   return (
     <View style={styles.container}>
-      {sentences.map((sentence, sentenceIndex) => {
-        const parts = parseTextWithBold(sentence.trim());
+      {paragraphs.map((paragraph, paragraphIndex) => {
+        const trimmedParagraph = paragraph.trim();
+        const parts = parseTextWithBold(trimmedParagraph);
         
         return (
-          <View key={`sentence-${sentenceIndex}-${sentence.substring(0, 20)}`}>
+          <View key={`paragraph-${paragraphIndex}`} style={styles.paragraphContainer}>
             <Text
               style={[
-                styles.sentence,
+                styles.paragraphText,
                 { color: colors.reportText },
-                isCustom && styles.customSentence
+                isCustom && styles.customText
               ]}
             >
               {parts.map((part, partIndex) => (
                 <Text
-                  key={`part-${sentenceIndex}-${partIndex}-${part.text.substring(0, 10)}`}
+                  key={`part-${paragraphIndex}-${partIndex}`}
                   style={[
                     part.bold && styles.boldText,
                     part.bold && { color: colors.reportBoldText }
@@ -77,14 +77,16 @@ export function ReportTextDisplay({ text, isCustom = false }: ReportTextDisplayP
 
 const styles = StyleSheet.create({
   container: {
-    gap: 8,
+    gap: 12,
   },
-  sentence: {
+  paragraphContainer: {
+    marginBottom: 4,
+  },
+  paragraphText: {
     fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 2,
+    lineHeight: 24,
   },
-  customSentence: {
+  customText: {
     fontWeight: '500',
   },
   boldText: {
