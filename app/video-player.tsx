@@ -284,14 +284,18 @@ export default function VideoPlayerScreen() {
         setDuration(videoDuration);
         setIsBuffering(false);
         
-        // ✅ CRITICAL FIX: Auto-play immediately
-        if (!player.playing) {
+        // ✅ CRITICAL FIX: Auto-play immediately with safety check
+        if (!player.playing && player) {
           console.log('[VideoPlayer] ⚡ Starting playback...');
           setTimeout(() => {
-            if (player) {
-              player.play();
+            try {
+              if (player && typeof player.play === 'function') {
+                player.play();
+              }
+            } catch (playError) {
+              console.error('[VideoPlayer] Play error:', playError);
             }
-          }, 50);
+          }, 100);
         }
       }
       
@@ -369,8 +373,12 @@ export default function VideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      player.play();
-      resetControlsTimeout();
+      try {
+        player.play();
+        resetControlsTimeout();
+      } catch (playError) {
+        console.error('[VideoPlayer] Play error:', playError);
+      }
     }
   }, [player, resetControlsTimeout, clearControlsTimeout]);
 
@@ -412,7 +420,7 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     
-    if (newFullscreenState && player.playing) {
+    if (newFullscreenState && player && player.playing) {
       startControlsTimeout();
     }
     

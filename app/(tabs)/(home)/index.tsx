@@ -1,6 +1,6 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -10,7 +10,6 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
@@ -109,6 +108,13 @@ function calculateSurfRating(surfData: any): number {
   return finalRating;
 }
 
+function getRatingColor(rating: number): string {
+  if (rating >= 8) return '#22C55E';
+  if (rating >= 6) return '#FFC107';
+  if (rating >= 4) return '#FF9800';
+  return '#F44336';
+}
+
 export default function HomeScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
@@ -121,7 +127,7 @@ export default function HomeScreen() {
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
-  // ✅ CRITICAL FIX: Simple thumbnail-only preview - NO video loading on home screen
+  // ✅ CRITICAL FIX: Load thumbnail with signed URL
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
   const todayDate = useMemo(() => getESTDate(), []);
@@ -184,15 +190,15 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  // ✅ CRITICAL FIX: Only load video metadata (thumbnail) - NO video player on home screen
+  // ✅ CRITICAL FIX: Load video metadata AND generate signed thumbnail URL
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
-      console.log('[HomeScreen] ⚡ FAST: Loading video metadata only (no video data)');
+      console.log('[HomeScreen] ⚡ Loading video metadata with thumbnail...');
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
-        .select('id, title, thumbnail_url, location, resolution_width, resolution_height')
+        .select('id, title, thumbnail_url, video_url, location, resolution_width, resolution_height')
         .eq('location', currentLocation)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -203,12 +209,43 @@ export default function HomeScreen() {
         setLatestVideo(null);
         setThumbnailUrl(null);
       } else if (videoData) {
-        console.log('[HomeScreen] ✅ Video metadata loaded instantly:', videoData.title);
+        console.log('[HomeScreen] ✅ Video metadata loaded:', videoData.title);
         setLatestVideo(videoData as Video);
         
-        // ✅ Load thumbnail only (lightweight)
+        // ✅ CRITICAL FIX: Generate signed URL for thumbnail
         if (videoData.thumbnail_url) {
-          setThumbnailUrl(videoData.thumbnail_url);
+          try {
+            let thumbnailFileName = '';
+            const thumbUrl = videoData.thumbnail_url;
+            
+            // Extract filename from thumbnail URL
+            const thumbParts = thumbUrl.split('/thumbnails/');
+            if (thumbParts.length === 2) {
+              thumbnailFileName = thumbParts[1].split('?')[0];
+            } else {
+              const url = new URL(thumbUrl);
+              const pathParts = url.pathname.split('/');
+              thumbnailFileName = pathParts[pathParts.length - 1];
+            }
+            
+            if (thumbnailFileName) {
+              console.log('[HomeScreen] ⚡ Generating signed thumbnail URL...');
+              const { data: signedData, error: signedError } = await supabase.storage
+                .from('thumbnails')
+                .createSignedUrl(thumbnailFileName, 7200);
+              
+              if (signedError) {
+                console.error('[HomeScreen] Thumbnail signed URL error:', signedError);
+                setThumbnailUrl(null);
+              } else if (signedData?.signedUrl) {
+                console.log('[HomeScreen] ✅ Thumbnail URL ready');
+                setThumbnailUrl(signedData.signedUrl);
+              }
+            }
+          } catch (thumbError) {
+            console.error('[HomeScreen] Thumbnail processing error:', thumbError);
+            setThumbnailUrl(null);
+          }
         }
         
         hasLoadedVideoRef.current = true;
@@ -228,7 +265,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
-      console.log('[HomeScreen] ⚡ INSTANT LOAD: Loading lightweight video metadata only');
+      console.log('[HomeScreen] ⚡ Loading video metadata with thumbnail');
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
@@ -243,7 +280,7 @@ export default function HomeScreen() {
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
-      console.log('[HomeScreen] ⚡ Opening video player - video will load there');
+      console.log('[HomeScreen] ⚡ Opening video player');
       
       router.push({
         pathname: '/video-player',
@@ -428,28 +465,29 @@ export default function HomeScreen() {
           >
             <View style={styles.videoPreviewContainer}>
               {thumbnailUrl ? (
-                <View style={styles.thumbnailContainer}>
-                  <View style={styles.thumbnailPlaceholder}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play-circle"
-                      size={80}
-                      color="rgba(255, 255, 255, 0.95)"
-                    />
-                  </View>
-                </View>
+                <Image
+                  source={{ uri: thumbnailUrl }}
+                  style={styles.thumbnailImage}
+                  resizeMode="cover"
+                />
               ) : (
                 <View style={styles.thumbnailPlaceholder}>
+                  <IconSymbol
+                    ios_icon_name="photo"
+                    android_material_icon_name="image"
+                    size={48}
+                    color="rgba(255, 255, 255, 0.3)"
+                  />
+                </View>
+              )}
+              <View style={styles.videoOverlay}>
+                <View style={styles.videoTitleOverlay}>
                   <IconSymbol
                     ios_icon_name="play.circle.fill"
                     android_material_icon_name="play-circle"
                     size={80}
                     color="rgba(255, 255, 255, 0.95)"
                   />
-                </View>
-              )}
-              <View style={styles.videoOverlay}>
-                <View style={styles.videoTitleOverlay}>
                   <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
                   <Text style={styles.tapToPlayText}>{tapToPlayText}</Text>
                 </View>
@@ -817,13 +855,6 @@ export default function HomeScreen() {
   );
 }
 
-function getRatingColor(rating: number): string {
-  if (rating >= 8) return '#22C55E';
-  if (rating >= 6) return '#FFC107';
-  if (rating >= 4) return '#FF9800';
-  return '#F44336';
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -968,10 +999,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#000000',
   },
-  thumbnailContainer: {
+  thumbnailImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#000000',
   },
   thumbnailPlaceholder: {
     width: '100%',
@@ -988,6 +1018,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   videoTitleOverlay: {
     alignItems: 'center',
