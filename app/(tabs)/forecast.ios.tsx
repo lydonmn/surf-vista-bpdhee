@@ -263,8 +263,8 @@ export default function ForecastScreen() {
 
   const getConfidenceColor = (confidence: number | null) => {
     if (!confidence) return colors.textSecondary;
-    if (confidence >= 0.8) return '#22C55E';
-    if (confidence >= 0.6) return '#FFC107';
+    if (confidence >= 80) return '#22C55E';
+    if (confidence >= 60) return '#FFC107';
     return '#FF9800';
   };
 
@@ -395,11 +395,9 @@ export default function ForecastScreen() {
             const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
             const ratingColor = getStokeColor(dayRating);
             
-            // 🚨 CRITICAL FIX: prediction_confidence is stored as decimal (0-1), convert to percentage
-            const confidenceDecimal = day.weatherForecast?.prediction_confidence;
-            const confidencePercentage = confidenceDecimal ? Math.round(Number(confidenceDecimal) * 100) : null;
-            const confidenceColor = getConfidenceColor(confidenceDecimal);
-            const confidenceText = confidencePercentage ? `${confidencePercentage}%` : 'N/A';
+            const confidenceValue = day.weatherForecast?.prediction_confidence;
+            const confidenceColor = getConfidenceColor(confidenceValue);
+            const confidenceText = confidenceValue ? `${Math.round(confidenceValue)}%` : 'N/A';
 
             const highTempText = formatTemp(day.weatherForecast?.high_temp);
             const lowTempText = formatTemp(day.weatherForecast?.low_temp);
@@ -468,7 +466,7 @@ export default function ForecastScreen() {
                     
                     {/* 🚨 CRITICAL FIX: Always show confidence badge if we have weather forecast data */}
                     {day.weatherForecast && (
-                      <View style={[styles.confidenceBadge, { backgroundColor: confidencePercentage ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
+                      <View style={[styles.confidenceBadge, { backgroundColor: confidenceValue ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
                         <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={18} color={confidenceColor} />
                         <Text style={[styles.confidenceLabel, { color: theme.colors.text }]}>Forecast Confidence:</Text>
                         <Text style={[styles.confidenceValue, { color: confidenceColor }]}>{confidenceText}</Text>

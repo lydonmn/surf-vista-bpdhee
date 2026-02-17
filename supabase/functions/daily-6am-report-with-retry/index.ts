@@ -389,10 +389,57 @@ function generateWittyNarrative(
     console.error('[generateWittyNarrative] ❌ weatherData:', JSON.stringify(weatherData, null, 2));
     console.error('[generateWittyNarrative] ❌ locationIdOverride:', locationIdOverride);
     
-    // Return a more informative fallback
+    // 🚨 CRITICAL FIX: Generate a normal witty report from available data instead of error message
     const locationId = locationIdOverride || surfConditions.location || 'unknown';
     const personality = getLocationPersonality(locationId);
-    return `Surf report for ${personality.nickname} is temporarily unavailable due to a technical issue. Wave data: ${surfConditions.surf_height || surfConditions.wave_height || 'N/A'}, Wind: ${surfConditions.wind_speed || 'N/A'} ${surfConditions.wind_direction || ''}, Water: ${surfConditions.water_temp || 'N/A'}. Check back soon for the full report.`;
+    
+    // Extract available data
+    const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height || 'N/A';
+    const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
+    const windDirRaw = surfConditions.wind_direction || 'variable';
+    const windDir = windDirRaw
+      .replace(/feet/gi, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*\([^)]*\)/g, '')
+      .trim();
+    const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
+    const period = parseNumericValue(surfConditions.wave_period, 0);
+    
+    // Build a simple but witty narrative from available data
+    let fallbackReport = `${personality.casual[0]} has waves today.\n\n`;
+    
+    if (surfHeightStr !== 'N/A') {
+      fallbackReport += `${surfHeightStr} surf`;
+      if (period > 0) {
+        fallbackReport += ` with ${period.toFixed(0)}-second period`;
+      }
+      fallbackReport += '.\n\n';
+    }
+    
+    if (windSpeed > 0) {
+      fallbackReport += `Wind is ${windSpeed.toFixed(0)} mph ${windDir}.\n\n`;
+    }
+    
+    if (waterTemp > 0) {
+      fallbackReport += `Water temperature is ${waterTemp.toFixed(0)}°F. `;
+      if (waterTemp >= 75) {
+        fallbackReport += `Boardshorts weather.`;
+      } else if (waterTemp >= 68) {
+        fallbackReport += `Spring suit recommended.`;
+      } else if (waterTemp >= 60) {
+        fallbackReport += `3/2mm wetsuit will keep you comfortable.`;
+      } else if (waterTemp >= 50) {
+        fallbackReport += `4/3mm wetsuit with booties needed.`;
+      } else {
+        fallbackReport += `5/4mm with hood and gloves, it's cold.`;
+      }
+      fallbackReport += '\n\n';
+    }
+    
+    fallbackReport += `Check it out if you're in the area.`;
+    
+    console.log('[generateWittyNarrative] ✅ Generated fallback narrative from available data');
+    return fallbackReport;
   }
 }
 
@@ -998,28 +1045,29 @@ async function processLocation(
       locationId: locationId,
     });
 
-    // 🚨 CRITICAL: Wrap narrative generation in try-catch AND pass locationId explicitly
-    let narrative = '';
-    try {
-      narrative = generateWittyNarrative(
-        surfConditions, 
-        captureTime, 
-        dateStr,
-        weatherData,
-        locationId // ✅ CRITICAL: Pass locationId explicitly to override missing field
-      );
-      
-      console.log(`[${locationName}] ✅ Generated narrative (${narrative.length} characters)`);
-      console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
-    } catch (narrativeError) {
-      console.error(`[${locationName}] ❌ Narrative generation failed:`, narrativeError);
-      console.error(`[${locationName}] ❌ Stack:`, narrativeError instanceof Error ? narrativeError.stack : 'No stack');
-      
-      // Fallback narrative
-      const personality = getLocationPersonality(locationId);
-      narrative = `Surf report for ${personality.nickname} is temporarily unavailable. Wave data: ${surfConditions.surf_height || surfConditions.wave_height || 'N/A'}, Wind: ${surfConditions.wind_speed || 'N/A'} ${surfConditions.wind_direction || ''}, Water: ${surfConditions.water_temp || 'N/A'}. Check back soon for the full report.`;
-      console.log(`[${locationName}] ✅ Using fallback narrative`);
-    }
+    // 🚨 CRITICAL FIX: Generate narrative directly without try-catch wrapper
+    // The generateWittyNarrative function already has its own error handling
+    console.log(`[${locationName}] 📝 Generating narrative...`);
+    console.log(`[${locationName}] Input data:`, {
+      locationId,
+      surf_height: surfConditions.surf_height,
+      wave_height: surfConditions.wave_height,
+      wind_speed: surfConditions.wind_speed,
+      wind_direction: surfConditions.wind_direction,
+      water_temp: surfConditions.water_temp,
+      wave_period: surfConditions.wave_period,
+    });
+    
+    const narrative = generateWittyNarrative(
+      surfConditions, 
+      captureTime, 
+      dateStr,
+      weatherData,
+      locationId // ✅ CRITICAL: Pass locationId explicitly to override missing field
+    );
+    
+    console.log(`[${locationName}] ✅ Generated narrative (${narrative.length} characters)`);
+    console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
 
     const rating = calculateSurfRating(surfConditions);
     console.log(`[${locationName}] Calculated rating: ${rating}/10`);

@@ -8,18 +8,6 @@ const corsHeaders = {
 
 const FETCH_TIMEOUT = 30000; // 30 seconds
 
-// Location-specific configuration
-const LOCATION_CONFIG = {
-  'folly-beach': {
-    name: 'Folly Beach, SC',
-    buoyId: '41004', // Edisto, SC
-  },
-  'pawleys-island': {
-    name: 'Pawleys Island, SC',
-    buoyId: '41013', // Frying Pan Shoals
-  },
-};
-
 // Helper function to get EST date
 function getESTDate(): string {
   const now = new Date();
@@ -318,25 +306,6 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.log('No location parameter in request body, using default: folly-beach');
     }
-
-    // Get location configuration
-    const locationConfig = LOCATION_CONFIG[locationId as keyof typeof LOCATION_CONFIG];
-    if (!locationConfig) {
-      console.error('Invalid location:', locationId);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Invalid location: ${locationId}`,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    }
-
-    console.log('Using location configuration:', locationConfig);
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -359,13 +328,42 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`Fetching surf forecast for ${locationConfig.name}...`);
+    // 🔥 DYNAMIC: Fetch location configuration from database
+    console.log('Fetching location configuration from database for:', locationId);
+    const { data: locationData, error: locationError } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('id', locationId)
+      .single();
+
+    if (locationError || !locationData) {
+      console.error('Location not found in database:', locationId, locationError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Invalid location: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location from database:', {
+      id: locationData.id,
+      name: locationData.display_name,
+      buoyId: locationData.buoy_id,
+    });
+
+    console.log(`Fetching surf forecast for ${locationData.display_name}...`);
 
     const today = getESTDate();
     console.log('Current EST date:', today);
 
     // Fetch current buoy data
-    const buoyData = await fetchBuoyData(locationConfig.buoyId);
+    const buoyData = await fetchBuoyData(locationData.buoy_id);
     
     if (buoyData) {
       console.log('✅ Current buoy data available:', buoyData);
@@ -484,8 +482,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Surf forecast updated successfully for ${locationConfig.name}`,
-        location: locationConfig.name,
+        message: `Surf forecast updated successfully for ${locationData.display_name}`,
+        location: locationData.display_name,
         locationId: locationId,
         forecasts: forecasts.map(f => ({
           date: f.date,
