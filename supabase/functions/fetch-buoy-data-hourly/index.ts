@@ -114,6 +114,53 @@ function getDirectionFromDegrees(degrees: number): string {
     .trim();
 }
 
+// 🚨 NEW: Helper to find most recent VALID data from current day
+async function getMostRecentValidDataFromToday(
+  supabase: any,
+  locationId: string,
+  today: string
+): Promise<any | null> {
+  console.log(`🔍 Searching for most recent valid data from today (${today}) for location ${locationId}`);
+  
+  // Fetch all entries from today, ordered by updated_at descending
+  const { data: todayData, error } = await supabase
+    .from('surf_conditions')
+    .select('*')
+    .eq('location', locationId)
+    .eq('date', today)
+    .order('updated_at', { ascending: false })
+    .limit(20); // Get last 20 entries from today (covers all hourly updates)
+
+  if (error) {
+    console.error('Error fetching today\'s data:', error);
+    return null;
+  }
+
+  if (!todayData || todayData.length === 0) {
+    console.log('❌ No data found for today');
+    return null;
+  }
+
+  console.log(`📊 Found ${todayData.length} entries from today, checking for valid wave data...`);
+
+  // Find the most recent entry with valid wave data
+  for (const entry of todayData) {
+    const waveHeightStr = entry.wave_height;
+    
+    // Check if wave_height is valid (not N/A, not null, not 99.0 ft)
+    if (waveHeightStr && waveHeightStr !== 'N/A') {
+      const waveHeightValue = parseFloat(waveHeightStr);
+      if (!isNaN(waveHeightValue) && waveHeightValue < 99.0) {
+        console.log(`✅ Found valid data from ${entry.updated_at}: wave_height=${waveHeightStr}, surf_height=${entry.surf_height}`);
+        return entry;
+      }
+    }
+  }
+
+  console.log('❌ No valid wave data found in any of today\'s entries');
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -177,17 +224,14 @@ serve(async (req) => {
       console.log(`\n=== Processing ${location.display_name} (Buoy ${location.buoy_id}) ===`);
       
       try {
-        // Fetch previous valid data for this location
-        const { data: previousData } = await supabase
-          .from('surf_conditions')
-          .select('*')
-          .eq('location', location.id)
-          .eq('date', today)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // 🚨 CRITICAL FIX: Find most recent VALID data from today (not just most recent entry)
+        const previousValidData = await getMostRecentValidDataFromToday(supabase, location.id, today);
 
-        console.log(`Previous data for ${location.display_name}:`, previousData ? 'Found' : 'None');
+        if (previousValidData) {
+          console.log(`📌 Previous valid data available from ${previousValidData.updated_at}`);
+        } else {
+          console.log('📌 No previous valid data from today');
+        }
 
         const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${location.buoy_id}.txt`;
         console.log('Fetching from:', buoyUrl);
@@ -199,15 +243,16 @@ serve(async (req) => {
           const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
           console.error(`Failed to fetch buoy ${location.buoy_id}:`, errorMsg);
           
-          // If we have previous data, keep it and mark as retained
-          if (previousData) {
-            console.log(`✅ Retaining previous data for ${location.display_name} due to fetch failure`);
+          // If we have previous valid data from today, keep it
+          if (previousValidData) {
+            console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to fetch failure`);
             results.push({
               success: true,
               location: location.display_name,
               locationId: location.id,
-              message: 'Retained previous data - buoy temporarily unavailable',
+              message: 'Retained previous valid data from today - buoy temporarily unavailable',
               dataRetained: true,
+              retainedFrom: previousValidData.updated_at,
             });
             continue;
           }
@@ -224,15 +269,16 @@ serve(async (req) => {
         if (!buoyResponse.ok) {
           console.error(`Buoy ${location.buoy_id} returned status ${buoyResponse.status}`);
           
-          // Retain previous data if available
-          if (previousData) {
-            console.log(`✅ Retaining previous data for ${location.display_name} due to HTTP error`);
+          // Retain previous valid data from today if available
+          if (previousValidData) {
+            console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to HTTP error`);
             results.push({
               success: true,
               location: location.display_name,
               locationId: location.id,
-              message: 'Retained previous data - buoy returned error',
+              message: 'Retained previous valid data from today - buoy returned error',
               dataRetained: true,
+              retainedFrom: previousValidData.updated_at,
             });
             continue;
           }
@@ -254,15 +300,16 @@ serve(async (req) => {
         if (lines.length < 3) {
           console.error('Insufficient buoy data');
           
-          // Retain previous data if available
-          if (previousData) {
-            console.log(`✅ Retaining previous data for ${location.display_name} due to insufficient data`);
+          // Retain previous valid data from today if available
+          if (previousValidData) {
+            console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to insufficient data`);
             results.push({
               success: true,
               location: location.display_name,
               locationId: location.id,
-              message: 'Retained previous data - insufficient new data',
+              message: 'Retained previous valid data from today - insufficient new data',
               dataRetained: true,
+              retainedFrom: previousValidData.updated_at,
             });
             continue;
           }
@@ -282,15 +329,16 @@ serve(async (req) => {
         if (dataLine.length < 15) {
           console.error(`Incomplete data - expected 15+ fields, got ${dataLine.length}`);
           
-          // Retain previous data if available
-          if (previousData) {
-            console.log(`✅ Retaining previous data for ${location.display_name} due to incomplete fields`);
+          // Retain previous valid data from today if available
+          if (previousValidData) {
+            console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to incomplete fields`);
             results.push({
               success: true,
               location: location.display_name,
               locationId: location.id,
-              message: 'Retained previous data - incomplete new data',
+              message: 'Retained previous valid data from today - incomplete new data',
               dataRetained: true,
+              retainedFrom: previousValidData.updated_at,
             });
             continue;
           }
@@ -334,19 +382,21 @@ serve(async (req) => {
           hasWaterTemp
         });
         
-        // If new data is incomplete, retain previous data
+        // 🚨 CRITICAL FIX: If new data is incomplete, revert to most recent valid data from TODAY
         const hasMinimalValidData = hasWaveData && hasPeriodData;
         
-        if (!hasMinimalValidData && previousData) {
-          console.log(`⚠️ New data incomplete for ${location.display_name} - retaining previous data`);
-          console.log('Previous data will continue to be displayed until next valid update');
+        if (!hasMinimalValidData && previousValidData) {
+          console.log(`⚠️ New data incomplete for ${location.display_name} - reverting to previous valid data from today`);
+          console.log(`📅 Using data from ${previousValidData.updated_at} (earlier today)`);
+          console.log('Previous valid data will continue to be displayed until next valid update');
           
           results.push({
             success: true,
             location: location.display_name,
             locationId: location.id,
-            message: 'Retained previous data - new data incomplete',
+            message: `Retained previous valid data from today (${previousValidData.updated_at})`,
             dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
           });
           continue;
         }
@@ -436,15 +486,18 @@ serve(async (req) => {
       } catch (error: any) {
         console.error(`❌ Error processing ${location.display_name}:`, error);
         
-        // Retain previous data on error
-        if (previousData) {
-          console.log(`✅ Retaining previous data for ${location.display_name} due to processing error`);
+        // Retain previous valid data from today on error
+        const previousValidData = await getMostRecentValidDataFromToday(supabase, location.id, today);
+        
+        if (previousValidData) {
+          console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to processing error`);
           results.push({
             success: true,
             location: location.display_name,
             locationId: location.id,
-            message: 'Retained previous data - processing error',
+            message: 'Retained previous valid data from today - processing error',
             dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
           });
         } else {
           results.push({
@@ -465,7 +518,7 @@ serve(async (req) => {
     console.log(`Total locations: ${results.length}`);
     console.log(`Successful: ${results.filter(r => r.success).length}`);
     console.log(`Failed: ${results.filter(r => !r.success).length}`);
-    console.log(`Data retained: ${results.filter(r => r.dataRetained).length}`);
+    console.log(`Data retained from today: ${results.filter(r => r.dataRetained).length}`);
     console.log('=========================================');
 
     if (allSucceeded) {
@@ -482,7 +535,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Partial success - some locations failed or retained previous data',
+          message: 'Partial success - some locations failed or retained previous data from today',
           estTime: currentTime,
           results: results,
         }),
