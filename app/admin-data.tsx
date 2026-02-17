@@ -231,9 +231,9 @@ export default function AdminDataScreen() {
     return () => clearInterval(interval);
   }, [loadDataCounts, loadLocationReports, calculateNextCompleteDataTime]);
 
-  const handlePullDataForLocation = async (locationId: string, locationName: string) => {
+  const handlePullDataForLocation = async (locationId: string, locationDisplayName: string) => {
     setIsLoading(true);
-    addLog(`Pulling data for ${locationName}...`, 'info');
+    addLog(`Pulling data for ${locationDisplayName}...`, 'info');
 
     try {
       console.log(`[AdminData] Invoking update-all-surf-data for ${locationId}`);
@@ -253,23 +253,23 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
-      addLog(`✅ Data updated successfully for ${locationName}`, 'success');
+      addLog(`✅ Data updated successfully for ${locationDisplayName}`, 'success');
       
       await loadDataCounts();
       await loadLocationReports();
     } catch (error) {
       console.error('[AdminData] Error pulling data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Failed to update ${locationName}: ${errorMessage}`, 'error');
+      addLog(`❌ Failed to update ${locationDisplayName}: ${errorMessage}`, 'error');
       showErrorModal('Update Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleUpdateForecast = async (locationId: string, locationName: string) => {
+  const handleUpdateForecast = async (locationId: string, locationDisplayName: string) => {
     setIsLoading(true);
-    addLog(`Updating 7-day forecast for ${locationName}...`, 'info');
+    addLog(`Updating 7-day forecast for ${locationDisplayName}...`, 'info');
 
     try {
       console.log(`[AdminData] Invoking fetch-surf-forecast for location: ${locationId}`);
@@ -298,7 +298,7 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
-      addLog(`✅ 7-day forecast updated for ${locationName}`, 'success');
+      addLog(`✅ 7-day forecast updated for ${locationDisplayName}`, 'success');
       
       if (data.has_buoy_data) {
         addLog(`  • Using live buoy data`, 'success');
@@ -321,22 +321,22 @@ export default function AdminDataScreen() {
     } catch (error) {
       console.error('[AdminData] Error updating forecast:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Failed to update forecast for ${locationName}: ${errorMessage}`, 'error');
+      addLog(`❌ Failed to update forecast for ${locationDisplayName}: ${errorMessage}`, 'error');
       showErrorModal('Forecast Update Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
+  const handleGenerateReportForLocation = async (locationId: string, locationDisplayName: string) => {
     console.log('[AdminData] ═══════════════════════════════════════');
     console.log('[AdminData] 🚀 REGENERATE TEXT BUTTON CLICKED');
-    console.log('[AdminData] Location:', locationName);
+    console.log('[AdminData] Location:', locationDisplayName);
     console.log('[AdminData] Location ID:', locationId);
     console.log('[AdminData] ═══════════════════════════════════════');
     
     setIsLoading(true);
-    addLog(`Regenerating report narrative for ${locationName}...`, 'info');
+    addLog(`Regenerating report narrative for ${locationDisplayName}...`, 'info');
 
     try {
       console.log(`[AdminData] ═══════════════════════════════════════`);
@@ -386,7 +386,7 @@ export default function AdminDataScreen() {
       }
 
       console.log('[AdminData] ✅ Edge Function call successful');
-      addLog(`✅ Report narrative regenerated for ${locationName}`, 'success');
+      addLog(`✅ Report narrative regenerated for ${locationDisplayName}`, 'success');
       addLog(`  • Used existing data from database (no fresh buoy pull)`, 'info');
       
       if (data.results && data.results.length > 0) {
@@ -435,12 +435,12 @@ export default function AdminDataScreen() {
       console.log('[AdminData] ✅ REFRESH SEQUENCE COMPLETE');
       console.log('[AdminData] ═══════════════════════════════════════');
       
-      addLog(`✅ Report data refreshed for ${locationName}`, 'success');
+      addLog(`✅ Report data refreshed for ${locationDisplayName}`, 'success');
       addLog(`  • Completed 5-stage refresh sequence to ensure latest data`, 'info');
     } catch (error) {
       console.error('[AdminData] ❌ Error generating report:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Failed to generate report for ${locationName}: ${errorMessage}`, 'error');
+      addLog(`❌ Failed to generate report for ${locationDisplayName}: ${errorMessage}`, 'error');
       showErrorModal('Report Generation Failed', errorMessage);
     } finally {
       setIsLoading(false);
@@ -453,18 +453,18 @@ export default function AdminDataScreen() {
 
     try {
       for (const location of locations) {
-        const locationName = location.displayName;
-        addLog(`Processing ${locationName}...`, 'info');
+        const locationDisplayName = location.displayName;
+        addLog(`Processing ${locationDisplayName}...`, 'info');
         
-        await handlePullDataForLocation(location.id, locationName);
-        
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        await handleUpdateForecast(location.id, locationName);
+        await handlePullDataForLocation(location.id, locationDisplayName);
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        await handleGenerateReportForLocation(location.id, locationName);
+        await handleUpdateForecast(location.id, locationDisplayName);
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        await handleGenerateReportForLocation(location.id, locationDisplayName);
         
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -586,7 +586,7 @@ export default function AdminDataScreen() {
                   <TouchableOpacity
                     style={[styles.actionButton, styles.primaryButton]}
                     onPress={() => {
-                      console.log('[AdminData] 🔵 Update Data button pressed for:', locationName, locationId);
+                      console.log('[AdminData] 🔵 Update Data button pressed for:', report.location, report.locationId);
                       handlePullDataForLocation(report.locationId, report.location);
                     }}
                     disabled={isLoading}
@@ -603,7 +603,7 @@ export default function AdminDataScreen() {
                   <TouchableOpacity
                     style={[styles.actionButton, styles.secondaryButton]}
                     onPress={() => {
-                      console.log('[AdminData] 📈 Update Forecast button pressed for:', locationName, locationId);
+                      console.log('[AdminData] 📈 Update Forecast button pressed for:', report.location, report.locationId);
                       handleUpdateForecast(report.locationId, report.location);
                     }}
                     disabled={isLoading}
@@ -622,9 +622,8 @@ export default function AdminDataScreen() {
                     onPress={() => {
                       console.log('[AdminData] ═══════════════════════════════════════');
                       console.log('[AdminData] 📝 REGENERATE TEXT BUTTON PRESSED');
-                      console.log('[AdminData] Location:', locationName);
-                      console.log('[AdminData] Location ID:', locationId);
-                      console.log('[AdminData] Report Location ID:', report.locationId);
+                      console.log('[AdminData] Location:', report.location);
+                      console.log('[AdminData] Location ID:', report.locationId);
                       console.log('[AdminData] Is Loading:', isLoading);
                       console.log('[AdminData] ═══════════════════════════════════════');
                       handleGenerateReportForLocation(report.locationId, report.location);
