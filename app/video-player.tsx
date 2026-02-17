@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, Dimensions } from "react-native";
 
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -57,6 +57,24 @@ export default function VideoPlayerScreen() {
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 🚨 CRITICAL FIX: Determine video orientation from resolution
+  const videoOrientation = useMemo(() => {
+    if (!video?.resolution_width || !video?.resolution_height) {
+      console.log('[VideoPlayer] No resolution data, assuming portrait (drone default)');
+      return 'portrait';
+    }
+    
+    const isPortrait = video.resolution_height > video.resolution_width;
+    const orientation = isPortrait ? 'portrait' : 'landscape';
+    
+    console.log('[VideoPlayer] 📐 Video orientation detected:', orientation);
+    console.log('[VideoPlayer] - Width:', video.resolution_width);
+    console.log('[VideoPlayer] - Height:', video.resolution_height);
+    console.log('[VideoPlayer] - Is Portrait:', isPortrait);
+    
+    return orientation;
+  }, [video]);
 
   // ✅ CRITICAL FIX: Configure audio session for continuous playback (no 8-second cutoffs)
   useEffect(() => {
@@ -282,6 +300,7 @@ export default function VideoPlayerScreen() {
         }
 
         console.log('[VideoPlayer] Video loaded:', data.title);
+        console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
         setVideo(data);
 
         // ✅ INSTANT PLAYBACK: Use preloaded URL if available
@@ -654,6 +673,7 @@ export default function VideoPlayerScreen() {
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
+    console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
     
@@ -668,14 +688,17 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 CRITICAL FIX: Always keep portrait orientation for fullscreen
-          // Drone videos are shot in portrait (9:16) and should stay portrait in fullscreen
-          console.log('[VideoPlayer] ✅ Entering fullscreen - maintaining PORTRAIT orientation');
-          console.log('[VideoPlayer] Video dimensions:', video?.resolution_width, 'x', video?.resolution_height);
+          // 🚨 CRITICAL FIX: Lock orientation based on video's natural orientation
+          // Drone videos are typically shot in portrait (9:16) and should stay portrait
+          console.log('[VideoPlayer] ✅ Entering fullscreen - locking to', videoOrientation, 'orientation');
           
-          // Lock to portrait for all videos (drone footage is portrait)
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          console.log('[VideoPlayer] ✅ Locked to portrait orientation for fullscreen');
+          if (videoOrientation === 'portrait') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+            console.log('[VideoPlayer] ✅ Locked to PORTRAIT orientation for fullscreen');
+          } else {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+            console.log('[VideoPlayer] ✅ Locked to LANDSCAPE orientation for fullscreen');
+          }
         } else {
           console.log('[VideoPlayer] Exiting fullscreen - unlocking orientation');
           await ScreenOrientation.unlockAsync();
@@ -684,7 +707,7 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
-  }, [isFullscreen, video, isPlaying, startControlsTimeout]);
+  }, [isFullscreen, videoOrientation, isPlaying, startControlsTimeout]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -962,6 +985,8 @@ export default function VideoPlayerScreen() {
   const resolutionLabel = "Resolution";
   const sizeLabel = "File Size";
   const durationLabel = "Duration";
+  const orientationLabel = "Orientation";
+  const orientationText = videoOrientation === 'portrait' ? 'Portrait (9:16)' : 'Landscape (16:9)';
   
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
@@ -1098,6 +1123,11 @@ export default function VideoPlayerScreen() {
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>{resolutionLabel}</Text>
               <Text style={styles.metaValue}>{videoResolution}</Text>
+            </View>
+            
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>{orientationLabel}</Text>
+              <Text style={styles.metaValue}>{orientationText}</Text>
             </View>
             
             <View style={styles.metaRow}>

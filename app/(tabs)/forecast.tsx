@@ -263,8 +263,8 @@ export default function ForecastScreen() {
 
   const getConfidenceColor = (confidence: number | null) => {
     if (!confidence) return colors.textSecondary;
-    if (confidence >= 0.8) return '#22C55E';
-    if (confidence >= 0.6) return '#FFC107';
+    if (confidence >= 80) return '#22C55E';
+    if (confidence >= 60) return '#FFC107';
     return '#FF9800';
   };
 
@@ -273,6 +273,28 @@ export default function ForecastScreen() {
     const numTemp = Number(temp);
     if (isNaN(numTemp)) return 'N/A';
     return `${Math.round(numTemp)}°`;
+  };
+
+  // 🚨 CRITICAL FIX: Format confidence value correctly
+  // Backend stores as percentage (0-100), so just display it directly
+  const formatConfidence = (confidence: number | null | undefined): string => {
+    console.log('[ForecastScreen] formatConfidence input:', confidence, 'type:', typeof confidence);
+    
+    if (confidence === null || confidence === undefined) {
+      console.log('[ForecastScreen] Confidence is null/undefined, returning N/A');
+      return 'N/A';
+    }
+    
+    const numConfidence = Number(confidence);
+    if (isNaN(numConfidence)) {
+      console.log('[ForecastScreen] Confidence is NaN, returning N/A');
+      return 'N/A';
+    }
+    
+    // Backend stores as percentage (0-100), display directly
+    const displayValue = Math.round(numConfidence);
+    console.log('[ForecastScreen] Displaying confidence as:', displayValue + '%');
+    return `${displayValue}%`;
   };
 
   if (!isInitialized || authLoading) {
@@ -376,27 +398,28 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
+            // 🚨 CRITICAL FIX: Use weatherForecast.swell_height_range first (this is the forecast data)
+            // Then fall back to surfReport data (which is today's actual data)
             const forecastSwellHeight = day.weatherForecast?.swell_height_range;
             const surfHeightValue = (day.surfReport as any)?.surf_height;
             const waveHeightValue = day.surfReport?.wave_height;
             const displayHeight = forecastSwellHeight || surfHeightValue || waveHeightValue || 'N/A';
             
+            console.log(`[ForecastScreen] Rendering ${day.date}:`, {
+              forecastSwellHeight,
+              surfHeightValue,
+              waveHeightValue,
+              displayHeight,
+              confidence: day.weatherForecast?.prediction_confidence,
+            });
+            
             const hasSurfData = displayHeight !== 'N/A';
             const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
             const ratingColor = getStokeColor(dayRating);
             
-            const confidenceDecimal = day.weatherForecast?.prediction_confidence;
-            const confidencePercentage = confidenceDecimal ? Math.round(Number(confidenceDecimal) * 100) : null;
-            const confidenceColor = getConfidenceColor(confidenceDecimal);
-            const confidenceText = confidencePercentage ? `${confidencePercentage}%` : 'N/A';
-            
-            console.log(`[ForecastScreen] Rendering ${day.date}:`, {
-              forecastSwellHeight,
-              displayHeight,
-              confidenceDecimal,
-              confidencePercentage,
-              confidenceText,
-            });
+            const confidenceValue = day.weatherForecast?.prediction_confidence;
+            const confidenceColor = getConfidenceColor(confidenceValue);
+            const confidenceText = formatConfidence(confidenceValue);
 
             const highTempText = formatTemp(day.weatherForecast?.high_temp);
             const lowTempText = formatTemp(day.weatherForecast?.low_temp);
@@ -463,8 +486,9 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     
+                    {/* 🚨 CRITICAL FIX: Always show confidence badge if we have weather forecast data */}
                     {day.weatherForecast && (
-                      <View style={[styles.confidenceBadge, { backgroundColor: confidencePercentage ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
+                      <View style={[styles.confidenceBadge, { backgroundColor: confidenceValue ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
                         <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={18} color={confidenceColor} />
                         <Text style={[styles.confidenceLabel, { color: theme.colors.text }]}>Forecast Confidence:</Text>
                         <Text style={[styles.confidenceValue, { color: confidenceColor }]}>{confidenceText}</Text>
@@ -732,7 +756,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
-    marginBottom: 8,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: 'rgba(128, 128, 128, 0.2)',
   },

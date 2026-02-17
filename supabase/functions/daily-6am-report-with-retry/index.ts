@@ -1,66 +1,90 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Location-specific personality traits - UPDATED WITH ALL CURRENT LOCATIONS
+// Location-specific personality traits - UPDATED WITH ALL CURRENT LOCATIONS INCLUDING JUPITER
 const LOCATION_PERSONALITIES: Record<string, {
   casual: string[];
   excited: string[];
   disappointed: string[];
   nickname: string;
+  fullName: string;
 }> = {
   'folly-beach': {
     casual: ['Folly', 'the Edge of America', 'Folly Beach'],
     excited: ['Folly is firing', 'Folly is going off', 'Folly is pumping'],
     disappointed: ['not much happening at Folly', 'Folly is pretty flat', 'Folly is taking a rest'],
-    nickname: 'Folly Beach'
+    nickname: 'Folly Beach',
+    fullName: 'Folly Beach, South Carolina'
   },
   'pawleys-island': {
     casual: ['Pawleys', 'the island', 'Pawleys Island'],
     excited: ['Pawleys has swell', 'Pawleys is working', 'Pawleys is delivering'],
     disappointed: ['not a wave on Pawleys', 'Pawleys is dead flat', 'Pawleys is sleeping'],
-    nickname: 'Pawleys Island'
+    nickname: 'Pawleys Island',
+    fullName: 'Pawleys Island, South Carolina'
   },
   'holden-beach-nc': {
     casual: ['Holden', 'Holden Beach', 'the beach'],
     excited: ['Holden is cranking', 'Holden has waves', 'Holden is alive'],
     disappointed: ['Holden is flat', 'nothing at Holden', 'Holden is quiet'],
-    nickname: 'Holden Beach'
+    nickname: 'Holden Beach',
+    fullName: 'Holden Beach, North Carolina'
   },
   'rexhame-beach,-massachusetts-': {
     casual: ['Marshfield', 'Rexhame Beach', 'the beach'],
     excited: ['Marshfield is firing', 'Marshfield has swell', 'Marshfield is pumping'],
     disappointed: ['not much at Marshfield', 'Marshfield is flat', 'Marshfield is quiet'],
-    nickname: 'Marshfield'
+    nickname: 'Marshfield',
+    fullName: 'Marshfield, Massachusetts'
   },
   'marshfield-ma': {
     casual: ['Marshfield', 'Rexhame Beach', 'the beach'],
     excited: ['Marshfield is firing', 'Marshfield has swell', 'Marshfield is pumping'],
     disappointed: ['not much at Marshfield', 'Marshfield is flat', 'Marshfield is quiet'],
-    nickname: 'Marshfield'
+    nickname: 'Marshfield',
+    fullName: 'Marshfield, Massachusetts'
   },
   'cisco-beach': {
     casual: ['Cisco', 'Cisco Beach', 'the beach'],
     excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
     disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
-    nickname: 'Cisco Beach'
+    nickname: 'Cisco Beach',
+    fullName: 'Cisco Beach, Nantucket'
   },
   'cisco-beach-nantucket': {
     casual: ['Cisco', 'Cisco Beach', 'the beach'],
     excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
     disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
-    nickname: 'Cisco Beach'
+    nickname: 'Cisco Beach',
+    fullName: 'Cisco Beach, Nantucket'
   },
+  // 🚨 CRITICAL FIX: Added Jupiter location personality
   'jupiter-florida': {
     casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
     excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
     disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
-    nickname: 'Jupiter Inlet'
+    nickname: 'Jupiter Inlet',
+    fullName: 'Jupiter Inlet, Florida'
+  },
+  'jupiter-inlet': {
+    casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
+    excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
+    disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
+    nickname: 'Jupiter Inlet',
+    fullName: 'Jupiter Inlet, Florida'
+  },
+  'jupiter': {
+    casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
+    excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
+    disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
+    nickname: 'Jupiter Inlet',
+    fullName: 'Jupiter Inlet, Florida'
   }
 };
 
@@ -70,7 +94,8 @@ function getLocationPersonality(locationId: string) {
     casual: [locationId.replace(/-/g, ' ')],
     excited: [`${locationId.replace(/-/g, ' ')} is firing`],
     disappointed: [`not much at ${locationId.replace(/-/g, ' ')}`],
-    nickname: locationId.replace(/-/g, ' ')
+    nickname: locationId.replace(/-/g, ' '),
+    fullName: locationId.replace(/-/g, ' ')
   };
   console.log('[getLocationPersonality] Using personality for:', personality.nickname);
   return personality;
