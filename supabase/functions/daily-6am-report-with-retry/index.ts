@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Location-specific personality traits
+// Location-specific personality traits - UPDATED WITH ALL CURRENT LOCATIONS
 const LOCATION_PERSONALITIES: Record<string, {
   casual: string[];
   excited: string[];
@@ -49,12 +49,30 @@ const LOCATION_PERSONALITIES: Record<string, {
     excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
     disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
     nickname: 'Cisco Beach'
+  },
+  // ✅ NEW LOCATIONS ADDED
+  'cisco-beach-nantucket': {
+    casual: ['Cisco', 'Cisco Beach', 'the beach'],
+    excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
+    disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
+    nickname: 'Cisco Beach'
+  },
+  'jupiter-florida': {
+    casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
+    excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
+    disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
+    nickname: 'Jupiter Inlet'
   }
 };
 
 function getLocationPersonality(locationId: string) {
   console.log('[getLocationPersonality] Looking up personality for:', locationId);
-  const personality = LOCATION_PERSONALITIES[locationId] || LOCATION_PERSONALITIES['folly-beach'];
+  const personality = LOCATION_PERSONALITIES[locationId] || {
+    casual: [locationId.replace(/-/g, ' ')],
+    excited: [`${locationId.replace(/-/g, ' ')} is firing`],
+    disappointed: [`not much at ${locationId.replace(/-/g, ' ')}`],
+    nickname: locationId.replace(/-/g, ' ')
+  };
   console.log('[getLocationPersonality] Using personality:', personality.nickname);
   return personality;
 }
@@ -129,6 +147,7 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, locationI
 }
 
 // 🚨 ENHANCED NARRATIVE GENERATOR: 300-500 characters, focused on surf height and rideability
+// ✅ MIRRORS ALL IMPROVEMENTS: detailed descriptions, proper formatting, no redundant metrics
 function generateWittyNarrative(
   surfConditions: any, 
   captureTime: string, 
@@ -519,6 +538,7 @@ serve(async (req) => {
     console.log(`[Daily 6AM Report] Mode: ${isManualTrigger ? 'MANUAL TRIGGER (use existing data)' : 'SCHEDULED 6AM RUN (fetch fresh data)'}`);
     console.log('[Daily 6AM Report] ═════════════════════════════════════════');
 
+    // ✅ DYNAMIC LOCATION FETCHING: Automatically includes all active locations from database
     let locationsQuery = supabase
       .from('locations')
       .select('id, name, display_name')
@@ -553,7 +573,7 @@ serve(async (req) => {
     }
 
     const modeText = targetLocationId ? 'single location' : `${locationsData.length} location(s)`;
-    console.log(`[Daily 6AM Report] Processing ${modeText}:`, locationsData.map(l => l.display_name).join(', '));
+    console.log(`[Daily 6AM Report] ✅ Processing ${modeText}:`, locationsData.map(l => l.display_name).join(', '));
 
     const now = new Date();
     const estDateString = now.toLocaleDateString('en-US', { 
