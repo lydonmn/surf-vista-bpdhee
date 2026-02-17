@@ -133,7 +133,6 @@ export default function ReportScreen() {
   const { surfReports, surfConditions, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
-  const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -142,14 +141,13 @@ export default function ReportScreen() {
   const hasLoadedDataRef = useRef(false);
   const hasLoadedVideoRef = useRef(false);
 
-  // ✅ CRITICAL FIX: Use signed URL for video player to ensure instant playback
-  const videoPlayer = useVideoPlayer(signedVideoUrl || '', (player) => {
-    if (signedVideoUrl) {
-      console.log('[ReportScreen] ⚡ Initializing video preview with PRELOADED URL for instant playback');
+  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
+    if (latestVideo?.video_url) {
+      console.log('[ReportScreen] Initializing video preview player with caching');
       player.loop = true;
       player.muted = true;
       player.volume = 0;
-      console.log('[ReportScreen] ✅ Video preview ready for instant playback');
+      console.log('[ReportScreen] ✅ Video preview caching: ENABLED');
     }
   });
 
@@ -297,7 +295,7 @@ export default function ReportScreen() {
     try {
       setIsLoadingVideo(true);
       setVideoReady(false);
-      console.log('[ReportScreen] ⚡ Fetching latest video with signed URL for location:', currentLocation, locationData.displayName);
+      console.log('[ReportScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
@@ -309,46 +307,16 @@ export default function ReportScreen() {
 
       if (videoError) {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
-        setLatestVideo(null);
-        setSignedVideoUrl(null);
       } else if (videoData) {
-        console.log('[ReportScreen] ✅ Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
         setLatestVideo(videoData);
-        
-        // ✅ CRITICAL FIX: Generate signed URL immediately for instant playback
-        try {
-          const urlParts = videoData.video_url.split('/videos/');
-          if (urlParts.length === 2) {
-            const fileName = urlParts[1].split('?')[0];
-            
-            console.log('[ReportScreen] ⚡ Generating signed URL for instant playback...');
-            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-              .from('videos')
-              .createSignedUrl(fileName, 7200);
-
-            if (signedUrlError || !signedUrlData?.signedUrl) {
-              console.error('[ReportScreen] Signed URL error:', signedUrlError);
-              setSignedVideoUrl(null);
-            } else {
-              console.log('[ReportScreen] ✅ Signed URL ready for instant playback');
-              setSignedVideoUrl(signedUrlData.signedUrl);
-            }
-          }
-        } catch (urlError) {
-          console.error('[ReportScreen] Error generating signed URL:', urlError);
-          setSignedVideoUrl(null);
-        }
-        
         hasLoadedVideoRef.current = true;
       } else {
         console.log('[ReportScreen] No videos found for location:', currentLocation, locationData.displayName);
         setLatestVideo(null);
-        setSignedVideoUrl(null);
       }
     } catch (error) {
       console.error('[ReportScreen] Error loading video:', error);
-      setLatestVideo(null);
-      setSignedVideoUrl(null);
     } finally {
       setIsLoadingVideo(false);
     }
@@ -455,19 +423,21 @@ export default function ReportScreen() {
   };
 
   const handleVideoPress = useCallback(() => {
-    if (latestVideo && signedVideoUrl) {
+    if (latestVideo) {
       console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
-      console.log('[ReportScreen] ✅ Passing preloaded signed URL for INSTANT playback');
+      console.log('[ReportScreen] ✅ Passing preloaded URL for instant playback');
+      
+      const params: any = { videoId: latestVideo.id };
+      if (latestVideo.video_url) {
+        params.preloadedUrl = latestVideo.video_url;
+      }
       
       router.push({
         pathname: '/video-player',
-        params: {
-          videoId: latestVideo.id,
-          preloadedUrl: signedVideoUrl
-        }
+        params
       });
     }
-  }, [latestVideo, signedVideoUrl]);
+  }, [latestVideo]);
 
   const handleEditReport = useCallback(() => {
     console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);
@@ -494,13 +464,13 @@ export default function ReportScreen() {
   };
 
   useEffect(() => {
-    if (signedVideoUrl && videoPlayer) {
-      console.log('[ReportScreen] ⚡ Loading video preview with signed URL for instant playback');
-      videoPlayer.replace(signedVideoUrl);
+    if (latestVideo?.video_url && videoPlayer) {
+      console.log('[ReportScreen] Loading video preview with caching enabled');
+      videoPlayer.replace(latestVideo.video_url);
       videoPlayer.play();
       setVideoReady(true);
     }
-  }, [signedVideoUrl, videoPlayer]);
+  }, [latestVideo?.video_url, videoPlayer]);
 
   const getSwellDirectionIcon = (direction: string | null) => {
     if (!direction) return { ios: 'arrow.up', android: 'north' };
@@ -1099,7 +1069,7 @@ export default function ReportScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
           </View>
-        ) : latestVideo && signedVideoUrl ? (
+        ) : latestVideo ? (
           <TouchableOpacity
             style={styles.videoCard}
             onPress={handleVideoPress}
