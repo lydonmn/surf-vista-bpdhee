@@ -1,6 +1,5 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -558,14 +557,20 @@ function calculateSurfRating(surfConditions: any): number {
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Daily 6AM Report] ❌ Missing environment variables');
+      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     let targetLocationId: string | null = null;
@@ -756,6 +761,7 @@ serve(async (req) => {
       JSON.stringify({
         success: false,
         error: error.message,
+        stack: error.stack,
       }),
       { 
         status: 500,
@@ -765,10 +771,6 @@ serve(async (req) => {
   }
 });
 
-async function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 async function processLocation(
   supabase: any, 
   locationId: string, 
@@ -776,9 +778,6 @@ async function processLocation(
   dateStr: string,
   isManualTrigger: boolean = false
 ) {
-  const MAX_RETRIES = isManualTrigger ? 1 : 10;
-  const RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000, 120000, 180000, 300000, 600000, 900000];
-  
   try {
     console.log(`[${locationName}] ═════════════════════════════════════════`);
     console.log(`[${locationName}] 🔍 CHECKING EXISTING REPORT`);
@@ -818,282 +817,117 @@ async function processLocation(
 
     console.log(`[${locationName}] 📝 Generating ${isManualTrigger ? 'updated' : 'new'} report for ${dateStr}...`);
 
+    // 🚨 CRITICAL FIX: For manual triggers, ONLY fetch existing data from database
+    // DO NOT call any Edge Functions to pull fresh data
     let weatherData = null;
-    
-    if (isManualTrigger) {
-      console.log(`[${locationName}] 🔍 Manual trigger: Fetching existing weather data from database...`);
-      
-      const { data: weatherDbData, error: weatherDbError } = await supabase
-        .from('weather_data')
-        .select('*')
-        .eq('location', locationId)
-        .gte('date', dateStr)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (weatherDbError) {
-        console.warn(`[${locationName}] ⚠️ Error fetching weather data:`, weatherDbError);
-      } else if (weatherDbData) {
-        console.log(`[${locationName}] ✅ Found weather data in database (date: ${weatherDbData.date})`);
-        weatherData = weatherDbData;
-      } else {
-        console.log(`[${locationName}] ⚠️ No weather data found, will use defaults`);
-      }
-    } else {
-      console.log(`[${locationName}] Step 1: Fetching weather data...`);
-      for (let weatherAttempt = 1; weatherAttempt <= 3; weatherAttempt++) {
-        try {
-          const { data: weatherResult, error: weatherError } = await supabase.functions.invoke('fetch-weather-data', {
-            body: { location: locationId },
-          });
-
-          if (weatherError) {
-            console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} warning:`, weatherError);
-          } else if (weatherResult?.success) {
-            console.log(`[${locationName}] ✅ Weather data fetched on attempt ${weatherAttempt}`);
-            
-            await delay(1000);
-            
-            const { data: weatherDbData } = await supabase
-              .from('weather_data')
-              .select('*')
-              .eq('date', dateStr)
-              .eq('location', locationId)
-              .maybeSingle();
-            
-            if (weatherDbData) {
-              weatherData = weatherDbData;
-              break;
-            }
-          }
-          
-          if (weatherAttempt < 3) {
-            await delay(2000);
-          }
-        } catch (weatherError: any) {
-          console.warn(`[${locationName}] Weather fetch attempt ${weatherAttempt} failed:`, weatherError);
-        }
-      }
-    }
-
     let surfConditions = null;
     let usedFallbackData = false;
     
     console.log(`[${locationName}] ═════════════════════════════════════════`);
-    console.log(`[${locationName}] 🌊 FETCHING SURF/BUOY DATA`);
-    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (use most recent available data)' : 'SCHEDULED (retry for fresh data)'}`);
+    console.log(`[${locationName}] 🌊 FETCHING DATA FROM DATABASE`);
+    console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (existing data only)' : 'SCHEDULED (may fetch fresh)'}`);
     console.log(`[${locationName}] ═════════════════════════════════════════`);
     
-    if (isManualTrigger) {
-      console.log(`[${locationName}] 🔍 MANUAL TRIGGER MODE ACTIVATED`);
-      console.log(`[${locationName}] ✅ Using EXISTING data from database`);
-      console.log(`[${locationName}] ❌ NOT fetching fresh data from buoy`);
+    // Step 1: Fetch weather data from database
+    console.log(`[${locationName}] 🔍 Fetching weather data from database...`);
+    const { data: weatherDbData, error: weatherDbError } = await supabase
+      .from('weather_data')
+      .select('*')
+      .eq('location_id', locationId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (weatherDbError) {
+      console.warn(`[${locationName}] ⚠️ Error fetching weather data:`, weatherDbError);
+    } else if (weatherDbData) {
+      console.log(`[${locationName}] ✅ Found weather data (date: ${weatherDbData.date})`);
+      weatherData = weatherDbData;
+    } else {
+      console.log(`[${locationName}] ⚠️ No weather data found in database`);
+    }
+    
+    // Step 2: Fetch surf conditions from database
+    console.log(`[${locationName}] 🔍 Fetching surf conditions from database...`);
+    
+    // Try today's data first
+    const { data: todayData, error: todayError } = await supabase
+      .from('surf_conditions')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('date', dateStr)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (todayError) {
+      console.error(`[${locationName}] ❌ Error fetching today's surf_conditions:`, todayError);
+    }
+    
+    console.log(`[${locationName}] 📊 Today's data:`, {
+      exists: !!todayData,
+      surf_height: todayData?.surf_height,
+      wave_height: todayData?.wave_height,
+      wind_speed: todayData?.wind_speed,
+      water_temp: todayData?.water_temp,
+      location_id: todayData?.location_id,
+    });
+    
+    const todayHasValidWaves = todayData && 
+      todayData.surf_height && 
+      todayData.surf_height !== 'N/A' && 
+      todayData.surf_height !== '';
+    
+    if (todayHasValidWaves) {
+      console.log(`[${locationName}] ✅ Found VALID data for today (${dateStr})`);
+      surfConditions = {
+        ...todayData,
+        location: locationId, // ✅ Force correct location
+      };
+      usedFallbackData = false;
+    } else {
+      console.log(`[${locationName}] ⚠️ Today's data has N/A wave data, looking for previous valid data...`);
       
-      const { data: todayData, error: todayError } = await supabase
+      const { data: validData, error: validError } = await supabase
         .from('surf_conditions')
         .select('*')
-        .eq('location', locationId)
-        .eq('date', dateStr)
+        .eq('location_id', locationId)
+        .neq('surf_height', 'N/A')
+        .neq('wave_height', 'N/A')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       
-      if (todayError) {
-        console.error(`[${locationName}] ❌ Error fetching today's surf_conditions:`, todayError);
+      if (validError) {
+        console.error(`[${locationName}] ❌ Error fetching valid data:`, validError);
       }
       
-      console.log(`[${locationName}] 📊 Today's data:`, {
-        exists: !!todayData,
-        surf_height: todayData?.surf_height,
-        wave_height: todayData?.wave_height,
-        wind_speed: todayData?.wind_speed,
-        water_temp: todayData?.water_temp,
-        location: todayData?.location,
-      });
-      
-      const todayHasValidWaves = todayData && 
-        todayData.surf_height && 
-        todayData.surf_height !== 'N/A' && 
-        todayData.surf_height !== '';
-      
-      if (todayHasValidWaves) {
-        console.log(`[${locationName}] ✅ Found VALID data for today (${dateStr})`);
-        console.log(`[${locationName}] 📊 surf_height: ${todayData.surf_height}`);
-        console.log(`[${locationName}] 📊 wave_height: ${todayData.wave_height}`);
-        console.log(`[${locationName}] 📊 wind_speed: ${todayData.wind_speed}`);
-        console.log(`[${locationName}] 📊 water_temp: ${todayData.water_temp}`);
-        console.log(`[${locationName}] 📊 location field: ${todayData.location}`);
+      if (validData) {
+        console.log(`[${locationName}] ✅ Found previous VALID data from ${validData.date}`);
         
-        // 🚨 CRITICAL FIX: Force location field to be the correct locationId
-        // DO NOT trust the location field from the database - it may be wrong
-        surfConditions = {
-          ...todayData,
-          location: locationId, // ✅ ALWAYS override with the correct locationId
-        };
-        usedFallbackData = false;
-        
-        console.log(`[${locationName}] ✅ Using today's data with FORCED location: ${surfConditions.location}`);
-      } else {
-        console.log(`[${locationName}] ⚠️ Today's data has N/A wave data, looking for previous valid data...`);
-        
-        const { data: validData, error: validError } = await supabase
-          .from('surf_conditions')
-          .select('*')
-          .eq('location', locationId)
-          .neq('surf_height', 'N/A')
-          .neq('wave_height', 'N/A')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (validError) {
-          console.error(`[${locationName}] ❌ Error fetching valid data:`, validError);
-        }
-        
-        if (validData) {
-          console.log(`[${locationName}] ✅ Found previous VALID data from ${validData.date}`);
-          console.log(`[${locationName}] 📊 surf_height: ${validData.surf_height}`);
-          console.log(`[${locationName}] 📊 wave_height: ${validData.wave_height}`);
-          console.log(`[${locationName}] 📊 updated_at: ${validData.updated_at}`);
-          
-          if (todayData) {
-            console.log(`[${locationName}] 🔄 Creating HYBRID data: previous waves + today's conditions`);
-            surfConditions = {
-              ...validData,
-              date: dateStr,
-              location: locationId, // ✅ Force correct location
-              wind_speed: todayData.wind_speed !== 'N/A' ? todayData.wind_speed : validData.wind_speed,
-              wind_direction: todayData.wind_direction !== 'N/A' ? todayData.wind_direction : validData.wind_direction,
-              water_temp: todayData.water_temp !== 'N/A' ? todayData.water_temp : validData.water_temp,
-              updated_at: new Date().toISOString(),
-            };
-            console.log(`[${locationName}] ✅ Hybrid data created with FORCED location: ${surfConditions.location}`);
-          } else {
-            surfConditions = {
-              ...validData,
-              location: locationId, // ✅ Force correct location
-            };
-            console.log(`[${locationName}] ✅ Using previous data with FORCED location: ${surfConditions.location}`);
-          }
-          usedFallbackData = true;
-        } else {
-          console.error(`[${locationName}] ❌ No valid surf data available in database at all`);
-          console.error(`[${locationName}] 💡 SOLUTION: Use "Update Data" button to pull fresh data from buoy first`);
-          throw new Error('No valid surf data available in database - please pull fresh data using "Update Data" button first');
-        }
-      }
-    } else {
-      let lastError = null;
-      
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          console.log(`[${locationName}] Attempt ${attempt}/${MAX_RETRIES}: Fetching buoy data...`);
-          
-          const { data: buoyData, error: buoyError } = await supabase.functions.invoke('fetch-surf-reports', {
-            body: { location: locationId },
-          });
-
-          if (buoyError) {
-            console.warn(`[${locationName}] Attempt ${attempt}: Buoy fetch warning:`, buoyError);
-          }
-
-          await delay(2000);
-
-          const { data: fetchedConditions, error: surfError } = await supabase
-            .from('surf_conditions')
-            .select('*')
-            .eq('date', dateStr)
-            .eq('location', locationId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (surfError) {
-            throw new Error(`Failed to fetch surf conditions: ${surfError.message}`);
-          }
-
-          const hasWaveData = fetchedConditions && (
-            (fetchedConditions.wave_height && fetchedConditions.wave_height !== 'N/A' && fetchedConditions.wave_height !== '') ||
-            (fetchedConditions.surf_height && fetchedConditions.surf_height !== 'N/A' && fetchedConditions.surf_height !== '')
-          );
-
-          const hasBuoyData = fetchedConditions && (
-            (fetchedConditions.wind_speed && fetchedConditions.wind_speed !== 'N/A') ||
-            (fetchedConditions.water_temp && fetchedConditions.water_temp !== 'N/A')
-          );
-
-          if (hasWaveData) {
-            console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`);
-            surfConditions = {
-              ...fetchedConditions,
-              location: locationId, // ✅ Ensure correct location
-            };
-            break;
-          } else if (hasBuoyData) {
-            console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online (wind/temp available)`);
-            
-            if (attempt === MAX_RETRIES) {
-              console.log(`[${locationName}] ✅ Max retries reached: Proceeding with available buoy data (wave sensors offline)`);
-              surfConditions = {
-                ...fetchedConditions,
-                location: locationId, // ✅ Ensure correct location
-              };
-              usedFallbackData = true;
-              break;
-            }
-            
-            lastError = `Wave sensors offline, retrying... (${attempt}/${MAX_RETRIES})`;
-          } else {
-            const errorMsg = `No valid buoy data available`;
-            console.log(`[${locationName}] ⚠️ Attempt ${attempt}/${MAX_RETRIES}: ${errorMsg}`);
-            lastError = errorMsg;
-          }
-          
-          if (attempt < MAX_RETRIES) {
-            const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-            console.log(`[${locationName}] ⏳ Waiting ${delayMs/1000} seconds before retry...`);
-            await delay(delayMs);
-          }
-        } catch (attemptError: any) {
-          console.error(`[${locationName}] Attempt ${attempt} error:`, attemptError);
-          lastError = attemptError.message;
-          
-          if (attempt < MAX_RETRIES) {
-            const delayMs = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-            await delay(delayMs);
-          }
-        }
-      }
-      
-      if (!surfConditions) {
-        console.error(`[${locationName}] ❌ All attempts failed. Trying to use previous valid data...`);
-        
-        const { data: previousValidData, error: prevError } = await supabase
-          .from('surf_conditions')
-          .select('*')
-          .eq('location', locationId)
-          .neq('surf_height', 'N/A')
-          .neq('wave_height', 'N/A')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (prevError) {
-          console.error(`[${locationName}] ❌ Error fetching previous valid data:`, prevError);
-        }
-        
-        if (previousValidData) {
-          console.log(`[${locationName}] ✅ Using previous valid data from ${previousValidData.date}`);
+        if (todayData) {
+          console.log(`[${locationName}] 🔄 Creating HYBRID data: previous waves + today's conditions`);
           surfConditions = {
-            ...previousValidData,
-            location: locationId, // ✅ Force correct location
+            ...validData,
+            date: dateStr,
+            location: locationId,
+            location_id: locationId,
+            wind_speed: todayData.wind_speed !== 'N/A' ? todayData.wind_speed : validData.wind_speed,
+            wind_direction: todayData.wind_direction !== 'N/A' ? todayData.wind_direction : validData.wind_direction,
+            water_temp: todayData.water_temp !== 'N/A' ? todayData.water_temp : validData.water_temp,
+            updated_at: new Date().toISOString(),
           };
-          usedFallbackData = true;
         } else {
-          console.error(`[${locationName}] ❌ No valid data available at all. Last error: ${lastError}`);
-          throw new Error(`Failed to fetch surf data: ${lastError}`);
+          surfConditions = {
+            ...validData,
+            location: locationId,
+            location_id: locationId,
+          };
         }
+        usedFallbackData = true;
+      } else {
+        console.error(`[${locationName}] ❌ No valid surf data available in database at all`);
+        throw new Error('No valid surf data available in database - please pull fresh data using "Update Data" button first');
       }
     }
 
@@ -1111,6 +945,7 @@ async function processLocation(
     console.log(`[${locationName}] ═════════════════════════════════════════`);
     console.log(`[${locationName}] 📊 FINAL SURF CONDITIONS FOR NARRATIVE`);
     console.log(`[${locationName}] location: ${surfConditions.location}`);
+    console.log(`[${locationName}] location_id: ${surfConditions.location_id}`);
     console.log(`[${locationName}] surf_height: ${surfConditions.surf_height}`);
     console.log(`[${locationName}] wave_height: ${surfConditions.wave_height}`);
     console.log(`[${locationName}] wind_speed: ${surfConditions.wind_speed}`);
@@ -1217,10 +1052,7 @@ async function processLocation(
 
     console.log(`[${locationName}] ✅ Report saved successfully to database`);
     
-    // 🚨 CRITICAL: Wait for database to propagate
-    await delay(1000);
-    
-    console.log(`[${locationName}] 🔍 Verifying save...`);
+    // Verify save
     const { data: verifyData, error: verifyError } = await supabase
       .from('surf_reports')
       .select('id, date, location, surf_height, wave_height, conditions, report_text, rating, updated_at')
@@ -1234,27 +1066,11 @@ async function processLocation(
       console.log(`[${locationName}] ═════════════════════════════════════════`);
       console.log(`[${locationName}] ✅ VERIFICATION SUCCESSFUL`);
       console.log(`[${locationName}] ✅ Report ID: ${verifyData.id}`);
-      console.log(`[${locationName}] ✅ surf_height: ${verifyData.surf_height}`);
-      console.log(`[${locationName}] ✅ wave_height: ${verifyData.wave_height}`);
       console.log(`[${locationName}] ✅ conditions: ${verifyData.conditions?.length || 0} characters`);
       console.log(`[${locationName}] ✅ report_text: ${verifyData.report_text?.length || 0} characters`);
       console.log(`[${locationName}] ✅ rating: ${verifyData.rating}/10`);
-      console.log(`[${locationName}] ✅ Newlines in conditions: ${verifyData.conditions?.includes('\n\n') ? 'YES' : 'NO'}`);
-      console.log(`[${locationName}] ✅ Newlines in report_text: ${verifyData.report_text?.includes('\n\n') ? 'YES' : 'NO'}`);
       console.log(`[${locationName}] ✅ updated_at: ${verifyData.updated_at}`);
-      
-      // 🚨 FINAL VERIFICATION: Check if saved narrative contains correct location
-      const savedPersonality = getLocationPersonality(locationId);
-      const savedContainsCorrectLocation = verifyData.conditions?.includes(savedPersonality.nickname);
-      console.log(`[${locationName}] 🔍 Saved narrative location check: ${savedContainsCorrectLocation ? '✅ CORRECT' : '❌ WRONG'}`);
-      if (!savedContainsCorrectLocation) {
-        console.error(`[${locationName}] ❌ CRITICAL: Saved narrative does NOT contain "${savedPersonality.nickname}"!`);
-        console.error(`[${locationName}] ❌ Saved narrative preview:`, verifyData.conditions?.substring(0, 200));
-      }
-      
       console.log(`[${locationName}] ═════════════════════════════════════════`);
-    } else {
-      console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);
     }
 
     return {
