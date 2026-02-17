@@ -18,19 +18,19 @@ const LOCATION_PERSONALITIES: Record<string, {
     casual: ['Folly', 'the Edge of America', 'Folly Beach'],
     excited: ['Folly is firing', 'Folly is going off', 'Folly is pumping'],
     disappointed: ['not much happening at Folly', 'Folly is pretty flat', 'Folly is taking a rest'],
-    nickname: 'Folly'
+    nickname: 'Folly Beach'
   },
   'pawleys-island': {
     casual: ['Pawleys', 'the island', 'Pawleys Island'],
     excited: ['Pawleys has swell', 'Pawleys is working', 'Pawleys is delivering'],
     disappointed: ['not a wave on Pawleys', 'Pawleys is dead flat', 'Pawleys is sleeping'],
-    nickname: 'Pawleys'
+    nickname: 'Pawleys Island'
   },
   'holden-beach-nc': {
     casual: ['Holden', 'Holden Beach', 'the beach'],
     excited: ['Holden is cranking', 'Holden has waves', 'Holden is alive'],
     disappointed: ['Holden is flat', 'nothing at Holden', 'Holden is quiet'],
-    nickname: 'Holden'
+    nickname: 'Holden Beach'
   },
   'rexhame-beach,-massachusetts-': {
     casual: ['Marshfield', 'Rexhame Beach', 'the beach'],
@@ -43,6 +43,12 @@ const LOCATION_PERSONALITIES: Record<string, {
     excited: ['Marshfield is firing', 'Marshfield has swell', 'Marshfield is pumping'],
     disappointed: ['not much at Marshfield', 'Marshfield is flat', 'Marshfield is quiet'],
     nickname: 'Marshfield'
+  },
+  'cisco-beach': {
+    casual: ['Cisco', 'Cisco Beach', 'the beach'],
+    excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
+    disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
+    nickname: 'Cisco Beach'
   }
 };
 
@@ -134,9 +140,14 @@ function generateWittyNarrative(
   console.log('[generateWittyNarrative] 🎯 STARTING ENHANCED NARRATIVE GENERATION');
   console.log('[generateWittyNarrative] ═════════════════════════════════════════');
   
+  // 🚨 CRITICAL FIX: Use locationIdOverride FIRST, then fall back to surfConditions.location
+  // This ensures the correct location is used when manually triggered from admin panel
   const locationId = locationIdOverride || surfConditions.location || 'folly-beach';
   
-  console.log('[generateWittyNarrative] Location ID:', locationId);
+  console.log('[generateWittyNarrative] 🎯 LOCATION RESOLUTION:');
+  console.log('[generateWittyNarrative]   locationIdOverride (from function call):', locationIdOverride);
+  console.log('[generateWittyNarrative]   surfConditions.location (from data):', surfConditions.location);
+  console.log('[generateWittyNarrative]   ✅ FINAL locationId being used:', locationId);
   console.log('[generateWittyNarrative] surf_height:', surfConditions.surf_height);
   console.log('[generateWittyNarrative] wave_height:', surfConditions.wave_height);
   console.log('[generateWittyNarrative] wind_speed:', surfConditions.wind_speed);
@@ -145,6 +156,8 @@ function generateWittyNarrative(
   console.log('[generateWittyNarrative] wave_period:', surfConditions.wave_period);
   
   const personality = getLocationPersonality(locationId);
+  console.log('[generateWittyNarrative] 🏖️ Using personality for:', personality.nickname);
+  
   const rideableFaceStr = surfConditions.surf_height || surfConditions.wave_height;
   
   console.log('[generateWittyNarrative] Rideable face string:', rideableFaceStr);
@@ -410,6 +423,7 @@ function generateWittyNarrative(
 
   console.log('[generateWittyNarrative] ═════════════════════════════════════════');
   console.log('[generateWittyNarrative] ✅ ENHANCED NARRATIVE COMPLETE');
+  console.log('[generateWittyNarrative] 🏖️ Location used:', personality.nickname);
   console.log('[generateWittyNarrative] 📏 Total length:', report.length, 'characters');
   console.log('[generateWittyNarrative] 📄 Preview:', report.substring(0, 150));
   console.log('[generateWittyNarrative] 🔍 Contains \\n\\n:', report.includes('\n\n'));
@@ -559,6 +573,7 @@ serve(async (req) => {
     for (const location of locationsData) {
       console.log(`\n[Daily 6AM Report] ═════════════════════════════════════════`);
       console.log(`[Daily 6AM Report] 📍 Processing ${location.display_name}...`);
+      console.log(`[Daily 6AM Report] 🆔 Location ID: ${location.id}`);
       console.log(`[Daily 6AM Report] ═════════════════════════════════════════`);
       
       const result = await processLocation(supabase, location.id, location.display_name, dateStr, isManualTrigger);
@@ -825,6 +840,7 @@ async function processLocation(
         wave_height: todayData?.wave_height,
         wind_speed: todayData?.wind_speed,
         water_temp: todayData?.water_temp,
+        location: todayData?.location,
       });
       
       const todayHasValidWaves = todayData && 
@@ -840,10 +856,10 @@ async function processLocation(
         console.log(`[${locationName}] 📊 water_temp: ${todayData.water_temp}`);
         console.log(`[${locationName}] 📊 location field: ${todayData.location}`);
         
-        // 🚨 CRITICAL: Ensure location field is set
+        // 🚨 CRITICAL: Ensure location field is set to the correct locationId
         surfConditions = {
           ...todayData,
-          location: locationId, // Force location to be set
+          location: locationId, // Force location to be set correctly
         };
         usedFallbackData = false;
         
@@ -876,7 +892,7 @@ async function processLocation(
             surfConditions = {
               ...validData,
               date: dateStr,
-              location: locationId,
+              location: locationId, // Force correct location
               wind_speed: todayData.wind_speed !== 'N/A' ? todayData.wind_speed : validData.wind_speed,
               wind_direction: todayData.wind_direction !== 'N/A' ? todayData.wind_direction : validData.wind_direction,
               water_temp: todayData.water_temp !== 'N/A' ? todayData.water_temp : validData.water_temp,
@@ -886,7 +902,7 @@ async function processLocation(
           } else {
             surfConditions = {
               ...validData,
-              location: locationId,
+              location: locationId, // Force correct location
             };
             console.log(`[${locationName}] ✅ Using previous data with location: ${surfConditions.location}`);
           }
@@ -939,14 +955,20 @@ async function processLocation(
 
           if (hasWaveData) {
             console.log(`[${locationName}] ✅ Attempt ${attempt}: Valid wave data found!`);
-            surfConditions = fetchedConditions;
+            surfConditions = {
+              ...fetchedConditions,
+              location: locationId, // Ensure correct location
+            };
             break;
           } else if (hasBuoyData) {
             console.log(`[${locationName}] ⚠️ Attempt ${attempt}: No wave data, but buoy is online (wind/temp available)`);
             
             if (attempt === MAX_RETRIES) {
               console.log(`[${locationName}] ✅ Max retries reached: Proceeding with available buoy data (wave sensors offline)`);
-              surfConditions = fetchedConditions;
+              surfConditions = {
+                ...fetchedConditions,
+                location: locationId, // Ensure correct location
+              };
               usedFallbackData = true;
               break;
             }
@@ -995,7 +1017,7 @@ async function processLocation(
           console.log(`[${locationName}] ✅ Using previous valid data from ${previousValidData.date}`);
           surfConditions = {
             ...previousValidData,
-            location: locationId,
+            location: locationId, // Force correct location
           };
           usedFallbackData = true;
         } else {
@@ -1010,9 +1032,9 @@ async function processLocation(
       throw new Error('No surf conditions available');
     }
 
-    // 🚨 CRITICAL: Ensure location field is ALWAYS set
-    if (!surfConditions.location) {
-      console.log(`[${locationName}] ⚠️ Location field missing in surfConditions, setting it to: ${locationId}`);
+    // 🚨 CRITICAL: Ensure location field is ALWAYS set to the correct locationId
+    if (!surfConditions.location || surfConditions.location !== locationId) {
+      console.log(`[${locationName}] ⚠️ Location field mismatch or missing, correcting to: ${locationId}`);
       surfConditions.location = locationId;
     }
 
@@ -1048,14 +1070,17 @@ async function processLocation(
 
     console.log(`[${locationName}] ═════════════════════════════════════════`);
     console.log(`[${locationName}] 📝 CALLING generateWittyNarrative`);
+    console.log(`[${locationName}] 🎯 Passing locationId: ${locationId}`);
+    console.log(`[${locationName}] 🎯 surfConditions.location: ${surfConditions.location}`);
     console.log(`[${locationName}] ═════════════════════════════════════════`);
     
+    // 🚨 CRITICAL FIX: Pass locationId as the override parameter to ensure correct location is used
     const narrative = generateWittyNarrative(
       surfConditions, 
       captureTime, 
       dateStr,
       weatherData,
-      locationId
+      locationId // ✅ This ensures the narrative uses the correct location name
     );
     
     console.log(`[${locationName}] ═════════════════════════════════════════`);
