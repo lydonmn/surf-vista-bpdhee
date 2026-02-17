@@ -670,11 +670,12 @@ export default function VideoPlayerScreen() {
     }
   }, [player, duration, resetControlsTimeout]);
 
-  // 🚨🚨🚨 CRITICAL FIX: Completely rewritten fullscreen toggle with FORCED orientation lock
+  // 🚨🚨🚨 ULTIMATE FIX: Force portrait lock for ALL videos in fullscreen
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
     console.log('[VideoPlayer] 🚨🚨🚨 Toggle fullscreen:', newFullscreenState);
     console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
+    console.log('[VideoPlayer] 📐 Video dimensions:', video?.resolution_width, 'x', video?.resolution_height);
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -683,9 +684,8 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 ENTERING FULLSCREEN - FORCE ORIENTATION LOCK IMMEDIATELY
-          console.log('[VideoPlayer] 🚨 ENTERING FULLSCREEN MODE');
-          console.log('[VideoPlayer] 🚨 Video is:', videoOrientation);
+          // 🚨 ENTERING FULLSCREEN - ALWAYS FORCE PORTRAIT FOR DRONE VIDEOS
+          console.log('[VideoPlayer] 🚨🚨🚨 ENTERING FULLSCREEN MODE');
           
           // Step 1: Unlock ALL existing orientation locks
           console.log('[VideoPlayer] Step 1: Unlocking all existing orientation locks...');
@@ -693,18 +693,14 @@ export default function VideoPlayerScreen() {
           console.log('[VideoPlayer] ✅ All orientation locks removed');
           
           // Step 2: Wait for unlock to fully take effect
-          await new Promise(resolve => setTimeout(resolve, 150));
+          await new Promise(resolve => setTimeout(resolve, 200));
           
-          // Step 3: FORCE lock to the correct orientation based on video dimensions
-          if (videoOrientation === 'portrait') {
-            console.log('[VideoPlayer] 🚨🚨🚨 FORCING PORTRAIT_UP LOCK (portrait video)');
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            console.log('[VideoPlayer] ✅✅✅ PORTRAIT_UP lock applied');
-          } else {
-            console.log('[VideoPlayer] 🚨🚨🚨 FORCING LANDSCAPE LOCK (landscape video)');
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            console.log('[VideoPlayer] ✅✅✅ LANDSCAPE lock applied');
-          }
+          // Step 3: 🚨 CRITICAL FIX - ALWAYS lock to PORTRAIT_UP for drone videos
+          // The issue is that even "landscape" drone videos are actually shot in portrait orientation
+          // and should stay portrait in fullscreen
+          console.log('[VideoPlayer] 🚨🚨🚨 FORCING PORTRAIT_UP LOCK (all drone videos stay portrait)');
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+          console.log('[VideoPlayer] ✅✅✅ PORTRAIT_UP lock applied - video will NOT flip sideways');
           
           // Step 4: Verify the lock was successfully applied
           const currentLock = await ScreenOrientation.getOrientationLockAsync();
@@ -713,10 +709,10 @@ export default function VideoPlayerScreen() {
           console.log('[VideoPlayer] 📐 Verification - Current orientation:', currentOrientation);
           
           // Step 5: Wait for orientation to stabilize before showing fullscreen
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 250));
           
           // Step 6: NOW set fullscreen state (after orientation is locked)
-          console.log('[VideoPlayer] ✅ Orientation locked - now entering fullscreen UI');
+          console.log('[VideoPlayer] ✅ Orientation locked to PORTRAIT - now entering fullscreen UI');
           setIsFullscreen(true);
           setControlsVisible(true);
           
@@ -747,7 +743,7 @@ export default function VideoPlayerScreen() {
     if (newFullscreenState && isPlaying) {
       startControlsTimeout();
     }
-  }, [isFullscreen, videoOrientation, isPlaying, startControlsTimeout]);
+  }, [isFullscreen, videoOrientation, video, isPlaying, startControlsTimeout]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
