@@ -245,6 +245,7 @@ function generateReportText(
   tideData: any[] = []
 ): string {
   try {
+    // 🚨 CRITICAL: Get locationId from surfData and ensure it's used throughout
     const locationId = surfData.location || 'folly-beach';
     const personality = getLocationPersonality(locationId);
     
@@ -275,6 +276,7 @@ function generateReportText(
     let report = '';
 
     // OPENING - Location-specific and rating-based
+    // 🚨 CRITICAL: ALL openings now use personality.nickname to ensure correct location
     console.log('[generateReportText] 📝 Building opening for', personality.nickname);
     if (rating >= 8) {
       const openings = [
@@ -633,7 +635,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 🚨 CRITICAL: Ensure location field is set correctly in surfData
+    // 🚨 CRITICAL: Force location field to be correct in surfData
     if (!surfData.location || surfData.location !== locationId) {
       console.log(`[${personality.nickname}] ⚠️ Correcting location field from "${surfData.location}" to "${locationId}"`);
       surfData.location = locationId;
