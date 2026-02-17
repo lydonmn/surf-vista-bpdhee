@@ -130,153 +130,188 @@ function generateWittyNarrative(
   weatherData: any = null,
   locationIdOverride: string | null = null
 ): string {
-  try {
-    const locationId = locationIdOverride || surfConditions.location || 'folly-beach';
-    
-    console.log('[generateWittyNarrative] ===== NARRATIVE GENERATION =====');
-    console.log('[generateWittyNarrative] Location ID:', locationId);
-    console.log('[generateWittyNarrative] surf_height:', surfConditions.surf_height);
-    console.log('[generateWittyNarrative] wave_height:', surfConditions.wave_height);
-    console.log('[generateWittyNarrative] wind_speed:', surfConditions.wind_speed);
-    console.log('[generateWittyNarrative] wind_direction:', surfConditions.wind_direction);
-    console.log('[generateWittyNarrative] water_temp:', surfConditions.water_temp);
-    console.log('[generateWittyNarrative] wave_period:', surfConditions.wave_period);
-    console.log('[generateWittyNarrative] ===============================');
-    
-    const personality = getLocationPersonality(locationId);
-    const rideableFaceStr = surfConditions.surf_height || surfConditions.wave_height;
-    
-    const waveSensorsOffline = !rideableFaceStr || rideableFaceStr === 'N/A' || rideableFaceStr === '';
-    
-    if (waveSensorsOffline) {
-      console.log('[generateWittyNarrative] Wave sensors offline - generating fallback narrative');
-      return generateNoWaveDataReportText(weatherData, surfConditions, locationId);
-    }
-    
-    // Parse the surf height value (handle ranges like "2.5-3.5 ft")
-    let waveHeight = 0;
-    let waveHeightLow = 0;
-    let waveHeightHigh = 0;
-    const cleanedStr = String(rideableFaceStr).trim();
-    
-    console.log('[generateWittyNarrative] Parsing wave height from:', cleanedStr);
-    
-    if (cleanedStr.includes('-')) {
-      const parts = cleanedStr.split('-');
-      waveHeightLow = parseNumericValue(parts[0], 0);
-      waveHeightHigh = parseNumericValue(parts[1], 0);
-      waveHeight = (waveHeightLow + waveHeightHigh) / 2;
-      console.log('[generateWittyNarrative] Parsed range:', { low: waveHeightLow, high: waveHeightHigh, average: waveHeight });
-    } else {
-      waveHeight = parseNumericValue(rideableFaceStr, 0);
-      waveHeightLow = waveHeight;
-      waveHeightHigh = waveHeight;
-      console.log('[generateWittyNarrative] Parsed single value:', waveHeight);
-    }
-    
-    if (waveHeight <= 0 || isNaN(waveHeight)) {
-      console.error('[generateWittyNarrative] ❌ Invalid wave height after parsing:', waveHeight);
-      return generateNoWaveDataReportText(weatherData, surfConditions, locationId);
-    }
-    
-    const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
-    const windDirRaw = surfConditions.wind_direction || 'variable';
-    const windDir = windDirRaw
-      .replace(/feet/gi, '')
-      .replace(/\s+/g, ' ')
-      .replace(/\s*\([^)]*\)/g, '')
-      .trim();
-    const swellDir = formatSwellDirection(surfConditions.swell_direction);
-    const period = parseNumericValue(surfConditions.wave_period, 0);
-    const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
-    const airTemp = parseNumericValue(weatherData?.temperature, 0);
-    const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'partly cloudy';
+  console.log('[generateWittyNarrative] ═════════════════════════════════════════');
+  console.log('[generateWittyNarrative] 🎯 STARTING ENHANCED NARRATIVE GENERATION');
+  console.log('[generateWittyNarrative] ═════════════════════════════════════════');
+  
+  const locationId = locationIdOverride || surfConditions.location || 'folly-beach';
+  
+  console.log('[generateWittyNarrative] Location ID:', locationId);
+  console.log('[generateWittyNarrative] surf_height:', surfConditions.surf_height);
+  console.log('[generateWittyNarrative] wave_height:', surfConditions.wave_height);
+  console.log('[generateWittyNarrative] wind_speed:', surfConditions.wind_speed);
+  console.log('[generateWittyNarrative] wind_direction:', surfConditions.wind_direction);
+  console.log('[generateWittyNarrative] water_temp:', surfConditions.water_temp);
+  console.log('[generateWittyNarrative] wave_period:', surfConditions.wave_period);
+  
+  const personality = getLocationPersonality(locationId);
+  const rideableFaceStr = surfConditions.surf_height || surfConditions.wave_height;
+  
+  console.log('[generateWittyNarrative] Rideable face string:', rideableFaceStr);
+  
+  const waveSensorsOffline = !rideableFaceStr || rideableFaceStr === 'N/A' || rideableFaceStr === '';
+  
+  if (waveSensorsOffline) {
+    console.log('[generateWittyNarrative] ⚠️ Wave sensors offline - generating fallback narrative');
+    const fallbackNarrative = generateNoWaveDataReportText(weatherData, surfConditions, locationId);
+    console.log('[generateWittyNarrative] ✅ Fallback narrative generated:', fallbackNarrative.length, 'characters');
+    return fallbackNarrative;
+  }
+  
+  // Parse the surf height value (handle ranges like "2.5-3.5 ft")
+  let waveHeight = 0;
+  let waveHeightLow = 0;
+  let waveHeightHigh = 0;
+  const cleanedStr = String(rideableFaceStr).trim();
+  
+  console.log('[generateWittyNarrative] Parsing wave height from:', cleanedStr);
+  
+  if (cleanedStr.includes('-')) {
+    const parts = cleanedStr.split('-');
+    waveHeightLow = parseNumericValue(parts[0], 0);
+    waveHeightHigh = parseNumericValue(parts[1], 0);
+    waveHeight = (waveHeightLow + waveHeightHigh) / 2;
+    console.log('[generateWittyNarrative] ✅ Parsed range:', { low: waveHeightLow, high: waveHeightHigh, average: waveHeight });
+  } else {
+    waveHeight = parseNumericValue(rideableFaceStr, 0);
+    waveHeightLow = waveHeight;
+    waveHeightHigh = waveHeight;
+    console.log('[generateWittyNarrative] ✅ Parsed single value:', waveHeight);
+  }
+  
+  if (waveHeight <= 0 || isNaN(waveHeight)) {
+    console.error('[generateWittyNarrative] ❌ Invalid wave height after parsing:', waveHeight);
+    console.error('[generateWittyNarrative] ❌ Falling back to no-wave-data narrative');
+    return generateNoWaveDataReportText(weatherData, surfConditions, locationId);
+  }
+  
+  console.log('[generateWittyNarrative] ✅ Valid wave height:', waveHeight, 'feet');
+  
+  const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
+  const windDirRaw = surfConditions.wind_direction || 'variable';
+  const windDir = windDirRaw
+    .replace(/feet/gi, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\([^)]*\)/g, '')
+    .trim();
+  const swellDir = formatSwellDirection(surfConditions.swell_direction);
+  const period = parseNumericValue(surfConditions.wave_period, 0);
+  const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
+  const airTemp = parseNumericValue(weatherData?.temperature, 0);
+  const weatherConditions = weatherData?.conditions || weatherData?.short_forecast || 'partly cloudy';
 
-    const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
-    const rating = calculateSurfRating(surfConditions);
-    const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
+  console.log('[generateWittyNarrative] 📊 Parsed values:', {
+    waveHeight,
+    waveHeightLow,
+    waveHeightHigh,
+    windSpeed,
+    windDir,
+    swellDir,
+    period,
+    waterTemp,
+    airTemp,
+  });
 
-    let report = '';
+  const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
+  const rating = calculateSurfRating(surfConditions);
+  const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
 
-    // 🎯 OPENING: Set expectations based on surf height and quality
-    if (waveHeight >= 8) {
-      const openings = [
-        `${personality.nickname} is absolutely firing today with overhead sets`,
-        `Epic conditions at ${personality.nickname} - we're seeing serious size`,
-        `${personality.nickname} is going off with well overhead waves`,
-      ];
-      report += openings[seed % openings.length];
-    } else if (waveHeight >= 5) {
-      const openings = [
-        `${personality.nickname} has solid head-high surf rolling through`,
-        `Looking really good at ${personality.nickname} with overhead waves`,
-        `${personality.nickname} is delivering quality head-high sets`,
-      ];
-      report += openings[seed % openings.length];
-    } else if (waveHeight >= 3) {
-      const openings = [
-        `${personality.nickname} has fun chest to shoulder high waves`,
-        `Decent session potential at ${personality.nickname} with chest-high surf`,
-        `${personality.nickname} is serving up chest-high waves`,
-      ];
-      report += openings[seed % openings.length];
-    } else if (waveHeight >= 1.5) {
-      const openings = [
-        `${personality.nickname} has small but rideable waist-high surf`,
-        `Mellow conditions at ${personality.nickname} with waist-high waves`,
-        `${personality.nickname} is offering beginner-friendly waist-high surf`,
-      ];
-      report += openings[seed % openings.length];
-    } else {
-      const openings = [
-        `${personality.nickname} is pretty flat today with minimal surf`,
-        `Not much happening at ${personality.nickname} - ankle-high at best`,
-        `${personality.nickname} is taking a rest with barely rideable waves`,
-      ];
-      report += openings[seed % openings.length];
-    }
+  console.log('[generateWittyNarrative] 🎲 Seed for randomization:', seed);
+  console.log('[generateWittyNarrative] 🌬️ Wind offshore:', isOffshore);
+  console.log('[generateWittyNarrative] ⭐ Rating:', rating);
 
+  let report = '';
+
+  // 🎯 OPENING: Set expectations based on surf height and quality
+  console.log('[generateWittyNarrative] 📝 Building opening...');
+  if (waveHeight >= 8) {
+    const openings = [
+      `${personality.nickname} is absolutely firing today with overhead sets`,
+      `Epic conditions at ${personality.nickname} - we're seeing serious size`,
+      `${personality.nickname} is going off with well overhead waves`,
+    ];
+    report += openings[seed % openings.length];
+  } else if (waveHeight >= 5) {
+    const openings = [
+      `${personality.nickname} has solid head-high surf rolling through`,
+      `Looking really good at ${personality.nickname} with overhead waves`,
+      `${personality.nickname} is delivering quality head-high sets`,
+    ];
+    report += openings[seed % openings.length];
+  } else if (waveHeight >= 3) {
+    const openings = [
+      `${personality.nickname} has fun chest to shoulder high waves`,
+      `Decent session potential at ${personality.nickname} with chest-high surf`,
+      `${personality.nickname} is serving up chest-high waves`,
+    ];
+    report += openings[seed % openings.length];
+  } else if (waveHeight >= 1.5) {
+    const openings = [
+      `${personality.nickname} has small but rideable waist-high surf`,
+      `Mellow conditions at ${personality.nickname} with waist-high waves`,
+      `${personality.nickname} is offering beginner-friendly waist-high surf`,
+    ];
+    report += openings[seed % openings.length];
+  } else {
+    const openings = [
+      `${personality.nickname} is pretty flat today with minimal surf`,
+      `Not much happening at ${personality.nickname} - ankle-high at best`,
+      `${personality.nickname} is taking a rest with barely rideable waves`,
+    ];
+    report += openings[seed % openings.length];
+  }
+
+  report += '.\n\n';
+  console.log('[generateWittyNarrative] ✅ Opening added:', report.length, 'chars');
+
+  // 🌊 WAVE DETAIL: Describe the surf height range and what it means for riding
+  console.log('[generateWittyNarrative] 📝 Building wave detail...');
+  if (waveHeightLow !== waveHeightHigh) {
+    report += `Faces are running ${waveHeightLow.toFixed(1)} feet to ${waveHeightHigh.toFixed(1)} feet`;
+  } else {
+    report += `Faces are around ${waveHeight.toFixed(1)} feet`;
+  }
+  
+  // Add context about rideability based on size
+  if (waveHeight >= 8) {
+    report += `, which is serious size for experienced surfers only. These waves have real power and consequence`;
+  } else if (waveHeight >= 5) {
+    report += `, perfect for intermediate to advanced surfers looking for a solid session. Plenty of face to work with`;
+  } else if (waveHeight >= 3) {
+    report += `, ideal for most skill levels. Enough push to have fun without being overwhelming`;
+  } else if (waveHeight >= 1.5) {
+    report += `, great for beginners and longboarders. Mellow enough to practice fundamentals`;
+  } else {
+    report += `, barely enough to ride. You'll need a longboard or foamie to catch anything`;
+  }
+  
+  report += '.\n\n';
+  console.log('[generateWittyNarrative] ✅ Wave detail added:', report.length, 'chars');
+
+  // 📊 PERIOD & SWELL: How the energy translates to ride quality
+  console.log('[generateWittyNarrative] 📝 Building period/swell detail...');
+  if (period >= 12) {
+    report += `${period.toFixed(0)}-second period from the ${swellDir} brings long-interval groundswell with powerful, well-spaced sets`;
+  } else if (period >= 10) {
+    report += `${period.toFixed(0)}-second period from the ${swellDir} brings decent energy with well-spaced sets that give you time to position`;
+  } else if (period >= 8) {
+    report += `${period.toFixed(0)}-second period from the ${swellDir} provides moderate power, though waves come in more frequently`;
+  } else if (period >= 6) {
+    report += `Shorter ${period.toFixed(0)}-second period from the ${swellDir} means weaker, more frequent waves without much push`;
+  } else if (period > 0) {
+    report += `Quick ${period.toFixed(0)}-second period indicates choppy wind swell from the ${swellDir} with limited power`;
+  } else {
+    console.warn('[generateWittyNarrative] ⚠️ No period data available, skipping period section');
+  }
+  
+  if (period > 0) {
     report += '.\n\n';
+    console.log('[generateWittyNarrative] ✅ Period detail added:', report.length, 'chars');
+  }
 
-    // 🌊 WAVE DETAIL: Describe the surf height range and what it means for riding
-    if (waveHeightLow !== waveHeightHigh) {
-      // 🚨 CRITICAL FIX: Add proper spacing with " to " between numbers
-      report += `Faces are running ${waveHeightLow.toFixed(1)} feet to ${waveHeightHigh.toFixed(1)} feet`;
-    } else {
-      report += `Faces are around ${waveHeight.toFixed(1)} feet`;
-    }
-    
-    // Add context about rideability based on size
-    if (waveHeight >= 8) {
-      report += `, which is serious size for experienced surfers only. These waves have real power and consequence`;
-    } else if (waveHeight >= 5) {
-      report += `, perfect for intermediate to advanced surfers looking for a solid session. Plenty of face to work with`;
-    } else if (waveHeight >= 3) {
-      report += `, ideal for most skill levels. Enough push to have fun without being overwhelming`;
-    } else if (waveHeight >= 1.5) {
-      report += `, great for beginners and longboarders. Mellow enough to practice fundamentals`;
-    } else {
-      report += `, barely enough to ride. You'll need a longboard or foamie to catch anything`;
-    }
-    
-    report += '.\n\n';
-
-    // 📊 PERIOD & SWELL: How the energy translates to ride quality
-    if (period >= 12) {
-      report += `${period.toFixed(0)}-second period from the ${swellDir} brings long-interval groundswell with powerful, well-spaced sets`;
-    } else if (period >= 10) {
-      report += `${period.toFixed(0)}-second period from the ${swellDir} brings decent energy with well-spaced sets that give you time to position`;
-    } else if (period >= 8) {
-      report += `${period.toFixed(0)}-second period from the ${swellDir} provides moderate power, though waves come in more frequently`;
-    } else if (period >= 6) {
-      report += `Shorter ${period.toFixed(0)}-second period from the ${swellDir} means weaker, more frequent waves without much push`;
-    } else if (period > 0) {
-      report += `Quick ${period.toFixed(0)}-second period indicates choppy wind swell from the ${swellDir} with limited power`;
-    }
-    
-    report += '.\n\n';
-
-    // 💨 WIND: How it affects the wave faces and ride quality
+  // 💨 WIND: How it affects the wave faces and ride quality
+  console.log('[generateWittyNarrative] 📝 Building wind detail...');
+  if (windSpeed > 0) {
     if (isOffshore) {
       if (windSpeed < 5) {
         report += `Light ${windSpeed.toFixed(0)} mph ${windDir} offshore breeze is grooming the faces into glassy perfection`;
@@ -300,184 +335,145 @@ function generateWittyNarrative(
     }
     
     report += '.\n\n';
-
-    // 🌡️ WATER TEMP & WEATHER: Brief conditions without redundancy
-    if (waterTemp > 0) {
-      // 🚨 FIX: Clean formatting - water temp only, no wetsuit thickness mixed in
-      report += `Water is ${waterTemp.toFixed(0)}°F`;
-      
-      if (waterTemp >= 75) {
-        report += ` - boardshorts weather`;
-      } else if (waterTemp >= 68) {
-        report += ` - spring suit recommended`;
-      } else if (waterTemp >= 60) {
-        report += ` - 3/2mm wetsuit territory`;
-      } else if (waterTemp >= 50) {
-        report += ` - 4/3mm with booties needed`;
-      } else {
-        report += ` - 5/4mm with hood and gloves`;
-      }
-    }
-    
-    if (airTemp > 0 && weatherConditions) {
-      report += `. ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()}`;
-    } else if (weatherConditions) {
-      report += `. ${weatherConditions}`;
-    }
-    
-    report += '.\n\n';
-
-    // 🏄 FINAL CALL: Action recommendation based on overall quality
-    if (rating >= 8 && waveHeight >= 5) {
-      const recs = [
-        `Drop everything and get out there - these are the conditions you've been waiting for`,
-        `This is a must-surf session. Everything is lining up perfectly`,
-        `Don't miss this one. Premium conditions that don't come around often`,
-      ];
-      report += recs[seed % recs.length];
-    } else if (rating >= 7 && waveHeight >= 3) {
-      const recs = [
-        `Definitely worth the paddle out. Should be a really fun session`,
-        `Get on it if you can - solid conditions for a quality surf`,
-        `This is surf-worthy for sure. Good size with clean conditions`,
-      ];
-      report += recs[seed % recs.length];
-    } else if (rating >= 5 && waveHeight >= 2) {
-      const recs = [
-        `Worth checking out if you're nearby. Decent waves for a casual session`,
-        `Not epic but definitely rideable. Good for working on your technique`,
-        `Surf-able conditions. Won't blow your mind but you'll catch waves`,
-      ];
-      report += recs[seed % recs.length];
-    } else if (waveHeight >= 1) {
-      const recs = [
-        `Small but rideable for longboarders and beginners. Mellow vibes`,
-        `Perfect for learning or cruising on a longboard. Low-pressure session`,
-        `Beginner-friendly conditions. Great for practicing fundamentals`,
-      ];
-      report += recs[seed % recs.length];
-    } else {
-      const recs = [
-        `Save your energy for a better swell. Not much out there today`,
-        `Pretty minimal. Check back tomorrow when conditions improve`,
-        `Not worth the paddle. Wait for the next swell to fill in`,
-      ];
-      report += recs[seed % recs.length];
-    }
-
-    report += '.';
-
-    console.log('[generateWittyNarrative] ✅ Generated narrative:', report.length, 'characters');
-    console.log('[generateWittyNarrative] Preview:', report.substring(0, 150));
-    console.log('[generateWittyNarrative] Contains \\n\\n:', report.includes('\n\n'));
-    console.log('[generateWittyNarrative] Newline count:', (report.match(/\n\n/g) || []).length);
-
-    return report;
-  } catch (error) {
-    console.error('[generateWittyNarrative] ❌ CRITICAL ERROR generating narrative:', error);
-    console.error('[generateWittyNarrative] ❌ Error type:', error instanceof Error ? error.constructor.name : typeof error);
-    console.error('[generateWittyNarrative] ❌ Error message:', error instanceof Error ? error.message : String(error));
-    
-    const locationId = locationIdOverride || surfConditions.location || 'unknown';
-    const personality = getLocationPersonality(locationId);
-    
-    const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height || 'N/A';
-    const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
-    const windDirRaw = surfConditions.wind_direction || 'variable';
-    const windDir = windDirRaw
-      .replace(/feet/gi, '')
-      .replace(/\s+/g, ' ')
-      .replace(/\s*\([^)]*\)/g, '')
-      .trim();
-    const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
-    const period = parseNumericValue(surfConditions.wave_period, 0);
-    
-    let fallbackReport = `${personality.casual[0]} has waves today.\n\n`;
-    
-    if (surfHeightStr !== 'N/A') {
-      fallbackReport += `${surfHeightStr} surf`;
-      if (period > 0) {
-        fallbackReport += ` with ${period.toFixed(0)}-second period`;
-      }
-      fallbackReport += '.\n\n';
-    }
-    
-    if (windSpeed > 0) {
-      fallbackReport += `Wind is ${windSpeed.toFixed(0)} mph ${windDir}.\n\n`;
-    }
-    
-    if (waterTemp > 0) {
-      fallbackReport += `Water temperature is ${waterTemp.toFixed(0)}°F. `;
-      if (waterTemp >= 75) {
-        fallbackReport += `Boardshorts weather.\n\n`;
-      } else if (waterTemp >= 68) {
-        fallbackReport += `Spring suit recommended.\n\n`;
-      } else if (waterTemp >= 60) {
-        fallbackReport += `3/2mm wetsuit will keep you comfortable.\n\n`;
-      } else if (waterTemp >= 50) {
-        fallbackReport += `4/3mm wetsuit with booties needed.\n\n`;
-      } else {
-        fallbackReport += `5/4mm with hood and gloves.\n\n`;
-      }
-    }
-    
-    fallbackReport += `Check it out if you're in the area.`;
-    
-    console.log('[generateWittyNarrative] ✅ Generated fallback narrative from available data');
-    return fallbackReport;
+    console.log('[generateWittyNarrative] ✅ Wind detail added:', report.length, 'chars');
+  } else {
+    console.warn('[generateWittyNarrative] ⚠️ No wind data available, skipping wind section');
   }
+
+  // 🌡️ WATER TEMP & WEATHER: Brief conditions without redundancy
+  console.log('[generateWittyNarrative] 📝 Building water temp/weather detail...');
+  if (waterTemp > 0) {
+    report += `Water is ${waterTemp.toFixed(0)}°F`;
+    
+    if (waterTemp >= 75) {
+      report += ` - boardshorts weather`;
+    } else if (waterTemp >= 68) {
+      report += ` - spring suit recommended`;
+    } else if (waterTemp >= 60) {
+      report += ` - 3/2mm wetsuit territory`;
+    } else if (waterTemp >= 50) {
+      report += ` - 4/3mm with booties needed`;
+    } else {
+      report += ` - 5/4mm with hood and gloves`;
+    }
+  }
+  
+  if (airTemp > 0 && weatherConditions) {
+    report += `. ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()}`;
+  } else if (weatherConditions) {
+    report += `. ${weatherConditions}`;
+  }
+  
+  report += '.\n\n';
+  console.log('[generateWittyNarrative] ✅ Water temp/weather added:', report.length, 'chars');
+
+  // 🏄 FINAL CALL: Action recommendation based on overall quality
+  console.log('[generateWittyNarrative] 📝 Building final call...');
+  if (rating >= 8 && waveHeight >= 5) {
+    const recs = [
+      `Drop everything and get out there - these are the conditions you've been waiting for`,
+      `This is a must-surf session. Everything is lining up perfectly`,
+      `Don't miss this one. Premium conditions that don't come around often`,
+    ];
+    report += recs[seed % recs.length];
+  } else if (rating >= 7 && waveHeight >= 3) {
+    const recs = [
+      `Definitely worth the paddle out. Should be a really fun session`,
+      `Get on it if you can - solid conditions for a quality surf`,
+      `This is surf-worthy for sure. Good size with clean conditions`,
+    ];
+    report += recs[seed % recs.length];
+  } else if (rating >= 5 && waveHeight >= 2) {
+    const recs = [
+      `Worth checking out if you're nearby. Decent waves for a casual session`,
+      `Not epic but definitely rideable. Good for working on your technique`,
+      `Surf-able conditions. Won't blow your mind but you'll catch waves`,
+    ];
+    report += recs[seed % recs.length];
+  } else if (waveHeight >= 1) {
+    const recs = [
+      `Small but rideable for longboarders and beginners. Mellow vibes`,
+      `Perfect for learning or cruising on a longboard. Low-pressure session`,
+      `Beginner-friendly conditions. Great for practicing fundamentals`,
+    ];
+    report += recs[seed % recs.length];
+  } else {
+    const recs = [
+      `Save your energy for a better swell. Not much out there today`,
+      `Pretty minimal. Check back tomorrow when conditions improve`,
+      `Not worth the paddle. Wait for the next swell to fill in`,
+    ];
+    report += recs[seed % recs.length];
+  }
+
+  report += '.';
+
+  console.log('[generateWittyNarrative] ═════════════════════════════════════════');
+  console.log('[generateWittyNarrative] ✅ ENHANCED NARRATIVE COMPLETE');
+  console.log('[generateWittyNarrative] 📏 Total length:', report.length, 'characters');
+  console.log('[generateWittyNarrative] 📄 Preview:', report.substring(0, 150));
+  console.log('[generateWittyNarrative] 🔍 Contains \\n\\n:', report.includes('\n\n'));
+  console.log('[generateWittyNarrative] 🔍 Newline count:', (report.match(/\n\n/g) || []).length);
+  console.log('[generateWittyNarrative] ═════════════════════════════════════════');
+
+  return report;
 }
 
 function calculateSurfRating(surfConditions: any): number {
-  const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height || '0';
-  const periodStr = surfConditions.wave_period || '0';
-  const windSpeedStr = surfConditions.wind_speed || '0';
-  
-  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
-  
-  if (surfHeightStr === 'N/A' || surfHeightStr === '') {
-    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
+  try {
+    const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height || '0';
+    const periodStr = surfConditions.wave_period || '0';
+    const windSpeedStr = surfConditions.wind_speed || '0';
+    
+    console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr });
+    
+    if (surfHeightStr === 'N/A' || surfHeightStr === '') {
+      console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
+      return 5;
+    }
+    
+    let surfHeight = 0;
+    const cleanedStr = String(surfHeightStr).trim();
+    
+    if (cleanedStr.includes('-')) {
+      const parts = cleanedStr.split('-');
+      const low = parseNumericValue(parts[0], 0);
+      const high = parseNumericValue(parts[1], 0);
+      surfHeight = (low + high) / 2;
+      console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
+    } else {
+      surfHeight = parseNumericValue(surfHeightStr, 0);
+      console.log('[calculateSurfRating] Parsed single value:', surfHeight);
+    }
+    
+    const period = parseNumericValue(periodStr, 0);
+    const windSpeed = parseNumericValue(windSpeedStr, 0);
+
+    let rating = 3;
+
+    if (surfHeight >= 6) rating += 5;
+    else if (surfHeight >= 4) rating += 4;
+    else if (surfHeight >= 3) rating += 3;
+    else if (surfHeight >= 2) rating += 2;
+    else if (surfHeight >= 1) rating += 1;
+    else if (surfHeight < 1) rating -= 1;
+
+    if (period >= 12) rating += 3;
+    else if (period >= 10) rating += 2;
+    else if (period >= 8) rating += 1;
+    else if (period < 6 && period > 0) rating -= 1;
+
+    if (windSpeed < 5) rating += 1;
+    else if (windSpeed > 15) rating -= 2;
+
+    const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
+    console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (surf_height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph)`);
+    
+    return finalRating;
+  } catch (error) {
+    console.error('[calculateSurfRating] ❌ Error calculating rating:', error);
     return 5;
   }
-  
-  let surfHeight = 0;
-  const cleanedStr = String(surfHeightStr).trim();
-  
-  if (cleanedStr.includes('-')) {
-    const parts = cleanedStr.split('-');
-    const low = parseNumericValue(parts[0], 0);
-    const high = parseNumericValue(parts[1], 0);
-    surfHeight = (low + high) / 2;
-    console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
-  } else {
-    surfHeight = parseNumericValue(surfHeightStr, 0);
-    console.log('[calculateSurfRating] Parsed single value:', surfHeight);
-  }
-  
-  const period = parseNumericValue(periodStr, 0);
-  const windSpeed = parseNumericValue(windSpeedStr, 0);
-
-  let rating = 3;
-
-  if (surfHeight >= 6) rating += 5;
-  else if (surfHeight >= 4) rating += 4;
-  else if (surfHeight >= 3) rating += 3;
-  else if (surfHeight >= 2) rating += 2;
-  else if (surfHeight >= 1) rating += 1;
-  else if (surfHeight < 1) rating -= 1;
-
-  if (period >= 12) rating += 3;
-  else if (period >= 10) rating += 2;
-  else if (period >= 8) rating += 1;
-  else if (period < 6 && period > 0) rating -= 1;
-
-  if (windSpeed < 5) rating += 1;
-  else if (windSpeed > 15) rating -= 2;
-
-  const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
-  console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (surf_height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph)`);
-  
-  return finalRating;
 }
 
 serve(async (req) => {
@@ -700,7 +696,12 @@ async function processLocation(
   const RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000, 120000, 180000, 300000, 600000, 900000];
   
   try {
-    console.log(`[${locationName}] Checking if report already exists for today (${dateStr})...`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] 🔍 CHECKING EXISTING REPORT`);
+    console.log(`[${locationName}] Date: ${dateStr}`);
+    console.log(`[${locationName}] Location: ${locationId}`);
+    console.log(`[${locationName}] Manual trigger: ${isManualTrigger}`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
     
     const { data: existingReport } = await supabase
       .from('surf_reports')
@@ -709,8 +710,15 @@ async function processLocation(
       .eq('location', locationId)
       .maybeSingle();
 
+    if (existingReport) {
+      console.log(`[${locationName}] ✅ Found existing report`);
+      console.log(`[${locationName}] 📊 conditions length: ${existingReport.conditions?.length || 0}`);
+      console.log(`[${locationName}] 📊 report_text length: ${existingReport.report_text?.length || 0}`);
+      console.log(`[${locationName}] 📊 Manual trigger: ${isManualTrigger}`);
+    }
+
     if (existingReport && existingReport.conditions && existingReport.conditions.length > 100 && !isManualTrigger) {
-      console.log(`[${locationName}] ✅ Valid report already exists for today - skipping`);
+      console.log(`[${locationName}] ✅ Valid report already exists for today - skipping (scheduled mode)`);
       return {
         success: true,
         location: locationName,
@@ -720,7 +728,11 @@ async function processLocation(
       };
     }
 
-    console.log(`[${locationName}] Generating ${isManualTrigger ? 'updated' : 'new'} report for ${dateStr}...`);
+    if (isManualTrigger) {
+      console.log(`[${locationName}] 🔄 Manual trigger: Will regenerate narrative even if report exists`);
+    }
+
+    console.log(`[${locationName}] 📝 Generating ${isManualTrigger ? 'updated' : 'new'} report for ${dateStr}...`);
 
     let weatherData = null;
     
@@ -784,15 +796,15 @@ async function processLocation(
     let surfConditions = null;
     let usedFallbackData = false;
     
-    console.log(`[${locationName}] Step 3: Fetching surf/buoy data...`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] 🌊 FETCHING SURF/BUOY DATA`);
     console.log(`[${locationName}] Mode: ${isManualTrigger ? 'MANUAL (use most recent available data)' : 'SCHEDULED (retry for fresh data)'}`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
     
     if (isManualTrigger) {
-      console.log(`[${locationName}] ═════════════════════════════════════════`);
       console.log(`[${locationName}] 🔍 MANUAL TRIGGER MODE ACTIVATED`);
       console.log(`[${locationName}] ✅ Using EXISTING data from database`);
       console.log(`[${locationName}] ❌ NOT fetching fresh data from buoy`);
-      console.log(`[${locationName}] ═════════════════════════════════════════`);
       
       const { data: todayData, error: todayError } = await supabase
         .from('surf_conditions')
@@ -807,6 +819,14 @@ async function processLocation(
         console.error(`[${locationName}] ❌ Error fetching today's surf_conditions:`, todayError);
       }
       
+      console.log(`[${locationName}] 📊 Today's data:`, {
+        exists: !!todayData,
+        surf_height: todayData?.surf_height,
+        wave_height: todayData?.wave_height,
+        wind_speed: todayData?.wind_speed,
+        water_temp: todayData?.water_temp,
+      });
+      
       const todayHasValidWaves = todayData && 
         todayData.surf_height && 
         todayData.surf_height !== 'N/A' && 
@@ -818,8 +838,16 @@ async function processLocation(
         console.log(`[${locationName}] 📊 wave_height: ${todayData.wave_height}`);
         console.log(`[${locationName}] 📊 wind_speed: ${todayData.wind_speed}`);
         console.log(`[${locationName}] 📊 water_temp: ${todayData.water_temp}`);
-        surfConditions = todayData;
+        console.log(`[${locationName}] 📊 location field: ${todayData.location}`);
+        
+        // 🚨 CRITICAL: Ensure location field is set
+        surfConditions = {
+          ...todayData,
+          location: locationId, // Force location to be set
+        };
         usedFallbackData = false;
+        
+        console.log(`[${locationName}] ✅ Using today's data with location: ${surfConditions.location}`);
       } else {
         console.log(`[${locationName}] ⚠️ Today's data has N/A wave data, looking for previous valid data...`);
         
@@ -982,20 +1010,32 @@ async function processLocation(
       throw new Error('No surf conditions available');
     }
 
+    // 🚨 CRITICAL: Ensure location field is ALWAYS set
     if (!surfConditions.location) {
       console.log(`[${locationName}] ⚠️ Location field missing in surfConditions, setting it to: ${locationId}`);
       surfConditions.location = locationId;
     }
+
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] 📊 FINAL SURF CONDITIONS FOR NARRATIVE`);
+    console.log(`[${locationName}] location: ${surfConditions.location}`);
+    console.log(`[${locationName}] surf_height: ${surfConditions.surf_height}`);
+    console.log(`[${locationName}] wave_height: ${surfConditions.wave_height}`);
+    console.log(`[${locationName}] wind_speed: ${surfConditions.wind_speed}`);
+    console.log(`[${locationName}] wind_direction: ${surfConditions.wind_direction}`);
+    console.log(`[${locationName}] water_temp: ${surfConditions.water_temp}`);
+    console.log(`[${locationName}] wave_period: ${surfConditions.wave_period}`);
+    console.log(`[${locationName}] swell_direction: ${surfConditions.swell_direction}`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
 
     const hasValidWaveData = surfConditions && (
       (surfConditions.wave_height && surfConditions.wave_height !== 'N/A' && surfConditions.wave_height !== '') ||
       (surfConditions.surf_height && surfConditions.surf_height !== 'N/A' && surfConditions.surf_height !== '')
     );
 
-    console.log(`[${locationName}] Step 4: Generating daily report...`);
-    console.log(`[${locationName}] Data source: ${usedFallbackData ? 'Previous valid data' : 'Fresh data'}`);
-    console.log(`[${locationName}] Wave sensors status: ${hasValidWaveData ? 'ONLINE ✅' : 'OFFLINE ⚠️'}`);
-    console.log(`[${locationName}] Weather data available:`, !!weatherData);
+    console.log(`[${locationName}] 🌊 Wave sensors status: ${hasValidWaveData ? 'ONLINE ✅' : 'OFFLINE ⚠️'}`);
+    console.log(`[${locationName}] 🌤️ Weather data available:`, !!weatherData);
+    console.log(`[${locationName}] 🔄 Used fallback data:`, usedFallbackData);
     
     const captureTime = surfConditions.updated_at 
       ? new Date(surfConditions.updated_at).toLocaleTimeString('en-US', { 
@@ -1006,7 +1046,9 @@ async function processLocation(
         })
       : '6:00 AM';
 
-    console.log(`[${locationName}] 📝 Generating narrative...`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] 📝 CALLING generateWittyNarrative`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
     
     const narrative = generateWittyNarrative(
       surfConditions, 
@@ -1016,14 +1058,16 @@ async function processLocation(
       locationId
     );
     
-    console.log(`[${locationName}] ✅ Generated narrative (${narrative.length} characters)`);
-    console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
-    console.log(`[${locationName}] 🔍 Checking newlines in narrative...`);
-    console.log(`[${locationName}] Contains \\n\\n: ${narrative.includes('\n\n')}`);
-    console.log(`[${locationName}] Newline count: ${(narrative.match(/\n\n/g) || []).length}`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] ✅ NARRATIVE GENERATION COMPLETE`);
+    console.log(`[${locationName}] 📏 Length: ${narrative.length} characters`);
+    console.log(`[${locationName}] 📄 Preview: ${narrative.substring(0, 150)}...`);
+    console.log(`[${locationName}] 🔍 Contains \\n\\n: ${narrative.includes('\n\n')}`);
+    console.log(`[${locationName}] 🔍 Newline count: ${(narrative.match(/\n\n/g) || []).length}`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
 
     const rating = calculateSurfRating(surfConditions);
-    console.log(`[${locationName}] Calculated rating: ${rating}/10`);
+    console.log(`[${locationName}] ⭐ Calculated rating: ${rating}/10`);
 
     // 🚨 CRITICAL FIX: Store narrative in BOTH conditions AND report_text fields
     // This ensures compatibility with both old and new frontend code
@@ -1044,10 +1088,13 @@ async function processLocation(
       updated_at: new Date().toISOString(),
     };
 
-    console.log(`[${locationName}] 💾 Upserting report to database...`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
+    console.log(`[${locationName}] 💾 UPSERTING REPORT TO DATABASE`);
     console.log(`[${locationName}] 💾 Date: ${dateStr}, Location: ${locationId}`);
     console.log(`[${locationName}] 💾 Narrative length: ${narrative.length} chars`);
     console.log(`[${locationName}] 💾 Storing in BOTH conditions and report_text fields`);
+    console.log(`[${locationName}] 💾 Rating: ${rating}/10`);
+    console.log(`[${locationName}] ═════════════════════════════════════════`);
 
     const { error: upsertError } = await supabase
       .from('surf_reports')
@@ -1061,11 +1108,12 @@ async function processLocation(
     console.log(`[${locationName}] ✅ Report saved successfully to database`);
     
     // 🚨 CRITICAL: Wait for database to propagate
-    await delay(500);
+    await delay(1000);
     
+    console.log(`[${locationName}] 🔍 Verifying save...`);
     const { data: verifyData, error: verifyError } = await supabase
       .from('surf_reports')
-      .select('id, date, location, surf_height, wave_height, conditions, report_text')
+      .select('id, date, location, surf_height, wave_height, conditions, report_text, rating, updated_at')
       .eq('date', dateStr)
       .eq('location', locationId)
       .maybeSingle();
@@ -1073,12 +1121,18 @@ async function processLocation(
     if (verifyError) {
       console.error(`[${locationName}] ⚠️ Could not verify save:`, verifyError);
     } else if (verifyData) {
-      console.log(`[${locationName}] ✅ Verified: Report exists in database`);
+      console.log(`[${locationName}] ═════════════════════════════════════════`);
+      console.log(`[${locationName}] ✅ VERIFICATION SUCCESSFUL`);
+      console.log(`[${locationName}] ✅ Report ID: ${verifyData.id}`);
       console.log(`[${locationName}] ✅ surf_height: ${verifyData.surf_height}`);
       console.log(`[${locationName}] ✅ wave_height: ${verifyData.wave_height}`);
       console.log(`[${locationName}] ✅ conditions: ${verifyData.conditions?.length || 0} characters`);
       console.log(`[${locationName}] ✅ report_text: ${verifyData.report_text?.length || 0} characters`);
-      console.log(`[${locationName}] ✅ Newlines in DB: ${verifyData.conditions?.includes('\n\n') ? 'YES' : 'NO'}`);
+      console.log(`[${locationName}] ✅ rating: ${verifyData.rating}/10`);
+      console.log(`[${locationName}] ✅ Newlines in conditions: ${verifyData.conditions?.includes('\n\n') ? 'YES' : 'NO'}`);
+      console.log(`[${locationName}] ✅ Newlines in report_text: ${verifyData.report_text?.includes('\n\n') ? 'YES' : 'NO'}`);
+      console.log(`[${locationName}] ✅ updated_at: ${verifyData.updated_at}`);
+      console.log(`[${locationName}] ═════════════════════════════════════════`);
     } else {
       console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);
     }

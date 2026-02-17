@@ -329,8 +329,14 @@ export default function AdminDataScreen() {
   };
 
   const handleGenerateReportForLocation = async (locationId: string, locationName: string) => {
+    console.log('[AdminData] ═══════════════════════════════════════');
+    console.log('[AdminData] 🚀 REGENERATE TEXT BUTTON CLICKED');
+    console.log('[AdminData] Location:', locationName);
+    console.log('[AdminData] Location ID:', locationId);
+    console.log('[AdminData] ═══════════════════════════════════════');
+    
     setIsLoading(true);
-    addLog(`Generating report narrative for ${locationName}...`, 'info');
+    addLog(`Regenerating report narrative for ${locationName}...`, 'info');
 
     try {
       console.log(`[AdminData] ═══════════════════════════════════════`);
@@ -361,7 +367,7 @@ export default function AdminDataScreen() {
       console.log('[AdminData] ═══════════════════════════════════════');
 
       if (error) {
-        console.error('[AdminData] Error invoking Edge Function:', error);
+        console.error('[AdminData] ❌ Error invoking Edge Function:', error);
         // 🚨 CRITICAL: Show detailed error to help debug
         const errorDetails = error.message || JSON.stringify(error);
         throw new Error(`Edge Function error: ${errorDetails}`);
@@ -369,7 +375,7 @@ export default function AdminDataScreen() {
 
       if (data && data.success === false) {
         const errorMsg = data.error || data.message || 'Report generation failed';
-        console.error('[AdminData] Edge Function reported failure:', errorMsg);
+        console.error('[AdminData] ❌ Edge Function reported failure:', errorMsg);
         
         // 🚨 CRITICAL: Include stack trace if available
         if (data.stack) {
@@ -379,6 +385,7 @@ export default function AdminDataScreen() {
         throw new Error(errorMsg);
       }
 
+      console.log('[AdminData] ✅ Edge Function call successful');
       addLog(`✅ Report narrative regenerated for ${locationName}`, 'success');
       addLog(`  • Used existing data from database (no fresh buoy pull)`, 'info');
       
@@ -388,6 +395,7 @@ export default function AdminDataScreen() {
         
         if (result.narrativeLength) {
           addLog(`  • Generated ${result.narrativeLength} character narrative`, 'success');
+          console.log('[AdminData] ✅ Narrative length:', result.narrativeLength);
         }
         if (result.usedFallbackData) {
           addLog(`  • Used most recent available data from scheduled updates`, 'info');
@@ -430,7 +438,7 @@ export default function AdminDataScreen() {
       addLog(`✅ Report data refreshed for ${locationName}`, 'success');
       addLog(`  • Completed 5-stage refresh sequence to ensure latest data`, 'info');
     } catch (error) {
-      console.error('[AdminData] Error generating report:', error);
+      console.error('[AdminData] ❌ Error generating report:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`❌ Failed to generate report for ${locationName}: ${errorMessage}`, 'error');
       showErrorModal('Report Generation Failed', errorMessage);
@@ -577,7 +585,10 @@ export default function AdminDataScreen() {
                 <View style={styles.locationActions}>
                   <TouchableOpacity
                     style={[styles.actionButton, styles.primaryButton]}
-                    onPress={() => handlePullDataForLocation(report.locationId, report.location)}
+                    onPress={() => {
+                      console.log('[AdminData] 🔵 Update Data button pressed for:', locationName, locationId);
+                      handlePullDataForLocation(report.locationId, report.location);
+                    }}
                     disabled={isLoading}
                   >
                     <IconSymbol
@@ -591,7 +602,10 @@ export default function AdminDataScreen() {
 
                   <TouchableOpacity
                     style={[styles.actionButton, styles.secondaryButton]}
-                    onPress={() => handleUpdateForecast(report.locationId, report.location)}
+                    onPress={() => {
+                      console.log('[AdminData] 📈 Update Forecast button pressed for:', locationName, locationId);
+                      handleUpdateForecast(report.locationId, report.location);
+                    }}
                     disabled={isLoading}
                   >
                     <IconSymbol
@@ -605,7 +619,16 @@ export default function AdminDataScreen() {
 
                   <TouchableOpacity
                     style={[styles.actionButton, styles.secondaryButton]}
-                    onPress={() => handleGenerateReportForLocation(report.locationId, report.location)}
+                    onPress={() => {
+                      console.log('[AdminData] ═══════════════════════════════════════');
+                      console.log('[AdminData] 📝 REGENERATE TEXT BUTTON PRESSED');
+                      console.log('[AdminData] Location:', locationName);
+                      console.log('[AdminData] Location ID:', locationId);
+                      console.log('[AdminData] Report Location ID:', report.locationId);
+                      console.log('[AdminData] Is Loading:', isLoading);
+                      console.log('[AdminData] ═══════════════════════════════════════');
+                      handleGenerateReportForLocation(report.locationId, report.location);
+                    }}
                     disabled={isLoading}
                   >
                     <IconSymbol
