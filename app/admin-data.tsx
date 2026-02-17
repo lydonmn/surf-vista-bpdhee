@@ -356,12 +356,20 @@ export default function AdminDataScreen() {
 
       if (error) {
         console.error('[AdminData] Error invoking Edge Function:', error);
-        throw new Error(error.message || 'Failed to generate report');
+        // 🚨 CRITICAL: Show detailed error to help debug
+        const errorDetails = error.message || JSON.stringify(error);
+        throw new Error(`Edge Function error: ${errorDetails}`);
       }
 
       if (data && data.success === false) {
         const errorMsg = data.error || data.message || 'Report generation failed';
         console.error('[AdminData] Edge Function reported failure:', errorMsg);
+        
+        // 🚨 CRITICAL: Include stack trace if available
+        if (data.stack) {
+          console.error('[AdminData] Stack trace:', data.stack);
+        }
+        
         throw new Error(errorMsg);
       }
 
@@ -687,7 +695,9 @@ export default function AdminDataScreen() {
               />
               <Text style={styles.modalTitle}>{errorModalTitle}</Text>
             </View>
-            <Text style={styles.modalMessage}>{errorModalMessage}</Text>
+            <ScrollView style={styles.modalMessageScroll}>
+              <Text style={styles.modalMessage}>{errorModalMessage}</Text>
+            </ScrollView>
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => {
@@ -946,6 +956,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 400,
+    maxHeight: '80%',
     boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
     elevation: 5,
   },
@@ -960,11 +971,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
+  modalMessageScroll: {
+    maxHeight: 300,
+    marginBottom: 24,
+  },
   modalMessage: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
     lineHeight: 20,
   },
   modalButton: {
