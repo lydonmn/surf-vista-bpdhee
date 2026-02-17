@@ -30,15 +30,13 @@ export default function VideoPlayerScreen() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const hasLoadedRef = useRef(false);
-  const isPortraitVideo = useRef(false);
 
-  // ✅ SIMPLE: Create player with URL
+  // Create player with URL - simple and clean
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
-      console.log('[VideoPlayer] ⚡ Player ready - auto-playing');
+      console.log('[VideoPlayer] Player ready - starting playback');
       player.loop = false;
       player.muted = false;
       player.play();
@@ -46,7 +44,7 @@ export default function VideoPlayerScreen() {
   });
 
   const handleExitPlayer = useCallback(async () => {
-    console.log('[VideoPlayer] Exiting');
+    console.log('[VideoPlayer] Exiting player');
     
     if (player) {
       player.pause();
@@ -55,20 +53,19 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       } catch (e) {
-        console.log('[VideoPlayer] Orientation reset error:', e);
+        console.log('[VideoPlayer] Orientation unlock error:', e);
       }
     }
     
     router.back();
   }, [player]);
 
-  // ✅ SIMPLE: Load video with signed URL
+  // Load video with signed URL
   useEffect(() => {
     if (hasLoadedRef.current) return;
     
-    console.log('[VideoPlayer] ⚡ Loading video:', videoId);
+    console.log('[VideoPlayer] Loading video:', videoId);
     
     const loadVideo = async () => {
       try {
@@ -92,14 +89,8 @@ export default function VideoPlayerScreen() {
           throw new Error('Video not found');
         }
 
-        console.log('[VideoPlayer] ✅ Video loaded:', videoData.title);
-        console.log('[VideoPlayer] 📐 Resolution:', videoData.resolution_width, 'x', videoData.resolution_height);
-        
-        // Determine orientation
-        if (videoData.resolution_width && videoData.resolution_height) {
-          isPortraitVideo.current = videoData.resolution_height > videoData.resolution_width;
-          console.log('[VideoPlayer] 📐 Video is:', isPortraitVideo.current ? 'PORTRAIT' : 'LANDSCAPE');
-        }
+        console.log('[VideoPlayer] Video loaded:', videoData.title);
+        console.log('[VideoPlayer] Resolution:', videoData.resolution_width, 'x', videoData.resolution_height);
         
         setVideo(videoData);
 
@@ -123,7 +114,7 @@ export default function VideoPlayerScreen() {
           throw new Error('Could not extract filename');
         }
 
-        console.log('[VideoPlayer] ⚡ Generating signed URL...');
+        console.log('[VideoPlayer] Generating signed URL for:', fileName);
         const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from('videos')
           .createSignedUrl(fileName, 7200);
@@ -133,7 +124,7 @@ export default function VideoPlayerScreen() {
           throw new Error('Failed to generate video URL');
         }
 
-        console.log('[VideoPlayer] ✅ Signed URL ready');
+        console.log('[VideoPlayer] Signed URL ready');
         setVideoUrl(signedUrlData.signedUrl);
         hasLoadedRef.current = true;
       } catch (loadError: unknown) {
@@ -147,33 +138,6 @@ export default function VideoPlayerScreen() {
 
     loadVideo();
   }, [videoId]);
-
-  const toggleFullscreen = useCallback(async () => {
-    const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] Fullscreen:', newFullscreenState);
-    setIsFullscreen(newFullscreenState);
-    
-    if (Platform.OS !== 'web') {
-      try {
-        if (newFullscreenState) {
-          // ✅ CRITICAL FIX: Lock to correct orientation based on video
-          if (isPortraitVideo.current) {
-            console.log('[VideoPlayer] ✅ Locking to PORTRAIT for fullscreen');
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          } else {
-            console.log('[VideoPlayer] ✅ Locking to LANDSCAPE for fullscreen');
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          }
-        } else {
-          console.log('[VideoPlayer] Resetting to portrait');
-          await ScreenOrientation.unlockAsync();
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        }
-      } catch (e) {
-        console.log('[VideoPlayer] Orientation error:', e);
-      }
-    }
-  }, [isFullscreen]);
 
   const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
 
@@ -246,54 +210,7 @@ export default function VideoPlayerScreen() {
 
   const videoTitle = video.title;
   const backButtonText = "Back";
-  const fullscreenIconIOS = isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right";
-  const fullscreenIconAndroid = isFullscreen ? "fullscreen-exit" : "fullscreen";
 
-  // ✅ SIMPLE FULLSCREEN MODE
-  if (isFullscreen) {
-    return (
-      <View style={styles.fullscreenContainer}>
-        <VideoView
-          style={styles.fullscreenVideo}
-          player={player}
-          allowsFullscreen={false}
-          allowsPictureInPicture
-          contentFit="contain"
-          nativeControls={true}
-        />
-        
-        <View style={styles.fullscreenOverlay}>
-          <View style={[styles.fullscreenTopBar, { paddingTop: Math.max(insets.top, 16) }]}>
-            <TouchableOpacity
-              style={styles.fullscreenButton}
-              onPress={handleExitPlayer}
-            >
-              <IconSymbol
-                ios_icon_name="chevron.left"
-                android_material_icon_name="arrow-back"
-                size={24}
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
-            <Text style={styles.fullscreenTitle}>{videoTitle}</Text>
-            <TouchableOpacity
-              style={styles.fullscreenButton}
-              onPress={toggleFullscreen}
-            >
-              <IconSymbol
-                ios_icon_name={fullscreenIconIOS}
-                android_material_icon_name={fullscreenIconAndroid}
-                size={24}
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // ✅ SIMPLE NORMAL MODE WITH NATIVE CONTROLS
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <TouchableOpacity
@@ -313,23 +230,11 @@ export default function VideoPlayerScreen() {
         <VideoView
           style={styles.video}
           player={player}
-          allowsFullscreen={false}
+          allowsFullscreen={true}
           allowsPictureInPicture
           contentFit="contain"
           nativeControls={true}
         />
-        
-        <TouchableOpacity
-          style={styles.fullscreenToggle}
-          onPress={toggleFullscreen}
-        >
-          <IconSymbol
-            ios_icon_name={fullscreenIconIOS}
-            android_material_icon_name={fullscreenIconAndroid}
-            size={28}
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.infoContainer}>
@@ -401,66 +306,12 @@ const styles = StyleSheet.create({
   },
   videoContainer: {
     flex: 1,
-    position: 'relative',
     backgroundColor: '#000000',
   },
   video: {
     flex: 1,
     width: '100%',
     height: '100%',
-  },
-  fullscreenToggle: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fullscreenContainer: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  fullscreenVideo: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  fullscreenOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  fullscreenTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    gap: 16,
-  },
-  fullscreenButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullscreenTitle: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   infoContainer: {
     padding: 20,
