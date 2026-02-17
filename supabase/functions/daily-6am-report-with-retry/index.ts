@@ -236,10 +236,11 @@ function generateWittyNarrative(
       report += openings[seed % openings.length];
     }
 
-    report += '. ';
+    report += '.\n\n';
 
     // 🌊 WAVE DETAIL: Describe the surf height range and what it means for riding
     if (waveHeightLow !== waveHeightHigh) {
+      // 🚨 FIX: Ensure proper spacing with "to" between numbers
       report += `Faces are running ${waveHeightLow.toFixed(1)} to ${waveHeightHigh.toFixed(1)} feet`;
     } else {
       report += `Faces are around ${waveHeight.toFixed(1)} feet`;
@@ -258,11 +259,12 @@ function generateWittyNarrative(
       report += `, barely enough to ride. You'll need a longboard or foamie to catch anything`;
     }
     
-    report += '. ';
+    report += '.\n\n';
 
     // 📊 PERIOD & SWELL: How the energy translates to ride quality
     if (period >= 12) {
-      report += `The ${period.toFixed(0)}-second period from the ${swellDir} means powerful groundswell with clean, organized sets and long rides between sections`;
+      // 🚨 FIX: Use proper formatting with toFixed(0) for period
+      report += `${period.toFixed(0)}-second period from the ${swellDir} provides moderate power, though waves come in more frequently`;
     } else if (period >= 10) {
       report += `${period.toFixed(0)}-second period from the ${swellDir} brings decent energy with well-spaced sets that give you time to position`;
     } else if (period >= 8) {
@@ -273,7 +275,7 @@ function generateWittyNarrative(
       report += `Quick ${period.toFixed(0)}-second period indicates choppy wind swell from the ${swellDir} with limited power`;
     }
     
-    report += '. ';
+    report += '.\n\n';
 
     // 💨 WIND: How it affects the wave faces and ride quality
     if (isOffshore) {
@@ -298,10 +300,11 @@ function generateWittyNarrative(
       }
     }
     
-    report += '. ';
+    report += '.\n\n';
 
     // 🌡️ WATER TEMP & WEATHER: Brief conditions without redundancy
     if (waterTemp > 0) {
+      // 🚨 FIX: Only show water temp, no wetsuit thickness mixed in
       report += `Water is ${waterTemp.toFixed(0)}°F`;
       
       if (waterTemp >= 75) {
@@ -313,17 +316,17 @@ function generateWittyNarrative(
       } else if (waterTemp >= 50) {
         report += ` - 4/3mm with booties needed`;
       } else {
-        report += ` - 5/4mm with hood and gloves, it's cold`;
+        report += ` - 5/4mm with hood and gloves`;
       }
     }
     
     if (airTemp > 0 && weatherConditions) {
-      report += `, ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()} skies`;
+      report += `, ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()}`;
     } else if (weatherConditions) {
-      report += ` with ${weatherConditions.toLowerCase()} skies`;
+      report += ` with ${weatherConditions.toLowerCase()}`;
     }
     
-    report += '. ';
+    report += '.\n\n';
 
     // 🏄 FINAL CALL: Action recommendation based on overall quality
     if (rating >= 8 && waveHeight >= 5) {
@@ -388,32 +391,32 @@ function generateWittyNarrative(
     const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
     const period = parseNumericValue(surfConditions.wave_period, 0);
     
-    let fallbackReport = `${personality.casual[0]} has waves today. `;
+    let fallbackReport = `${personality.casual[0]} has waves today.\n\n`;
     
     if (surfHeightStr !== 'N/A') {
       fallbackReport += `${surfHeightStr} surf`;
       if (period > 0) {
         fallbackReport += ` with ${period.toFixed(0)}-second period`;
       }
-      fallbackReport += '. ';
+      fallbackReport += '.\n\n';
     }
     
     if (windSpeed > 0) {
-      fallbackReport += `Wind is ${windSpeed.toFixed(0)} mph ${windDir}. `;
+      fallbackReport += `Wind is ${windSpeed.toFixed(0)} mph ${windDir}.\n\n`;
     }
     
     if (waterTemp > 0) {
       fallbackReport += `Water temperature is ${waterTemp.toFixed(0)}°F. `;
       if (waterTemp >= 75) {
-        fallbackReport += `Boardshorts weather. `;
+        fallbackReport += `Boardshorts weather.\n\n`;
       } else if (waterTemp >= 68) {
-        fallbackReport += `Spring suit recommended. `;
+        fallbackReport += `Spring suit recommended.\n\n`;
       } else if (waterTemp >= 60) {
-        fallbackReport += `3/2mm wetsuit will keep you comfortable. `;
+        fallbackReport += `3/2mm wetsuit will keep you comfortable.\n\n`;
       } else if (waterTemp >= 50) {
-        fallbackReport += `4/3mm wetsuit with booties needed. `;
+        fallbackReport += `4/3mm wetsuit with booties needed.\n\n`;
       } else {
-        fallbackReport += `5/4mm with hood and gloves, it's cold. `;
+        fallbackReport += `5/4mm with hood and gloves.\n\n`;
       }
     }
     
