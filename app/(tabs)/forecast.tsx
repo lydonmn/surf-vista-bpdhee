@@ -278,22 +278,27 @@ export default function ForecastScreen() {
   // 🚨 CRITICAL FIX: Format confidence value correctly
   // Backend stores as percentage (0-100), so just display it directly
   const formatConfidence = (confidence: number | null | undefined): string => {
-    console.log('[ForecastScreen] formatConfidence input:', confidence, 'type:', typeof confidence);
+    console.log('[ForecastScreen] formatConfidence called with:', {
+      value: confidence,
+      type: typeof confidence,
+      isNull: confidence === null,
+      isUndefined: confidence === undefined,
+    });
     
     if (confidence === null || confidence === undefined) {
-      console.log('[ForecastScreen] Confidence is null/undefined, returning N/A');
+      console.log('[ForecastScreen] ⚠️ Confidence is null/undefined, returning N/A');
       return 'N/A';
     }
     
     const numConfidence = Number(confidence);
     if (isNaN(numConfidence)) {
-      console.log('[ForecastScreen] Confidence is NaN, returning N/A');
+      console.log('[ForecastScreen] ⚠️ Confidence is NaN, returning N/A');
       return 'N/A';
     }
     
     // Backend stores as percentage (0-100), display directly
     const displayValue = Math.round(numConfidence);
-    console.log('[ForecastScreen] Displaying confidence as:', displayValue + '%');
+    console.log('[ForecastScreen] ✅ Displaying confidence as:', displayValue + '%');
     return `${displayValue}%`;
   };
 
@@ -411,6 +416,7 @@ export default function ForecastScreen() {
               waveHeightValue,
               displayHeight,
               confidence: day.weatherForecast?.prediction_confidence,
+              confidenceType: typeof day.weatherForecast?.prediction_confidence,
             });
             
             const hasSurfData = displayHeight !== 'N/A';
