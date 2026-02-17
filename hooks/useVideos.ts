@@ -22,9 +22,9 @@ export function useVideos() {
   const currentLocationRef = useRef(currentLocation);
 
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour
-  const PRELOAD_SIZE = 50 * 1024 * 1024; // ✅ CRITICAL FIX: 50MB preload for INSTANT smooth start
-  const KEEP_ALIVE_INTERVAL = 180000; // ✅ OPTIMIZED: 3 minutes (less aggressive)
-  const REFRESH_INTERVAL = 20 * 60 * 1000; // ✅ OPTIMIZED: 20 minutes (less frequent)
+  const PRELOAD_SIZE = 75 * 1024 * 1024; // ✅ CRITICAL FIX: 75MB preload for INSTANT smooth start (increased from 50MB)
+  const KEEP_ALIVE_INTERVAL = 240000; // ✅ OPTIMIZED: 4 minutes (less aggressive)
+  const REFRESH_INTERVAL = 25 * 60 * 1000; // ✅ OPTIMIZED: 25 minutes (less frequent)
 
   useEffect(() => {
     currentLocationRef.current = currentLocation;
@@ -111,7 +111,7 @@ export function useVideos() {
       
       console.log('[useVideos] ⚡ Preloading first', PRELOAD_SIZE / (1024 * 1024), 'MB for INSTANT smooth playback:', videoIdParam);
       
-      // ✅ CRITICAL FIX: Preload larger initial chunk (50MB) for instant smooth start
+      // ✅ CRITICAL FIX: Preload larger initial chunk (75MB) for instant smooth start
       const response = await fetch(signedUrl, {
         method: 'GET',
         headers: {
@@ -279,12 +279,12 @@ export function useVideos() {
     
     fetchVideos();
 
-    // ✅ CRITICAL FIX: Less aggressive keep-alive (every 3 minutes instead of 2)
+    // ✅ CRITICAL FIX: Less aggressive keep-alive (every 4 minutes instead of 3)
     keepAliveIntervalRef.current = setInterval(() => {
       keepConnectionsAlive();
     }, KEEP_ALIVE_INTERVAL);
 
-    // ✅ CRITICAL FIX: Less frequent background refresh (every 20 minutes instead of 15)
+    // ✅ CRITICAL FIX: Less frequent background refresh (every 25 minutes instead of 20)
     const refreshInterval = setInterval(() => {
       backgroundRefresh();
     }, REFRESH_INTERVAL);

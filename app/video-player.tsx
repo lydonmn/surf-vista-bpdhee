@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
 
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -37,7 +37,6 @@ export default function VideoPlayerScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
@@ -54,6 +53,7 @@ export default function VideoPlayerScreen() {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioConfiguredRef = useRef(false);
+  const playerReadyRef = useRef(false);
 
   // 🚨 CRITICAL FIX: Determine video orientation from resolution
   const videoOrientation = useMemo(() => {
@@ -123,12 +123,10 @@ export default function VideoPlayerScreen() {
   const startControlsTimeout = useCallback(() => {
     clearControlsTimeout();
     
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setControlsVisible(false);
-      }, CONTROLS_HIDE_DELAY);
-    }
-  }, [isPlaying, clearControlsTimeout]);
+    controlsTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, CONTROLS_HIDE_DELAY);
+  }, [clearControlsTimeout]);
 
   const toggleControls = useCallback(() => {
     const newVisibility = !controlsVisible;
@@ -150,12 +148,13 @@ export default function VideoPlayerScreen() {
 
   // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
-    if (memoizedVideoUrl) {
+    if (memoizedVideoUrl && !playerReadyRef.current) {
       console.log('[VideoPlayer] ⚡ Initializing player with OPTIMIZED settings for seamless playback');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
+      playerReadyRef.current = true;
       
       console.log('[VideoPlayer] ✅ Player configured for smooth, continuous playback');
     }
@@ -180,9 +179,10 @@ export default function VideoPlayerScreen() {
     if (isFullscreen && Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
-        console.log('[VideoPlayer] Unlocked screen orientation');
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        console.log('[VideoPlayer] Reset to portrait orientation');
       } catch (e) {
-        console.log('[VideoPlayer] Error unlocking orientation:', e);
+        console.log('[VideoPlayer] Error resetting orientation:', e);
       }
     }
     
@@ -295,14 +295,13 @@ export default function VideoPlayerScreen() {
     loadVideo();
   }, [videoId, preloadedUrl]);
 
+  // ✅ CRITICAL FIX: Stable event listeners that don't cause re-renders
   useEffect(() => {
     if (!player || !videoUrl) return;
 
-    console.log('[VideoPlayer] Setting up player event listeners');
+    console.log('[VideoPlayer] Setting up stable player event listeners');
 
     const statusListener = player.addListener('statusChange', (status) => {
-      console.log('[VideoPlayer] Status:', status.status);
-      
       if (status.error) {
         console.error('[VideoPlayer] ❌ Player error:', status.error);
         
@@ -356,7 +355,7 @@ export default function VideoPlayerScreen() {
         }
         
         // ✅ CRITICAL FIX: Auto-play immediately when ready
-        if (!isPlaying) {
+        if (!player.playing) {
           console.log('[VideoPlayer] ⚡ Starting INSTANT playback...');
           setTimeout(() => {
             if (player) {
@@ -367,7 +366,6 @@ export default function VideoPlayerScreen() {
       }
       
       if (status.status === 'loading') {
-        console.log('[VideoPlayer] Video buffering...');
         setIsBuffering(true);
         
         // ✅ CRITICAL FIX: Shorter buffering timeout (1 second instead of 2)
@@ -391,26 +389,12 @@ export default function VideoPlayerScreen() {
       }
     });
 
-    const playingListener = player.addListener('playingChange', (newIsPlaying) => {
-      console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
-      setIsPlaying(newIsPlaying);
-      
-      if (newIsPlaying) {
-        console.log('[VideoPlayer] ✅ Video playing - clearing buffering');
-        setIsBuffering(false);
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-          bufferingTimeoutRef.current = null;
-        }
-      }
-    });
-
-    // ✅ CRITICAL FIX: Optimized time update - less frequent updates (200ms instead of 100ms)
+    // ✅ CRITICAL FIX: Optimized time update - less frequent updates (250ms instead of 200ms)
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
       const newTime = timeUpdate.currentTime || 0;
       
       const now = Date.now();
-      if (now - lastProgressUpdateRef.current < 200) return;
+      if (now - lastProgressUpdateRef.current < 250) return;
       lastProgressUpdateRef.current = now;
       
       if (!isSeekingRef.current) {
@@ -436,7 +420,6 @@ export default function VideoPlayerScreen() {
     return () => {
       console.log('[VideoPlayer] Cleaning up event listeners');
       statusListener.remove();
-      playingListener.remove();
       timeUpdateListener.remove();
       
       if (bufferingTimeoutRef.current) {
@@ -444,14 +427,15 @@ export default function VideoPlayerScreen() {
         bufferingTimeoutRef.current = null;
       }
     };
-  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl]);
+  }, [player, videoUrl, retryCount]);
 
   // ✅ CRITICAL FIX: Load video source immediately
   useEffect(() => {
-    if (videoUrl && player) {
+    if (videoUrl && player && !playerReadyRef.current) {
       console.log('[VideoPlayer] ⚡ Loading video source for INSTANT playback...');
       try {
         player.replace(videoUrl);
+        playerReadyRef.current = true;
         console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
       } catch (e) {
         console.error('[VideoPlayer] Error loading source:', e);
@@ -466,22 +450,6 @@ export default function VideoPlayerScreen() {
     }
   }, [volume, player]);
 
-  // ✅ CRITICAL FIX: Removed redundant polling interval - player events handle updates
-  // This reduces CPU usage and prevents stuttering
-
-  useEffect(() => {
-    if (isPlaying && controlsVisible) {
-      startControlsTimeout();
-    } else if (!isPlaying) {
-      clearControlsTimeout();
-      setControlsVisible(true);
-    }
-
-    return () => {
-      clearControlsTimeout();
-    };
-  }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
-
   const togglePlayPause = useCallback(() => {
     if (!player) return;
     
@@ -494,12 +462,10 @@ export default function VideoPlayerScreen() {
     
     if (currentlyPlaying) {
       player.pause();
-      setIsPlaying(false);
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
       player.play();
-      setIsPlaying(true);
       resetControlsTimeout();
     }
   }, [player, resetControlsTimeout, clearControlsTimeout]);
@@ -545,7 +511,7 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     
-    if (newFullscreenState && isPlaying) {
+    if (newFullscreenState && player.playing) {
       startControlsTimeout();
     }
     
@@ -563,14 +529,15 @@ export default function VideoPlayerScreen() {
             console.log('[VideoPlayer] ✅ Locked to LANDSCAPE orientation for fullscreen');
           }
         } else {
-          console.log('[VideoPlayer] Exiting fullscreen - unlocking orientation');
+          console.log('[VideoPlayer] Exiting fullscreen - resetting to portrait');
           await ScreenOrientation.unlockAsync();
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         }
       } catch (e) {
         console.log('[VideoPlayer] Screen orientation not available:', e);
       }
     }
-  }, [isFullscreen, videoOrientation, isPlaying, startControlsTimeout]);
+  }, [isFullscreen, videoOrientation, player, startControlsTimeout]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -587,6 +554,7 @@ export default function VideoPlayerScreen() {
     return `${mb.toFixed(2)} MB`;
   };
 
+  const isPlaying = player?.playing || false;
   const playPauseIconIOS = isPlaying ? "pause.fill" : "play.fill";
   const playPauseIconAndroid = isPlaying ? "pause" : "play-arrow";
   const volumeIconIOS = volume === 0 ? "speaker.slash.fill" : "speaker.wave.2.fill";
@@ -657,6 +625,7 @@ export default function VideoPlayerScreen() {
             style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
             onPress={() => {
               hasLoadedRef.current = false;
+              playerReadyRef.current = false;
               setIsLoading(true);
               setError(null);
               router.back();

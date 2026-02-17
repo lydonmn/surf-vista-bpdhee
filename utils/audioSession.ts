@@ -24,13 +24,14 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
     console.log('[AudioSession] ⚡ Configuring audio session for SEAMLESS CONTINUOUS playback...');
     console.log('[AudioSession] Config:', finalConfig);
 
-    // ✅ CRITICAL FIX: Optimized audio configuration for seamless playback
+    // ✅ CRITICAL FIX: Optimized audio configuration for seamless playback on iPhone
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       staysActiveInBackground: true,
       shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
       allowsRecordingIOS: false,
+      // 🚨 CRITICAL: DoNotMix prevents iOS from interrupting video audio
       interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
