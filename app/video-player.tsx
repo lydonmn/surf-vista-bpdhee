@@ -370,7 +370,8 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Video buffering...');
         setIsBuffering(true);
         
-        const bufferTimeout = 2000;
+        // ✅ CRITICAL FIX: Shorter buffering timeout (1 second instead of 2)
+        const bufferTimeout = 1000;
         
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
@@ -404,11 +405,12 @@ export default function VideoPlayerScreen() {
       }
     });
 
+    // ✅ CRITICAL FIX: Optimized time update - less frequent updates (200ms instead of 100ms)
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
       const newTime = timeUpdate.currentTime || 0;
       
       const now = Date.now();
-      if (now - lastProgressUpdateRef.current < 100) return;
+      if (now - lastProgressUpdateRef.current < 200) return;
       lastProgressUpdateRef.current = now;
       
       if (!isSeekingRef.current) {
@@ -464,17 +466,8 @@ export default function VideoPlayerScreen() {
     }
   }, [volume, player]);
 
-  useEffect(() => {
-    if (!player || !isPlaying) return;
-
-    const interval = setInterval(() => {
-      if (!isSeekingRef.current && player.currentTime !== undefined) {
-        setCurrentTime(player.currentTime);
-      }
-    }, 100);
-    
-    return () => clearInterval(interval);
-  }, [player, isPlaying]);
+  // ✅ CRITICAL FIX: Removed redundant polling interval - player events handle updates
+  // This reduces CPU usage and prevents stuttering
 
   useEffect(() => {
     if (isPlaying && controlsVisible) {
