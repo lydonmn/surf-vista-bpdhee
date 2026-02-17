@@ -14,6 +14,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import 'react-native-url-polyfill/auto';
 import { useLocation } from '@/contexts/LocationContext';
+import * as tus from 'tus-js-client';
 
 interface VideoMetadata {
   width: number;
@@ -229,36 +230,62 @@ export default function AdminScreen() {
       const fileName = `video_${timestamp}.mp4`;
       console.log('[AdminScreen] 📝 Uploading as:', fileName);
 
-      // Read file as base64
-      console.log('[AdminScreen] 📖 Reading file...');
-      const base64Data = await FileSystem.readAsStringAsync(videoUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      // Convert base64 to binary
-      console.log('[AdminScreen] 🔄 Converting to binary...');
-      const binaryData = decode(base64Data);
-
-      console.log('[AdminScreen] ☁️ Uploading to Supabase Storage...');
-      
-      // Use standard Supabase upload with progress tracking
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, binaryData, {
-          contentType: 'video/mp4',
-          upsert: false,
-          cacheControl: '3600',
-        });
-
-      if (uploadError) {
-        console.error('[AdminScreen] ❌ Upload error:', uploadError);
-        throw uploadError;
+      // Get Supabase project details
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
       }
 
-      console.log('[AdminScreen] ✅ Upload complete:', uploadData);
+      const projectUrl = supabase.supabaseUrl;
+      const bucketName = 'videos';
+      
+      console.log('[AdminScreen] 🔄 Using TUS resumable upload for large file...');
 
-      // Simulate progress for user feedback
-      setUploadProgress(100);
+      // Use TUS for resumable uploads (handles large files without memory issues)
+      await new Promise<void>((resolve, reject) => {
+        // Fetch the file as a blob
+        fetch(videoUri)
+          .then(response => response.blob())
+          .then(blob => {
+            const upload = new tus.Upload(blob, {
+              endpoint: `${projectUrl}/storage/v1/upload/resumable`,
+              retryDelays: [0, 3000, 5000, 10000, 20000],
+              headers: {
+                authorization: `Bearer ${session.access_token}`,
+                'x-upsert': 'false',
+              },
+              uploadDataDuringCreation: true,
+              removeFingerprintOnSuccess: true,
+              metadata: {
+                bucketName: bucketName,
+                objectName: fileName,
+                contentType: 'video/mp4',
+                cacheControl: '3600',
+              },
+              chunkSize: 6 * 1024 * 1024, // 6MB chunks
+              onError: (error) => {
+                console.error('[AdminScreen] ❌ TUS upload error:', error);
+                reject(error);
+              },
+              onProgress: (bytesUploaded, bytesTotal) => {
+                const percentage = Math.round((bytesUploaded / bytesTotal) * 100);
+                console.log('[AdminScreen] 📤 Upload progress:', percentage + '%');
+                setUploadProgress(percentage);
+              },
+              onSuccess: () => {
+                console.log('[AdminScreen] ✅ TUS upload complete');
+                resolve();
+              },
+            });
+
+            // Start the upload
+            upload.start();
+          })
+          .catch(error => {
+            console.error('[AdminScreen] ❌ Error fetching video blob:', error);
+            reject(error);
+          });
+      });
 
       console.log('[AdminScreen] 🔗 Getting public URL...');
 
@@ -279,13 +306,17 @@ export default function AdminScreen() {
         console.log('[AdminScreen] ✅ Thumbnail generated:', thumbnailUri);
 
         const thumbnailFileName = `thumbnail_${timestamp}.jpg`;
-        const thumbnailFile = await FileSystem.readAsStringAsync(thumbnailUri, {
+        
+        // Upload thumbnail using fetch (small file, safe to use base64)
+        const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
+        const thumbnailBlob = await fetch(`data:image/jpeg;base64,${thumbnailBase64}`).then(r => r.blob());
+
         const { error: thumbnailError } = await supabase.storage
           .from('videos')
-          .upload(thumbnailFileName, decode(thumbnailFile), {
+          .upload(thumbnailFileName, thumbnailBlob, {
             contentType: 'image/jpeg',
             upsert: false,
           });
@@ -376,15 +407,6 @@ export default function AdminScreen() {
     } finally {
       setIsUploading(false);
     }
-  };
-
-  const decode = (base64: string): Uint8Array => {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
   };
 
   if (!profile?.is_admin && !profile?.is_regional_admin) {
@@ -546,7 +568,7 @@ export default function AdminScreen() {
               {locationInfoText}
             </Text>
             <Text style={[styles.infoText, { marginTop: 8, fontWeight: '600' }]}>
-              🚀 Optimized for 6K drone footage - instant uploads with paid Supabase!
+              🚀 Optimized for 6K drone footage - instant uploads with resumable technology!
             </Text>
           </View>
 
@@ -647,7 +669,7 @@ export default function AdminScreen() {
                 />
               </View>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                Using instant upload with paid Supabase...
+                Using resumable upload - safe for large files...
               </Text>
             </View>
           )}
