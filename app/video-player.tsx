@@ -672,7 +672,7 @@ export default function VideoPlayerScreen() {
 
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
+    console.log('[VideoPlayer] 🚨 Toggle fullscreen:', newFullscreenState);
     console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
@@ -688,23 +688,39 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 CRITICAL FIX: Lock orientation based on video's natural orientation
-          // Drone videos are typically shot in portrait (9:16) and should stay portrait
-          console.log('[VideoPlayer] ✅ Entering fullscreen - locking to', videoOrientation, 'orientation');
+          // 🚨 CRITICAL FIX: Force orientation lock based on video's natural orientation
+          // First unlock to reset any existing locks, then lock to the correct orientation
+          console.log('[VideoPlayer] 🚨 FORCING orientation lock for fullscreen');
           
+          // Step 1: Unlock any existing orientation locks
+          await ScreenOrientation.unlockAsync();
+          console.log('[VideoPlayer] ✅ Step 1: Unlocked existing orientation');
+          
+          // Step 2: Wait a moment for the unlock to take effect
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Step 3: Lock to the correct orientation based on video dimensions
           if (videoOrientation === 'portrait') {
+            console.log('[VideoPlayer] 🚨 LOCKING to PORTRAIT_UP for portrait video');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            console.log('[VideoPlayer] ✅ Locked to PORTRAIT orientation for fullscreen');
+            console.log('[VideoPlayer] ✅ Successfully locked to PORTRAIT orientation');
           } else {
+            console.log('[VideoPlayer] 🚨 LOCKING to LANDSCAPE for landscape video');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            console.log('[VideoPlayer] ✅ Locked to LANDSCAPE orientation for fullscreen');
+            console.log('[VideoPlayer] ✅ Successfully locked to LANDSCAPE orientation');
           }
+          
+          // Step 4: Verify the lock was applied
+          const currentOrientation = await ScreenOrientation.getOrientationAsync();
+          console.log('[VideoPlayer] 📐 Current device orientation after lock:', currentOrientation);
+          
         } else {
           console.log('[VideoPlayer] Exiting fullscreen - unlocking orientation');
           await ScreenOrientation.unlockAsync();
+          console.log('[VideoPlayer] ✅ Orientation unlocked');
         }
       } catch (e) {
-        console.log('[VideoPlayer] Screen orientation not available:', e);
+        console.error('[VideoPlayer] ❌ Screen orientation error:', e);
       }
     }
   }, [isFullscreen, videoOrientation, isPlaying, startControlsTimeout]);
