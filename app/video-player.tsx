@@ -210,6 +210,29 @@ export default function VideoPlayerScreen() {
 
   const videoTitle = video.title;
   const backButtonText = "Back";
+  const resolutionLabel = "Resolution";
+  const fileSizeLabel = "File Size";
+  const durationLabel = "Duration";
+  const instantPlaybackLabel = "Instant Playback";
+  const secureLabel = "Secure";
+  
+  const resolutionValue = video.resolution_width && video.resolution_height 
+    ? `${video.resolution_width}x${video.resolution_height}`
+    : 'N/A';
+  
+  const fileSizeValue = video.file_size_bytes 
+    ? `${(video.file_size_bytes / (1024 * 1024)).toFixed(2)} MB`
+    : 'N/A';
+  
+  const durationValue = video.duration_seconds 
+    ? formatDuration(video.duration_seconds)
+    : '0:00';
+
+  function formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 
   return (
     <ScrollView 
@@ -251,6 +274,49 @@ export default function VideoPlayerScreen() {
 
       <View style={styles.infoContainer}>
         <Text style={styles.title}>{videoTitle}</Text>
+        
+        <View style={styles.badgesRow}>
+          <View style={styles.badge}>
+            <IconSymbol
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
+              size={16}
+              color="#22C55E"
+            />
+            <Text style={styles.badgeText}>{instantPlaybackLabel}</Text>
+          </View>
+          
+          <View style={styles.badge}>
+            <IconSymbol
+              ios_icon_name="lock.fill"
+              android_material_icon_name="lock"
+              size={16}
+              color="#22C55E"
+            />
+            <Text style={styles.badgeText}>{secureLabel}</Text>
+          </View>
+        </View>
+
+        <View style={styles.metadataContainer}>
+          <View style={styles.metadataRow}>
+            <Text style={styles.metadataLabel}>{resolutionLabel}</Text>
+            <Text style={styles.metadataValue}>{resolutionValue}</Text>
+          </View>
+          
+          <View style={styles.metadataDivider} />
+          
+          <View style={styles.metadataRow}>
+            <Text style={styles.metadataLabel}>{fileSizeLabel}</Text>
+            <Text style={styles.metadataValue}>{fileSizeValue}</Text>
+          </View>
+          
+          <View style={styles.metadataDivider} />
+          
+          <View style={styles.metadataRow}>
+            <Text style={styles.metadataLabel}>{durationLabel}</Text>
+            <Text style={styles.metadataValue}>{durationValue}</Text>
+          </View>
+        </View>
         
         {video.description && (
           <Text style={styles.description}>{video.description}</Text>
@@ -347,13 +413,61 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: '#000000',
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  metadataContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  metadataLabel: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: '500',
+  },
+  metadataValue: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  metadataDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 4,
   },
   description: {
     fontSize: 14,

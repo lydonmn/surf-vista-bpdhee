@@ -218,6 +218,7 @@ export default function HomeScreen() {
       }
 
       console.log('[HomeScreen] Video loaded:', videoData.title);
+      console.log('[HomeScreen] Thumbnail URL from DB:', videoData.thumbnail_url);
       setLatestVideo(videoData as Video);
       
       if (videoData.thumbnail_url) {
@@ -225,19 +226,30 @@ export default function HomeScreen() {
           let thumbnailFileName = '';
           const thumbUrl = videoData.thumbnail_url;
           
-          if (thumbUrl.includes('/thumbnails/')) {
+          if (thumbUrl.includes('/object/public/thumbnails/')) {
+            const parts = thumbUrl.split('/object/public/thumbnails/');
+            if (parts.length === 2) {
+              thumbnailFileName = parts[1].split('?')[0];
+            }
+          } else if (thumbUrl.includes('/thumbnails/')) {
             const parts = thumbUrl.split('/thumbnails/');
             if (parts.length === 2) {
               thumbnailFileName = parts[1].split('?')[0];
             }
           } else {
-            const url = new URL(thumbUrl);
-            const pathParts = url.pathname.split('/');
-            thumbnailFileName = pathParts[pathParts.length - 1];
+            try {
+              const url = new URL(thumbUrl);
+              const pathParts = url.pathname.split('/');
+              thumbnailFileName = pathParts[pathParts.length - 1];
+            } catch (urlError) {
+              console.error('[HomeScreen] URL parse error:', urlError);
+              thumbnailFileName = thumbUrl.split('/').pop()?.split('?')[0] || '';
+            }
           }
           
           if (thumbnailFileName) {
-            console.log('[HomeScreen] Generating signed URL for thumbnail:', thumbnailFileName);
+            console.log('[HomeScreen] Extracted thumbnail filename:', thumbnailFileName);
+            console.log('[HomeScreen] Generating signed URL for thumbnail');
             
             const { data: signedData, error: signedError } = await supabase.storage
               .from('thumbnails')
@@ -247,14 +259,14 @@ export default function HomeScreen() {
               console.error('[HomeScreen] Thumbnail signed URL error:', signedError);
               setSignedThumbnailUrl(null);
             } else if (signedData?.signedUrl) {
-              console.log('[HomeScreen] Thumbnail signed URL ready');
+              console.log('[HomeScreen] Thumbnail signed URL ready:', signedData.signedUrl);
               setSignedThumbnailUrl(signedData.signedUrl);
             } else {
               console.log('[HomeScreen] No signed URL returned');
               setSignedThumbnailUrl(null);
             }
           } else {
-            console.log('[HomeScreen] Could not extract thumbnail filename');
+            console.log('[HomeScreen] Could not extract thumbnail filename from:', thumbUrl);
             setSignedThumbnailUrl(null);
           }
         } catch (e) {
@@ -486,6 +498,9 @@ export default function HomeScreen() {
                   onError={(e) => {
                     console.log('[HomeScreen] Thumbnail load error:', e.nativeEvent.error);
                     setSignedThumbnailUrl(null);
+                  }}
+                  onLoad={() => {
+                    console.log('[HomeScreen] Thumbnail loaded successfully');
                   }}
                 />
               ) : (
