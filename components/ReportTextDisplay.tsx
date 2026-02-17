@@ -9,21 +9,14 @@ interface ReportTextDisplayProps {
 }
 
 export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
-  // 🚨 CRITICAL FIX: Handle both literal \n\n and actual newlines
-  // The backend inserts \n\n but they might be stored as literal strings
-  // We need to handle both cases to ensure paragraph breaks work
-  
-  // First, normalize the text by replacing literal \n with actual newlines
-  const normalizedText = text.replace(/\\n/g, '\n');
-  
-  // Split by double newlines (actual newlines, not escaped)
-  const paragraphs = normalizedText
+  // Split by double newlines to create paragraphs
+  // The backend now generates narratives with actual \n\n characters
+  const paragraphs = text
     .split('\n\n')
     .map(p => p.trim())
     .filter(p => p.length > 0);
 
   console.log('[ReportTextDisplay] Original text length:', text.length);
-  console.log('[ReportTextDisplay] Contains literal \\n\\n:', text.includes('\\n\\n'));
   console.log('[ReportTextDisplay] Contains actual newlines:', text.includes('\n\n'));
   console.log('[ReportTextDisplay] Total paragraphs after split:', paragraphs.length);
   console.log('[ReportTextDisplay] Paragraph lengths:', paragraphs.map(p => p.length));
@@ -69,8 +62,6 @@ export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
     if (sections.length > 1) {
       console.log('[ReportTextDisplay] ✅ Split into', sections.length, 'sections using pattern matching');
       console.log('[ReportTextDisplay] Section lengths:', sections.map(s => s.length));
-      console.log('[ReportTextDisplay] First section ends with:', sections[0].slice(-20));
-      console.log('[ReportTextDisplay] Second section starts with:', sections[1].slice(0, 20));
       
       return (
         <View style={[styles.container, style]}>
