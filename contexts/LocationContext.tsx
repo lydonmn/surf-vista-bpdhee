@@ -72,7 +72,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchLocations = useCallback(async () => {
+  // ✅ FIXED: Removed useCallback to prevent infinite loop
+  const fetchLocations = async () => {
     try {
       console.log('[LocationContext] Fetching locations from database...');
       
@@ -110,9 +111,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       console.error('[LocationContext] Exception fetching locations:', error);
       console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
     }
-  }, []);
+  };
 
+  // ✅ FIXED: Removed fetchLocations from dependency array to prevent infinite loop
   useEffect(() => {
+    let isMounted = true;
+
     const initialize = async () => {
       try {
         console.log('[LocationContext] Initializing...');
@@ -122,21 +126,29 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
         // Load saved location preference
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          console.log('[LocationContext] Loaded saved location preference:', saved);
-          setCurrentLocation(saved);
-        } else {
-          console.log('[LocationContext] No saved location, using default: folly-beach');
+        if (isMounted) {
+          if (saved) {
+            console.log('[LocationContext] Loaded saved location preference:', saved);
+            setCurrentLocation(saved);
+          } else {
+            console.log('[LocationContext] No saved location, using default: folly-beach');
+          }
         }
       } catch (error) {
         console.error('[LocationContext] Error initializing:', error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     initialize();
-  }, [fetchLocations]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const setLocation = useCallback(async (location: Location) => {
     try {
@@ -151,7 +163,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const refreshLocations = useCallback(async () => {
     console.log('[LocationContext] ⚡ Refreshing locations from database...');
     await fetchLocations();
-  }, [fetchLocations]);
+  }, []);
 
   // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
