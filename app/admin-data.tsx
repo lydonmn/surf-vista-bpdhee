@@ -124,7 +124,7 @@ export default function AdminDataScreen() {
       console.log('[AdminData] 🔄 LOADING LOCATION REPORTS');
       console.log('[AdminData] Date:', dateStr);
       console.log('[AdminData] Available locations:', locations.length);
-      console.log('[AdminData] Cache-busting timestamp:', Date.now());
+      console.log('[AdminData] Timestamp:', new Date().toISOString());
       console.log('[AdminData] ═══════════════════════════════════════');
 
       for (const location of locations) {
@@ -134,8 +134,8 @@ export default function AdminDataScreen() {
           displayName: location.displayName,
         });
 
-        // 🚨 CRITICAL FIX: Force fresh query with cache bypass using timestamp
-        const cacheBuster = Date.now();
+        // 🚨 CRITICAL FIX: Force fresh query by adding timestamp to bypass any caching
+        const timestamp = Date.now();
         const [reportResult, conditionsResult] = await Promise.all([
           supabase
             .from('surf_reports')
@@ -160,10 +160,11 @@ export default function AdminDataScreen() {
 
         console.log('[AdminData] ═══════════════════════════════════════');
         console.log('[AdminData] 📊 REPORT DATA FOR', location.displayName);
-        console.log('[AdminData] Cache buster:', cacheBuster);
+        console.log('[AdminData] Query timestamp:', timestamp);
         console.log('[AdminData] Has report:', !!report);
         console.log('[AdminData] Report ID:', report?.id);
         console.log('[AdminData] Report date:', report?.date);
+        console.log('[AdminData] Report location field:', report?.location);
         console.log('[AdminData] Has conditions field:', !!report?.conditions);
         console.log('[AdminData] Has report_text field:', !!report?.report_text);
         console.log('[AdminData] Conditions length:', report?.conditions?.length || 0);
@@ -348,14 +349,10 @@ export default function AdminDataScreen() {
       console.log(`[AdminData] ═══════════════════════════════════════`);
       console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId} with isManualTrigger=true`);
       
-      // 🚨 CRITICAL: The manual report generator ONLY uses existing database data
-      // It does NOT fetch fresh data from the buoy or external APIs
-      // The report page already has the most up-to-date data from scheduled updates
-      // This function ONLY regenerates the narrative text using that existing data
       const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { 
           location: locationId,
-          isManualTrigger: true // ✅ This tells backend: Use database data ONLY, no fresh API calls
+          isManualTrigger: true
         },
       });
 
@@ -368,7 +365,6 @@ export default function AdminDataScreen() {
 
       if (error) {
         console.error('[AdminData] ❌ Error invoking Edge Function:', error);
-        // 🚨 CRITICAL: Show detailed error to help debug
         const errorDetails = error.message || JSON.stringify(error);
         throw new Error(`Edge Function error: ${errorDetails}`);
       }
@@ -377,7 +373,6 @@ export default function AdminDataScreen() {
         const errorMsg = data.error || data.message || 'Report generation failed';
         console.error('[AdminData] ❌ Edge Function reported failure:', errorMsg);
         
-        // 🚨 CRITICAL: Include stack trace if available
         if (data.stack) {
           console.error('[AdminData] Stack trace:', data.stack);
         }
@@ -402,41 +397,29 @@ export default function AdminDataScreen() {
         }
       }
       
-      // 🚨 CRITICAL FIX: More aggressive refresh with longer delays
+      // 🚨 CRITICAL FIX: Aggressive refresh with cache invalidation
       console.log('[AdminData] ═══════════════════════════════════════');
-      console.log('[AdminData] 🔄 STARTING ULTRA-AGGRESSIVE REFRESH SEQUENCE');
+      console.log('[AdminData] 🔄 STARTING AGGRESSIVE REFRESH WITH CACHE INVALIDATION');
       console.log('[AdminData] ═══════════════════════════════════════');
       
-      // Stage 1: Immediate refresh
-      console.log('[AdminData] Stage 1: Immediate refresh...');
+      // Wait for database write to complete
+      console.log('[AdminData] Waiting 2s for database write...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Refresh with cache invalidation
+      console.log('[AdminData] Refreshing with cache invalidation...');
       await loadLocationReports();
       
-      // Stage 2: Wait for database write propagation
-      console.log('[AdminData] Stage 2: Waiting 3s for database write propagation...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      await loadLocationReports();
-      
-      // Stage 3: Wait for real-time subscriptions and cache invalidation
-      console.log('[AdminData] Stage 3: Waiting 2s for real-time subscriptions...');
+      // Additional refresh after delay to catch any delayed propagation
+      console.log('[AdminData] Waiting 2s for propagation...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       await loadLocationReports();
       
-      // Stage 4: Final verification refresh
-      console.log('[AdminData] Stage 4: Final verification refresh after 2s...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await loadLocationReports();
-      
-      // Stage 5: One more for good measure
-      console.log('[AdminData] Stage 5: Final final refresh after 1s...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      await loadLocationReports();
-      
       console.log('[AdminData] ═══════════════════════════════════════');
-      console.log('[AdminData] ✅ REFRESH SEQUENCE COMPLETE');
+      console.log('[AdminData] ✅ REFRESH COMPLETE');
       console.log('[AdminData] ═══════════════════════════════════════');
       
       addLog(`✅ Report data refreshed for ${locationDisplayName}`, 'success');
-      addLog(`  • Completed 5-stage refresh sequence to ensure latest data`, 'info');
     } catch (error) {
       console.error('[AdminData] ❌ Error generating report:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

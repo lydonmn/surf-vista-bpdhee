@@ -140,59 +140,47 @@ async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: num
   return null;
 }
 
-async function fetchWaveWatchForecast(FETCH_TIMEOUT: number): Promise<any> {
-  try {
-    console.log('[fetchWaveWatchForecast] Fetching WaveWatch III forecast...');
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-    
-    const response = await fetch(
-      'https://www.ndbc.noaa.gov/data/wavewatch/',
-      { signal: controller.signal }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      console.warn('[fetchWaveWatchForecast] HTTP error:', response.status);
-      return null;
-    }
-    
-    console.log('[fetchWaveWatchForecast] ✅ WaveWatch data fetched');
-    return {};
-  } catch (error: any) {
-    console.error('[fetchWaveWatchForecast] Error:', error.message);
-    return null;
-  }
-}
-
 // 🚨 CRITICAL FIX: Calculate confidence based on data quality and recency
+// This function determines how confident we are in the forecast
+// NOTE: We do NOT look for future buoy data because it doesn't exist
+// We only use CURRENT buoy data to inform future predictions
 function calculateConfidence(
   hasBuoyData: boolean,
   hasHistoricalData: boolean,
   daysOut: number,
   dataQuality: 'excellent' | 'good' | 'fair' | 'poor'
 ): number {
+  console.log('[calculateConfidence] Input:', {
+    hasBuoyData,
+    hasHistoricalData,
+    daysOut,
+    dataQuality,
+  });
+  
   let baseConfidence = 50; // Start at 50%
   
-  // Boost for having live buoy data
+  // Boost for having live buoy data (current conditions)
   if (hasBuoyData) {
     baseConfidence += 20;
+    console.log('[calculateConfidence] +20% for live buoy data');
   }
   
   // Boost for having historical trend data
   if (hasHistoricalData) {
     baseConfidence += 15;
+    console.log('[calculateConfidence] +15% for historical data');
   }
   
   // Data quality adjustment
   if (dataQuality === 'excellent') {
     baseConfidence += 10;
+    console.log('[calculateConfidence] +10% for excellent data quality');
   } else if (dataQuality === 'good') {
     baseConfidence += 5;
+    console.log('[calculateConfidence] +5% for good data quality');
   } else if (dataQuality === 'poor') {
     baseConfidence -= 10;
+    console.log('[calculateConfidence] -10% for poor data quality');
   }
   
   // Decay confidence as we go further into the future
@@ -206,8 +194,15 @@ function calculateConfidence(
   const decayFactor = Math.max(0.7, 1 - (daysOut * 0.05));
   const finalConfidence = Math.round(baseConfidence * decayFactor);
   
+  console.log('[calculateConfidence] Decay factor for day', daysOut, ':', decayFactor);
+  console.log('[calculateConfidence] Base confidence:', baseConfidence);
+  console.log('[calculateConfidence] Final confidence:', finalConfidence);
+  
   // Clamp between 30% and 95%
-  return Math.max(30, Math.min(95, finalConfidence));
+  const clampedConfidence = Math.max(30, Math.min(95, finalConfidence));
+  console.log('[calculateConfidence] ✅ Clamped confidence:', clampedConfidence);
+  
+  return clampedConfidence;
 }
 
 async function generateForecast(
@@ -216,8 +211,11 @@ async function generateForecast(
 ): Promise<any[]> {
   const forecast = [];
   
-  console.log('[generateForecast] Generating forecast for', days, 'days');
+  console.log('[generateForecast] ═══════════════════════════════════════');
+  console.log('[generateForecast] 📊 GENERATING FORECAST');
+  console.log('[generateForecast] Days:', days);
   console.log('[generateForecast] Has current buoy data:', !!currentBuoyData);
+  console.log('[generateForecast] ═══════════════════════════════════════');
   
   const baseWaveHeight = currentBuoyData?.waveHeight || 1.5;
   const basePeriod = currentBuoyData?.period || 8;
@@ -238,6 +236,11 @@ async function generateForecast(
   }
   
   console.log('[generateForecast] Data quality assessment:', dataQuality);
+  console.log('[generateForecast] Base values:', {
+    waveHeight: baseWaveHeight,
+    period: basePeriod,
+    windSpeed: baseWindSpeed,
+  });
   
   for (let i = 0; i < days; i++) {
     const date = getESTDateNDaysFromNow(i);
@@ -251,11 +254,13 @@ async function generateForecast(
     const rating = calculateSurfRating(min, max, period, windSpeed);
     
     // 🚨 CRITICAL FIX: Calculate confidence for each day
+    // NOTE: We use CURRENT buoy data to inform ALL future predictions
+    // We do NOT look for future buoy data because it doesn't exist
     const confidence = calculateConfidence(
-      !!currentBuoyData,
+      !!currentBuoyData, // Do we have current buoy data?
       !!currentBuoyData, // hasHistoricalData - true if we have current data
-      i, // daysOut
-      dataQuality
+      i, // daysOut - how many days in the future
+      dataQuality // Quality of the current data
     );
     
     console.log(`[generateForecast] Day ${i} (${date}):`, {
@@ -263,7 +268,7 @@ async function generateForecast(
       period: period.toFixed(1),
       surfRange: `${min.toFixed(1)}-${max.toFixed(1)} ft`,
       rating,
-      confidence: `${confidence}%`, // ✅ Now calculated
+      confidence: `${confidence}%`,
     });
     
     forecast.push({
@@ -274,9 +279,11 @@ async function generateForecast(
       surfHeightMin: min,
       surfHeightMax: max,
       rating,
-      confidence, // ✅ Now included
+      confidence, // ✅ Now calculated and included
     });
   }
+  
+  console.log('[generateForecast] ✅ Generated', forecast.length, 'days of forecast');
   
   return forecast;
 }
@@ -325,21 +332,30 @@ Deno.serve(async (req) => {
     const buoyId = locationData.buoy_id;
     console.log('Using buoy:', buoyId, 'for location:', locationId);
     
-    // Try to fetch current buoy data
+    // 🚨 CRITICAL: Try to fetch CURRENT buoy data
+    // We do NOT look for future buoy data because it doesn't exist
+    // We use current conditions to inform future predictions
+    console.log('[Forecast] Fetching CURRENT buoy data (not future data)...');
     const currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
     if (currentBuoyData) {
-      console.log('✅ Live buoy data available:', currentBuoyData);
+      console.log('✅ Live CURRENT buoy data available:', currentBuoyData);
+      console.log('✅ This will be used to inform ALL future predictions');
     } else {
-      console.log('⚠️ No live buoy data, using baseline estimates');
+      console.log('⚠️ No live CURRENT buoy data, using baseline estimates');
+      console.log('⚠️ Confidence levels will be lower without current data');
     }
     
-    // Generate 7-day forecast
+    // Generate 7-day forecast using current buoy data
     const forecastData = await generateForecast(currentBuoyData, 7);
     
     console.log('Generated forecast for', forecastData.length, 'days');
     
     // Store forecast in database
+    console.log('[Store] ═══════════════════════════════════════');
+    console.log('[Store] 💾 STORING FORECAST TO DATABASE');
+    console.log('[Store] ═══════════════════════════════════════');
+    
     for (const day of forecastData) {
       const forecastRecord = {
         location: locationId,
@@ -351,7 +367,7 @@ Deno.serve(async (req) => {
         wind_direction: 'Variable',
         precipitation_chance: null,
         swell_height_range: `${day.surfHeightMin.toFixed(1)}-${day.surfHeightMax.toFixed(1)} ft`,
-        prediction_confidence: day.confidence, // ✅ CRITICAL FIX: Store confidence value (0-100)
+        prediction_confidence: day.confidence, // ✅ CRITICAL: Store as integer (0-100)
         updated_at: new Date().toISOString(),
       };
       
@@ -359,7 +375,8 @@ Deno.serve(async (req) => {
         location: locationId,
         date: day.date,
         swell_height_range: forecastRecord.swell_height_range,
-        prediction_confidence: forecastRecord.prediction_confidence, // ✅ Verify it's being stored
+        prediction_confidence: forecastRecord.prediction_confidence,
+        confidence_type: typeof forecastRecord.prediction_confidence,
       });
       
       const { error: upsertError } = await supabase
@@ -367,14 +384,19 @@ Deno.serve(async (req) => {
         .upsert(forecastRecord, { onConflict: 'location,date' });
       
       if (upsertError) {
-        console.error('Error storing forecast for', day.date, ':', upsertError);
+        console.error('❌ Error storing forecast for', day.date, ':', upsertError);
       } else {
         console.log(`✅ Forecast stored for ${day.date} with confidence ${day.confidence}%`);
       }
     }
     
+    console.log('[Store] ═══════════════════════════════════════');
+    
     // 🚨 VERIFICATION: Read back the data to confirm confidence was stored
-    console.log('[Verification] Reading back stored forecast data...');
+    console.log('[Verification] ═══════════════════════════════════════');
+    console.log('[Verification] 🔍 READING BACK STORED DATA');
+    console.log('[Verification] ═══════════════════════════════════════');
+    
     const { data: verifyData, error: verifyError } = await supabase
       .from('weather_forecast')
       .select('date, swell_height_range, prediction_confidence')
@@ -384,14 +406,19 @@ Deno.serve(async (req) => {
       .limit(7);
     
     if (verifyError) {
-      console.error('[Verification] Error reading back data:', verifyError);
+      console.error('[Verification] ❌ Error reading back data:', verifyError);
     } else {
       console.log('[Verification] ✅ Stored forecast data:');
       verifyData?.forEach(row => {
         console.log(`  ${row.date}: ${row.swell_height_range}, confidence: ${row.prediction_confidence}%`);
+        
+        if (row.prediction_confidence === null || row.prediction_confidence === undefined) {
+          console.error(`  ❌ CRITICAL: Confidence is NULL for ${row.date}!`);
+        }
       });
     }
     
+    console.log('[Verification] ═══════════════════════════════════════');
     console.log('=== FETCH SURF FORECAST COMPLETED ===');
     
     return new Response(
