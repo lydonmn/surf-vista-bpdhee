@@ -64,7 +64,6 @@ const LOCATION_PERSONALITIES: Record<string, {
     nickname: 'Cisco Beach',
     fullName: 'Cisco Beach, Nantucket'
   },
-  // 🚨 CRITICAL FIX: Added Jupiter location personality
   'jupiter-florida': {
     casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
     excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
@@ -284,7 +283,7 @@ function generateWittyNarrative(
   const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
   const rating = calculateSurfRating(surfConditions);
   
-  // 🚨 CRITICAL: Create seed based on locationId to ensure consistent randomization per location per day
+  // 🚨 CRITICAL FIX: Create seed based on locationId to ensure consistent randomization per location per day
   const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
 
   console.log('[generateWittyNarrative] 🎲 Seed for randomization:', seed);
@@ -294,7 +293,7 @@ function generateWittyNarrative(
   let report = '';
 
   // 🎯 OPENING: Set expectations based on surf height and quality
-  // 🚨 CRITICAL: ALL openings now use personality.nickname to ensure correct location
+  // 🚨 CRITICAL FIX: ALL openings now use personality.nickname to ensure correct location
   console.log('[generateWittyNarrative] 📝 Building opening for:', personality.nickname);
   if (waveHeight >= 8) {
     const openings = [
@@ -926,7 +925,7 @@ async function processLocation(
         console.log(`[${locationName}] 📊 water_temp: ${todayData.water_temp}`);
         console.log(`[${locationName}] 📊 location field: ${todayData.location}`);
         
-        // 🚨 CRITICAL: Force location field to be the correct locationId
+        // 🚨 CRITICAL FIX: Force location field to be the correct locationId
         // DO NOT trust the location field from the database - it may be wrong
         surfConditions = {
           ...todayData,
@@ -1103,7 +1102,7 @@ async function processLocation(
       throw new Error('No surf conditions available');
     }
 
-    // 🚨 CRITICAL: TRIPLE-CHECK that location field is correct before generating narrative
+    // 🚨 CRITICAL FIX: TRIPLE-CHECK that location field is correct before generating narrative
     if (!surfConditions.location || surfConditions.location !== locationId) {
       console.log(`[${locationName}] ⚠️ Location field mismatch or missing, correcting to: ${locationId}`);
       surfConditions.location = locationId;
@@ -1203,6 +1202,8 @@ async function processLocation(
     console.log(`[${locationName}] 💾 Narrative length: ${narrative.length} chars`);
     console.log(`[${locationName}] 💾 Storing in BOTH conditions and report_text fields`);
     console.log(`[${locationName}] 💾 Rating: ${rating}/10`);
+    console.log(`[${locationName}] 💾 Narrative preview: ${narrative.substring(0, 100)}...`);
+    console.log(`[${locationName}] 💾 Narrative contains "${verifyPersonality.nickname}": ${narrative.includes(verifyPersonality.nickname) ? '✅ YES' : '❌ NO'}`);
     console.log(`[${locationName}] ═════════════════════════════════════════`);
 
     const { error: upsertError } = await supabase
