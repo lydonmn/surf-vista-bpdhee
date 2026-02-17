@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 
@@ -30,7 +30,7 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const STORAGE_KEY = '@surfvista_location';
 
-// ✅ CRITICAL: Updated DEFAULT_LOCATIONS to include all existing locations as fallback
+// Default locations as fallback
 const DEFAULT_LOCATIONS: LocationData[] = [
   {
     id: 'folly-beach',
@@ -71,9 +71,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   const [isLoading, setIsLoading] = useState(true);
+  const isMounted = useRef(true);
 
-  // ✅ FIXED: Removed useCallback to prevent infinite loop
-  const fetchLocations = async () => {
+  // Fetch locations from database
+  const fetchLocations = useCallback(async () => {
+    if (!isMounted.current) return;
+    
     try {
       console.log('[LocationContext] Fetching locations from database...');
       
@@ -89,7 +92,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (data && data.length > 0) {
+      if (data && data.length > 0 && isMounted.current) {
         const formattedLocations: LocationData[] = data.map(loc => ({
           id: loc.id,
           name: loc.name,
@@ -111,22 +114,22 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       console.error('[LocationContext] Exception fetching locations:', error);
       console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
     }
-  };
+  }, []);
 
-  // ✅ FIXED: Removed fetchLocations from dependency array to prevent infinite loop
+  // Initialize on mount
   useEffect(() => {
-    let isMounted = true;
+    isMounted.current = true;
 
     const initialize = async () => {
       try {
         console.log('[LocationContext] Initializing...');
         
-        // Fetch locations from database first
+        // Fetch locations from database
         await fetchLocations();
 
         // Load saved location preference
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (isMounted) {
+        if (isMounted.current) {
           if (saved) {
             console.log('[LocationContext] Loaded saved location preference:', saved);
             setCurrentLocation(saved);
@@ -137,7 +140,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('[LocationContext] Error initializing:', error);
       } finally {
-        if (isMounted) {
+        if (isMounted.current) {
           setIsLoading(false);
         }
       }
@@ -146,9 +149,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     initialize();
 
     return () => {
-      isMounted = false;
+      isMounted.current = false;
     };
-  }, []);
+  }, [fetchLocations]);
 
   const setLocation = useCallback(async (location: Location) => {
     try {
@@ -163,9 +166,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const refreshLocations = useCallback(async () => {
     console.log('[LocationContext] ⚡ Refreshing locations from database...');
     await fetchLocations();
-  }, []);
+  }, [fetchLocations]);
 
-  // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
+  // Ensure locationData always has a valid location
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
 
   const value: LocationContextType = {
@@ -192,7 +195,7 @@ export function useLocation() {
   return context;
 }
 
-// ✅ Export LOCATIONS for backward compatibility
+// Export LOCATIONS for backward compatibility
 export const LOCATIONS: Record<string, LocationData> = DEFAULT_LOCATIONS.reduce((acc, loc) => {
   acc[loc.id] = loc;
   return acc;
