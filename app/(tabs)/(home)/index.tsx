@@ -127,7 +127,7 @@ export default function HomeScreen() {
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
-  // ✅ CRITICAL FIX: Load thumbnail with signed URL
+  // ✅ SIMPLE: Just store the thumbnail URL from database (no signed URL needed)
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
   const todayDate = useMemo(() => getESTDate(), []);
@@ -190,62 +190,37 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  // ✅ CRITICAL FIX: Load video metadata AND generate signed thumbnail URL
+  // ✅ SIMPLE: Just load video metadata - use thumbnail_url directly
   const loadLatestVideo = useCallback(async () => {
+    if (hasLoadedVideoRef.current) return;
+    
     try {
       setIsLoadingVideo(true);
-      console.log('[HomeScreen] ⚡ Loading video metadata with thumbnail...');
+      console.log('[HomeScreen] ⚡ Loading video...');
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
-        .select('id, title, thumbnail_url, video_url, location, resolution_width, resolution_height')
+        .select('*')
         .eq('location', currentLocation)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (videoError) {
-        console.log('[HomeScreen] Video fetch error:', videoError.message);
+        console.log('[HomeScreen] Video error:', videoError.message);
         setLatestVideo(null);
         setThumbnailUrl(null);
       } else if (videoData) {
-        console.log('[HomeScreen] ✅ Video metadata loaded:', videoData.title);
+        console.log('[HomeScreen] ✅ Video loaded:', videoData.title);
         setLatestVideo(videoData as Video);
         
-        // ✅ CRITICAL FIX: Generate signed URL for thumbnail
+        // ✅ SIMPLE: Use thumbnail URL directly if it exists
         if (videoData.thumbnail_url) {
-          try {
-            let thumbnailFileName = '';
-            const thumbUrl = videoData.thumbnail_url;
-            
-            // Extract filename from thumbnail URL
-            const thumbParts = thumbUrl.split('/thumbnails/');
-            if (thumbParts.length === 2) {
-              thumbnailFileName = thumbParts[1].split('?')[0];
-            } else {
-              const url = new URL(thumbUrl);
-              const pathParts = url.pathname.split('/');
-              thumbnailFileName = pathParts[pathParts.length - 1];
-            }
-            
-            if (thumbnailFileName) {
-              console.log('[HomeScreen] ⚡ Generating signed thumbnail URL...');
-              const { data: signedData, error: signedError } = await supabase.storage
-                .from('thumbnails')
-                .createSignedUrl(thumbnailFileName, 7200);
-              
-              if (signedError) {
-                console.error('[HomeScreen] Thumbnail signed URL error:', signedError);
-                setThumbnailUrl(null);
-              } else if (signedData?.signedUrl) {
-                console.log('[HomeScreen] ✅ Thumbnail URL ready');
-                setThumbnailUrl(signedData.signedUrl);
-              }
-            }
-          } catch (thumbError) {
-            console.error('[HomeScreen] Thumbnail processing error:', thumbError);
-            setThumbnailUrl(null);
-          }
+          console.log('[HomeScreen] ✅ Thumbnail available');
+          setThumbnailUrl(videoData.thumbnail_url);
+        } else {
+          console.log('[HomeScreen] No thumbnail');
+          setThumbnailUrl(null);
         }
         
         hasLoadedVideoRef.current = true;
@@ -255,7 +230,7 @@ export default function HomeScreen() {
         setThumbnailUrl(null);
       }
     } catch (error) {
-      console.error('[HomeScreen] Error loading video:', error);
+      console.error('[HomeScreen] Error:', error);
       setLatestVideo(null);
       setThumbnailUrl(null);
     } finally {
@@ -265,7 +240,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
-      console.log('[HomeScreen] ⚡ Loading video metadata with thumbnail');
+      console.log('[HomeScreen] ⚡ Loading video');
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
@@ -274,6 +249,7 @@ export default function HomeScreen() {
   const handleRefresh = async () => {
     console.log('[HomeScreen] User refresh');
     setIsRefreshing(true);
+    hasLoadedVideoRef.current = false;
     await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
   };
@@ -469,6 +445,10 @@ export default function HomeScreen() {
                   source={{ uri: thumbnailUrl }}
                   style={styles.thumbnailImage}
                   resizeMode="cover"
+                  onError={(e) => {
+                    console.log('[HomeScreen] Thumbnail load error:', e.nativeEvent.error);
+                    setThumbnailUrl(null);
+                  }}
                 />
               ) : (
                 <View style={styles.thumbnailPlaceholder}>
