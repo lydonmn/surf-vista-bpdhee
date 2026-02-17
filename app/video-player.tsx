@@ -670,58 +670,82 @@ export default function VideoPlayerScreen() {
     }
   }, [player, duration, resetControlsTimeout]);
 
+  // 🚨🚨🚨 CRITICAL FIX: Completely rewritten fullscreen toggle with FORCED orientation lock
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] 🚨 Toggle fullscreen:', newFullscreenState);
+    console.log('[VideoPlayer] 🚨🚨🚨 Toggle fullscreen:', newFullscreenState);
     console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
-    setIsFullscreen(newFullscreenState);
-    setControlsVisible(true);
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     
-    if (newFullscreenState && isPlaying) {
-      startControlsTimeout();
-    }
-    
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 CRITICAL FIX: Force orientation lock based on video's natural orientation
-          // First unlock to reset any existing locks, then lock to the correct orientation
-          console.log('[VideoPlayer] 🚨 FORCING orientation lock for fullscreen');
+          // 🚨 ENTERING FULLSCREEN - FORCE ORIENTATION LOCK IMMEDIATELY
+          console.log('[VideoPlayer] 🚨 ENTERING FULLSCREEN MODE');
+          console.log('[VideoPlayer] 🚨 Video is:', videoOrientation);
           
-          // Step 1: Unlock any existing orientation locks
+          // Step 1: Unlock ALL existing orientation locks
+          console.log('[VideoPlayer] Step 1: Unlocking all existing orientation locks...');
           await ScreenOrientation.unlockAsync();
-          console.log('[VideoPlayer] ✅ Step 1: Unlocked existing orientation');
+          console.log('[VideoPlayer] ✅ All orientation locks removed');
           
-          // Step 2: Wait a moment for the unlock to take effect
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Step 2: Wait for unlock to fully take effect
+          await new Promise(resolve => setTimeout(resolve, 150));
           
-          // Step 3: Lock to the correct orientation based on video dimensions
+          // Step 3: FORCE lock to the correct orientation based on video dimensions
           if (videoOrientation === 'portrait') {
-            console.log('[VideoPlayer] 🚨 LOCKING to PORTRAIT_UP for portrait video');
+            console.log('[VideoPlayer] 🚨🚨🚨 FORCING PORTRAIT_UP LOCK (portrait video)');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            console.log('[VideoPlayer] ✅ Successfully locked to PORTRAIT orientation');
+            console.log('[VideoPlayer] ✅✅✅ PORTRAIT_UP lock applied');
           } else {
-            console.log('[VideoPlayer] 🚨 LOCKING to LANDSCAPE for landscape video');
+            console.log('[VideoPlayer] 🚨🚨🚨 FORCING LANDSCAPE LOCK (landscape video)');
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            console.log('[VideoPlayer] ✅ Successfully locked to LANDSCAPE orientation');
+            console.log('[VideoPlayer] ✅✅✅ LANDSCAPE lock applied');
           }
           
-          // Step 4: Verify the lock was applied
+          // Step 4: Verify the lock was successfully applied
+          const currentLock = await ScreenOrientation.getOrientationLockAsync();
           const currentOrientation = await ScreenOrientation.getOrientationAsync();
-          console.log('[VideoPlayer] 📐 Current device orientation after lock:', currentOrientation);
+          console.log('[VideoPlayer] 📐 Verification - Lock type:', currentLock);
+          console.log('[VideoPlayer] 📐 Verification - Current orientation:', currentOrientation);
+          
+          // Step 5: Wait for orientation to stabilize before showing fullscreen
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+          // Step 6: NOW set fullscreen state (after orientation is locked)
+          console.log('[VideoPlayer] ✅ Orientation locked - now entering fullscreen UI');
+          setIsFullscreen(true);
+          setControlsVisible(true);
           
         } else {
-          console.log('[VideoPlayer] Exiting fullscreen - unlocking orientation');
+          // 🚨 EXITING FULLSCREEN - UNLOCK ORIENTATION
+          console.log('[VideoPlayer] 🚨 EXITING FULLSCREEN MODE');
+          
+          // First set state
+          setIsFullscreen(false);
+          
+          // Then unlock orientation
+          console.log('[VideoPlayer] Unlocking orientation...');
           await ScreenOrientation.unlockAsync();
-          console.log('[VideoPlayer] ✅ Orientation unlocked');
+          console.log('[VideoPlayer] ✅ Orientation unlocked - back to normal mode');
         }
       } catch (e) {
-        console.error('[VideoPlayer] ❌ Screen orientation error:', e);
+        console.error('[VideoPlayer] ❌❌❌ CRITICAL ERROR during orientation change:', e);
+        // Even if orientation lock fails, still toggle fullscreen UI
+        setIsFullscreen(newFullscreenState);
+        setControlsVisible(true);
       }
+    } else {
+      // Web doesn't need orientation locking
+      setIsFullscreen(newFullscreenState);
+      setControlsVisible(true);
+    }
+    
+    if (newFullscreenState && isPlaying) {
+      startControlsTimeout();
     }
   }, [isFullscreen, videoOrientation, isPlaying, startControlsTimeout]);
 
