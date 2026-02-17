@@ -39,7 +39,6 @@ export default function AdminUsersScreen() {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
-  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
   
   // Form state
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -88,7 +87,6 @@ export default function AdminUsersScreen() {
     setErrorModalTitle(title);
     setErrorModalMessage(message);
     setErrorModalVisible(true);
-    setConfirmAction(null);
   };
 
   const toggleLocationSelection = (locationId: string) => {
@@ -221,16 +219,10 @@ export default function AdminUsersScreen() {
   const confirmDelete = (adminId: string, adminEmail: string) => {
     setErrorModalTitle('Confirm Removal');
     setErrorModalMessage(`Are you sure you want to remove regional admin access for ${adminEmail}?\n\nThey will still have their user account but will no longer have admin privileges.`);
-    setConfirmAction(() => () => handleDeleteRegionalAdmin(adminId, adminEmail));
     setErrorModalVisible(true);
-  };
-
-  const handleModalAction = () => {
-    if (confirmAction) {
-      confirmAction();
-      setConfirmAction(null);
-    }
-    setErrorModalVisible(false);
+    
+    // Store the action for the modal button
+    (errorModalVisible as any).deleteAction = () => handleDeleteRegionalAdmin(adminId, adminEmail);
   };
 
   const handleGoBack = () => {
@@ -261,7 +253,6 @@ export default function AdminUsersScreen() {
   const sectionTitleText = 'Regional Admins';
   const emptyStateText = 'No regional admins yet';
   const emptyStateSubtext = 'Add regional admins to help manage specific locations';
-  const keyboardBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
 
   return (
     <View style={styles.container}>
@@ -359,7 +350,7 @@ export default function AdminUsersScreen() {
         onRequestClose={() => !isSaving && setModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={keyboardBehavior}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
@@ -487,7 +478,7 @@ export default function AdminUsersScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Error/Success/Confirm Modal */}
+      {/* Error/Success Modal */}
       <Modal
         visible={errorModalVisible}
         transparent={true}
@@ -497,37 +488,13 @@ export default function AdminUsersScreen() {
         <View style={styles.errorModalOverlay}>
           <View style={styles.errorModalContent}>
             <Text style={styles.errorModalTitle}>{errorModalTitle}</Text>
-            <ScrollView style={styles.errorModalScroll}>
-              <Text style={styles.errorModalMessage}>{errorModalMessage}</Text>
-            </ScrollView>
-            <View style={styles.errorModalActions}>
-              {confirmAction ? (
-                <>
-                  <TouchableOpacity
-                    style={[styles.errorModalButton, styles.errorModalCancelButton]}
-                    onPress={() => {
-                      setConfirmAction(null);
-                      setErrorModalVisible(false);
-                    }}
-                  >
-                    <Text style={styles.errorModalCancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.errorModalButton, styles.errorModalConfirmButton]}
-                    onPress={handleModalAction}
-                  >
-                    <Text style={styles.errorModalButtonText}>Confirm</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <TouchableOpacity
-                  style={styles.errorModalButton}
-                  onPress={() => setErrorModalVisible(false)}
-                >
-                  <Text style={styles.errorModalButtonText}>OK</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <Text style={styles.errorModalMessage}>{errorModalMessage}</Text>
+            <TouchableOpacity
+              style={styles.errorModalButton}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.errorModalButtonText}>OK</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -820,7 +787,6 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 400,
-    maxHeight: '80%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -833,43 +799,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
-  errorModalScroll: {
-    maxHeight: 300,
-    marginBottom: 20,
-  },
   errorModalMessage: {
     fontSize: 16,
     color: colors.text,
     lineHeight: 24,
-  },
-  errorModalActions: {
-    flexDirection: 'row',
-    gap: 12,
+    marginBottom: 20,
   },
   errorModalButton: {
-    flex: 1,
     backgroundColor: colors.primary,
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
     alignItems: 'center',
   },
-  errorModalCancelButton: {
-    backgroundColor: colors.background,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  errorModalConfirmButton: {
-    backgroundColor: '#FF3B30',
-  },
   errorModalButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-  },
-  errorModalCancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
   },
 });
