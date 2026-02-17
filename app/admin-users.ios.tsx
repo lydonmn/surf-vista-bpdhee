@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
