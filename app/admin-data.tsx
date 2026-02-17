@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from '@/contexts/LocationContext';
