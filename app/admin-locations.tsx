@@ -287,13 +287,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginRight: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   testLogMessage: {
     color: colors.text,
     fontSize: 12,
     flex: 1,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   testLogError: {
     color: '#ff4444',
@@ -328,7 +326,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#616161',
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     backgroundColor: '#FFFFFF',
     padding: 12,
     borderRadius: 8,

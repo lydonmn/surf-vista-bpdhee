@@ -202,13 +202,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginRight: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   logMessage: {
     color: colors.text,
     fontSize: 12,
     flex: 1,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   logError: {
     color: '#ff4444',

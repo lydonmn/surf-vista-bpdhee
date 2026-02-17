@@ -77,12 +77,14 @@ export default function AdminUsersScreen() {
     if (profile && !profile.is_admin) {
       console.log('[AdminUsersScreen] User is not admin, redirecting...');
       showErrorModal('Access Denied', 'You do not have admin privileges');
-      router.back();
+      setTimeout(() => {
+        router.back();
+      }, 100);
       return;
     }
 
     loadRegionalAdmins();
-  }, [profile, loadRegionalAdmins, router]);
+  }, [profile, loadRegionalAdmins]);
 
   const showErrorModal = (title: string, message: string) => {
     setErrorModalTitle(title);
@@ -261,7 +263,6 @@ export default function AdminUsersScreen() {
   const sectionTitleText = 'Regional Admins';
   const emptyStateText = 'No regional admins yet';
   const emptyStateSubtext = 'Add regional admins to help manage specific locations';
-  const keyboardBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
 
   return (
     <View style={styles.container}>
@@ -359,7 +360,7 @@ export default function AdminUsersScreen() {
         onRequestClose={() => !isSaving && setModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={keyboardBehavior}
+          behavior="padding"
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
