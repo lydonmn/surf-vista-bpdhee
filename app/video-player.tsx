@@ -1,6 +1,6 @@
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, Dimensions } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
@@ -21,6 +21,8 @@ interface Video {
   created_at: string;
 }
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 export default function VideoPlayerScreen() {
   const insets = useSafeAreaInsets();
   const { videoId } = useLocalSearchParams();
@@ -29,25 +31,11 @@ export default function VideoPlayerScreen() {
   const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
-  
-  const hasLoadedRef = useRef(false);
 
   const player = useVideoPlayer(signedVideoUrl || '', (player) => {
     console.log('[VideoPlayer] Player initialized');
-    setIsPlayerReady(true);
-    
-    if (signedVideoUrl) {
-      console.log('[VideoPlayer] Starting playback');
-      player.loop = false;
-      player.muted = false;
-      
-      setTimeout(() => {
-        if (player && typeof player.play === 'function') {
-          player.play();
-        }
-      }, 500);
-    }
+    player.loop = false;
+    player.muted = false;
   });
 
   const handleExitPlayer = useCallback(() => {
@@ -61,8 +49,6 @@ export default function VideoPlayerScreen() {
   }, [player]);
 
   useEffect(() => {
-    if (hasLoadedRef.current) return;
-    
     console.log('[VideoPlayer] Loading video with ID:', videoId);
     
     const loadVideo = async () => {
@@ -122,7 +108,6 @@ export default function VideoPlayerScreen() {
 
         console.log('[VideoPlayer] Signed URL generated successfully');
         setSignedVideoUrl(signedUrlData.signedUrl);
-        hasLoadedRef.current = true;
       } catch (loadError: unknown) {
         console.error('[VideoPlayer] Load error:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
@@ -208,37 +193,10 @@ export default function VideoPlayerScreen() {
     );
   }
 
-  const videoTitle = video.title;
   const backButtonText = "Back";
-  const resolutionLabel = "Resolution";
-  const fileSizeLabel = "File Size";
-  const durationLabel = "Duration";
-  const instantPlaybackLabel = "Instant Playback";
-  const secureLabel = "Secure";
-  
-  const resolutionValue = video.resolution_width && video.resolution_height 
-    ? `${video.resolution_width}x${video.resolution_height}`
-    : 'N/A';
-  
-  const fileSizeValue = video.file_size_bytes 
-    ? `${(video.file_size_bytes / (1024 * 1024)).toFixed(2)} MB`
-    : 'N/A';
-  
-  const durationValue = video.duration_seconds 
-    ? formatDuration(video.duration_seconds)
-    : '0:00';
-
-  function formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: '#000000' }]}
-      contentContainerStyle={styles.scrollContent}
-    >
+    <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <Stack.Screen options={{ headerShown: false }} />
       
       <TouchableOpacity
@@ -255,13 +213,6 @@ export default function VideoPlayerScreen() {
       </TouchableOpacity>
 
       <View style={styles.videoContainer}>
-        {!isPlayerReady && (
-          <View style={styles.playerLoadingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.playerLoadingText}>Preparing video...</Text>
-          </View>
-        )}
-        
         <VideoView
           style={styles.video}
           player={player}
@@ -271,58 +222,7 @@ export default function VideoPlayerScreen() {
           nativeControls={true}
         />
       </View>
-
-      <View style={styles.infoContainer}>
-        <Text style={styles.title}>{videoTitle}</Text>
-        
-        <View style={styles.badgesRow}>
-          <View style={styles.badge}>
-            <IconSymbol
-              ios_icon_name="checkmark.circle.fill"
-              android_material_icon_name="check-circle"
-              size={16}
-              color="#22C55E"
-            />
-            <Text style={styles.badgeText}>{instantPlaybackLabel}</Text>
-          </View>
-          
-          <View style={styles.badge}>
-            <IconSymbol
-              ios_icon_name="lock.fill"
-              android_material_icon_name="lock"
-              size={16}
-              color="#22C55E"
-            />
-            <Text style={styles.badgeText}>{secureLabel}</Text>
-          </View>
-        </View>
-
-        <View style={styles.metadataContainer}>
-          <View style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>{resolutionLabel}</Text>
-            <Text style={styles.metadataValue}>{resolutionValue}</Text>
-          </View>
-          
-          <View style={styles.metadataDivider} />
-          
-          <View style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>{fileSizeLabel}</Text>
-            <Text style={styles.metadataValue}>{fileSizeValue}</Text>
-          </View>
-          
-          <View style={styles.metadataDivider} />
-          
-          <View style={styles.metadataRow}>
-            <Text style={styles.metadataLabel}>{durationLabel}</Text>
-            <Text style={styles.metadataValue}>{durationValue}</Text>
-          </View>
-        </View>
-        
-        {video.description && (
-          <Text style={styles.description}>{video.description}</Text>
-        )}
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -330,21 +230,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
-  },
   headerBackButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     zIndex: 10,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   headerBackText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
   },
   centerContent: {
@@ -386,92 +287,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   videoContainer: {
-    width: '100%',
-    aspectRatio: 16 / 9,
+    flex: 1,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#000000',
-    position: 'relative',
   },
   video: {
     width: '100%',
     height: '100%',
-  },
-  playerLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    zIndex: 5,
-  },
-  playerLoadingText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    marginTop: 12,
-  },
-  infoContainer: {
-    padding: 20,
-    backgroundColor: '#000000',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 16,
-  },
-  badgesRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  metadataContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  metadataLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontWeight: '500',
-  },
-  metadataValue: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  metadataDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginVertical: 4,
-  },
-  description: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: 'rgba(255, 255, 255, 0.8)',
   },
 });

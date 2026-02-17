@@ -257,21 +257,21 @@ export default function HomeScreen() {
 
             if (signedError) {
               console.error('[HomeScreen] Thumbnail signed URL error:', signedError);
-              setSignedThumbnailUrl(null);
+              setSignedThumbnailUrl(videoData.thumbnail_url);
             } else if (signedData?.signedUrl) {
               console.log('[HomeScreen] Thumbnail signed URL ready:', signedData.signedUrl);
               setSignedThumbnailUrl(signedData.signedUrl);
             } else {
-              console.log('[HomeScreen] No signed URL returned');
-              setSignedThumbnailUrl(null);
+              console.log('[HomeScreen] No signed URL returned, using original');
+              setSignedThumbnailUrl(videoData.thumbnail_url);
             }
           } else {
-            console.log('[HomeScreen] Could not extract thumbnail filename from:', thumbUrl);
-            setSignedThumbnailUrl(null);
+            console.log('[HomeScreen] Could not extract thumbnail filename, using original URL');
+            setSignedThumbnailUrl(videoData.thumbnail_url);
           }
         } catch (e) {
           console.error('[HomeScreen] Thumbnail URL processing error:', e);
-          setSignedThumbnailUrl(null);
+          setSignedThumbnailUrl(videoData.thumbnail_url);
         }
       } else {
         console.log('[HomeScreen] No thumbnail URL in video data');
@@ -447,7 +447,6 @@ export default function HomeScreen() {
   const forecastTitle = '7-Day Forecast';
   const swellLabel = 'swell';
   const noForecastText = 'No forecast data available yet. Pull down to refresh or check back later.';
-  const tapToPlayText = 'Tap to Play Video';
 
   return (
     <ScrollView 
@@ -478,7 +477,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
+      <View style={styles.videoSection}>
         {isLoadingVideo ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -487,7 +486,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.videoCard}
             onPress={handleVideoPress}
-            activeOpacity={0.7}
+            activeOpacity={0.9}
           >
             <View style={styles.videoPreviewContainer}>
               {signedThumbnailUrl ? (
@@ -497,7 +496,6 @@ export default function HomeScreen() {
                   resizeMode="cover"
                   onError={(e) => {
                     console.log('[HomeScreen] Thumbnail load error:', e.nativeEvent.error);
-                    setSignedThumbnailUrl(null);
                   }}
                   onLoad={() => {
                     console.log('[HomeScreen] Thumbnail loaded successfully');
@@ -508,22 +506,23 @@ export default function HomeScreen() {
                   <IconSymbol
                     ios_icon_name="photo"
                     android_material_icon_name="image"
-                    size={48}
+                    size={64}
                     color="rgba(255, 255, 255, 0.3)"
                   />
                 </View>
               )}
               <View style={styles.videoOverlay}>
-                <View style={styles.videoTitleOverlay}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play-circle-filled"
-                    size={80}
-                    color="rgba(255, 255, 255, 0.95)"
-                  />
-                  <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
-                  <Text style={styles.tapToPlayText}>{tapToPlayText}</Text>
+                <View style={styles.playButtonContainer}>
+                  <View style={styles.playButton}>
+                    <IconSymbol
+                      ios_icon_name="play.fill"
+                      android_material_icon_name="play-arrow"
+                      size={48}
+                      color="#FFFFFF"
+                    />
+                  </View>
                 </View>
+                <Text style={styles.videoTitle}>SurfVista</Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -1016,25 +1015,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   videoSection: {
-    borderRadius: 16,
     marginHorizontal: 16,
     marginBottom: 16,
+    borderRadius: 16,
     overflow: 'hidden',
-    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
-    elevation: 4,
   },
   videoCard: {
     width: '100%',
   },
   videoPreviewContainer: {
     width: '100%',
-    height: 280,
+    aspectRatio: 16 / 9,
     position: 'relative',
     backgroundColor: '#000000',
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   thumbnailImage: {
     width: '100%',
     height: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   thumbnailPlaceholder: {
     width: '100%',
@@ -1051,27 +1055,29 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
-  videoTitleOverlay: {
+  playButtonContainer: {
+    marginBottom: 16,
+  },
+  playButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
+    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.3)',
+    elevation: 8,
   },
-  videoTitleOnVideo: {
-    color: 'rgba(255, 255, 255, 0.95)',
-    fontSize: 32,
+  videoTitle: {
+    color: '#FFFFFF',
+    fontSize: 36,
     fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  tapToPlayText: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 14,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 8,
+    letterSpacing: 1,
   },
   reportCard: {
     borderRadius: 16,
