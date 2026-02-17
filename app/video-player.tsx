@@ -668,18 +668,16 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          const isPortraitVideo = video && video.resolution_height && video.resolution_width 
-            ? video.resolution_height > video.resolution_width 
-            : false;
+          // 🚨 CRITICAL FIX: Always keep portrait orientation for fullscreen
+          // Drone videos are shot in portrait (9:16) and should stay portrait in fullscreen
+          console.log('[VideoPlayer] ✅ Entering fullscreen - maintaining PORTRAIT orientation');
+          console.log('[VideoPlayer] Video dimensions:', video?.resolution_width, 'x', video?.resolution_height);
           
-          if (isPortraitVideo) {
-            console.log('[VideoPlayer] Portrait video - unlocking orientation');
-            await ScreenOrientation.unlockAsync();
-          } else {
-            console.log('[VideoPlayer] Landscape video - locking to landscape');
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          }
+          // Lock to portrait for all videos (drone footage is portrait)
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+          console.log('[VideoPlayer] ✅ Locked to portrait orientation for fullscreen');
         } else {
+          console.log('[VideoPlayer] Exiting fullscreen - unlocking orientation');
           await ScreenOrientation.unlockAsync();
         }
       } catch (e) {

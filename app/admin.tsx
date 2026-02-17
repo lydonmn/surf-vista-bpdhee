@@ -156,6 +156,17 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Video selected:', videoAsset.uri);
       console.log('[AdminScreen] Raw video duration from picker:', videoAsset.duration);
       console.log('[AdminScreen] Video dimensions:', videoAsset.width, 'x', videoAsset.height);
+      
+      // 🚨 CRITICAL: Detect video orientation from dimensions
+      const isPortrait = videoAsset.height && videoAsset.width && videoAsset.height > videoAsset.width;
+      const isLandscape = videoAsset.width && videoAsset.height && videoAsset.width > videoAsset.height;
+      const orientationType = isPortrait ? 'portrait' : (isLandscape ? 'landscape' : 'square');
+      
+      console.log('[AdminScreen] ✅ Video orientation detected:', orientationType);
+      console.log('[AdminScreen] - Width:', videoAsset.width);
+      console.log('[AdminScreen] - Height:', videoAsset.height);
+      console.log('[AdminScreen] - Is Portrait:', isPortrait);
+      console.log('[AdminScreen] - Is Landscape:', isLandscape);
 
       const metadata = await validateVideoMetadata(videoAsset.uri);
       if (!metadata) {
@@ -341,7 +352,13 @@ export default function AdminScreen() {
       const resolutionHeight = metadata?.height || null;
       const fileSizeBytes = metadata?.size || null;
 
+      // 🚨 CRITICAL: Determine orientation from resolution for proper playback
+      const isPortraitVideo = resolutionHeight && resolutionWidth && resolutionHeight > resolutionWidth;
+      const orientationInfo = isPortraitVideo ? 'portrait' : 'landscape';
+      
       console.log('[AdminScreen] 💾 Saving to database with location:', selectedLocation);
+      console.log('[AdminScreen] 📐 Video orientation:', orientationInfo, `(${resolutionWidth}x${resolutionHeight})`);
+      
       const { error: dbError } = await supabase
         .from('videos')
         .insert({
