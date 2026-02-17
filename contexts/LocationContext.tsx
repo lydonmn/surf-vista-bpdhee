@@ -151,7 +151,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted.current = false;
     };
-  }, [fetchLocations]);
+  }, []); // Empty deps - fetchLocations is stable due to useCallback with empty deps
 
   const setLocation = useCallback(async (location: Location) => {
     try {
@@ -166,7 +166,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const refreshLocations = useCallback(async () => {
     console.log('[LocationContext] ⚡ Refreshing locations from database...');
     await fetchLocations();
-  }, [fetchLocations]);
+  }, []); // Empty deps - fetchLocations is stable
 
   // Ensure locationData always has a valid location
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
