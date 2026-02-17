@@ -12,7 +12,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -37,6 +36,32 @@ interface ActivityLog {
   timestamp: string;
   message: string;
   type: 'info' | 'success' | 'error' | 'warning';
+}
+
+interface BuoyOption {
+  id: string;
+  name: string;
+  distanceNm: number;
+  latitude: number;
+  longitude: number;
+}
+
+interface TideStation {
+  id: string;
+  name: string;
+  distance: number;
+}
+
+interface LocationSearchResult {
+  id: string;
+  shortName: string;
+  displayName: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  buoyOptions: BuoyOption[];
+  tideStation: TideStation;
 }
 
 const styles = StyleSheet.create({
@@ -208,6 +233,9 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: colors.primary,
   },
+  searchButton: {
+    backgroundColor: '#10B981',
+  },
   modalButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -330,6 +358,188 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginLeft: 8,
   },
+  searchSection: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#10B981',
+  },
+  searchTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#047857',
+    marginBottom: 12,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#000000',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  searchButtonSmall: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  searchButtonTextSmall: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  searchResultCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  searchResultTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#047857',
+    marginBottom: 12,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  searchResultLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    width: 100,
+  },
+  searchResultValue: {
+    fontSize: 14,
+    color: '#6B7280',
+    flex: 1,
+  },
+  buoyOptionsSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  buoyOptionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#047857',
+    marginBottom: 12,
+  },
+  buoyOptionCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  buoyOptionSelected: {
+    borderColor: '#10B981',
+    backgroundColor: '#ECFDF5',
+  },
+  buoyOptionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  buoyOptionDetails: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  confirmButton: {
+    backgroundColor: '#10B981',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  confirmButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  confirmButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  outputCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  outputTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 12,
+  },
+  outputText: {
+    fontSize: 13,
+    color: '#78350F',
+    lineHeight: 22,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  copyButton: {
+    backgroundColor: '#F59E0B',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  copyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  errorModal: {
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#EF4444',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  errorCloseButton: {
+    backgroundColor: colors.primary,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  errorCloseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 export default function AdminLocationsScreen() {
@@ -352,6 +562,25 @@ export default function AdminLocationsScreen() {
     is_active: true,
   });
 
+  // New search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<LocationSearchResult | null>(null);
+  const [selectedBuoyId, setSelectedBuoyId] = useState<string | null>(null);
+  const [showOutput, setShowOutput] = useState(false);
+
+  // Error modal state
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorTitle, setErrorTitle] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const showError = (title: string, message: string) => {
+    console.log('AdminLocationsScreen: Showing error:', title, message);
+    setErrorTitle(title);
+    setErrorMessage(message);
+    setErrorModalVisible(true);
+  };
+
   const loadLocations = useCallback(async () => {
     console.log('AdminLocationsScreen: Loading locations');
     try {
@@ -363,7 +592,7 @@ export default function AdminLocationsScreen() {
 
       if (error) {
         console.error('AdminLocationsScreen: Error loading locations:', error);
-        Alert.alert('Error', `Failed to load locations: ${error.message}`);
+        showError('Error', `Failed to load locations: ${error.message}`);
         return;
       }
 
@@ -371,7 +600,7 @@ export default function AdminLocationsScreen() {
       setLocations(data || []);
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error:', err);
-      Alert.alert('Error', 'An unexpected error occurred');
+      showError('Error', 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -396,6 +625,10 @@ export default function AdminLocationsScreen() {
       is_active: true,
     });
     setEditingLocation(null);
+    setSearchQuery('');
+    setSearchResult(null);
+    setSelectedBuoyId(null);
+    setShowOutput(false);
   };
 
   const openAddModal = () => {
@@ -417,6 +650,9 @@ export default function AdminLocationsScreen() {
       tide_station_id: location.tide_station_id,
       is_active: location.is_active,
     });
+    setSearchResult(null);
+    setSelectedBuoyId(null);
+    setShowOutput(false);
     setModalVisible(true);
   };
 
@@ -426,33 +662,121 @@ export default function AdminLocationsScreen() {
     resetForm();
   };
 
+  const handleSearchLocation = async () => {
+    if (!searchQuery.trim()) {
+      showError('Validation Error', 'Please enter a location name to search');
+      return;
+    }
+
+    console.log('AdminLocationsScreen: Searching for location:', searchQuery);
+    setSearching(true);
+    setSearchResult(null);
+    setSelectedBuoyId(null);
+    setShowOutput(false);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('search-location-data', {
+        body: { locationName: searchQuery },
+      });
+
+      if (error) {
+        console.error('AdminLocationsScreen: Search error:', error);
+        showError('Search Failed', error.message || 'Failed to search for location');
+        return;
+      }
+
+      if (!data.success || !data.data) {
+        console.error('AdminLocationsScreen: Search returned no results');
+        showError('No Results', data.error || 'Could not find location. Please try a different search term.');
+        return;
+      }
+
+      console.log('AdminLocationsScreen: Search successful:', data.data);
+      const result = data.data as LocationSearchResult;
+      
+      setSearchResult(result);
+      
+      // Auto-populate form with search results
+      setFormData({
+        id: result.id,
+        name: result.shortName,
+        display_name: result.displayName,
+        latitude: result.coordinates.lat.toString(),
+        longitude: result.coordinates.lng.toString(),
+        buoy_id: result.buoyOptions[0]?.id || '',
+        tide_station_id: result.tideStation.id,
+        is_active: true,
+      });
+      
+      // Auto-select first buoy
+      if (result.buoyOptions.length > 0) {
+        setSelectedBuoyId(result.buoyOptions[0].id);
+      }
+
+    } catch (err) {
+      console.error('AdminLocationsScreen: Unexpected search error:', err);
+      showError('Error', 'An unexpected error occurred while searching');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleBuoySelect = (buoyId: string) => {
+    console.log('AdminLocationsScreen: Buoy selected:', buoyId);
+    setSelectedBuoyId(buoyId);
+    setFormData({ ...formData, buoy_id: buoyId });
+    setShowOutput(false);
+  };
+
+  const handleConfirmSelection = () => {
+    if (!searchResult || !selectedBuoyId) {
+      showError('Selection Required', 'Please select a buoy before confirming');
+      return;
+    }
+
+    console.log('AdminLocationsScreen: Confirming selection with buoy:', selectedBuoyId);
+    setShowOutput(true);
+  };
+
+  const getOutputText = (): string => {
+    if (!searchResult || !selectedBuoyId) return '';
+    
+    const selectedBuoy = searchResult.buoyOptions.find(b => b.id === selectedBuoyId);
+    if (!selectedBuoy) return '';
+
+    const buoyNameText = `${selectedBuoy.id} (${selectedBuoy.name})`;
+    const coordsText = `${searchResult.coordinates.lat}, ${searchResult.coordinates.lng}`;
+    
+    return `• ID: ${searchResult.id}\n• Name: ${searchResult.shortName}\n• Display: ${searchResult.displayName}\n• Buoy: ${buoyNameText}\n• Tide Station: ${searchResult.tideStation.id}\n• Coordinates: ${coordsText}`;
+  };
+
   const validateForm = (): boolean => {
     if (!formData.id.trim()) {
-      Alert.alert('Validation Error', 'Location ID is required');
+      showError('Validation Error', 'Location ID is required');
       return false;
     }
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Location Name is required');
+      showError('Validation Error', 'Location Name is required');
       return false;
     }
     if (!formData.display_name.trim()) {
-      Alert.alert('Validation Error', 'Display Name is required');
+      showError('Validation Error', 'Display Name is required');
       return false;
     }
     if (!formData.latitude.trim() || isNaN(parseFloat(formData.latitude))) {
-      Alert.alert('Validation Error', 'Valid Latitude is required');
+      showError('Validation Error', 'Valid Latitude is required');
       return false;
     }
     if (!formData.longitude.trim() || isNaN(parseFloat(formData.longitude))) {
-      Alert.alert('Validation Error', 'Valid Longitude is required');
+      showError('Validation Error', 'Valid Longitude is required');
       return false;
     }
     if (!formData.buoy_id.trim()) {
-      Alert.alert('Validation Error', 'NOAA Buoy ID is required');
+      showError('Validation Error', 'NOAA Buoy ID is required');
       return false;
     }
     if (!formData.tide_station_id.trim()) {
-      Alert.alert('Validation Error', 'NOAA Tide Station ID is required');
+      showError('Validation Error', 'NOAA Tide Station ID is required');
       return false;
     }
     return true;
@@ -497,7 +821,7 @@ export default function AdminLocationsScreen() {
 
       if (error) {
         console.error('AdminLocationsScreen: Error saving location:', error);
-        Alert.alert('Error', `Failed to save location: ${error.message}`);
+        showError('Error', `Failed to save location: ${error.message}`);
         return;
       }
 
@@ -506,16 +830,15 @@ export default function AdminLocationsScreen() {
       // ✅ CRITICAL: Refresh the LocationContext so the new location appears everywhere
       await refreshLocations();
       
-      Alert.alert(
-        'Success!', 
-        `Location "${formData.display_name}" saved successfully!\n\n✅ Location will now appear in:\n  • Location selector\n  • Homepage video card\n  • Admin data manager\n  • All reports and forecasts\n\nNext steps:\n1. Click "Test Data" to verify NOAA sources\n2. Upload videos for this location\n3. Generate daily reports`
-      );
+      const successMessage = `Location "${formData.display_name}" saved successfully!\n\n✅ Location will now appear in:\n  • Location selector\n  • Homepage video card\n  • Admin data manager\n  • All reports and forecasts\n\nNext steps:\n1. Click "Test Data" to verify NOAA sources\n2. Upload videos for this location\n3. Generate daily reports`;
+      
+      showError('Success!', successMessage);
       
       closeModal();
       await loadLocations();
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error saving location:', err);
-      Alert.alert('Error', 'An unexpected error occurred');
+      showError('Error', 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -532,7 +855,7 @@ export default function AdminLocationsScreen() {
 
       if (error) {
         console.error('AdminLocationsScreen: Error toggling active status:', error);
-        Alert.alert('Error', `Failed to update location: ${error.message}`);
+        showError('Error', `Failed to update location: ${error.message}`);
         return;
       }
 
@@ -543,7 +866,7 @@ export default function AdminLocationsScreen() {
       await loadLocations();
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error toggling active:', err);
-      Alert.alert('Error', 'An unexpected error occurred');
+      showError('Error', 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -615,12 +938,12 @@ export default function AdminLocationsScreen() {
       
       if (allSuccess) {
         addLog(`🎉 All data sources working for ${location.display_name}!`, 'success');
-        Alert.alert(
+        showError(
           'Test Successful!',
           `All data sources are working correctly for ${location.display_name}:\n\n✅ Buoy ${location.buoy_id}\n✅ Weather (${location.latitude}, ${location.longitude})\n✅ Tide Station ${location.tide_station_id}\n\nThis location is ready to:\n  • Generate daily reports\n  • Display on homepage\n  • Show in location selector\n  • Accept video uploads`
         );
       } else {
-        Alert.alert(
+        showError(
           'Test Results',
           `Some data sources may have issues for ${location.display_name}. Check the activity log for details.`
         );
@@ -629,7 +952,7 @@ export default function AdminLocationsScreen() {
     } catch (err) {
       console.error('AdminLocationsScreen: Error testing location:', err);
       addLog(`❌ Test failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-      Alert.alert('Error', 'Failed to test location data sources');
+      showError('Error', 'Failed to test location data sources');
     } finally {
       setLoading(false);
     }
@@ -637,46 +960,71 @@ export default function AdminLocationsScreen() {
 
   const handleDeleteLocation = (location: LocationItem) => {
     console.log('AdminLocationsScreen: Delete requested for:', location);
-    Alert.alert(
+    
+    // Use custom modal for confirmation
+    showError(
       'Confirm Delete',
-      `Are you sure you want to delete "${location.display_name}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            console.log('AdminLocationsScreen: Deleting location:', location);
-            try {
-              setLoading(true);
-              const { error } = await supabase
-                .from('locations')
-                .delete()
-                .eq('id', location.id);
-
-              if (error) {
-                console.error('AdminLocationsScreen: Error deleting location:', error);
-                Alert.alert('Error', `Failed to delete location: ${error.message}`);
-                return;
-              }
-
-              console.log('AdminLocationsScreen: Location deleted successfully');
-              
-              // ✅ CRITICAL: Refresh LocationContext when deleting
-              await refreshLocations();
-              
-              Alert.alert('Success', 'Location deleted successfully!');
-              await loadLocations();
-            } catch (err) {
-              console.error('AdminLocationsScreen: Unexpected error deleting:', err);
-              Alert.alert('Error', 'An unexpected error occurred');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
+      `Are you sure you want to delete "${location.display_name}"? This action cannot be undone.`
     );
+    
+    // Note: Actual deletion would need a separate confirmation modal with action buttons
+    // For now, keeping the Alert.alert for delete confirmation
+    setTimeout(() => {
+      setErrorModalVisible(false);
+      
+      // Show native alert for delete confirmation
+      if (Platform.OS === 'web') {
+        const confirmed = window.confirm(`Are you sure you want to delete "${location.display_name}"? This action cannot be undone.`);
+        if (confirmed) {
+          performDelete(location);
+        }
+      } else {
+        // On native, we can use Alert
+        const Alert = require('react-native').Alert;
+        Alert.alert(
+          'Confirm Delete',
+          `Are you sure you want to delete "${location.display_name}"? This action cannot be undone.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => performDelete(location),
+            },
+          ]
+        );
+      }
+    }, 100);
+  };
+
+  const performDelete = async (location: LocationItem) => {
+    console.log('AdminLocationsScreen: Deleting location:', location);
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('locations')
+        .delete()
+        .eq('id', location.id);
+
+      if (error) {
+        console.error('AdminLocationsScreen: Error deleting location:', error);
+        showError('Error', `Failed to delete location: ${error.message}`);
+        return;
+      }
+
+      console.log('AdminLocationsScreen: Location deleted successfully');
+      
+      // ✅ CRITICAL: Refresh LocationContext when deleting
+      await refreshLocations();
+      
+      showError('Success', 'Location deleted successfully!');
+      await loadLocations();
+    } catch (err) {
+      console.error('AdminLocationsScreen: Unexpected error deleting:', err);
+      showError('Error', 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGoBack = () => {
@@ -752,22 +1100,25 @@ export default function AdminLocationsScreen() {
         <View style={styles.helpCard}>
           <Text style={styles.helpTitle}>📚 How to Add a New Location</Text>
           <Text style={styles.helpText}>
-            1. Find NOAA Buoy ID at: ndbc.noaa.gov{'\n'}
-            2. Find Tide Station ID at: tidesandcurrents.noaa.gov{'\n'}
-            3. Get coordinates from Google Maps{'\n'}
-            4. Add location and click "Test Data" to verify{'\n'}
-            5. If test passes, activate the location!{'\n'}
-            6. Upload videos for the new location{'\n'}
-            7. Generate daily reports in Admin Data Manager
+            NEW: Just type the beach name and click "Search"!{'\n'}
+            The system will automatically find:{'\n'}
+            • Coordinates from Google Maps{'\n'}
+            • 3-5 nearest NOAA buoys{'\n'}
+            • Nearest tide station{'\n'}
+            • Generate location ID and names{'\n\n'}
+            Then:{'\n'}
+            1. Select the best buoy from the list{'\n'}
+            2. Review the data{'\n'}
+            3. Click "Save Location"{'\n'}
+            4. Test the data sources{'\n'}
+            5. Start uploading videos!
           </Text>
           <Text style={styles.helpExample}>
-            Example (Holden Beach, NC):{'\n'}
-            • ID: holden-beach-nc{'\n'}
-            • Name: Holden Beach{'\n'}
-            • Display: Holden Beach, NC{'\n'}
-            • Buoy: 41013 (Frying Pan Shoals){'\n'}
-            • Tide Station: 8659414{'\n'}
-            • Coordinates: 33.9140, -78.3070
+            Example searches:{'\n'}
+            • "Jupiter Inlet Florida"{'\n'}
+            • "Myrtle Beach SC"{'\n'}
+            • "Holden Beach North Carolina"{'\n'}
+            • "Nantucket Cisco Beach"
           </Text>
         </View>
 
@@ -862,6 +1213,7 @@ export default function AdminLocationsScreen() {
         )}
       </ScrollView>
 
+      {/* Add/Edit Location Modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -883,6 +1235,135 @@ export default function AdminLocationsScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={true}
             >
+              {/* Search Section - Only show when adding new location */}
+              {!editingLocation && (
+                <View style={styles.searchSection}>
+                  <Text style={styles.searchTitle}>🔍 Smart Location Search</Text>
+                  <Text style={styles.helpText}>
+                    Type a beach or surf spot name and we'll automatically find all the data you need!
+                  </Text>
+                  
+                  <View style={styles.searchInputContainer}>
+                    <TextInput
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder="e.g., Jupiter Inlet Florida"
+                      placeholderTextColor="#9CA3AF"
+                      editable={!searching}
+                    />
+                    <TouchableOpacity
+                      style={styles.searchButtonSmall}
+                      onPress={handleSearchLocation}
+                      disabled={searching}
+                    >
+                      {searching ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.searchButtonTextSmall}>Search</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Search Results */}
+                  {searchResult && (
+                    <View style={styles.searchResultCard}>
+                      <Text style={styles.searchResultTitle}>📍 Location Found!</Text>
+                      
+                      <View style={styles.searchResultRow}>
+                        <Text style={styles.searchResultLabel}>ID:</Text>
+                        <Text style={styles.searchResultValue}>{searchResult.id}</Text>
+                      </View>
+                      
+                      <View style={styles.searchResultRow}>
+                        <Text style={styles.searchResultLabel}>Name:</Text>
+                        <Text style={styles.searchResultValue}>{searchResult.shortName}</Text>
+                      </View>
+                      
+                      <View style={styles.searchResultRow}>
+                        <Text style={styles.searchResultLabel}>Display:</Text>
+                        <Text style={styles.searchResultValue}>{searchResult.displayName}</Text>
+                      </View>
+                      
+                      <View style={styles.searchResultRow}>
+                        <Text style={styles.searchResultLabel}>Coordinates:</Text>
+                        <Text style={styles.searchResultValue}>
+                          {searchResult.coordinates.lat.toFixed(4)}, {searchResult.coordinates.lng.toFixed(4)}
+                        </Text>
+                      </View>
+                      
+                      <View style={styles.searchResultRow}>
+                        <Text style={styles.searchResultLabel}>Tide Station:</Text>
+                        <Text style={styles.searchResultValue}>
+                          {searchResult.tideStation.id} ({searchResult.tideStation.distance.toFixed(1)} nm)
+                        </Text>
+                      </View>
+
+                      {/* Buoy Selection */}
+                      <View style={styles.buoyOptionsSection}>
+                        <Text style={styles.buoyOptionsTitle}>
+                          🌊 Select NOAA Buoy ({searchResult.buoyOptions.length} options)
+                        </Text>
+                        <Text style={styles.helpText}>
+                          Choose the buoy that best represents surf conditions for this location:
+                        </Text>
+                        
+                        {searchResult.buoyOptions.map((buoy) => {
+                          const isSelected = selectedBuoyId === buoy.id;
+                          const buoyNameText = buoy.name;
+                          const buoyIdText = buoy.id;
+                          const distanceText = `${buoy.distanceNm} nm away`;
+                          
+                          return (
+                            <TouchableOpacity
+                              key={buoy.id}
+                              style={[
+                                styles.buoyOptionCard,
+                                isSelected && styles.buoyOptionSelected,
+                              ]}
+                              onPress={() => handleBuoySelect(buoy.id)}
+                            >
+                              <Text style={styles.buoyOptionName}>
+                                {buoyIdText} - {buoyNameText}
+                              </Text>
+                              <Text style={styles.buoyOptionDetails}>
+                                {distanceText}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                        
+                        <TouchableOpacity
+                          style={[
+                            styles.confirmButton,
+                            !selectedBuoyId && styles.confirmButtonDisabled,
+                          ]}
+                          onPress={handleConfirmSelection}
+                          disabled={!selectedBuoyId}
+                        >
+                          <Text style={styles.confirmButtonText}>
+                            ✓ Confirm Buoy Selection
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Output Block */}
+                      {showOutput && selectedBuoyId && (
+                        <View style={styles.outputCard}>
+                          <Text style={styles.outputTitle}>
+                            📋 Ready-to-Copy Data Block
+                          </Text>
+                          <Text style={styles.outputText}>
+                            {getOutputText()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Manual Entry Fields */}
               <Text style={styles.inputLabel}>Location ID (URL-friendly, e.g., "myrtle-beach")</Text>
               <TextInput
                 style={styles.input}
@@ -892,7 +1373,7 @@ export default function AdminLocationsScreen() {
                 }
                 placeholder="e.g., holden-beach-nc"
                 placeholderTextColor={colors.textSecondary}
-                editable={!editingLocation}
+                editable={!editingLocation && !searchResult}
               />
 
               <Text style={styles.inputLabel}>Location Name</Text>
@@ -902,6 +1383,7 @@ export default function AdminLocationsScreen() {
                 onChangeText={(text) => setFormData({ ...formData, name: text })}
                 placeholder="e.g., Holden Beach"
                 placeholderTextColor={colors.textSecondary}
+                editable={!searchResult}
               />
 
               <Text style={styles.inputLabel}>Display Name</Text>
@@ -911,6 +1393,7 @@ export default function AdminLocationsScreen() {
                 onChangeText={(text) => setFormData({ ...formData, display_name: text })}
                 placeholder="e.g., Holden Beach, NC"
                 placeholderTextColor={colors.textSecondary}
+                editable={!searchResult}
               />
 
               <Text style={styles.inputLabel}>Latitude</Text>
@@ -921,6 +1404,7 @@ export default function AdminLocationsScreen() {
                 placeholder="e.g., 33.9140"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
+                editable={!searchResult}
               />
 
               <Text style={styles.inputLabel}>Longitude</Text>
@@ -931,26 +1415,33 @@ export default function AdminLocationsScreen() {
                 placeholder="e.g., -78.3070"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
+                editable={!searchResult}
               />
 
               <Text style={styles.inputLabel}>NOAA Buoy ID</Text>
-              <Text style={styles.inputHint}>Find at: ndbc.noaa.gov (search for nearest buoy)</Text>
+              {!searchResult && (
+                <Text style={styles.inputHint}>Find at: ndbc.noaa.gov (search for nearest buoy)</Text>
+              )}
               <TextInput
                 style={styles.input}
                 value={formData.buoy_id}
                 onChangeText={(text) => setFormData({ ...formData, buoy_id: text })}
                 placeholder="e.g., 41013"
                 placeholderTextColor={colors.textSecondary}
+                editable={!searchResult}
               />
 
               <Text style={styles.inputLabel}>NOAA Tide Station ID</Text>
-              <Text style={styles.inputHint}>Find at: tidesandcurrents.noaa.gov (search for nearest station)</Text>
+              {!searchResult && (
+                <Text style={styles.inputHint}>Find at: tidesandcurrents.noaa.gov (search for nearest station)</Text>
+              )}
               <TextInput
                 style={styles.input}
                 value={formData.tide_station_id}
                 onChangeText={(text) => setFormData({ ...formData, tide_station_id: text })}
                 placeholder="e.g., 8659414"
                 placeholderTextColor={colors.textSecondary}
+                editable={!searchResult}
               />
             </ScrollView>
 
@@ -965,11 +1456,34 @@ export default function AdminLocationsScreen() {
                 style={[styles.modalButton, styles.saveButton]}
                 onPress={handleSaveLocation}
               >
-                <Text style={styles.modalButtonText}>Save</Text>
+                <Text style={styles.modalButtonText}>Save Location</Text>
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Error/Success Modal */}
+      <Modal
+        visible={errorModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setErrorModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.errorModal}>
+            <Text style={styles.errorTitle}>{errorTitle}</Text>
+            <ScrollView style={{ maxHeight: 400 }}>
+              <Text style={styles.errorMessage}>{errorMessage}</Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.errorCloseButton}
+              onPress={() => setErrorModalVisible(false)}
+            >
+              <Text style={styles.errorCloseButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
