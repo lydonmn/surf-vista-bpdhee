@@ -50,7 +50,6 @@ const LOCATION_PERSONALITIES: Record<string, {
     disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
     nickname: 'Cisco Beach'
   },
-  // ✅ NEW LOCATIONS ADDED
   'cisco-beach-nantucket': {
     casual: ['Cisco', 'Cisco Beach', 'the beach'],
     excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
@@ -73,7 +72,7 @@ function getLocationPersonality(locationId: string) {
     disappointed: [`not much at ${locationId.replace(/-/g, ' ')}`],
     nickname: locationId.replace(/-/g, ' ')
   };
-  console.log('[getLocationPersonality] Using personality:', personality.nickname);
+  console.log('[getLocationPersonality] Using personality for:', personality.nickname);
   return personality;
 }
 
@@ -121,6 +120,8 @@ function selectRandom<T>(array: T[]): T {
 
 function generateNoWaveDataReportText(weatherData: any, surfData: any, locationId: string): string {
   const personality = getLocationPersonality(locationId);
+  console.log('[generateNoWaveDataReportText] 🏖️ Generating for location:', personality.nickname);
+  
   const windSpeed = parseNumericValue(surfData.wind_speed, 0);
   const windDirRaw = surfData.wind_direction || 'variable';
   const windDir = windDirRaw
@@ -143,7 +144,12 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, locationI
   ];
   
   const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
-  return messages[seed % messages.length];
+  const selectedMessage = messages[seed % messages.length];
+  
+  console.log('[generateNoWaveDataReportText] ✅ Generated message for', personality.nickname);
+  console.log('[generateNoWaveDataReportText] 📄 Preview:', selectedMessage.substring(0, 100));
+  
+  return selectedMessage;
 }
 
 // 🚨 ENHANCED NARRATIVE GENERATOR: 300-500 characters, focused on surf height and rideability
@@ -187,6 +193,7 @@ function generateWittyNarrative(
     console.log('[generateWittyNarrative] ⚠️ Wave sensors offline - generating fallback narrative');
     const fallbackNarrative = generateNoWaveDataReportText(weatherData, surfConditions, locationId);
     console.log('[generateWittyNarrative] ✅ Fallback narrative generated:', fallbackNarrative.length, 'characters');
+    console.log('[generateWittyNarrative] 🏖️ Fallback narrative location check:', fallbackNarrative.includes(personality.nickname) ? '✅ CORRECT' : '❌ WRONG');
     return fallbackNarrative;
   }
   
@@ -294,7 +301,7 @@ function generateWittyNarrative(
   }
 
   report += '.\n\n';
-  console.log('[generateWittyNarrative] ✅ Opening added:', report.length, 'chars');
+  console.log('[generateWittyNarrative] ✅ Opening added (location:', personality.nickname, '):', report.substring(0, 100));
 
   // 🌊 WAVE DETAIL: Describe the surf height range and what it means for riding
   console.log('[generateWittyNarrative] 📝 Building wave detail...');
@@ -447,6 +454,7 @@ function generateWittyNarrative(
   console.log('[generateWittyNarrative] 📄 Preview:', report.substring(0, 150));
   console.log('[generateWittyNarrative] 🔍 Contains \\n\\n:', report.includes('\n\n'));
   console.log('[generateWittyNarrative] 🔍 Newline count:', (report.match(/\n\n/g) || []).length);
+  console.log('[generateWittyNarrative] 🔍 Location check:', report.includes(personality.nickname) ? '✅ CORRECT' : '❌ WRONG');
   console.log('[generateWittyNarrative] ═════════════════════════════════════════');
 
   return report;
@@ -1109,6 +1117,15 @@ async function processLocation(
     console.log(`[${locationName}] 📄 Preview: ${narrative.substring(0, 150)}...`);
     console.log(`[${locationName}] 🔍 Contains \\n\\n: ${narrative.includes('\n\n')}`);
     console.log(`[${locationName}] 🔍 Newline count: ${(narrative.match(/\n\n/g) || []).length}`);
+    
+    // 🚨 VERIFICATION: Check if the narrative contains the correct location name
+    const personality = getLocationPersonality(locationId);
+    const containsCorrectLocation = narrative.includes(personality.nickname);
+    console.log(`[${locationName}] 🔍 Location verification: ${containsCorrectLocation ? '✅ CORRECT' : '❌ WRONG'}`);
+    if (!containsCorrectLocation) {
+      console.error(`[${locationName}] ❌ CRITICAL: Narrative does NOT contain "${personality.nickname}"!`);
+      console.error(`[${locationName}] ❌ Narrative preview:`, narrative.substring(0, 200));
+    }
     console.log(`[${locationName}] ═════════════════════════════════════════`);
 
     const rating = calculateSurfRating(surfConditions);
@@ -1177,6 +1194,16 @@ async function processLocation(
       console.log(`[${locationName}] ✅ Newlines in conditions: ${verifyData.conditions?.includes('\n\n') ? 'YES' : 'NO'}`);
       console.log(`[${locationName}] ✅ Newlines in report_text: ${verifyData.report_text?.includes('\n\n') ? 'YES' : 'NO'}`);
       console.log(`[${locationName}] ✅ updated_at: ${verifyData.updated_at}`);
+      
+      // 🚨 FINAL VERIFICATION: Check if saved narrative contains correct location
+      const savedPersonality = getLocationPersonality(locationId);
+      const savedContainsCorrectLocation = verifyData.conditions?.includes(savedPersonality.nickname);
+      console.log(`[${locationName}] 🔍 Saved narrative location check: ${savedContainsCorrectLocation ? '✅ CORRECT' : '❌ WRONG'}`);
+      if (!savedContainsCorrectLocation) {
+        console.error(`[${locationName}] ❌ CRITICAL: Saved narrative does NOT contain "${savedPersonality.nickname}"!`);
+        console.error(`[${locationName}] ❌ Saved narrative preview:`, verifyData.conditions?.substring(0, 200));
+      }
+      
       console.log(`[${locationName}] ═════════════════════════════════════════`);
     } else {
       console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);

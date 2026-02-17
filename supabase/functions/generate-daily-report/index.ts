@@ -39,7 +39,7 @@ function generateTideSummary(tideData: any[]): string {
   return tides.join(', ');
 }
 
-// Location-specific personality traits
+// Location-specific personality traits - UPDATED WITH ALL LOCATIONS
 const LOCATION_PERSONALITIES: Record<string, {
   casual: string[];
   excited: string[];
@@ -50,28 +50,68 @@ const LOCATION_PERSONALITIES: Record<string, {
     casual: ['Folly', 'the Edge of America', 'Folly Beach'],
     excited: ['Folly is firing', 'Folly is going off', 'Folly is pumping'],
     disappointed: ['not much happening at Folly', 'Folly is pretty flat', 'Folly is taking a rest'],
-    nickname: 'Folly'
+    nickname: 'Folly Beach'
   },
   'pawleys-island': {
     casual: ['Pawleys', 'the island', 'Pawleys Island'],
     excited: ['Pawleys has swell', 'Pawleys is working', 'Pawleys is delivering'],
     disappointed: ['not a wave on Pawleys', 'Pawleys is dead flat', 'Pawleys is sleeping'],
-    nickname: 'Pawleys'
+    nickname: 'Pawleys Island'
   },
   'holden-beach-nc': {
     casual: ['Holden', 'Holden Beach', 'the beach'],
     excited: ['Holden is cranking', 'Holden has waves', 'Holden is alive'],
     disappointed: ['Holden is flat', 'nothing at Holden', 'Holden is quiet'],
-    nickname: 'Holden'
+    nickname: 'Holden Beach'
+  },
+  'rexhame-beach,-massachusetts-': {
+    casual: ['Marshfield', 'Rexhame Beach', 'the beach'],
+    excited: ['Marshfield is firing', 'Marshfield has swell', 'Marshfield is pumping'],
+    disappointed: ['not much at Marshfield', 'Marshfield is flat', 'Marshfield is quiet'],
+    nickname: 'Marshfield'
+  },
+  'marshfield-ma': {
+    casual: ['Marshfield', 'Rexhame Beach', 'the beach'],
+    excited: ['Marshfield is firing', 'Marshfield has swell', 'Marshfield is pumping'],
+    disappointed: ['not much at Marshfield', 'Marshfield is flat', 'Marshfield is quiet'],
+    nickname: 'Marshfield'
+  },
+  'cisco-beach': {
+    casual: ['Cisco', 'Cisco Beach', 'the beach'],
+    excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
+    disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
+    nickname: 'Cisco Beach'
+  },
+  'cisco-beach-nantucket': {
+    casual: ['Cisco', 'Cisco Beach', 'the beach'],
+    excited: ['Cisco is firing', 'Cisco has swell', 'Cisco is pumping'],
+    disappointed: ['not much at Cisco', 'Cisco is flat', 'Cisco is quiet'],
+    nickname: 'Cisco Beach'
+  },
+  'jupiter-florida': {
+    casual: ['Jupiter', 'Jupiter Inlet', 'the inlet'],
+    excited: ['Jupiter is firing', 'Jupiter has swell', 'Jupiter is pumping'],
+    disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
+    nickname: 'Jupiter Inlet'
   }
 };
 
 function getLocationPersonality(locationId: string) {
-  return LOCATION_PERSONALITIES[locationId] || LOCATION_PERSONALITIES['folly-beach'];
+  console.log('[getLocationPersonality] Looking up personality for:', locationId);
+  const personality = LOCATION_PERSONALITIES[locationId] || {
+    casual: [locationId.replace(/-/g, ' ')],
+    excited: [`${locationId.replace(/-/g, ' ')} is firing`],
+    disappointed: [`not much at ${locationId.replace(/-/g, ' ')}`],
+    nickname: locationId.replace(/-/g, ' ')
+  };
+  console.log('[getLocationPersonality] Using personality for:', personality.nickname);
+  return personality;
 }
 
 function generateNoWaveDataReportText(weatherData: any, surfData: any, tideData: any[], locationId: string): string {
   const personality = getLocationPersonality(locationId);
+  console.log('[generateNoWaveDataReportText] 🏖️ Generating for location:', personality.nickname);
+  
   const windSpeed = parseNumericValue(surfData.wind_speed, 0);
   const windDir = surfData.wind_direction || 'variable';
   const waterTemp = parseNumericValue(surfData.water_temp, 0);
@@ -89,7 +129,13 @@ function generateNoWaveDataReportText(weatherData: any, surfData: any, tideData:
   ];
   
   const seed = locationId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + Math.floor(Date.now() / 86400000);
-  return messages[seed % messages.length];
+  const selectedMessage = messages[seed % messages.length];
+  
+  console.log('[generateNoWaveDataReportText] ✅ Generated message for', personality.nickname);
+  console.log('[generateNoWaveDataReportText] 📄 Preview:', selectedMessage.substring(0, 100));
+  console.log('[generateNoWaveDataReportText] 🔍 Location check:', selectedMessage.includes(personality.nickname) ? '✅ CORRECT' : '❌ WRONG');
+  
+  return selectedMessage;
 }
 
 function calculateSurfRating(surfData: any, weatherData: any): number {
@@ -202,9 +248,13 @@ function generateReportText(
     const locationId = surfData.location || 'folly-beach';
     const personality = getLocationPersonality(locationId);
     
+    console.log('[generateReportText] 🏖️ Generating report for location:', personality.nickname);
+    console.log('[generateReportText] 🆔 Location ID:', locationId);
+    
     const rideableFaceStr = surfData.surf_height || surfData.wave_height;
     
     if (!rideableFaceStr || rideableFaceStr === 'N/A') {
+      console.log('[generateReportText] ⚠️ No wave data, generating fallback narrative');
       return generateNoWaveDataReportText(weatherData, surfData, tideData, locationId);
     }
     
@@ -225,6 +275,7 @@ function generateReportText(
     let report = '';
 
     // OPENING - Location-specific and rating-based
+    console.log('[generateReportText] 📝 Building opening for', personality.nickname);
     if (rating >= 8) {
       const openings = [
         `${personality.excited[seed % personality.excited.length]} today!`,
@@ -258,6 +309,8 @@ function generateReportText(
     if (historicalDate) {
       report += ` (Wave sensor data from ${historicalDate}, but wind and water temps are current.)`;
     }
+
+    console.log('[generateReportText] ✅ Opening added (location:', personality.nickname, '):', report.substring(0, 100));
 
     // WAVE CONDITIONS - Natural language, no redundant units
     report += '\n\n';
@@ -434,6 +487,10 @@ function generateReportText(
       report += recs[seed % recs.length];
     }
 
+    console.log('[generateReportText] ✅ Report complete for', personality.nickname);
+    console.log('[generateReportText] 📏 Total length:', report.length, 'characters');
+    console.log('[generateReportText] 🔍 Location check:', report.includes(personality.nickname) ? '✅ CORRECT' : '❌ WRONG');
+
     return report;
   } catch (error) {
     console.error('Error generating report text:', error);
@@ -461,10 +518,8 @@ Deno.serve(async (req) => {
       console.log('No location parameter in request body, using default: folly-beach');
     }
 
-    const locationName = locationId === 'pawleys-island' ? 'Pawleys Island, SC' : 
-                         locationId === 'holden-beach-nc' ? 'Holden Beach, NC' : 
-                         'Folly Beach, SC';
-    console.log('Generating report for:', locationName);
+    const personality = getLocationPersonality(locationId);
+    console.log('Generating report for:', personality.nickname, '(ID:', locationId, ')');
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -578,9 +633,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    // 🚨 CRITICAL: Ensure location field is set correctly in surfData
+    if (!surfData.location || surfData.location !== locationId) {
+      console.log(`[${personality.nickname}] ⚠️ Correcting location field from "${surfData.location}" to "${locationId}"`);
+      surfData.location = locationId;
+    }
+
     const hasValidWaveData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
     
     if (!hasValidWaveData) {
+      console.log(`[${personality.nickname}] ⚠️ No valid wave data, generating fallback narrative`);
       const tideSummary = generateTideSummary(tideData);
       const noWaveDataReport = {
         date: today,
@@ -625,12 +687,13 @@ Deno.serve(async (req) => {
       }
 
       console.log('=== GENERATE DAILY REPORT COMPLETED (NO WAVE DATA) ===');
+      console.log('Location used:', personality.nickname);
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: `Daily surf report generated for ${locationName} (wave sensors offline)`,
-          location: locationName,
+          message: `Daily surf report generated for ${personality.nickname} (wave sensors offline)`,
+          location: personality.nickname,
           locationId: locationId,
           report: noWaveDataReport,
           timestamp: new Date().toISOString(),
@@ -645,6 +708,10 @@ Deno.serve(async (req) => {
     const tideSummary = generateTideSummary(tideData);
     const rating = calculateSurfRating(surfData, weatherData);
     const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate, tideData);
+
+    console.log('[generate-daily-report] ✅ Report text generated');
+    console.log('[generate-daily-report] 📏 Length:', reportText.length, 'characters');
+    console.log('[generate-daily-report] 🔍 Location check:', reportText.includes(personality.nickname) ? '✅ CORRECT' : '❌ WRONG');
 
     const displayHeight = surfData.surf_height !== 'N/A' ? surfData.surf_height : surfData.wave_height;
 
@@ -691,12 +758,13 @@ Deno.serve(async (req) => {
     }
 
     console.log('=== GENERATE DAILY REPORT COMPLETED ===');
+    console.log('Location used:', personality.nickname);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Daily surf report generated successfully for ${locationName}`,
-        location: locationName,
+        message: `Daily surf report generated successfully for ${personality.nickname}`,
+        location: personality.nickname,
         locationId: locationId,
         report: surfReport,
         timestamp: new Date().toISOString(),
