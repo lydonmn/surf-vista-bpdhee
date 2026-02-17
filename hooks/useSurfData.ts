@@ -101,9 +101,6 @@ export function useSurfData() {
       console.log('[useSurfData] EST date:', today);
       console.log('[useSurfData] Timestamp:', new Date().toISOString());
       console.log('[useSurfData] ═══════════════════════════════════════');
-
-      // 🚨 CRITICAL FIX: Add timestamp to queries to bypass Supabase client-side cache
-      const cacheBuster = `?t=${timestamp}`;
       
       // Fetch all data in parallel with location filter
       const [surfReportsResult, surfConditionsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
