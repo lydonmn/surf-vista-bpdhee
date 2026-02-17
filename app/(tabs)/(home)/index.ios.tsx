@@ -17,7 +17,6 @@ import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeS
 import { LocationSelector } from "@/components/LocationSelector";
 import { openPaywall } from "@/utils/paywallHelper";
 
-// 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
   
@@ -26,14 +25,10 @@ function calculateSurfRating(surfData: any): number {
   const windSpeedStr = surfData.wind_speed || '0';
   const windDirStr = surfData.wind_direction || '';
   
-  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr, windDirStr });
-  
   if (surfHeightStr === 'N/A' || surfHeightStr === '' || surfHeightStr === 'null') {
-    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
     return 5;
   }
   
-  // Parse wave height - handle ranges like "1.0-1.5 ft"
   const parseValue = (str: string): number => {
     const cleaned = String(str).replace(/[^0-9.-]/g, '');
     const parsed = parseFloat(cleaned);
@@ -44,15 +39,12 @@ function calculateSurfRating(surfData: any): number {
   const cleanedStr = String(surfHeightStr).trim();
   
   if (cleanedStr.includes('-')) {
-    // It's a range, take the average
     const parts = cleanedStr.split('-');
     const low = parseValue(parts[0]);
     const high = parseValue(parts[1]);
     surfHeight = (low + high) / 2;
-    console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
   } else {
     surfHeight = parseValue(cleanedStr);
-    console.log('[calculateSurfRating] Parsed single value:', surfHeight);
   }
   
   const period = parseValue(periodStr);
@@ -60,68 +52,59 @@ function calculateSurfRating(surfData: any): number {
   const windDir = windDirStr.toLowerCase();
   const isOffshore = windDir.includes('w') || windDir.includes('n');
 
-  console.log('[calculateSurfRating] Numeric values:', { surfHeight, period, windSpeed, isOffshore });
-
-  // 🚨 CRITICAL FIX: Start at 3 instead of 5 for more realistic ratings
   let rating = 3;
 
-  // Height contribution (more conservative)
   if (surfHeight >= 6) {
-    rating += 5; // 8/10 for overhead
+    rating += 5;
   } else if (surfHeight >= 4) {
-    rating += 4; // 7/10 for chest-head high
+    rating += 4;
   } else if (surfHeight >= 3) {
-    rating += 3; // 6/10 for waist-chest high
+    rating += 3;
   } else if (surfHeight >= 2) {
-    rating += 2; // 5/10 for waist high
+    rating += 2;
   } else if (surfHeight >= 1.5) {
-    rating += 1; // 4/10 for knee-waist
+    rating += 1;
   } else if (surfHeight >= 1) {
-    rating += 0; // 3/10 for ankle-knee (base rating)
+    rating += 0;
   } else {
-    rating -= 1; // 2/10 for less than 1 foot
+    rating -= 1;
   }
 
-  // Period contribution (more conservative)
   if (period >= 12) {
-    rating += 2; // Long period groundswell
+    rating += 2;
   } else if (period >= 10) {
-    rating += 1; // Good period
+    rating += 1;
   } else if (period >= 8) {
-    rating += 0; // Moderate period (no change)
+    rating += 0;
   } else if (period >= 6) {
-    rating -= 1; // Short period
+    rating -= 1;
   } else if (period > 0) {
-    rating -= 2; // Very short period wind swell
+    rating -= 2;
   }
 
-  // Wind contribution (check direction too)
   if (isOffshore) {
-    // Offshore wind is good
     if (windSpeed < 5) {
-      rating += 1; // Light offshore, glassy
+      rating += 1;
     } else if (windSpeed < 10) {
-      rating += 1; // Offshore grooming
+      rating += 1;
     } else if (windSpeed < 15) {
-      rating += 0; // Strong offshore (no change)
+      rating += 0;
     } else {
-      rating -= 1; // Too strong offshore
+      rating -= 1;
     }
   } else {
-    // Onshore wind is bad
     if (windSpeed < 5) {
-      rating += 0; // Light onshore (no change)
+      rating += 0;
     } else if (windSpeed < 10) {
-      rating -= 1; // Moderate onshore
+      rating -= 1;
     } else if (windSpeed < 15) {
-      rating -= 2; // Strong onshore
+      rating -= 2;
     } else {
-      rating -= 3; // Very strong onshore, blown out
+      rating -= 3;
     }
   }
 
   const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
-  console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph ${isOffshore ? 'offshore' : 'onshore'})`);
   
   return finalRating;
 }
@@ -134,61 +117,37 @@ export default function HomeScreen() {
   const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
-  const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
-  // ✅ FIX: ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // ✅ CRITICAL FIX: Simple thumbnail-only preview - NO video loading on home screen
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+
   const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
     const filtered = surfReports.filter(report => report.location === currentLocation);
-    console.log('[HomeScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
     return filtered;
   }, [surfReports, currentLocation]);
 
   const locationWeatherForecast = useMemo(() => {
     const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
-    console.log('[HomeScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
     return filtered;
   }, [weatherForecast, currentLocation]);
 
   const todaysReport = useMemo(() => {
     try {
-      console.log('[HomeScreen] ===== FINDING TODAY\'S REPORT =====');
-      console.log('[HomeScreen] Current EST date:', todayDate);
-      console.log('[HomeScreen] Current location:', currentLocation, locationData.displayName);
-      console.log('[HomeScreen] Total reports for this location:', locationSurfReports.length);
-      
       const todayReports = locationSurfReports.filter(report => {
         if (!report.date) return false;
         const reportDate = report.date.split('T')[0];
         const isToday = reportDate === todayDate;
-        console.log('[HomeScreen] Checking report:', reportDate, 'vs today:', todayDate, '=', isToday);
         return isToday;
       });
       
-      console.log('[HomeScreen] Found', todayReports.length, 'reports for today at', locationData.displayName);
-      
       if (todayReports.length > 0) {
-        const report = todayReports[0];
-        console.log('[HomeScreen] ===== USING TODAY\'S REPORT =====');
-        console.log('[HomeScreen] Report ID:', report.id);
-        console.log('[HomeScreen] Report date:', report.date);
-        console.log('[HomeScreen] Report location:', report.location);
-        console.log('[HomeScreen] wave_height:', report.wave_height);
-        console.log('[HomeScreen] surf_height:', (report as any).surf_height);
-        console.log('[HomeScreen] wind_speed:', report.wind_speed);
-        console.log('[HomeScreen] wind_direction:', report.wind_direction);
-        console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
-        console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
-        console.log('[HomeScreen] Conditions length:', report.conditions?.length || 0);
-        return report;
+        return todayReports[0];
       } else {
-        console.log('[HomeScreen] No report for today, checking for most recent report...');
-        
         const sortedReports = [...locationSurfReports].sort((a, b) => {
           const dateA = new Date(a.date).getTime();
           const dateB = new Date(b.date).getTime();
@@ -196,81 +155,44 @@ export default function HomeScreen() {
         });
         
         if (sortedReports.length > 0) {
-          const mostRecentReport = sortedReports[0];
-          console.log('[HomeScreen] ===== USING MOST RECENT REPORT =====');
-          console.log('[HomeScreen] Report ID:', mostRecentReport.id);
-          console.log('[HomeScreen] Report date:', mostRecentReport.date);
-          console.log('[HomeScreen] Report location:', mostRecentReport.location);
-          console.log('[HomeScreen] wave_height:', mostRecentReport.wave_height);
-          console.log('[HomeScreen] surf_height:', (mostRecentReport as any).surf_height);
-          return mostRecentReport;
+          return sortedReports[0];
         }
         
-        console.log('[HomeScreen] ❌ No reports found at all for', locationData.displayName);
         return null;
       }
     } catch (error) {
       console.error('[HomeScreen] Error filtering reports:', error);
       return null;
     }
-  }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
-
-  // 🚨 DATA FLOW ARCHITECTURE:
-  // 1. Scheduled CRON job (6 AM daily) pulls fresh data from buoy → surf_conditions table
-  // 2. Home page displays data from surf_conditions table (most up-to-date)
-  // 3. Manual "Regenerate Text" button uses this SAME surf_conditions data (no fresh pull)
-  // 4. This ensures report generator always uses the data that's already on the home/report pages
+  }, [locationSurfReports, todayDate]);
   
-  // ✅ Calculate rating early (before conditional returns)
   const ratingValue = useMemo(() => {
-    console.log('[HomeScreen] ===== CALCULATING CURRENT RATING =====');
-    console.log('[HomeScreen] Has surfConditions:', !!surfConditions);
-    console.log('[HomeScreen] Has todaysReport:', !!todaysReport);
-    
-    // ALWAYS use surf_conditions if available (most current data from scheduled updates)
     if (surfConditions) {
       const rating = calculateSurfRating(surfConditions);
-      console.log('[HomeScreen] ✅ Using rating from surf_conditions (from scheduled updates):', rating);
       return rating;
     }
     
-    // Fallback to report rating if no surf_conditions
     if (todaysReport?.rating) {
-      console.log('[HomeScreen] Using rating from report (stored):', todaysReport.rating);
       return todaysReport.rating;
     }
     
-    // Last resort: calculate from report data
     if (todaysReport) {
       const rating = calculateSurfRating(todaysReport);
-      console.log('[HomeScreen] Calculated rating from report data:', rating);
       return rating;
     }
     
-    console.log('[HomeScreen] No data available, using default rating: 5');
     return 5;
   }, [surfConditions, todaysReport]);
 
-  // ✅ CRITICAL FIX: Use signed URL for video player to ensure instant playback
-  const videoPlayer = useVideoPlayer(signedVideoUrl || '', (player) => {
-    if (signedVideoUrl) {
-      console.log('[HomeScreen] ⚡ Initializing video preview with PRELOADED URL for instant playback');
-      player.loop = true;
-      player.muted = true;
-      player.volume = 0;
-      console.log('[HomeScreen] ✅ Video preview ready for instant playback');
-    }
-  });
-
+  // ✅ CRITICAL FIX: Only load video metadata (thumbnail) - NO video player on home screen
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
-      setVideoReady(false);
-      console.log('[HomeScreen] ⚡ Fetching latest video with signed URL for location:', currentLocation, locationData.displayName);
+      console.log('[HomeScreen] ⚡ FAST: Loading video metadata only (no video data)');
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
-        .select('*')
+        .select('id, title, thumbnail_url, location, resolution_width, resolution_height')
         .eq('location', currentLocation)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -279,96 +201,61 @@ export default function HomeScreen() {
       if (videoError) {
         console.log('[HomeScreen] Video fetch error:', videoError.message);
         setLatestVideo(null);
-        setSignedVideoUrl(null);
+        setThumbnailUrl(null);
       } else if (videoData) {
-        console.log('[HomeScreen] ✅ Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
-        setLatestVideo(videoData);
+        console.log('[HomeScreen] ✅ Video metadata loaded instantly:', videoData.title);
+        setLatestVideo(videoData as Video);
         
-        // ✅ CRITICAL FIX: Generate signed URL immediately for instant playback
-        try {
-          const urlParts = videoData.video_url.split('/videos/');
-          if (urlParts.length === 2) {
-            const fileName = urlParts[1].split('?')[0];
-            
-            console.log('[HomeScreen] ⚡ Generating signed URL for instant playback...');
-            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-              .from('videos')
-              .createSignedUrl(fileName, 7200);
-
-            if (signedUrlError || !signedUrlData?.signedUrl) {
-              console.error('[HomeScreen] Signed URL error:', signedUrlError);
-              setSignedVideoUrl(null);
-            } else {
-              console.log('[HomeScreen] ✅ Signed URL ready for instant playback');
-              setSignedVideoUrl(signedUrlData.signedUrl);
-            }
-          }
-        } catch (urlError) {
-          console.error('[HomeScreen] Error generating signed URL:', urlError);
-          setSignedVideoUrl(null);
+        // ✅ Load thumbnail only (lightweight)
+        if (videoData.thumbnail_url) {
+          setThumbnailUrl(videoData.thumbnail_url);
         }
         
         hasLoadedVideoRef.current = true;
       } else {
-        console.log('[HomeScreen] No videos found for location:', currentLocation, locationData.displayName);
+        console.log('[HomeScreen] No videos found');
         setLatestVideo(null);
-        setSignedVideoUrl(null);
+        setThumbnailUrl(null);
       }
     } catch (error) {
       console.error('[HomeScreen] Error loading video:', error);
       setLatestVideo(null);
-      setSignedVideoUrl(null);
+      setThumbnailUrl(null);
     } finally {
       setIsLoadingVideo(false);
     }
-  }, [currentLocation, locationData.displayName]);
+  }, [currentLocation]);
 
-  // ✅ REVERTED: Removed real-time subscription - data refreshes on schedule only
-  // Data will be updated by the scheduled CRON jobs aligned with buoy schedule
-
-  // ✅ REVERTED: Only load video when location changes, not on every focus
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
-      console.log('[HomeScreen] Location changed to:', currentLocation, locationData.displayName);
-      console.log('[HomeScreen] Loading video for location');
+      console.log('[HomeScreen] ⚡ INSTANT LOAD: Loading lightweight video metadata only');
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, locationData.displayName]);
-
-  useEffect(() => {
-    if (signedVideoUrl && videoPlayer) {
-      console.log('[HomeScreen] ⚡ Loading video preview with signed URL for instant playback');
-      videoPlayer.replace(signedVideoUrl);
-      videoPlayer.play();
-      setVideoReady(true);
-    }
-  }, [signedVideoUrl, videoPlayer]);
+  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo]);
 
   const handleRefresh = async () => {
-    console.log('[HomeScreen] User initiated manual refresh for location:', currentLocation, locationData.displayName);
+    console.log('[HomeScreen] User refresh');
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
   };
 
   const handleVideoPress = useCallback(() => {
-    if (latestVideo && signedVideoUrl) {
-      console.log('[HomeScreen] Opening fullscreen video player for:', latestVideo.id);
-      console.log('[HomeScreen] ✅ Passing preloaded signed URL for INSTANT playback');
+    if (latestVideo) {
+      console.log('[HomeScreen] ⚡ Opening video player - video will load there');
       
       router.push({
         pathname: '/video-player',
         params: {
-          videoId: latestVideo.id,
-          preloadedUrl: signedVideoUrl
+          videoId: latestVideo.id
         }
       });
     }
-  }, [latestVideo, signedVideoUrl]);
+  }, [latestVideo]);
 
   const handleSubscribeNow = async () => {
-    console.log('[HomeScreen] 🔘 Subscribe button pressed');
+    console.log('[HomeScreen] Subscribe button pressed');
     
     if (!user) {
       console.log('[HomeScreen] No user, redirecting to login');
@@ -379,7 +266,7 @@ export default function HomeScreen() {
     setIsSubscribing(true);
     
     await openPaywall(user.id, user.email || undefined, async () => {
-      console.log('[HomeScreen] ✅ Subscription successful, refreshing profile');
+      console.log('[HomeScreen] Subscription successful');
       await refreshProfile();
     });
     
@@ -387,7 +274,7 @@ export default function HomeScreen() {
   };
 
   if (!isInitialized || isLoading) {
-    const loadingTextContent = 'Loading your profile...';
+    const loadingTextContent = 'Loading...';
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -401,7 +288,6 @@ export default function HomeScreen() {
   }
 
   if (!user || !isSubscribed) {
-    console.log('[HomeScreen] Showing locked content');
     const titleText = 'Subscriber Only Content';
     const descriptionText = 'Subscribe to access exclusive 6K drone footage and detailed surf reports';
     const debugText = 'You are signed in but not subscribed';
@@ -445,51 +331,18 @@ export default function HomeScreen() {
     );
   }
 
-  console.log('[HomeScreen] Showing content for', locationData.displayName);
-  console.log('[HomeScreen] Surf conditions available:', !!surfConditions);
-  console.log('[HomeScreen] Surf conditions:', surfConditions);
-  console.log('[HomeScreen] Weather data available:', !!weatherData);
-  console.log('[HomeScreen] Weather data:', weatherData);
-
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
-  console.log('[HomeScreen] ===== NARRATIVE DISPLAY =====');
-  console.log('[HomeScreen] Location:', locationData.displayName);
-  console.log('[HomeScreen] Report location:', todaysReport?.location);
-  console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
-  console.log('[HomeScreen] Narrative preview:', narrativeText?.substring(0, 100));
-  console.log('[HomeScreen] Is custom (edited):', isCustomReport);
-  console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
-  console.log('[HomeScreen] Is from today:', isReportFromToday);
-
-  // 🚨 CRITICAL FIX: Always display surf_height (rideable face height), not wave_height
-  // Priority: surf_conditions (most recent) > todaysReport (stored)
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
-  console.log('[HomeScreen] ===== WAVE DATA CHECK =====');
-  console.log('[HomeScreen] surfConditions surf_height:', surfConditions?.surf_height);
-  console.log('[HomeScreen] surfConditions wave_height:', surfConditions?.wave_height);
-  console.log('[HomeScreen] surfConditions updated_at:', surfConditions?.updated_at);
-  console.log('[HomeScreen] todaysReport surf_height:', (todaysReport as any)?.surf_height);
-  console.log('[HomeScreen] todaysReport wave_height:', todaysReport?.wave_height);
-  console.log('[HomeScreen] todaysReport updated_at:', todaysReport?.updated_at);
-  console.log('[HomeScreen] Final surfHeightValue:', surfHeightValue);
-  console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
-  console.log('[HomeScreen] ===========================');
-  
-  // 🚨 CRITICAL FIX: ALWAYS prioritize surf_height over wave_height for display
-  // Surf height is the rideable face height that surfers care about
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
     : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
       ? waveHeightValue 
       : 'N/A';
-  
-  console.log('[HomeScreen] 🏄 Final surf height display:', surfHeightDisplay);
-  console.log('[HomeScreen] Data source:', surfConditions ? 'surf_conditions (real-time buoy)' : 'todaysReport (stored)');
   
   const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
   const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
@@ -505,15 +358,6 @@ export default function HomeScreen() {
   
   const ratingColorValue = getRatingColor(ratingValue);
   const ratingLabel = 'Stoke Rating';
-
-  console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
-  console.log('[HomeScreen] 🏄 Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)', ')');
-  console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
-  console.log('[HomeScreen] 🎯 STOKE METER:', ratingValue, '/10');
-  console.log('[HomeScreen] ================================================');
 
   const errorTitleText = 'Unable to fetch surf data';
   const emptyVideoText = `No videos available yet for ${locationData.displayName}`;
@@ -540,6 +384,7 @@ export default function HomeScreen() {
   const forecastTitle = '7-Day Forecast';
   const swellLabel = 'swell';
   const noForecastText = 'No forecast data available yet. Pull down to refresh or check back later.';
+  const tapToPlayText = 'Tap to Play Video';
 
   return (
     <ScrollView 
@@ -575,41 +420,40 @@ export default function HomeScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
           </View>
-        ) : latestVideo && signedVideoUrl ? (
+        ) : latestVideo ? (
           <TouchableOpacity
             style={styles.videoCard}
             onPress={handleVideoPress}
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {!videoReady && (
-                <View style={styles.videoLoadingOverlay}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-              )}
-              <VideoView
-                style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                player={videoPlayer}
-                allowsFullscreen={false}
-                allowsPictureInPicture={false}
-                contentFit="cover"
-                nativeControls={false}
-              />
-              {videoReady && (
-                <View style={styles.videoOverlay}>
-                  <View style={styles.playButtonContainer}>
+              {thumbnailUrl ? (
+                <View style={styles.thumbnailContainer}>
+                  <View style={styles.thumbnailPlaceholder}>
                     <IconSymbol
                       ios_icon_name="play.circle.fill"
                       android_material_icon_name="play-circle"
-                      size={64}
-                      color="rgba(255, 255, 255, 0.9)"
+                      size={80}
+                      color="rgba(255, 255, 255, 0.95)"
                     />
                   </View>
-                  <View style={styles.videoTitleOverlay}>
-                    <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
-                  </View>
+                </View>
+              ) : (
+                <View style={styles.thumbnailPlaceholder}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play-circle"
+                    size={80}
+                    color="rgba(255, 255, 255, 0.95)"
+                  />
                 </View>
               )}
+              <View style={styles.videoOverlay}>
+                <View style={styles.videoTitleOverlay}>
+                  <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
+                  <Text style={styles.tapToPlayText}>{tapToPlayText}</Text>
+                </View>
+              </View>
             </View>
           </TouchableOpacity>
         ) : (
@@ -923,20 +767,6 @@ export default function HomeScreen() {
               
               const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
               
-              console.log('[HomeScreen] Forecast day', index, ':', {
-                date: forecastDateStr,
-                dayName,
-                monthDay,
-                hasReport: !!dayReport,
-                hasForecast: !!dayWeatherForecast,
-                surf_height: daySurfHeight,
-                wave_height: dayWaveHeight,
-                waveDisplay,
-                highTemp: highTempDisplay,
-                lowTemp: lowTempDisplay,
-                weather: weatherDesc
-              });
-              
               return (
                 <View key={index} style={[styles.forecastDay, { 
                   backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
@@ -1138,23 +968,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#000000',
   },
-  videoPreview: {
+  thumbnailContainer: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#000000',
   },
-  videoHidden: {
-    opacity: 0,
-  },
-  videoLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  thumbnailPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000000',
-    zIndex: 10,
   },
   videoOverlay: {
     position: 'absolute',
@@ -1164,18 +988,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
-  playButtonContainer: {
-    alignItems: 'center',
-    gap: 8,
   },
   videoTitleOverlay: {
-    position: 'absolute',
-    top: 20,
-    left: 0,
-    right: 0,
     alignItems: 'center',
+    gap: 12,
   },
   videoTitleOnVideo: {
     color: 'rgba(255, 255, 255, 0.95)',
@@ -1184,6 +1000,14 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.7)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  tapToPlayText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 14,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   reportCard: {
     borderRadius: 16,

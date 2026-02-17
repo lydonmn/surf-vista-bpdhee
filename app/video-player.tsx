@@ -1,7 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
-
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
@@ -30,7 +29,7 @@ const CONTROLS_HIDE_DELAY = 3000;
 
 export default function VideoPlayerScreen() {
   const insets = useSafeAreaInsets();
-  const { videoId, preloadedUrl } = useLocalSearchParams();
+  const { videoId } = useLocalSearchParams();
   
   const [video, setVideo] = useState<Video | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -41,8 +40,6 @@ export default function VideoPlayerScreen() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 3;
   
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -51,35 +48,31 @@ export default function VideoPlayerScreen() {
   const lastProgressUpdateRef = useRef(0);
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioConfiguredRef = useRef(false);
   const playerReadyRef = useRef(false);
 
   // 🚨 CRITICAL FIX: Determine video orientation from resolution
   const videoOrientation = useMemo(() => {
     if (!video?.resolution_width || !video?.resolution_height) {
-      console.log('[VideoPlayer] No resolution data, assuming portrait (drone default)');
+      console.log('[VideoPlayer] No resolution data, assuming portrait');
       return 'portrait';
     }
     
     const isPortrait = video.resolution_height > video.resolution_width;
     const orientation = isPortrait ? 'portrait' : 'landscape';
     
-    console.log('[VideoPlayer] 📐 Video orientation detected:', orientation);
-    console.log('[VideoPlayer] - Width:', video.resolution_width);
-    console.log('[VideoPlayer] - Height:', video.resolution_height);
-    console.log('[VideoPlayer] - Is Portrait:', isPortrait);
+    console.log('[VideoPlayer] 📐 Video orientation:', orientation, `(${video.resolution_width}x${video.resolution_height})`);
     
     return orientation;
   }, [video]);
 
-  // ✅ CRITICAL FIX: Configure audio session ONCE on mount for continuous playback
+  // ✅ CRITICAL FIX: Configure audio session ONCE on mount
   useEffect(() => {
     if (audioConfiguredRef.current) {
       return;
     }
 
-    console.log('[VideoPlayer] ⚡ Configuring audio session for SEAMLESS CONTINUOUS playback...');
+    console.log('[VideoPlayer] ⚡ Configuring audio for seamless playback...');
     
     let isActive = true;
     
@@ -93,22 +86,21 @@ export default function VideoPlayerScreen() {
 
         if (isActive) {
           await activateAudioSession();
-          console.log('[VideoPlayer] ✅ Audio session activated - continuous playback ready');
+          console.log('[VideoPlayer] ✅ Audio ready');
           audioConfiguredRef.current = true;
         }
       } catch (audioError) {
-        console.error('[VideoPlayer] Failed to setup audio:', audioError);
+        console.error('[VideoPlayer] Audio setup failed:', audioError);
       }
     };
 
     setupAudio();
 
     return () => {
-      console.log('[VideoPlayer] Cleaning up audio session...');
       isActive = false;
       audioConfiguredRef.current = false;
       deactivateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to deactivate audio:', err)
+        console.error('[VideoPlayer] Audio cleanup failed:', err)
       );
     };
   }, []);
@@ -146,22 +138,20 @@ export default function VideoPlayerScreen() {
 
   const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
 
-  // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
+  // ✅ CRITICAL FIX: Initialize player with optimized settings
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl && !playerReadyRef.current) {
-      console.log('[VideoPlayer] ⚡ Initializing player with OPTIMIZED settings for seamless playback');
+      console.log('[VideoPlayer] ⚡ Player initialized');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
       playerReadyRef.current = true;
-      
-      console.log('[VideoPlayer] ✅ Player configured for smooth, continuous playback');
     }
   });
 
   const handleExitPlayer = useCallback(async () => {
-    console.log('[VideoPlayer] User exiting video player');
+    console.log('[VideoPlayer] Exiting');
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -170,9 +160,8 @@ export default function VideoPlayerScreen() {
     if (player) {
       try {
         player.pause();
-        console.log('[VideoPlayer] Stopped playback');
       } catch (e) {
-        console.log('[VideoPlayer] Error stopping playback:', e);
+        console.log('[VideoPlayer] Error stopping:', e);
       }
     }
     
@@ -180,7 +169,6 @@ export default function VideoPlayerScreen() {
       try {
         await ScreenOrientation.unlockAsync();
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        console.log('[VideoPlayer] Reset to portrait orientation');
       } catch (e) {
         console.log('[VideoPlayer] Error resetting orientation:', e);
       }
@@ -189,13 +177,12 @@ export default function VideoPlayerScreen() {
     router.back();
   }, [player, isFullscreen]);
 
+  // ✅ CRITICAL FIX: Fast parallel loading
   useEffect(() => {
-    console.log('[VideoPlayer] Component mounted, loading video:', videoId);
-    console.log('[VideoPlayer] ⚡ Preloaded URL available:', !!preloadedUrl);
+    console.log('[VideoPlayer] Loading video:', videoId);
     
     const loadVideo = async () => {
       if (hasLoadedRef.current) {
-        console.log('[VideoPlayer] Already loaded, skipping...');
         return;
       }
       
@@ -203,7 +190,7 @@ export default function VideoPlayerScreen() {
         setIsLoading(true);
         setError(null);
         
-        console.log('[VideoPlayer] ⚡ FAST PATH: Loading video metadata and URL in parallel');
+        console.log('[VideoPlayer] ⚡ FAST: Parallel load');
 
         const [sessionResult, videoResult] = await Promise.all([
           supabase.auth.getSession(),
@@ -212,35 +199,18 @@ export default function VideoPlayerScreen() {
 
         const { data: { session } } = sessionResult;
         if (!session) {
-          throw new Error('Not authenticated. Please log in again.');
+          throw new Error('Not authenticated');
         }
 
         const { data, error: fetchError } = videoResult;
         if (fetchError) {
-          console.error('[VideoPlayer] Error loading video:', fetchError);
           throw fetchError;
         }
 
-        console.log('[VideoPlayer] Video loaded:', data.title);
-        console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
+        console.log('[VideoPlayer] ✅ Video loaded:', data.title);
+        console.log('[VideoPlayer] 📐 Resolution:', data.resolution_width, 'x', data.resolution_height);
         setVideo(data);
 
-        // ✅ INSTANT PLAYBACK: Use preloaded URL if available
-        if (preloadedUrl && typeof preloadedUrl === 'string') {
-          console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
-          setVideoUrl(preloadedUrl);
-          hasLoadedRef.current = true;
-          
-          if (data.duration_seconds) {
-            setDuration(data.duration_seconds);
-          }
-          setIsLoading(false);
-          setIsBuffering(false);
-          return;
-        }
-
-        console.log('[VideoPlayer] ⚠️ No preloaded URL - generating signed URL (slower)');
-        
         let fileName = '';
         try {
           const urlParts = data.video_url.split('/videos/');
@@ -252,29 +222,29 @@ export default function VideoPlayerScreen() {
             fileName = pathParts[pathParts.length - 1];
           }
         } catch (e) {
-          console.error('[VideoPlayer] Error parsing URL:', e);
-          throw new Error('Invalid video URL format');
+          console.error('[VideoPlayer] URL parse error:', e);
+          throw new Error('Invalid video URL');
         }
 
         if (!fileName) {
-          throw new Error('Could not extract filename from video URL');
+          throw new Error('Could not extract filename');
         }
 
+        console.log('[VideoPlayer] ⚡ Generating signed URL...');
         const { data: signedUrlData, error: signedUrlError } = await supabase.storage
           .from('videos')
           .createSignedUrl(fileName, 7200);
 
         if (signedUrlError || !signedUrlData?.signedUrl) {
           console.error('[VideoPlayer] Signed URL error:', signedUrlError);
-          throw new Error('Failed to generate streaming URL');
+          throw new Error('Failed to generate URL');
         }
 
         const generatedUrl = signedUrlData.signedUrl;
-        console.log('[VideoPlayer] ✓ Signed URL created');
+        console.log('[VideoPlayer] ✅ URL ready');
         
         if (!generatedUrl.startsWith('https://')) {
-          console.error('[VideoPlayer] ❌ URL is not HTTPS');
-          throw new Error('Video URL must use HTTPS');
+          throw new Error('URL must use HTTPS');
         }
         
         setVideoUrl(generatedUrl);
@@ -284,7 +254,7 @@ export default function VideoPlayerScreen() {
           setDuration(data.duration_seconds);
         }
       } catch (loadError: unknown) {
-        console.error('[VideoPlayer] Exception loading video:', loadError);
+        console.error('[VideoPlayer] Load error:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
         setError(errorMessage);
       } finally {
@@ -293,70 +263,30 @@ export default function VideoPlayerScreen() {
     };
 
     loadVideo();
-  }, [videoId, preloadedUrl]);
+  }, [videoId]);
 
-  // ✅ CRITICAL FIX: Stable event listeners that don't cause re-renders
+  // ✅ CRITICAL FIX: Optimized event listeners
   useEffect(() => {
     if (!player || !videoUrl) return;
 
-    console.log('[VideoPlayer] Setting up stable player event listeners');
+    console.log('[VideoPlayer] Setting up listeners');
 
     const statusListener = player.addListener('statusChange', (status) => {
       if (status.error) {
-        console.error('[VideoPlayer] ❌ Player error:', status.error);
-        
-        const errorString = String(status.error).toLowerCase();
-        const isRecoverableError = errorString.includes('network') || 
-                                   errorString.includes('timeout') || 
-                                   errorString.includes('connection') ||
-                                   errorString.includes('buffer');
-        
-        if (isRecoverableError && retryCount < maxRetries) {
-          console.log('[VideoPlayer] ⚡ Recoverable error - auto-recovery attempt', retryCount + 1, 'of', maxRetries);
-          
-          setRetryCount(prev => prev + 1);
-          
-          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
-          setTimeout(() => {
-            if (player && videoUrl) {
-              console.log('[VideoPlayer] ⚡ Reloading video source...');
-              player.replace(videoUrl);
-              setTimeout(() => {
-                if (player) {
-                  player.play();
-                }
-              }, 100);
-            }
-          }, backoffDelay);
-        } else if (retryCount >= maxRetries) {
-          console.error('[VideoPlayer] ❌ Max retries reached');
-          setError(`Playback error: ${status.error}. Please check your internet connection and try again.`);
-        } else {
-          setError(`Playback error: ${status.error}`);
-        }
+        console.error('[VideoPlayer] ❌ Error:', status.error);
+        setError(`Playback error: ${status.error}`);
         setIsBuffering(false);
       }
       
       if (status.status === 'readyToPlay') {
         const videoDuration = status.duration || 0;
-        console.log('[VideoPlayer] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
+        console.log('[VideoPlayer] ✅ Ready, duration:', videoDuration.toFixed(2));
         setDuration(videoDuration);
-        
         setIsBuffering(false);
         
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-          bufferingTimeoutRef.current = null;
-        }
-        
-        if (retryCount > 0) {
-          console.log('[VideoPlayer] ✅ Video recovered after', retryCount, 'retries');
-          setRetryCount(0);
-        }
-        
-        // ✅ CRITICAL FIX: Auto-play immediately when ready
+        // ✅ CRITICAL FIX: Auto-play immediately
         if (!player.playing) {
-          console.log('[VideoPlayer] ⚡ Starting INSTANT playback...');
+          console.log('[VideoPlayer] ⚡ Starting playback...');
           setTimeout(() => {
             if (player) {
               player.play();
@@ -367,34 +297,19 @@ export default function VideoPlayerScreen() {
       
       if (status.status === 'loading') {
         setIsBuffering(true);
-        
-        // ✅ CRITICAL FIX: Shorter buffering timeout (1 second instead of 2)
-        const bufferTimeout = 1000;
-        
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-        }
-        bufferingTimeoutRef.current = setTimeout(() => {
-          console.log('[VideoPlayer] ⚠️ Buffering timeout - forcing clear');
-          setIsBuffering(false);
-        }, bufferTimeout);
       }
       
       if (status.status === 'idle' || status.status === 'error') {
         setIsBuffering(false);
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-          bufferingTimeoutRef.current = null;
-        }
       }
     });
 
-    // ✅ CRITICAL FIX: Optimized time update - less frequent updates (250ms instead of 200ms)
+    // ✅ CRITICAL FIX: Less frequent time updates (500ms)
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
       const newTime = timeUpdate.currentTime || 0;
       
       const now = Date.now();
-      if (now - lastProgressUpdateRef.current < 250) return;
+      if (now - lastProgressUpdateRef.current < 500) return;
       lastProgressUpdateRef.current = now;
       
       if (!isSeekingRef.current) {
@@ -411,35 +326,25 @@ export default function VideoPlayerScreen() {
       }
 
       setIsBuffering(false);
-      if (bufferingTimeoutRef.current) {
-        clearTimeout(bufferingTimeoutRef.current);
-        bufferingTimeoutRef.current = null;
-      }
     });
 
     return () => {
-      console.log('[VideoPlayer] Cleaning up event listeners');
       statusListener.remove();
       timeUpdateListener.remove();
-      
-      if (bufferingTimeoutRef.current) {
-        clearTimeout(bufferingTimeoutRef.current);
-        bufferingTimeoutRef.current = null;
-      }
     };
-  }, [player, videoUrl, retryCount]);
+  }, [player, videoUrl]);
 
-  // ✅ CRITICAL FIX: Load video source immediately
+  // ✅ CRITICAL FIX: Load video immediately
   useEffect(() => {
     if (videoUrl && player && !playerReadyRef.current) {
-      console.log('[VideoPlayer] ⚡ Loading video source for INSTANT playback...');
+      console.log('[VideoPlayer] ⚡ Loading video...');
       try {
         player.replace(videoUrl);
         playerReadyRef.current = true;
-        console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
+        console.log('[VideoPlayer] ✅ Video loaded');
       } catch (e) {
-        console.error('[VideoPlayer] Error loading source:', e);
-        setError('Failed to load video source');
+        console.error('[VideoPlayer] Load error:', e);
+        setError('Failed to load video');
       }
     }
   }, [videoUrl, player]);
@@ -458,7 +363,6 @@ export default function VideoPlayerScreen() {
     }
     
     const currentlyPlaying = player.playing;
-    console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
       player.pause();
@@ -471,7 +375,6 @@ export default function VideoPlayerScreen() {
   }, [player, resetControlsTimeout, clearControlsTimeout]);
 
   const handleSeekStart = useCallback(() => {
-    console.log('[VideoPlayer] Seek started');
     isSeekingRef.current = true;
     setControlsVisible(true);
     clearControlsTimeout();
@@ -486,7 +389,6 @@ export default function VideoPlayerScreen() {
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seek to:', value.toFixed(2));
     if (player) {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
@@ -502,8 +404,7 @@ export default function VideoPlayerScreen() {
 
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] Toggle fullscreen:', newFullscreenState);
-    console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
+    console.log('[VideoPlayer] Fullscreen:', newFullscreenState, '| Orientation:', videoOrientation);
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
     
@@ -518,23 +419,23 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 CRITICAL FIX: Lock orientation based on video's natural orientation
-          console.log('[VideoPlayer] ✅ Entering fullscreen - locking to', videoOrientation, 'orientation');
+          // 🚨 CRITICAL FIX: Lock to correct orientation based on video
+          console.log('[VideoPlayer] ✅ Locking to', videoOrientation, 'for fullscreen');
           
           if (videoOrientation === 'portrait') {
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            console.log('[VideoPlayer] ✅ Locked to PORTRAIT orientation for fullscreen');
+            console.log('[VideoPlayer] ✅ PORTRAIT locked');
           } else {
             await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            console.log('[VideoPlayer] ✅ Locked to LANDSCAPE orientation for fullscreen');
+            console.log('[VideoPlayer] ✅ LANDSCAPE locked');
           }
         } else {
-          console.log('[VideoPlayer] Exiting fullscreen - resetting to portrait');
+          console.log('[VideoPlayer] Resetting to portrait');
           await ScreenOrientation.unlockAsync();
           await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         }
       } catch (e) {
-        console.log('[VideoPlayer] Screen orientation not available:', e);
+        console.log('[VideoPlayer] Orientation error:', e);
       }
     }
   }, [isFullscreen, videoOrientation, player, startControlsTimeout]);
@@ -565,7 +466,7 @@ export default function VideoPlayerScreen() {
   const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
 
   if (isLoading) {
-    const loadingText = preloadedUrl ? "Starting instant playback..." : "Loading video...";
+    const loadingText = "Loading video...";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
@@ -812,7 +713,7 @@ export default function VideoPlayerScreen() {
   }
 
   const backButtonText = "Back";
-  const optimizedText = preloadedUrl ? "Instant Playback" : "4K Streaming";
+  const optimizedText = "4K Streaming";
   const httpsText = "Secure";
   const resolutionLabel = "Resolution";
   const sizeLabel = "File Size";
