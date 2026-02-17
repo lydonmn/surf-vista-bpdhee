@@ -240,8 +240,8 @@ function generateWittyNarrative(
 
     // 🌊 WAVE DETAIL: Describe the surf height range and what it means for riding
     if (waveHeightLow !== waveHeightHigh) {
-      // 🚨 FIX: Ensure proper spacing with "to" between numbers
-      report += `Faces are running ${waveHeightLow.toFixed(1)} to ${waveHeightHigh.toFixed(1)} feet`;
+      // 🚨 CRITICAL FIX: Add proper spacing with " to " between numbers
+      report += `Faces are running ${waveHeightLow.toFixed(1)} feet to ${waveHeightHigh.toFixed(1)} feet`;
     } else {
       report += `Faces are around ${waveHeight.toFixed(1)} feet`;
     }
@@ -263,8 +263,7 @@ function generateWittyNarrative(
 
     // 📊 PERIOD & SWELL: How the energy translates to ride quality
     if (period >= 12) {
-      // 🚨 FIX: Use proper formatting with toFixed(0) for period
-      report += `${period.toFixed(0)}-second period from the ${swellDir} provides moderate power, though waves come in more frequently`;
+      report += `${period.toFixed(0)}-second period from the ${swellDir} brings long-interval groundswell with powerful, well-spaced sets`;
     } else if (period >= 10) {
       report += `${period.toFixed(0)}-second period from the ${swellDir} brings decent energy with well-spaced sets that give you time to position`;
     } else if (period >= 8) {
@@ -304,7 +303,7 @@ function generateWittyNarrative(
 
     // 🌡️ WATER TEMP & WEATHER: Brief conditions without redundancy
     if (waterTemp > 0) {
-      // 🚨 FIX: Only show water temp, no wetsuit thickness mixed in
+      // 🚨 FIX: Clean formatting - water temp only, no wetsuit thickness mixed in
       report += `Water is ${waterTemp.toFixed(0)}°F`;
       
       if (waterTemp >= 75) {
@@ -321,9 +320,9 @@ function generateWittyNarrative(
     }
     
     if (airTemp > 0 && weatherConditions) {
-      report += `, ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()}`;
+      report += `. ${airTemp.toFixed(0)}°F air with ${weatherConditions.toLowerCase()}`;
     } else if (weatherConditions) {
-      report += ` with ${weatherConditions.toLowerCase()}`;
+      report += `. ${weatherConditions}`;
     }
     
     report += '.\n\n';
@@ -370,6 +369,8 @@ function generateWittyNarrative(
 
     console.log('[generateWittyNarrative] ✅ Generated narrative:', report.length, 'characters');
     console.log('[generateWittyNarrative] Preview:', report.substring(0, 150));
+    console.log('[generateWittyNarrative] Contains \\n\\n:', report.includes('\n\n'));
+    console.log('[generateWittyNarrative] Newline count:', (report.match(/\n\n/g) || []).length);
 
     return report;
   } catch (error) {
@@ -1017,10 +1018,15 @@ async function processLocation(
     
     console.log(`[${locationName}] ✅ Generated narrative (${narrative.length} characters)`);
     console.log(`[${locationName}] Narrative preview: ${narrative.substring(0, 150)}...`);
+    console.log(`[${locationName}] 🔍 Checking newlines in narrative...`);
+    console.log(`[${locationName}] Contains \\n\\n: ${narrative.includes('\n\n')}`);
+    console.log(`[${locationName}] Newline count: ${(narrative.match(/\n\n/g) || []).length}`);
 
     const rating = calculateSurfRating(surfConditions);
     console.log(`[${locationName}] Calculated rating: ${rating}/10`);
 
+    // 🚨 CRITICAL FIX: Store narrative in BOTH conditions AND report_text fields
+    // This ensures compatibility with both old and new frontend code
     const reportData = {
       date: dateStr,
       location: locationId,
@@ -1032,12 +1038,16 @@ async function processLocation(
       wind_direction: surfConditions.wind_direction || 'N/A',
       water_temp: surfConditions.water_temp || 'N/A',
       tide: 'See tide times',
-      conditions: narrative,
+      conditions: narrative, // ✅ Store in conditions field (primary)
+      report_text: narrative, // ✅ ALSO store in report_text field (backup)
       rating: rating,
       updated_at: new Date().toISOString(),
     };
 
-    console.log(`[${locationName}] Upserting report to database for date: ${dateStr}...`);
+    console.log(`[${locationName}] 💾 Upserting report to database...`);
+    console.log(`[${locationName}] 💾 Date: ${dateStr}, Location: ${locationId}`);
+    console.log(`[${locationName}] 💾 Narrative length: ${narrative.length} chars`);
+    console.log(`[${locationName}] 💾 Storing in BOTH conditions and report_text fields`);
 
     const { error: upsertError } = await supabase
       .from('surf_reports')
@@ -1050,9 +1060,12 @@ async function processLocation(
 
     console.log(`[${locationName}] ✅ Report saved successfully to database`);
     
+    // 🚨 CRITICAL: Wait for database to propagate
+    await delay(500);
+    
     const { data: verifyData, error: verifyError } = await supabase
       .from('surf_reports')
-      .select('id, date, location, surf_height, wave_height, conditions')
+      .select('id, date, location, surf_height, wave_height, conditions, report_text')
       .eq('date', dateStr)
       .eq('location', locationId)
       .maybeSingle();
@@ -1063,7 +1076,9 @@ async function processLocation(
       console.log(`[${locationName}] ✅ Verified: Report exists in database`);
       console.log(`[${locationName}] ✅ surf_height: ${verifyData.surf_height}`);
       console.log(`[${locationName}] ✅ wave_height: ${verifyData.wave_height}`);
-      console.log(`[${locationName}] ✅ Narrative: ${verifyData.conditions?.length || 0} characters`);
+      console.log(`[${locationName}] ✅ conditions: ${verifyData.conditions?.length || 0} characters`);
+      console.log(`[${locationName}] ✅ report_text: ${verifyData.report_text?.length || 0} characters`);
+      console.log(`[${locationName}] ✅ Newlines in DB: ${verifyData.conditions?.includes('\n\n') ? 'YES' : 'NO'}`);
     } else {
       console.warn(`[${locationName}] ⚠️ Report not found after save - possible race condition`);
     }

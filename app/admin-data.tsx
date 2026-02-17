@@ -124,6 +124,7 @@ export default function AdminDataScreen() {
       console.log('[AdminData] 🔄 LOADING LOCATION REPORTS');
       console.log('[AdminData] Date:', dateStr);
       console.log('[AdminData] Available locations:', locations.length);
+      console.log('[AdminData] Cache-busting timestamp:', Date.now());
       console.log('[AdminData] ═══════════════════════════════════════');
 
       for (const location of locations) {
@@ -133,14 +134,16 @@ export default function AdminDataScreen() {
           displayName: location.displayName,
         });
 
-        // 🚨 CRITICAL FIX: Force fresh query with cache bypass
-        const timestamp = Date.now();
+        // 🚨 CRITICAL FIX: Force fresh query with cache bypass using timestamp
+        const cacheBuster = Date.now();
         const [reportResult, conditionsResult] = await Promise.all([
           supabase
             .from('surf_reports')
             .select('*')
             .eq('location', location.id)
             .eq('date', dateStr)
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle(),
           supabase
             .from('surf_conditions')
@@ -157,6 +160,7 @@ export default function AdminDataScreen() {
 
         console.log('[AdminData] ═══════════════════════════════════════');
         console.log('[AdminData] 📊 REPORT DATA FOR', location.displayName);
+        console.log('[AdminData] Cache buster:', cacheBuster);
         console.log('[AdminData] Has report:', !!report);
         console.log('[AdminData] Report ID:', report?.id);
         console.log('[AdminData] Report date:', report?.date);
@@ -166,8 +170,10 @@ export default function AdminDataScreen() {
         console.log('[AdminData] Report_text length:', report?.report_text?.length || 0);
         console.log('[AdminData] Conditions preview:', report?.conditions?.substring(0, 100));
         console.log('[AdminData] Report_text preview:', report?.report_text?.substring(0, 100));
+        console.log('[AdminData] Updated at:', report?.updated_at);
         console.log('[AdminData] ═══════════════════════════════════════');
 
+        // 🚨 CRITICAL: Prefer report_text over conditions for display
         const narrativeText = report?.report_text || report?.conditions || '';
         
         const locationReport: LocationReport = {
@@ -388,27 +394,32 @@ export default function AdminDataScreen() {
         }
       }
       
-      // 🚨 CRITICAL FIX: Aggressive multi-stage refresh to ensure UI updates
+      // 🚨 CRITICAL FIX: More aggressive refresh with longer delays
       console.log('[AdminData] ═══════════════════════════════════════');
-      console.log('[AdminData] 🔄 STARTING AGGRESSIVE REFRESH SEQUENCE');
+      console.log('[AdminData] 🔄 STARTING ULTRA-AGGRESSIVE REFRESH SEQUENCE');
       console.log('[AdminData] ═══════════════════════════════════════');
       
       // Stage 1: Immediate refresh
       console.log('[AdminData] Stage 1: Immediate refresh...');
       await loadLocationReports();
       
-      // Stage 2: Wait for database propagation
-      console.log('[AdminData] Stage 2: Waiting 2s for database propagation...');
+      // Stage 2: Wait for database write propagation
+      console.log('[AdminData] Stage 2: Waiting 3s for database write propagation...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      await loadLocationReports();
+      
+      // Stage 3: Wait for real-time subscriptions and cache invalidation
+      console.log('[AdminData] Stage 3: Waiting 2s for real-time subscriptions...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       await loadLocationReports();
       
-      // Stage 3: Wait for real-time subscriptions
-      console.log('[AdminData] Stage 3: Waiting 1.5s for real-time subscriptions...');
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Stage 4: Final verification refresh
+      console.log('[AdminData] Stage 4: Final verification refresh after 2s...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
       await loadLocationReports();
       
-      // Stage 4: Final verification refresh
-      console.log('[AdminData] Stage 4: Final verification refresh...');
+      // Stage 5: One more for good measure
+      console.log('[AdminData] Stage 5: Final final refresh after 1s...');
       await new Promise(resolve => setTimeout(resolve, 1000));
       await loadLocationReports();
       
@@ -417,6 +428,7 @@ export default function AdminDataScreen() {
       console.log('[AdminData] ═══════════════════════════════════════');
       
       addLog(`✅ Report data refreshed for ${locationName}`, 'success');
+      addLog(`  • Completed 5-stage refresh sequence to ensure latest data`, 'info');
     } catch (error) {
       console.error('[AdminData] Error generating report:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
