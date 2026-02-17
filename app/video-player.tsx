@@ -1,12 +1,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
+import { useLocalSearchParams, router, Stack } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
-import * as ScreenOrientation from 'expo-screen-orientation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Video {
@@ -27,58 +26,55 @@ export default function VideoPlayerScreen() {
   const { videoId } = useLocalSearchParams();
   
   const [video, setVideo] = useState<Video | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
   
   const hasLoadedRef = useRef(false);
 
-  // Create player with URL - simple and clean
-  const player = useVideoPlayer(videoUrl || '', (player) => {
-    if (videoUrl) {
-      console.log('[VideoPlayer] Player ready - starting playback');
+  const player = useVideoPlayer(signedVideoUrl || '', (player) => {
+    console.log('[VideoPlayer] Player initialized');
+    setIsPlayerReady(true);
+    
+    if (signedVideoUrl) {
+      console.log('[VideoPlayer] Starting playback');
       player.loop = false;
       player.muted = false;
-      player.play();
+      
+      setTimeout(() => {
+        if (player && typeof player.play === 'function') {
+          player.play();
+        }
+      }, 500);
     }
   });
 
-  const handleExitPlayer = useCallback(async () => {
-    console.log('[VideoPlayer] Exiting player');
+  const handleExitPlayer = useCallback(() => {
+    console.log('[VideoPlayer] User pressed back button');
     
-    if (player) {
+    if (player && typeof player.pause === 'function') {
       player.pause();
-    }
-    
-    if (Platform.OS !== 'web') {
-      try {
-        await ScreenOrientation.unlockAsync();
-      } catch (e) {
-        console.log('[VideoPlayer] Orientation unlock error:', e);
-      }
     }
     
     router.back();
   }, [player]);
 
-  // Load video with signed URL
   useEffect(() => {
     if (hasLoadedRef.current) return;
     
-    console.log('[VideoPlayer] Loading video:', videoId);
+    console.log('[VideoPlayer] Loading video with ID:', videoId);
     
     const loadVideo = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        // Get session
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error('Not authenticated');
         }
 
-        // Get video metadata
         const { data: videoData, error: fetchError } = await supabase
           .from('videos')
           .select('*')
@@ -86,15 +82,15 @@ export default function VideoPlayerScreen() {
           .single();
 
         if (fetchError || !videoData) {
+          console.error('[VideoPlayer] Video fetch error:', fetchError);
           throw new Error('Video not found');
         }
 
-        console.log('[VideoPlayer] Video loaded:', videoData.title);
+        console.log('[VideoPlayer] Video metadata loaded:', videoData.title);
         console.log('[VideoPlayer] Resolution:', videoData.resolution_width, 'x', videoData.resolution_height);
         
         setVideo(videoData);
 
-        // Extract filename from video_url
         let fileName = '';
         try {
           const urlParts = videoData.video_url.split('/videos/');
@@ -107,11 +103,11 @@ export default function VideoPlayerScreen() {
           }
         } catch (e) {
           console.error('[VideoPlayer] URL parse error:', e);
-          throw new Error('Invalid video URL');
+          throw new Error('Invalid video URL format');
         }
 
         if (!fileName) {
-          throw new Error('Could not extract filename');
+          throw new Error('Could not extract video filename');
         }
 
         console.log('[VideoPlayer] Generating signed URL for:', fileName);
@@ -121,11 +117,11 @@ export default function VideoPlayerScreen() {
 
         if (signedUrlError || !signedUrlData?.signedUrl) {
           console.error('[VideoPlayer] Signed URL error:', signedUrlError);
-          throw new Error('Failed to generate video URL');
+          throw new Error('Failed to generate video playback URL');
         }
 
-        console.log('[VideoPlayer] Signed URL ready');
-        setVideoUrl(signedUrlData.signedUrl);
+        console.log('[VideoPlayer] Signed URL generated successfully');
+        setSignedVideoUrl(signedUrlData.signedUrl);
         hasLoadedRef.current = true;
       } catch (loadError: unknown) {
         console.error('[VideoPlayer] Load error:', loadError);
@@ -146,6 +142,8 @@ export default function VideoPlayerScreen() {
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        
         <TouchableOpacity
           style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
@@ -167,13 +165,15 @@ export default function VideoPlayerScreen() {
     );
   }
 
-  if (error || !video || !videoUrl) {
+  if (error || !video || !signedVideoUrl) {
     const errorMessage = error || 'Video not found';
     const errorTitle = "Unable to load video";
     const backText = "Go Back";
     
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        
         <TouchableOpacity
           style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
@@ -212,7 +212,12 @@ export default function VideoPlayerScreen() {
   const backButtonText = "Back";
 
   return (
-    <View style={[styles.container, { backgroundColor: '#000000' }]}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: '#000000' }]}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <Stack.Screen options={{ headerShown: false }} />
+      
       <TouchableOpacity
         style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
         onPress={handleExitPlayer}
@@ -227,11 +232,18 @@ export default function VideoPlayerScreen() {
       </TouchableOpacity>
 
       <View style={styles.videoContainer}>
+        {!isPlayerReady && (
+          <View style={styles.playerLoadingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.playerLoadingText}>Preparing video...</Text>
+          </View>
+        )}
+        
         <VideoView
           style={styles.video}
           player={player}
           allowsFullscreen={true}
-          allowsPictureInPicture
+          allowsPictureInPicture={true}
           contentFit="contain"
           nativeControls={true}
         />
@@ -244,13 +256,16 @@ export default function VideoPlayerScreen() {
           <Text style={styles.description}>{video.description}</Text>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   headerBackButton: {
     flexDirection: 'row',
@@ -305,13 +320,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   videoContainer: {
-    flex: 1,
+    width: '100%',
+    aspectRatio: 16 / 9,
     backgroundColor: '#000000',
+    position: 'relative',
   },
   video: {
-    flex: 1,
     width: '100%',
     height: '100%',
+  },
+  playerLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    zIndex: 5,
+  },
+  playerLoadingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginTop: 12,
   },
   infoContainer: {
     padding: 20,
