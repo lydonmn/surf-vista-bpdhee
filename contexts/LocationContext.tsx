@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 
@@ -30,7 +30,7 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const STORAGE_KEY = '@surfvista_location';
 
-// Default locations as fallback
+// ✅ CRITICAL: Updated DEFAULT_LOCATIONS to include all existing locations as fallback
 const DEFAULT_LOCATIONS: LocationData[] = [
   {
     id: 'folly-beach',
@@ -71,12 +71,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   const [isLoading, setIsLoading] = useState(true);
-  const isMounted = useRef(true);
 
-  // Fetch locations from database
   const fetchLocations = useCallback(async () => {
-    if (!isMounted.current) return;
-    
     try {
       console.log('[LocationContext] Fetching locations from database...');
       
@@ -92,7 +88,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (data && data.length > 0 && isMounted.current) {
+      if (data && data.length > 0) {
         const formattedLocations: LocationData[] = data.map(loc => ({
           id: loc.id,
           name: loc.name,
@@ -116,42 +112,31 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Initialize on mount
   useEffect(() => {
-    isMounted.current = true;
-
     const initialize = async () => {
       try {
         console.log('[LocationContext] Initializing...');
         
-        // Fetch locations from database
+        // Fetch locations from database first
         await fetchLocations();
 
         // Load saved location preference
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (isMounted.current) {
-          if (saved) {
-            console.log('[LocationContext] Loaded saved location preference:', saved);
-            setCurrentLocation(saved);
-          } else {
-            console.log('[LocationContext] No saved location, using default: folly-beach');
-          }
+        if (saved) {
+          console.log('[LocationContext] Loaded saved location preference:', saved);
+          setCurrentLocation(saved);
+        } else {
+          console.log('[LocationContext] No saved location, using default: folly-beach');
         }
       } catch (error) {
         console.error('[LocationContext] Error initializing:', error);
       } finally {
-        if (isMounted.current) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     };
 
     initialize();
-
-    return () => {
-      isMounted.current = false;
-    };
-  }, []); // Empty deps - fetchLocations is stable due to useCallback with empty deps
+  }, [fetchLocations]);
 
   const setLocation = useCallback(async (location: Location) => {
     try {
@@ -166,9 +151,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const refreshLocations = useCallback(async () => {
     console.log('[LocationContext] ⚡ Refreshing locations from database...');
     await fetchLocations();
-  }, []); // Empty deps - fetchLocations is stable
+  }, [fetchLocations]);
 
-  // Ensure locationData always has a valid location
+  // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
 
   const value: LocationContextType = {
@@ -195,7 +180,7 @@ export function useLocation() {
   return context;
 }
 
-// Export LOCATIONS for backward compatibility
+// ✅ Export LOCATIONS for backward compatibility
 export const LOCATIONS: Record<string, LocationData> = DEFAULT_LOCATIONS.reduce((acc, loc) => {
   acc[loc.id] = loc;
   return acc;
