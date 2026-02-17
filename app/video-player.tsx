@@ -11,7 +11,7 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { configureAudioSession, setupAudioInterruptionHandling, activateAudioSession, deactivateAudioSession } from '@/utils/audioSession';
+import { configureAudioSession, activateAudioSession, deactivateAudioSession } from '@/utils/audioSession';
 
 interface Video {
   id: string;
@@ -53,10 +53,7 @@ export default function VideoPlayerScreen() {
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
-  const lastPlaybackActivityRef = useRef<number>(Date.now());
-  const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioConfiguredRef = useRef(false);
 
   // 🚨 CRITICAL FIX: Determine video orientation from resolution
   const videoOrientation = useMemo(() => {
@@ -76,9 +73,13 @@ export default function VideoPlayerScreen() {
     return orientation;
   }, [video]);
 
-  // ✅ CRITICAL FIX: Configure audio session for continuous playback (no 8-second cutoffs)
+  // ✅ CRITICAL FIX: Configure audio session ONCE on mount for continuous playback
   useEffect(() => {
-    console.log('[VideoPlayer] ⚡ Configuring audio session for CONTINUOUS playback...');
+    if (audioConfiguredRef.current) {
+      return;
+    }
+
+    console.log('[VideoPlayer] ⚡ Configuring audio session for SEAMLESS CONTINUOUS playback...');
     
     let isActive = true;
     
@@ -92,35 +93,8 @@ export default function VideoPlayerScreen() {
 
         if (isActive) {
           await activateAudioSession();
-          console.log('[VideoPlayer] ✅ Audio session activated for continuous playback');
-
-          // ✅ CRITICAL FIX: Reactivate audio every 5 seconds to prevent iOS from cutting audio
-          // iOS can deactivate audio sessions after ~8-10 seconds of "inactivity"
-          audioReactivationIntervalRef.current = setInterval(async () => {
-            if (isActive) {
-              console.log('[VideoPlayer] 🔄 Reactivating audio session (preventing 8-second cutoff)');
-              try {
-                await activateAudioSession();
-              } catch (err) {
-                console.error('[VideoPlayer] Failed to reactivate audio:', err);
-              }
-            }
-          }, 5000); // Every 5 seconds (well before the 8-second cutoff)
-
-          const cleanup = setupAudioInterruptionHandling(
-            () => {
-              console.log('[VideoPlayer] ⚠️ Audio interruption began');
-            },
-            () => {
-              console.log('[VideoPlayer] ✅ Audio interruption ended - reactivating');
-              if (isActive) {
-                activateAudioSession().catch(err => 
-                  console.error('[VideoPlayer] Failed to reactivate audio after interruption:', err)
-                );
-              }
-            }
-          );
-          audioInterruptionCleanupRef.current = cleanup;
+          console.log('[VideoPlayer] ✅ Audio session activated - continuous playback ready');
+          audioConfiguredRef.current = true;
         }
       } catch (audioError) {
         console.error('[VideoPlayer] Failed to setup audio:', audioError);
@@ -132,15 +106,7 @@ export default function VideoPlayerScreen() {
     return () => {
       console.log('[VideoPlayer] Cleaning up audio session...');
       isActive = false;
-      
-      if (audioReactivationIntervalRef.current) {
-        clearInterval(audioReactivationIntervalRef.current);
-        audioReactivationIntervalRef.current = null;
-      }
-      
-      if (audioInterruptionCleanupRef.current) {
-        audioInterruptionCleanupRef.current();
-      }
+      audioConfiguredRef.current = false;
       deactivateAudioSession().catch(err => 
         console.error('[VideoPlayer] Failed to deactivate audio:', err)
       );
@@ -182,43 +148,16 @@ export default function VideoPlayerScreen() {
 
   const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
 
-  const refreshConnectionIfNeeded = useCallback(() => {
-    const now = Date.now();
-    const timeSinceLastActivity = now - lastPlaybackActivityRef.current;
-    
-    if (timeSinceLastActivity > 45000 && videoUrl) {
-      console.log('[VideoPlayer] ⚡ Refreshing connection for instant playback');
-      
-      fetch(videoUrl, {
-        method: 'HEAD',
-        cache: 'no-cache',
-      })
-        .then(() => {
-          console.log('[VideoPlayer] ✅ Connection refreshed');
-          lastPlaybackActivityRef.current = now;
-        })
-        .catch(err => {
-          console.warn('[VideoPlayer] Connection refresh failed:', err);
-        });
-    }
-  }, [videoUrl]);
-
-  // ✅ CRITICAL FIX: Initialize player with optimized settings
+  // ✅ CRITICAL FIX: Initialize player with optimized settings for smooth playback
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl) {
-      console.log('[VideoPlayer] ⚡ Initializing player with INSTANT PLAYBACK settings');
+      console.log('[VideoPlayer] ⚡ Initializing player with OPTIMIZED settings for seamless playback');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
       
-      lastPlaybackActivityRef.current = Date.now();
-      
-      console.log('[VideoPlayer] ✅ Player configured for instant, smooth playback');
-      
-      activateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to activate audio for player:', err)
-      );
+      console.log('[VideoPlayer] ✅ Player configured for smooth, continuous playback');
     }
   });
 
@@ -251,25 +190,8 @@ export default function VideoPlayerScreen() {
   }, [player, isFullscreen]);
 
   useEffect(() => {
-    console.log('[VideoPlayer] Setting up connection keep-alive');
-    
-    connectionRefreshTimeoutRef.current = setInterval(() => {
-      refreshConnectionIfNeeded();
-    }, 30000);
-    
-    return () => {
-      if (connectionRefreshTimeoutRef.current) {
-        clearInterval(connectionRefreshTimeoutRef.current);
-        connectionRefreshTimeoutRef.current = null;
-      }
-    };
-  }, [refreshConnectionIfNeeded]);
-
-  useEffect(() => {
     console.log('[VideoPlayer] Component mounted, loading video:', videoId);
     console.log('[VideoPlayer] ⚡ Preloaded URL available:', !!preloadedUrl);
-    
-    lastPlaybackActivityRef.current = Date.now();
     
     const loadVideo = async () => {
       if (hasLoadedRef.current) {
@@ -399,25 +321,12 @@ export default function VideoPlayerScreen() {
           setTimeout(() => {
             if (player && videoUrl) {
               console.log('[VideoPlayer] ⚡ Reloading video source...');
-              
-              activateAudioSession()
-                .then(() => {
-                  player.replace(videoUrl);
-                  setTimeout(() => {
-                    if (player) {
-                      player.play();
-                    }
-                  }, 100);
-                })
-                .catch(err => {
-                  console.error('[VideoPlayer] Failed to reactivate audio for recovery:', err);
-                  player.replace(videoUrl);
-                  setTimeout(() => {
-                    if (player) {
-                      player.play();
-                    }
-                  }, 100);
-                });
+              player.replace(videoUrl);
+              setTimeout(() => {
+                if (player) {
+                  player.play();
+                }
+              }, 100);
             }
           }, backoffDelay);
         } else if (retryCount >= maxRetries) {
@@ -446,26 +355,15 @@ export default function VideoPlayerScreen() {
           setRetryCount(0);
         }
         
-        // ✅ CRITICAL FIX: Ensure audio is active before playback
-        activateAudioSession()
-          .then(() => {
-            console.log('[VideoPlayer] ✅ Audio session active - starting playback');
-            
-            if (!isPlaying) {
-              console.log('[VideoPlayer] ⚡ Starting INSTANT playback with continuous audio...');
-              setTimeout(() => {
-                if (player) {
-                  player.play();
-                }
-              }, 50);
-            }
-          })
-          .catch(err => {
-            console.error('[VideoPlayer] Failed to activate audio before playback:', err);
-            if (!isPlaying && player) {
+        // ✅ CRITICAL FIX: Auto-play immediately when ready
+        if (!isPlaying) {
+          console.log('[VideoPlayer] ⚡ Starting INSTANT playback...');
+          setTimeout(() => {
+            if (player) {
               player.play();
             }
-          });
+          }, 50);
+        }
       }
       
       if (status.status === 'loading') {
@@ -503,11 +401,6 @@ export default function VideoPlayerScreen() {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
-        
-        // ✅ CRITICAL FIX: Reactivate audio when playback starts
-        activateAudioSession().catch(err => 
-          console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
-        );
       }
     });
 
@@ -517,8 +410,6 @@ export default function VideoPlayerScreen() {
       const now = Date.now();
       if (now - lastProgressUpdateRef.current < 100) return;
       lastProgressUpdateRef.current = now;
-      
-      lastPlaybackActivityRef.current = now;
       
       if (!isSeekingRef.current) {
         setCurrentTime(newTime);
@@ -605,8 +496,6 @@ export default function VideoPlayerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    lastPlaybackActivityRef.current = Date.now();
-    
     const currentlyPlaying = player.playing;
     console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
@@ -616,24 +505,11 @@ export default function VideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      refreshConnectionIfNeeded();
-      
-      // ✅ CRITICAL FIX: Reactivate audio before playing
-      activateAudioSession()
-        .then(() => {
-          console.log('[VideoPlayer] ✅ Audio reactivated - playing');
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        })
-        .catch(err => {
-          console.error('[VideoPlayer] Failed to reactivate audio:', err);
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        });
+      player.play();
+      setIsPlaying(true);
+      resetControlsTimeout();
     }
-  }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded]);
+  }, [player, resetControlsTimeout, clearControlsTimeout]);
 
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] Seek started');
@@ -656,11 +532,6 @@ export default function VideoPlayerScreen() {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
-      
-      // ✅ CRITICAL FIX: Reactivate audio after seeking
-      activateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to reactivate audio after seek:', err)
-      );
     }
     isSeekingRef.current = false;
     resetControlsTimeout();
@@ -689,7 +560,6 @@ export default function VideoPlayerScreen() {
       try {
         if (newFullscreenState) {
           // 🚨 CRITICAL FIX: Lock orientation based on video's natural orientation
-          // Drone videos are typically shot in portrait (9:16) and should stay portrait
           console.log('[VideoPlayer] ✅ Entering fullscreen - locking to', videoOrientation, 'orientation');
           
           if (videoOrientation === 'portrait') {

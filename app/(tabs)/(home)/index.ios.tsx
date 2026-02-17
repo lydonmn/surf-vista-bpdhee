@@ -134,6 +134,7 @@ export default function HomeScreen() {
   const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
+  const [signedVideoUrl, setSignedVideoUrl] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
@@ -250,13 +251,14 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    if (latestVideo?.video_url) {
-      console.log('[HomeScreen] Initializing video preview player with caching');
+  // ✅ CRITICAL FIX: Use signed URL for video player to ensure instant playback
+  const videoPlayer = useVideoPlayer(signedVideoUrl || '', (player) => {
+    if (signedVideoUrl) {
+      console.log('[HomeScreen] ⚡ Initializing video preview with PRELOADED URL for instant playback');
       player.loop = true;
       player.muted = true;
       player.volume = 0;
-      console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
+      console.log('[HomeScreen] ✅ Video preview ready for instant playback');
     }
   });
 
@@ -264,7 +266,7 @@ export default function HomeScreen() {
     try {
       setIsLoadingVideo(true);
       setVideoReady(false);
-      console.log('[HomeScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
+      console.log('[HomeScreen] ⚡ Fetching latest video with signed URL for location:', currentLocation, locationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
@@ -276,16 +278,46 @@ export default function HomeScreen() {
 
       if (videoError) {
         console.log('[HomeScreen] Video fetch error:', videoError.message);
+        setLatestVideo(null);
+        setSignedVideoUrl(null);
       } else if (videoData) {
-        console.log('[HomeScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        console.log('[HomeScreen] ✅ Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
         setLatestVideo(videoData);
+        
+        // ✅ CRITICAL FIX: Generate signed URL immediately for instant playback
+        try {
+          const urlParts = videoData.video_url.split('/videos/');
+          if (urlParts.length === 2) {
+            const fileName = urlParts[1].split('?')[0];
+            
+            console.log('[HomeScreen] ⚡ Generating signed URL for instant playback...');
+            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+              .from('videos')
+              .createSignedUrl(fileName, 7200);
+
+            if (signedUrlError || !signedUrlData?.signedUrl) {
+              console.error('[HomeScreen] Signed URL error:', signedUrlError);
+              setSignedVideoUrl(null);
+            } else {
+              console.log('[HomeScreen] ✅ Signed URL ready for instant playback');
+              setSignedVideoUrl(signedUrlData.signedUrl);
+            }
+          }
+        } catch (urlError) {
+          console.error('[HomeScreen] Error generating signed URL:', urlError);
+          setSignedVideoUrl(null);
+        }
+        
         hasLoadedVideoRef.current = true;
       } else {
         console.log('[HomeScreen] No videos found for location:', currentLocation, locationData.displayName);
         setLatestVideo(null);
+        setSignedVideoUrl(null);
       }
     } catch (error) {
       console.error('[HomeScreen] Error loading video:', error);
+      setLatestVideo(null);
+      setSignedVideoUrl(null);
     } finally {
       setIsLoadingVideo(false);
     }
@@ -305,13 +337,13 @@ export default function HomeScreen() {
   }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, locationData.displayName]);
 
   useEffect(() => {
-    if (latestVideo?.video_url && videoPlayer) {
-      console.log('[HomeScreen] Loading video preview with caching enabled');
-      videoPlayer.replace(latestVideo.video_url);
+    if (signedVideoUrl && videoPlayer) {
+      console.log('[HomeScreen] ⚡ Loading video preview with signed URL for instant playback');
+      videoPlayer.replace(signedVideoUrl);
       videoPlayer.play();
       setVideoReady(true);
     }
-  }, [latestVideo?.video_url, videoPlayer]);
+  }, [signedVideoUrl, videoPlayer]);
 
   const handleRefresh = async () => {
     console.log('[HomeScreen] User initiated manual refresh for location:', currentLocation, locationData.displayName);
@@ -321,21 +353,19 @@ export default function HomeScreen() {
   };
 
   const handleVideoPress = useCallback(() => {
-    if (latestVideo) {
+    if (latestVideo && signedVideoUrl) {
       console.log('[HomeScreen] Opening fullscreen video player for:', latestVideo.id);
-      console.log('[HomeScreen] ✅ Passing preloaded URL for instant playback');
-      
-      const params: any = { videoId: latestVideo.id };
-      if (latestVideo.video_url) {
-        params.preloadedUrl = latestVideo.video_url;
-      }
+      console.log('[HomeScreen] ✅ Passing preloaded signed URL for INSTANT playback');
       
       router.push({
         pathname: '/video-player',
-        params
+        params: {
+          videoId: latestVideo.id,
+          preloadedUrl: signedVideoUrl
+        }
       });
     }
-  }, [latestVideo]);
+  }, [latestVideo, signedVideoUrl]);
 
   const handleSubscribeNow = async () => {
     console.log('[HomeScreen] 🔘 Subscribe button pressed');
@@ -545,7 +575,7 @@ export default function HomeScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
           </View>
-        ) : latestVideo ? (
+        ) : latestVideo && signedVideoUrl ? (
           <TouchableOpacity
             style={styles.videoCard}
             onPress={handleVideoPress}
