@@ -213,6 +213,13 @@ export default function HomeScreen() {
     }
   }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
 
+  // 🚨 CRITICAL FIX: Get today's weather forecast as fallback for current conditions
+  const todaysWeatherForecast = useMemo(() => {
+    const todayForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === todayDate);
+    console.log('[HomeScreen] Today\'s weather forecast:', todayForecast ? 'Found' : 'Not found');
+    return todayForecast;
+  }, [locationWeatherForecast, todayDate]);
+
   // 🚨 DATA FLOW ARCHITECTURE:
   // 1. Scheduled CRON job (6 AM daily) pulls fresh data from buoy → surf_conditions table
   // 2. Home page displays data from surf_conditions table (most up-to-date)
@@ -399,6 +406,8 @@ export default function HomeScreen() {
   console.log('[HomeScreen] Surf conditions:', surfConditions);
   console.log('[HomeScreen] Weather data available:', !!weatherData);
   console.log('[HomeScreen] Weather data:', weatherData);
+  console.log('[HomeScreen] Today\'s weather forecast available:', !!todaysWeatherForecast);
+  console.log('[HomeScreen] Today\'s weather forecast:', todaysWeatherForecast);
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
@@ -444,10 +453,31 @@ export default function HomeScreen() {
   const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
   const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
   
-  const airTempValue = weatherData?.temperature || todaysReport?.air_temp;
+  // 🚨 CRITICAL FIX: Use weather_forecast as fallback when weather_data is not available for today
+  // Check if weatherData is from today, if not use forecast
+  const weatherDataIsFromToday = weatherData?.date?.split('T')[0] === todayDate;
+  
+  console.log('[HomeScreen] ===== WEATHER DATA FALLBACK LOGIC =====');
+  console.log('[HomeScreen] weatherData date:', weatherData?.date);
+  console.log('[HomeScreen] weatherData is from today:', weatherDataIsFromToday);
+  console.log('[HomeScreen] todaysWeatherForecast available:', !!todaysWeatherForecast);
+  console.log('[HomeScreen] =======================================');
+  
+  const airTempValue = (weatherDataIsFromToday && weatherData?.temperature) 
+    ? weatherData.temperature 
+    : todaysWeatherForecast?.high_temp 
+      ? todaysWeatherForecast.high_temp 
+      : todaysReport?.air_temp;
+  
   const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
   
-  const weatherDescDisplay = weatherData?.conditions || todaysReport?.weather_conditions || 'N/A';
+  const weatherDescDisplay = (weatherDataIsFromToday && weatherData?.conditions) 
+    ? weatherData.conditions 
+    : todaysWeatherForecast?.conditions 
+      ? todaysWeatherForecast.conditions 
+      : todaysReport?.weather_conditions 
+        ? todaysReport.weather_conditions 
+        : 'N/A';
   
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
@@ -458,8 +488,8 @@ export default function HomeScreen() {
   console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
   console.log('[HomeScreen] Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
   console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherData ? 'weatherData' : 'report', ')');
+  console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherDataIsFromToday ? 'weatherData' : todaysWeatherForecast ? 'weatherForecast' : 'report', ')');
+  console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherDataIsFromToday ? 'weatherData' : todaysWeatherForecast ? 'weatherForecast' : 'report', ')');
   console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
   console.log('[HomeScreen] 🎯 STOKE METER:', ratingValue, '/10');
   console.log('[HomeScreen] ================================================');
@@ -593,7 +623,7 @@ export default function HomeScreen() {
             {loadingReportsText}
           </Text>
         </View>
-      ) : !todaysReport ? (
+      ) : !todaysReport && !surfConditions ? (
         <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
             ios_icon_name="water.waves"
@@ -760,46 +790,68 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={[
-            styles.reportNarrativeSection, 
-            { 
-              borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
-              backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
-              borderRadius: 12,
-              padding: 16,
-              marginTop: 8
-            }
-          ]}>
-            <View style={styles.reportTitleRow}>
-              <IconSymbol
-                ios_icon_name="doc.text.fill"
-                android_material_icon_name="description"
-                size={20}
-                color={colors.primary}
-              />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
-                {surfReportTitle}
-              </Text>
-            </View>
-            
-            {narrativeText ? (
-              <>
-                <ReportTextDisplay 
-                  text={narrativeText}
-                  isCustom={isCustomReport}
+          {narrativeText && (
+            <View style={[
+              styles.reportNarrativeSection, 
+              { 
+                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                borderRadius: 12,
+                padding: 16,
+                marginTop: 8
+              }
+            ]}>
+              <View style={styles.reportTitleRow}>
+                <IconSymbol
+                  ios_icon_name="doc.text.fill"
+                  android_material_icon_name="description"
+                  size={20}
+                  color={colors.primary}
                 />
-                {todaysReport.report_text && todaysReport.edited_at && (
-                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                    {editedNotePrefix}{new Date(todaysReport.edited_at).toLocaleDateString()}
-                  </Text>
-                )}
-              </>
-            ) : (
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                  {surfReportTitle}
+                </Text>
+              </View>
+              
+              <ReportTextDisplay 
+                text={narrativeText}
+                isCustom={isCustomReport}
+              />
+              {todaysReport?.report_text && todaysReport.edited_at && (
+                <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                  {editedNotePrefix}{new Date(todaysReport.edited_at).toLocaleDateString()}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {!narrativeText && (
+            <View style={[
+              styles.reportNarrativeSection, 
+              { 
+                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                borderRadius: 12,
+                padding: 16,
+                marginTop: 8
+              }
+            ]}>
+              <View style={styles.reportTitleRow}>
+                <IconSymbol
+                  ios_icon_name="doc.text.fill"
+                  android_material_icon_name="description"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                  {surfReportTitle}
+                </Text>
+              </View>
               <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
                 {noNarrativeText}
               </Text>
-            )}
-          </View>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.detailsButton, { backgroundColor: colors.primary }]}

@@ -130,7 +130,7 @@ export default function ReportScreen() {
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, surfConditions, weatherData, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
+  const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -184,6 +184,12 @@ export default function ReportScreen() {
     return filtered;
   }, [surfReports, currentLocation]);
 
+  const locationWeatherForecast = useMemo(() => {
+    const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
+    console.log('[ReportScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
+    return filtered;
+  }, [weatherForecast, currentLocation]);
+
   const todaysReport = useMemo(() => {
     try {
       console.log('[ReportScreen] ===== FINDING TODAY\'S REPORT =====');
@@ -218,6 +224,13 @@ export default function ReportScreen() {
       return null;
     }
   }, [locationSurfReports, todayDate, currentLocation, locationData.displayName]);
+
+  // 🚨 CRITICAL FIX: Get today's weather forecast as fallback for current conditions
+  const todaysWeatherForecast = useMemo(() => {
+    const todayForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === todayDate);
+    console.log('[ReportScreen] Today\'s weather forecast:', todayForecast ? 'Found' : 'Not found');
+    return todayForecast;
+  }, [locationWeatherForecast, todayDate]);
 
   const lastValidReport = useMemo(() => {
     const sortedReports = [...locationSurfReports].sort((a, b) => {
@@ -553,10 +566,13 @@ export default function ReportScreen() {
     const surfHeightValue = displayData.surf_height || displayData.wave_height;
     const surfHeightDisplay = isValidValue(surfHeightValue) ? surfHeightValue : null;
     
-    const windSpeedValue = displayData.wind_speed;
+    // 🚨 CRITICAL FIX: Use weather_forecast as fallback when weather_data is not available for today
+    const weatherDataIsFromToday = weatherData?.date?.split('T')[0] === todayDate;
+    
+    const windSpeedValue = displayData.wind_speed || (weatherDataIsFromToday ? weatherData?.wind_speed : null);
     const windSpeedDisplay = isValidValue(windSpeedValue) ? windSpeedValue : null;
     
-    const windDirectionValue = displayData.wind_direction;
+    const windDirectionValue = displayData.wind_direction || (weatherDataIsFromToday ? weatherData?.wind_direction : null);
     const windDirectionDisplay = isValidValue(windDirectionValue) ? windDirectionValue : null;
     
     const waterTempValue = displayData.water_temp;
@@ -576,6 +592,7 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Swell direction to display:', swellDirectionDisplay);
     console.log('[ReportScreen] Data source:', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)');
     console.log('[ReportScreen] Data updated at:', displayData.updated_at);
+    console.log('[ReportScreen] Weather data is from today:', weatherDataIsFromToday);
     console.log('[ReportScreen] ================================');
     
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
@@ -930,6 +947,7 @@ export default function ReportScreen() {
   console.log('[ReportScreen] Showing surf reports for', locationData.displayName);
   console.log('[ReportScreen] Surf conditions available:', !!surfConditions);
   console.log('[ReportScreen] Weather data available:', !!weatherData);
+  console.log('[ReportScreen] Today\'s weather forecast available:', !!todaysWeatherForecast);
   
   return (
     <ScrollView 
