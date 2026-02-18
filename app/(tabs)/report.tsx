@@ -424,20 +424,18 @@ export default function ReportScreen() {
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
-      console.log('[ReportScreen] Opening fullscreen video player for:', latestVideo.id);
-      console.log('[ReportScreen] ✅ Passing preloaded URL for instant playback');
-      
-      const params: any = { videoId: latestVideo.id };
-      if (latestVideo.video_url) {
-        params.preloadedUrl = latestVideo.video_url;
-      }
+      console.log('[ReportScreen] Opening enhanced video player for:', latestVideo.id);
+      console.log('[ReportScreen] ✅ Using video preloader for instant playback');
       
       router.push({
-        pathname: '/video-player',
-        params
+        pathname: '/video-player-v2',
+        params: {
+          videoId: latestVideo.id,
+          locationId: currentLocation,
+        }
       });
     }
-  }, [latestVideo]);
+  }, [latestVideo, currentLocation]);
 
   const handleEditReport = useCallback(() => {
     console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);

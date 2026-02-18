@@ -11,6 +11,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
+import { initializeVideoDownloads, configureBackgroundDownloads } from '@/utils/videoDownloadInit';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,6 +29,16 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  // Initialize video download system on app startup
+  useEffect(() => {
+    console.log('[RootLayout] 🚀 Initializing video download system...');
+    
+    configureBackgroundDownloads();
+    initializeVideoDownloads().catch((error) => {
+      console.error('[RootLayout] Failed to initialize video downloads:', error);
+    });
+  }, []);
 
   useEffect(() => {
     // Listen for notifications when app is in foreground
@@ -68,6 +79,7 @@ export default function RootLayout() {
             <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
             <Stack.Screen name="verification-success" options={{ headerShown: false }} />
             <Stack.Screen name="video-player" options={{ headerShown: false }} />
+            <Stack.Screen name="video-player-v2" options={{ headerShown: false }} />
             <Stack.Screen name="video-player-simple" options={{ headerShown: false }} />
             <Stack.Screen name="edit-report" options={{ headerShown: false }} />
             <Stack.Screen name="admin" options={{ headerShown: false }} />
@@ -78,6 +90,7 @@ export default function RootLayout() {
             <Stack.Screen name="admin-debug" options={{ headerShown: false }} />
             <Stack.Screen name="admin-predictions" options={{ headerShown: false }} />
             <Stack.Screen name="admin-cron-logs" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-video-cache" options={{ headerShown: false }} />
             <Stack.Screen name="setup-admin" options={{ headerShown: false }} />
             <Stack.Screen name="demo-paywall" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />

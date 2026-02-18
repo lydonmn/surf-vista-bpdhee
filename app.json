@@ -32,7 +32,8 @@
         ],
         "BGTaskSchedulerPermittedIdentifiers": [
           "Therealfollysurfreport.SurfVista.refresh",
-          "Therealfollysurfreport.SurfVista.processing"
+          "Therealfollysurfreport.SurfVista.processing",
+          "Therealfollysurfreport.SurfVista.video-download"
         ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
@@ -55,7 +56,9 @@
         "READ_MEDIA_VIDEO",
         "CAMERA",
         "RECORD_AUDIO",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE"
       ],
       "intentFilters": [
         {

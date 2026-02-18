@@ -322,20 +322,18 @@ export default function HomeScreen() {
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
-      console.log('[HomeScreen] Opening fullscreen video player for:', latestVideo.id);
-      console.log('[HomeScreen] ✅ Passing preloaded URL for instant playback');
-      
-      const params: any = { videoId: latestVideo.id };
-      if (latestVideo.video_url) {
-        params.preloadedUrl = latestVideo.video_url;
-      }
+      console.log('[HomeScreen] Opening enhanced video player for:', latestVideo.id);
+      console.log('[HomeScreen] ✅ Using video preloader for instant playback');
       
       router.push({
-        pathname: '/video-player',
-        params
+        pathname: '/video-player-v2',
+        params: {
+          videoId: latestVideo.id,
+          locationId: currentLocation,
+        }
       });
     }
-  }, [latestVideo]);
+  }, [latestVideo, currentLocation]);
 
   const handleSubscribeNow = async () => {
     console.log('[HomeScreen] 🔘 Subscribe button pressed');

@@ -422,6 +422,13 @@ export default function AdminDebugScreen() {
                     <Text style={styles.functionButtonText}>Test Report</Text>
                   )}
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.functionButton, { backgroundColor: '#9C27B0' }]}
+                  onPress={() => router.push('/admin-video-cache')}
+                >
+                  <Text style={styles.functionButtonText}>Video Cache</Text>
+                </TouchableOpacity>
               </View>
 
               {Object.entries(debugInfo.edgeFunctions).map(([funcName, funcInfo]: [string, any]) => (
