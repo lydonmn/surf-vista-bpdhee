@@ -10,7 +10,7 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoPreviewThumbnail } from "@/components/VideoPreviewThumbnail";
 import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
@@ -135,7 +135,6 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
@@ -250,20 +249,9 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    if (latestVideo?.video_url) {
-      console.log('[HomeScreen] Initializing video preview player with caching');
-      player.loop = true;
-      player.muted = true;
-      player.volume = 0;
-      console.log('[HomeScreen] ✅ Video preview caching: ENABLED');
-    }
-  });
-
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
-      setVideoReady(false);
       console.log('[HomeScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
@@ -277,7 +265,9 @@ export default function HomeScreen() {
       if (videoError) {
         console.log('[HomeScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
-        console.log('[HomeScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        console.log('[HomeScreen] ✅ Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        console.log('[HomeScreen] Video URL:', videoData.video_url);
+        console.log('[HomeScreen] Thumbnail URL:', videoData.thumbnail_url);
         setLatestVideo(videoData);
         hasLoadedVideoRef.current = true;
       } else {
@@ -303,15 +293,6 @@ export default function HomeScreen() {
       loadLatestVideo();
     }
   }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, locationData.displayName]);
-
-  useEffect(() => {
-    if (latestVideo?.video_url && videoPlayer) {
-      console.log('[HomeScreen] Loading video preview with caching enabled');
-      videoPlayer.replace(latestVideo.video_url);
-      videoPlayer.play();
-      setVideoReady(true);
-    }
-  }, [latestVideo?.video_url, videoPlayer]);
 
   const handleRefresh = async () => {
     console.log('[HomeScreen] User initiated manual refresh for location:', currentLocation, locationData.displayName);
@@ -550,34 +531,27 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {!videoReady && (
-                <View style={styles.videoLoadingOverlay}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                </View>
-              )}
-              <VideoView
-                style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                player={videoPlayer}
-                allowsFullscreen={false}
-                allowsPictureInPicture={false}
-                contentFit="cover"
-                nativeControls={false}
+              {/* ✅ FIX: Use dedicated preview component with proper state management */}
+              <VideoPreviewThumbnail
+                videoUrl={latestVideo.video_url}
+                thumbnailUrl={latestVideo.thumbnail_url}
+                style={styles.videoPreview}
               />
-              {videoReady && (
-                <View style={styles.videoOverlay}>
-                  <View style={styles.playButtonContainer}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play-circle"
-                      size={64}
-                      color="rgba(255, 255, 255, 0.9)"
-                    />
-                  </View>
-                  <View style={styles.videoTitleOverlay}>
-                    <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
-                  </View>
+              
+              {/* Play button overlay */}
+              <View style={styles.videoOverlay}>
+                <View style={styles.playButtonContainer}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play-circle"
+                    size={64}
+                    color="rgba(255, 255, 255, 0.9)"
+                  />
                 </View>
-              )}
+                <View style={styles.videoTitleOverlay}>
+                  <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
+                </View>
+              </View>
             </View>
           </TouchableOpacity>
         ) : (
@@ -1109,20 +1083,6 @@ const styles = StyleSheet.create({
   videoPreview: {
     width: '100%',
     height: '100%',
-  },
-  videoHidden: {
-    opacity: 0,
-  },
-  videoLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    zIndex: 10,
   },
   videoOverlay: {
     position: 'absolute',
