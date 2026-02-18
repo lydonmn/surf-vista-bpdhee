@@ -169,7 +169,7 @@ export function useVideos() {
     }
   }, [PRELOAD_SIZE]);
 
-  // 🚨 NEW: Background polling for processing videos
+  // 🚨 FIXED: Background polling for processing videos with proper database updates
   const pollProcessingVideos = useCallback(async (processingVideos: Video[]) => {
     if (processingVideos.length === 0) {
       return;
@@ -177,80 +177,94 @@ export function useVideos() {
 
     console.log('[useVideos] 🔄 Polling Mux asset status for', processingVideos.length, 'processing videos...');
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      console.warn('[useVideos] No session available for polling');
-      return;
-    }
-
     for (const video of processingVideos) {
       if (!video.mux_upload_id) {
-        console.warn('[useVideos] Video missing mux_upload_id:', video.id);
+        console.warn('[useVideos] ⚠️ Video missing mux_upload_id:', video.id);
         continue;
       }
 
       try {
-        console.log('[useVideos] 🔍 Checking Mux asset status for video:', video.id);
+        console.log('[useVideos] 🔍 Checking Mux asset status for video:', video.id, 'with mux_upload_id:', video.mux_upload_id);
         
-        const assetStatusResponse = await fetch(
-          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?uploadId=${video.mux_upload_id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
+        // Call the mux-asset-status Edge Function with uploadId query parameter
+        const { data: muxStatusData, error: muxStatusError } = await supabase.functions.invoke('mux-asset-status', {
+          body: { uploadId: video.mux_upload_id },
+        });
 
-        if (!assetStatusResponse.ok) {
-          console.error('[useVideos] ❌ Failed to get Mux asset status for video:', video.id);
-          continue;
-        }
-
-        const assetData = await assetStatusResponse.json();
-        console.log('[useVideos] 📊 Mux asset status for video', video.id, ':', assetData);
-
-        if (assetData.status === 'ready' && assetData.playback_id) {
-          // 🚨 CRITICAL: Update video record with final HLS URL and set status to active
-          const hlsUrl = `https://stream.mux.com/${assetData.playback_id}.m3u8`;
-          console.log('[useVideos] ✅ Mux asset ready! Updating video:', video.id);
-          console.log('[useVideos] 🎥 HLS URL:', hlsUrl);
-          console.log('[useVideos] 🎬 Asset ID:', assetData.asset_id);
-
-          const { error: updateError } = await supabase
-            .from('videos')
-            .update({
-              video_url: hlsUrl,
-              status: 'active',
-              mux_asset_id: assetData.asset_id,
-            })
-            .eq('id', video.id);
-
-          if (updateError) {
-            console.error('[useVideos] ❌ Error updating video record:', updateError);
-          } else {
-            console.log('[useVideos] ✅ Video updated to active status');
-            // Trigger a refresh to update the UI
-            fetchVideos();
-          }
-        } else if (assetData.status === 'errored') {
-          console.error('[useVideos] ❌ Mux asset processing failed for video:', video.id);
+        if (muxStatusError) {
+          console.error('[useVideos] ❌ Error invoking mux-asset-status for video', video.id, ':', muxStatusError);
           
           // Update status to errored
           const { error: updateError } = await supabase
             .from('videos')
-            .update({
-              status: 'errored',
-            })
+            .update({ status: 'errored' })
             .eq('id', video.id);
 
           if (updateError) {
             console.error('[useVideos] ❌ Error updating video to errored status:', updateError);
           }
+          continue;
+        }
+
+        console.log('[useVideos] 📊 Mux asset status response for video', video.id, ':', JSON.stringify(muxStatusData, null, 2));
+
+        // Check if asset is ready
+        if (muxStatusData?.status === 'ready' && muxStatusData.playback_id) {
+          // 🚨 CRITICAL: Construct the HLS URL and update the database
+          const playbackUrl = `${MUX_HLS_PREFIX}${muxStatusData.playback_id}.m3u8`;
+          
+          console.log('[useVideos] ✅ Mux asset ready! Updating video', video.id);
+          console.log('[useVideos] 🎥 Playback ID:', muxStatusData.playback_id);
+          console.log('[useVideos] 🎬 HLS URL:', playbackUrl);
+          console.log('[useVideos] 📦 Asset ID:', muxStatusData.asset_id);
+
+          // Update the video record with the playback URL and set status to active
+          const { error: updateError } = await supabase
+            .from('videos')
+            .update({
+              video_url: playbackUrl,
+              status: 'active',
+              mux_asset_id: muxStatusData.asset_id,
+            })
+            .eq('id', video.id);
+
+          if (updateError) {
+            console.error('[useVideos] ❌ Error updating video record in database:', updateError);
+          } else {
+            console.log('[useVideos] ✅ Video successfully updated to active status with HLS URL');
+            // Trigger a refresh to update the UI
+            fetchVideos();
+          }
+        } else if (muxStatusData?.status === 'errored') {
+          console.error('[useVideos] ❌ Mux asset processing failed for video:', video.id);
+          
+          // Update status to errored
+          const { error: updateError } = await supabase
+            .from('videos')
+            .update({ status: 'errored' })
+            .eq('id', video.id);
+
+          if (updateError) {
+            console.error('[useVideos] ❌ Error updating video to errored status:', updateError);
+          } else {
+            console.log('[useVideos] ✅ Video status updated to errored');
+            fetchVideos();
+          }
         } else {
-          console.log('[useVideos] ⏳ Mux asset still processing for video:', video.id, '- status:', assetData.status);
+          console.log('[useVideos] ⏳ Mux asset still processing for video:', video.id, '- status:', muxStatusData?.status || 'unknown');
         }
       } catch (error) {
-        console.error('[useVideos] Error polling Mux asset status for video:', video.id, error);
+        console.error('[useVideos] ❌ Unexpected error during polling for video', video.id, ':', error);
+        
+        // Update status to errored on unexpected errors
+        try {
+          await supabase
+            .from('videos')
+            .update({ status: 'errored' })
+            .eq('id', video.id);
+        } catch (updateError) {
+          console.error('[useVideos] ❌ Error updating video to errored status after exception:', updateError);
+        }
       }
     }
   }, []);
@@ -385,7 +399,7 @@ export function useVideos() {
     fetchVideos();
   }, [currentLocation, fetchVideos]);
 
-  // 🚨 NEW: Set up background polling for processing videos
+  // 🚨 FIXED: Set up background polling for processing videos
   useEffect(() => {
     const processingVideos = videos.filter(v => v.status === 'processing');
     
