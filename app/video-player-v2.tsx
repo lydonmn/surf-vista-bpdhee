@@ -273,10 +273,14 @@ export default function VideoPlayerV2Screen() {
       player.volume = volume;
       player.allowsExternalPlayback = true;
       
-      // 🎯 CRITICAL: Set preferredForwardBufferDuration to request more data upfront
-      // This helps the player select higher quality renditions immediately
+      // 🎯 CRITICAL: Set preferredPeakBitRate to force maximum quality
+      // Setting to a very high value (100 Mbps) ensures the player always selects the highest quality rendition
       if (Platform.OS === 'ios') {
-        // iOS-specific: Request 10 seconds of buffer to ensure high quality selection
+        // iOS-specific: Set preferredPeakBitRate to 100 Mbps (100,000,000 bits per second)
+        (player as any).preferredPeakBitRate = 100000000;
+        console.log('[VideoPlayerV2] ✅ iOS: Set preferredPeakBitRate to 100 Mbps for maximum quality');
+        
+        // Also set preferredForwardBufferDuration to request more data upfront
         (player as any).preferredForwardBufferDuration = 10;
         console.log('[VideoPlayerV2] ✅ iOS: Set preferredForwardBufferDuration to 10 seconds');
       }
