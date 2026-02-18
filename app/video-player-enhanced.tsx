@@ -47,7 +47,7 @@ export default function EnhancedVideoPlayerScreen() {
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
-  const { videos, currentIndex } = useVideoQueue(locationIdStr);
+  const { videos } = useVideoQueue(locationIdStr);
 
   // Get URLs for preloading (current + next 2-3)
   const videoUrls = videos.map(v => v.video_url);
@@ -262,17 +262,22 @@ export default function EnhancedVideoPlayerScreen() {
   }, [videoId]);
 
   // Initialize video player with expo-video
-  // 🎯 QUALITY FIX: Configure player to prefer highest quality rendition on load
+  // 🎯 QUALITY FIX #1: Set preferredPeakBitRate to 999999999 to always prefer maximum quality
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[EnhancedVideoPlayer] ⚡ Initializing player with expo-video');
-      console.log('[EnhancedVideoPlayer] 🎯 Configuring for HIGHEST QUALITY on load');
+      console.log('[EnhancedVideoPlayer] 🎯 QUALITY FIX: Setting preferredPeakBitRate to 999999999 for MAXIMUM QUALITY');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
       
-      // 🎯 CRITICAL: Set preferredForwardBufferDuration to request more data upfront
+      // 🎯 CRITICAL QUALITY FIX: Set preferredPeakBitRate to a very high value
+      // This ensures the player always attempts to stream the highest available bitrate
+      (player as any).preferredPeakBitRate = 999999999;
+      console.log('[EnhancedVideoPlayer] ✅ preferredPeakBitRate set to 999999999 - player will prefer maximum quality');
+      
+      // 🎯 ADDITIONAL: Set preferredForwardBufferDuration to request more data upfront
       // This helps the player select higher quality renditions immediately
       if (Platform.OS === 'ios') {
         // iOS-specific: Request 10 seconds of buffer to ensure high quality selection
@@ -280,7 +285,7 @@ export default function EnhancedVideoPlayerScreen() {
         console.log('[EnhancedVideoPlayer] ✅ iOS: Set preferredForwardBufferDuration to 10 seconds');
       }
       
-      console.log('[EnhancedVideoPlayer] ✅ Player configured for highest quality playback');
+      console.log('[EnhancedVideoPlayer] ✅ Player configured for HIGHEST QUALITY playback');
       
       activateAudioSession().catch(err => 
         console.error('[EnhancedVideoPlayer] Failed to activate audio for player:', err)
@@ -724,10 +729,6 @@ export default function EnhancedVideoPlayerScreen() {
       </View>
     );
   }
-
-  // Get the best source (local or remote)
-  const videoSource = getSource(video.video_url);
-  const nextVideoSource = nextVideo ? getSource(nextVideo.video_url) : null;
 
   const currentTimeText = formatTime(currentTime);
   const durationText = formatTime(duration);

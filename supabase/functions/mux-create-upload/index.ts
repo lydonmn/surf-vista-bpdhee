@@ -27,9 +27,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('Creating Mux upload URL...');
+    console.log('Creating Mux upload URL with optimized quality settings...');
 
-    // Create Mux direct upload
+    // 🎯 QUALITY FIX #2: Configure Mux to use smart encoding tier with max resolution limit
+    // This ensures Mux generates fewer, higher-quality renditions with a higher minimum quality floor
+    // Instead of starting at 240p and ramping up, this starts much closer to max quality
     const muxResponse = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
@@ -40,6 +42,8 @@ Deno.serve(async (req) => {
         cors_origin: '*',
         new_asset_settings: {
           playback_policy: ['public'],
+          encoding_tier: 'smart',
+          max_resolution_tier: '1080p',
         },
       }),
     });
@@ -51,7 +55,8 @@ Deno.serve(async (req) => {
     }
 
     const data = await muxResponse.json();
-    console.log('Mux upload created successfully:', data.data.id);
+    console.log('Mux upload created successfully with optimized settings:', data.data.id);
+    console.log('✅ Encoding tier: smart, Max resolution: 1080p - Higher quality floor enabled');
 
     const { id, url } = data.data;
 

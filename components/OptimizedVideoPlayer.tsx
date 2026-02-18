@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import Video, { OnLoadData, OnProgressData, OnBufferData, OnPlaybackStateChangedData, OnAudioBecomingNoisyData } from 'react-native-video';
 import { IconSymbol } from '@/components/IconSymbol';

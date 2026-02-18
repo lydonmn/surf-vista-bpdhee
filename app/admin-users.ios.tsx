@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from './integrations/supabase/client';
@@ -84,7 +83,7 @@ export default function AdminUsersScreen() {
     }
 
     loadRegionalAdmins();
-  }, [profile, loadRegionalAdmins]);
+  }, [profile, loadRegionalAdmins, router]);
 
   const showErrorModal = (title: string, message: string) => {
     setErrorModalTitle(title);

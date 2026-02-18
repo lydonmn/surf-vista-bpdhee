@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
 
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";

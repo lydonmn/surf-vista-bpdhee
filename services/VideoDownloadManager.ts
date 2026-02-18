@@ -1,11 +1,11 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import CryptoJS from 'crypto-js';
-import { Platform } from 'react-native';
 
 // Conditional import for react-native-background-downloader
 let RNBackgroundDownloader: any = null;
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   RNBackgroundDownloader = require('react-native-background-downloader').default;
   console.log('[VideoDownloadManager] ✅ react-native-background-downloader loaded successfully');
 } catch (error) {
