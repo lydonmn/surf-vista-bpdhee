@@ -282,7 +282,7 @@ export default function AdminScreen() {
         },
         body: JSON.stringify({ 
           filename: fileName,
-          corsOrigin: '*', // Allow uploads from any origin
+          corsOrigin: '*',
         }),
       });
 
@@ -292,9 +292,20 @@ export default function AdminScreen() {
         throw new Error(`Failed to create Mux upload: ${errorText}`);
       }
 
-      const { id: uploadId, url: muxUploadUrl, asset_id: muxAssetId } = await createUploadResponse.json();
-      console.log('[AdminScreen] ✅ Mux upload URL created:', muxUploadUrl);
-      console.log('[AdminScreen] 📦 Mux asset ID:', muxAssetId);
+      const createUploadData = await createUploadResponse.json();
+      console.log('[AdminScreen] ✅ Mux upload response:', createUploadData);
+      
+      // 🚨 FIX: The response is { id, url }, NOT { id, url, asset_id }
+      const uploadId = createUploadData.id;
+      const muxUploadUrl = createUploadData.url;
+      
+      if (!uploadId || !muxUploadUrl) {
+        console.error('[AdminScreen] ❌ Invalid Mux upload response:', createUploadData);
+        throw new Error('Invalid Mux upload response - missing id or url');
+      }
+      
+      console.log('[AdminScreen] ✅ Mux upload ID:', uploadId);
+      console.log('[AdminScreen] ✅ Mux upload URL:', muxUploadUrl);
 
       // ========================================
       // STEP 2: Upload video directly to Mux
@@ -310,6 +321,7 @@ export default function AdminScreen() {
       const videoBlob = await new Promise<Blob>((resolve, reject) => {
         xhr.onload = () => {
           if (xhr.status === 200) {
+            console.log('[AdminScreen] ✅ Video blob loaded, size:', formatFileSize(xhr.response.size));
             resolve(xhr.response);
           } else {
             reject(new Error(`Failed to load video: ${xhr.status}`));
@@ -323,7 +335,7 @@ export default function AdminScreen() {
 
       // Upload directly to Mux with progress tracking
       const muxUploadXhr = new XMLHttpRequest();
-      currentUploadRef.current = muxUploadXhr; // Store reference for cancellation
+      currentUploadRef.current = muxUploadXhr;
       
       await new Promise<void>((resolve, reject) => {
         muxUploadXhr.upload.addEventListener('progress', (e) => {
@@ -362,14 +374,23 @@ export default function AdminScreen() {
             currentUploadRef.current = null;
             resolve();
           } else {
+            console.error('[AdminScreen] ❌ Mux upload failed:', muxUploadXhr.status, muxUploadXhr.statusText);
+            console.error('[AdminScreen] Response:', muxUploadXhr.responseText);
             reject(new Error(`Mux upload failed: ${muxUploadXhr.status} ${muxUploadXhr.statusText}`));
           }
         });
 
         muxUploadXhr.addEventListener('error', () => {
+          console.error('[AdminScreen] ❌ Mux upload network error');
           reject(new Error('Mux upload network error'));
         });
 
+        muxUploadXhr.addEventListener('abort', () => {
+          console.log('[AdminScreen] 🛑 Mux upload aborted');
+          reject(new Error('Upload cancelled'));
+        });
+
+        console.log('[AdminScreen] 🚀 Starting PUT request to Mux URL...');
         muxUploadXhr.open('PUT', muxUploadUrl);
         muxUploadXhr.setRequestHeader('Content-Type', 'video/mp4');
         muxUploadXhr.send(videoBlob);
@@ -384,6 +405,7 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
 
       let assetReady = false;
+      let muxAssetId = '';
       let playbackId = '';
       let pollAttempts = 0;
       const maxPollAttempts = 60; // 5 minutes max (5s intervals)
@@ -394,8 +416,9 @@ export default function AdminScreen() {
 
         console.log(`[AdminScreen] 🔍 Checking Mux asset status (attempt ${pollAttempts})...`);
 
+        // 🚨 FIX: Use uploadId to check status, NOT asset_id
         const assetStatusResponse = await fetch(
-          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?asset_id=${muxAssetId}`,
+          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?uploadId=${uploadId}`,
           {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -409,14 +432,20 @@ export default function AdminScreen() {
         }
 
         const assetData = await assetStatusResponse.json();
-        console.log('[AdminScreen] 📊 Mux asset status:', assetData.status);
+        console.log('[AdminScreen] 📊 Mux asset status response:', assetData);
 
         if (assetData.status === 'ready') {
           assetReady = true;
-          playbackId = assetData.playback_ids[0].id;
-          console.log('[AdminScreen] ✅ Mux asset ready! Playback ID:', playbackId);
+          muxAssetId = assetData.asset_id;
+          playbackId = assetData.playback_id;
+          console.log('[AdminScreen] ✅ Mux asset ready!');
+          console.log('[AdminScreen] - Asset ID:', muxAssetId);
+          console.log('[AdminScreen] - Playback ID:', playbackId);
         } else if (assetData.status === 'errored') {
+          console.error('[AdminScreen] ❌ Mux asset processing failed');
           throw new Error('Mux asset processing failed');
+        } else {
+          console.log('[AdminScreen] ⏳ Mux asset status:', assetData.status);
         }
       }
 
