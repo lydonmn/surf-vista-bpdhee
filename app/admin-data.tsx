@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
-import { PushNotificationTester } from '@/components/PushNotificationTester';
 import { getESTDate } from '@/utils/surfDataFormatter';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -517,11 +516,6 @@ export default function AdminDataScreen() {
               ))
             )}
           </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Push Notification Testing</Text>
-          <PushNotificationTester />
         </View>
       </ScrollView>
 
