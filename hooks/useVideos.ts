@@ -435,7 +435,7 @@ export function useVideos() {
         processingPollIntervalRef.current = null;
       }
     }
-  }, [videos, pollProcessingVideos, PROCESSING_POLL_INTERVAL, fetchVideos]);
+  }, [videos, pollProcessingVideos, PROCESSING_POLL_INTERVAL]);
 
   useEffect(() => {
     console.log('[useVideos] Initializing video preloading system...');
