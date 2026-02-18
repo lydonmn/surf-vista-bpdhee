@@ -39,6 +39,7 @@ export default function VideoPlayerScreen() {
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  // 🚨 CRITICAL FIX: Initialize duration to 0 and ONLY set it from video metadata
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -301,6 +302,8 @@ export default function VideoPlayerScreen() {
 
         console.log('[VideoPlayer] Video loaded:', data.title);
         console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
+        // 🚨 CRITICAL FIX: Do NOT set duration from database - wait for video metadata
+        console.log('[VideoPlayer] ⚠️ NOT using database duration - will wait for video onLoad callback');
         setVideo(data);
 
         // ✅ INSTANT PLAYBACK: Use preloaded URL if available
@@ -308,10 +311,7 @@ export default function VideoPlayerScreen() {
           console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           setVideoUrl(preloadedUrl);
           hasLoadedRef.current = true;
-          
-          if (data.duration_seconds) {
-            setDuration(data.duration_seconds);
-          }
+          // 🚨 CRITICAL FIX: Do NOT set duration here - let the player's onLoad set it
           setIsLoading(false);
           setIsBuffering(false);
           return;
@@ -357,10 +357,7 @@ export default function VideoPlayerScreen() {
         
         setVideoUrl(generatedUrl);
         hasLoadedRef.current = true;
-        
-        if (data.duration_seconds) {
-          setDuration(data.duration_seconds);
-        }
+        // 🚨 CRITICAL FIX: Do NOT set duration here - let the player's onLoad set it
       } catch (loadError: unknown) {
         console.error('[VideoPlayer] Exception loading video:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
@@ -430,9 +427,16 @@ export default function VideoPlayerScreen() {
       }
       
       if (status.status === 'readyToPlay') {
+        // 🚨 CRITICAL FIX: Set duration from video metadata, not from database
         const videoDuration = status.duration || 0;
-        console.log('[VideoPlayer] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
-        setDuration(videoDuration);
+        console.log('[VideoPlayer] ✅ Video ready to play, duration from metadata:', videoDuration.toFixed(2));
+        
+        if (videoDuration > 0) {
+          console.log('[VideoPlayer] 🎯 Setting duration from onLoad callback:', videoDuration);
+          setDuration(videoDuration);
+        } else {
+          console.warn('[VideoPlayer] ⚠️ Video metadata has no duration, will try to get it from player');
+        }
         
         setIsBuffering(false);
         
@@ -524,9 +528,11 @@ export default function VideoPlayerScreen() {
         setCurrentTime(newTime);
       }
       
+      // 🚨 CRITICAL FIX: Also update duration from player if we don't have it yet
       if (player.duration && player.duration > 0) {
         setDuration(prevDuration => {
-          if (prevDuration === 0) {
+          if (prevDuration === 0 || Math.abs(prevDuration - player.duration) > 1) {
+            console.log('[VideoPlayer] 🎯 Updating duration from player:', player.duration);
             return player.duration;
           }
           return prevDuration;
@@ -580,10 +586,16 @@ export default function VideoPlayerScreen() {
       if (!isSeekingRef.current && player.currentTime !== undefined) {
         setCurrentTime(player.currentTime);
       }
+      
+      // 🚨 CRITICAL FIX: Continuously check for duration from player
+      if (player.duration && player.duration > 0 && duration === 0) {
+        console.log('[VideoPlayer] 🎯 Got duration from player during playback:', player.duration);
+        setDuration(player.duration);
+      }
     }, 100);
     
     return () => clearInterval(interval);
-  }, [player, isPlaying]);
+  }, [player, isPlaying, duration]);
 
   useEffect(() => {
     if (isPlaying && controlsVisible) {
