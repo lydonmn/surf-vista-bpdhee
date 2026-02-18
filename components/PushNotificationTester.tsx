@@ -17,6 +17,7 @@ export function PushNotificationTester() {
     }
 
     console.log('[PushNotificationTester] ===== TESTING PUSH NOTIFICATION =====');
+    console.log('[PushNotificationTester] Platform:', Platform.OS);
     setIsTesting(true);
 
     try {
