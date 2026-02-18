@@ -42,7 +42,7 @@ export default function AdminScreen() {
   const [availableLocations, setAvailableLocations] = useState<typeof locations>([]);
   const uploadStartTimeRef = useRef<number>(0);
   const lastBytesUploadedRef = useRef<number>(0);
-  const currentUploadRef = useRef<XMLHttpRequest | null>(null);
+  const cancellationFlagRef = useRef<boolean>(false);
 
   // Determine which locations this user can upload to
   useEffect(() => {
@@ -248,6 +248,7 @@ export default function AdminScreen() {
       setEstimatedTimeRemaining('');
       uploadStartTimeRef.current = Date.now();
       lastBytesUploadedRef.current = 0;
+      cancellationFlagRef.current = false;
       
       console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
 
@@ -295,7 +296,6 @@ export default function AdminScreen() {
       const createUploadData = await createUploadResponse.json();
       console.log('[AdminScreen] ✅ Mux upload response:', createUploadData);
       
-      // 🚨 FIX: The response is { id, url }, NOT { id, url, asset_id }
       const uploadId = createUploadData.id;
       const muxUploadUrl = createUploadData.url;
       
@@ -308,93 +308,32 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✅ Mux upload URL:', muxUploadUrl);
 
       // ========================================
-      // STEP 2: Upload video directly to Mux
+      // STEP 2: Upload video directly to Mux using FileSystem.uploadAsync
       // ========================================
-      console.log('[AdminScreen] ⚡ Uploading video directly to Mux...');
+      console.log('[AdminScreen] ⚡ Uploading video directly to Mux using FileSystem.uploadAsync...');
       setUploadProgress(10);
+      setUploadSpeed('Uploading...');
 
-      // Read video file as blob for direct upload
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', videoUri, true);
-      xhr.responseType = 'blob';
-      
-      const videoBlob = await new Promise<Blob>((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            console.log('[AdminScreen] ✅ Video blob loaded, size:', formatFileSize(xhr.response.size));
-            resolve(xhr.response);
-          } else {
-            reject(new Error(`Failed to load video: ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Failed to load video file'));
-        xhr.send();
+      // Use FileSystem.uploadAsync for reliable large file uploads
+      const uploadResult = await FileSystem.uploadAsync(muxUploadUrl, videoUri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        mimeType: 'video/mp4',
+        headers: {
+          'Content-Type': 'video/mp4',
+        },
       });
 
-      console.log('[AdminScreen] 📦 Video blob prepared, uploading to Mux...');
+      console.log('[AdminScreen] 📤 Upload result status:', uploadResult.status);
 
-      // Upload directly to Mux with progress tracking
-      const muxUploadXhr = new XMLHttpRequest();
-      currentUploadRef.current = muxUploadXhr;
-      
-      await new Promise<void>((resolve, reject) => {
-        muxUploadXhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const percentage = Math.round((e.loaded / e.total) * 85) + 10; // 10-95% for upload
-            setUploadProgress(percentage);
-            
-            // Calculate upload speed and ETA
-            const currentTime = Date.now();
-            const elapsedSeconds = (currentTime - uploadStartTimeRef.current) / 1000;
-            
-            if (elapsedSeconds > 1) {
-              const bytesPerSecond = e.loaded / elapsedSeconds;
-              const speedText = formatSpeed(bytesPerSecond);
-              setUploadSpeed(speedText);
-              
-              const bytesRemaining = e.total - e.loaded;
-              const secondsRemaining = bytesRemaining / bytesPerSecond;
-              const etaText = formatTimeRemaining(secondsRemaining);
-              setEstimatedTimeRemaining(etaText);
-              
-              // Log progress every 10%
-              const progressMilestone = Math.floor(percentage / 10) * 10;
-              if (progressMilestone !== lastBytesUploadedRef.current && progressMilestone > 0) {
-                console.log(`[AdminScreen] 📤 Mux upload progress: ${percentage}% (${speedText}) - ETA: ${etaText}`);
-                lastBytesUploadedRef.current = progressMilestone;
-              }
-            }
-          }
-        });
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
+        console.error('[AdminScreen] Response body:', uploadResult.body);
+        throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+      }
 
-        muxUploadXhr.addEventListener('load', () => {
-          if (muxUploadXhr.status >= 200 && muxUploadXhr.status < 300) {
-            const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-            console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
-            currentUploadRef.current = null;
-            resolve();
-          } else {
-            console.error('[AdminScreen] ❌ Mux upload failed:', muxUploadXhr.status, muxUploadXhr.statusText);
-            console.error('[AdminScreen] Response:', muxUploadXhr.responseText);
-            reject(new Error(`Mux upload failed: ${muxUploadXhr.status} ${muxUploadXhr.statusText}`));
-          }
-        });
-
-        muxUploadXhr.addEventListener('error', () => {
-          console.error('[AdminScreen] ❌ Mux upload network error');
-          reject(new Error('Mux upload network error'));
-        });
-
-        muxUploadXhr.addEventListener('abort', () => {
-          console.log('[AdminScreen] 🛑 Mux upload aborted');
-          reject(new Error('Upload cancelled'));
-        });
-
-        console.log('[AdminScreen] 🚀 Starting PUT request to Mux URL...');
-        muxUploadXhr.open('PUT', muxUploadUrl);
-        muxUploadXhr.setRequestHeader('Content-Type', 'video/mp4');
-        muxUploadXhr.send(videoBlob);
-      });
+      const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
+      console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
 
       // ========================================
       // STEP 3: Poll for Mux asset ready status
@@ -411,12 +350,16 @@ export default function AdminScreen() {
       const maxPollAttempts = 60; // 5 minutes max (5s intervals)
 
       while (!assetReady && pollAttempts < maxPollAttempts) {
+        // Check cancellation flag
+        if (cancellationFlagRef.current) {
+          throw new Error('Upload cancelled by user');
+        }
+
         await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
         pollAttempts++;
 
         console.log(`[AdminScreen] 🔍 Checking Mux asset status (attempt ${pollAttempts})...`);
 
-        // 🚨 FIX: Use uploadId to check status, NOT asset_id
         const assetStatusResponse = await fetch(
           `${supabase.supabaseUrl}/functions/v1/mux-asset-status?uploadId=${uploadId}`,
           {
@@ -580,19 +523,19 @@ export default function AdminScreen() {
       setIsUploading(false);
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
-      currentUploadRef.current = null;
+      cancellationFlagRef.current = false;
     }
   };
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (currentUploadRef.current) {
-        console.log('[AdminScreen] 🛑 Component unmounting, aborting Mux upload...');
-        currentUploadRef.current.abort();
+      if (isUploading) {
+        console.log('[AdminScreen] 🛑 Component unmounting, setting cancellation flag...');
+        cancellationFlagRef.current = true;
       }
     };
-  }, []);
+  }, [isUploading]);
 
   if (!profile?.is_admin && !profile?.is_regional_admin) {
     return (
@@ -858,7 +801,7 @@ export default function AdminScreen() {
               </View>
               {uploadSpeed && (
                 <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                  ⚡ Speed: {uploadSpeed} {estimatedTimeRemaining && `• ETA: ${estimatedTimeRemaining}`}
+                  {uploadSpeed}
                 </Text>
               )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
