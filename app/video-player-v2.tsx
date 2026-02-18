@@ -50,8 +50,8 @@ export default function VideoPlayerV2Screen() {
     ? videoUrls.slice(currentVideoIndex, currentVideoIndex + 3)
     : videoUrls.slice(0, 3);
 
-  // Use video preloader hook
-  const { getSource, isPreloading } = useVideoPreloader(preloadQueue);
+  // Use video preloader hook (silent background operation)
+  const { getSource } = useVideoPreloader(preloadQueue);
 
   // Get next video for pre-buffering
   const nextVideo = currentVideoIndex >= 0 && currentVideoIndex < videos.length - 1
@@ -399,7 +399,7 @@ export default function VideoPlayerV2Screen() {
           posterResizeMode="cover"
         />
 
-        {/* Pre-buffer next video off-screen */}
+        {/* Pre-buffer next video off-screen (silent) */}
         {nextVideoSource && (
           <Video
             ref={nextVideoRef}
@@ -410,7 +410,9 @@ export default function VideoPlayerV2Screen() {
             muted={true}
             resizeMode="contain"
             onLoad={() => {
-              console.log('[VideoPlayerV2] ✅ Next video pre-buffered');
+              if (__DEV__) {
+                console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
+              }
             }}
             bufferConfig={Platform.OS === 'android' ? {
               minBufferMs: 2500,
@@ -422,17 +424,11 @@ export default function VideoPlayerV2Screen() {
           />
         )}
         
+        {/* Only show buffering for CURRENT video, not preloading */}
         {isBuffering && (
           <View style={styles.bufferingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.bufferingText}>Buffering...</Text>
-          </View>
-        )}
-
-        {isPreloading && (
-          <View style={styles.preloadingBadge}>
-            <ActivityIndicator size="small" color="#FFFFFF" />
-            <Text style={styles.preloadingText}>Preloading next videos...</Text>
           </View>
         )}
         
@@ -585,7 +581,7 @@ export default function VideoPlayerV2Screen() {
             posterResizeMode="cover"
           />
 
-          {/* Pre-buffer next video off-screen */}
+          {/* Pre-buffer next video off-screen (silent) */}
           {nextVideoSource && (
             <Video
               ref={nextVideoRef}
@@ -596,7 +592,9 @@ export default function VideoPlayerV2Screen() {
               muted={true}
               resizeMode="contain"
               onLoad={() => {
-                console.log('[VideoPlayerV2] ✅ Next video pre-buffered');
+                if (__DEV__) {
+                  console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
+                }
               }}
               bufferConfig={Platform.OS === 'android' ? {
                 minBufferMs: 2500,
@@ -608,17 +606,11 @@ export default function VideoPlayerV2Screen() {
             />
           )}
           
+          {/* Only show buffering for CURRENT video, not preloading */}
           {isBuffering && (
             <View style={styles.bufferingOverlay}>
               <ActivityIndicator size="large" color="#FFFFFF" />
               <Text style={styles.bufferingText}>Buffering...</Text>
-            </View>
-          )}
-
-          {isPreloading && (
-            <View style={styles.preloadingBadge}>
-              <ActivityIndicator size="small" color="#FFFFFF" />
-              <Text style={styles.preloadingText}>Preloading...</Text>
             </View>
           )}
           
@@ -850,24 +842,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginTop: 12,
-  },
-  preloadingBadge: {
-    position: 'absolute',
-    top: 80,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 16,
-    zIndex: 5,
-  },
-  preloadingText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
   fullscreenControls: {
     position: 'absolute',
