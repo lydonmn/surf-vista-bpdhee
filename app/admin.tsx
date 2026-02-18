@@ -238,7 +238,39 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
 
-      const fileInfo = await FileSystem.getInfoAsync(videoUri);
+      // ========================================
+      // FIX #3: Check if video URI is local, copy if needed
+      // ========================================
+      let uploadUri = videoUri;
+      console.log('[AdminScreen] 🔍 Checking video URI type:', videoUri);
+      
+      if (!videoUri.startsWith('file://')) {
+        console.log('[AdminScreen] ⚠️ Video URI is not a local file:// path, copying to cache...');
+        setUploadStatus('Preparing video file...');
+        
+        try {
+          const fileName = videoUri.split('/').pop() || `video_${Date.now()}.mp4`;
+          const localUri = `${FileSystem.cacheDirectory}${fileName}`;
+          
+          console.log('[AdminScreen] 📋 Copying from:', videoUri);
+          console.log('[AdminScreen] 📋 Copying to:', localUri);
+          
+          await FileSystem.copyAsync({
+            from: videoUri,
+            to: localUri,
+          });
+          
+          uploadUri = localUri;
+          console.log('[AdminScreen] ✅ Video copied to local cache:', uploadUri);
+        } catch (copyError) {
+          console.error('[AdminScreen] ❌ Failed to copy video to cache:', copyError);
+          throw new Error('Failed to prepare video file for upload. Please try selecting the video again.');
+        }
+      } else {
+        console.log('[AdminScreen] ✅ Video URI is already a local file:// path');
+      }
+
+      const fileInfo = await FileSystem.getInfoAsync(uploadUri);
       if (!fileInfo.exists) {
         throw new Error('Video file not found');
       }
@@ -296,10 +328,13 @@ export default function AdminScreen() {
 
       // ========================================
       // STEP 2: Upload video directly to Mux using FileSystem.uploadAsync
+      // FIX #1: Add 60-second timeout with Promise.race
+      // FIX #2: Log uploadResult immediately when it resolves
       // ========================================
       console.log('[AdminScreen] ⚡ Uploading video directly to Mux using FileSystem.uploadAsync...');
       console.log('[AdminScreen] 📊 File size:', formatFileSize(fileInfo.size));
       console.log('[AdminScreen] 🎯 Mux upload URL:', muxUploadUrl);
+      console.log('[AdminScreen] 📁 Upload URI (local file):', uploadUri);
       setUploadProgress(10);
       setUploadStatus('Uploading to Mux...');
 
@@ -315,68 +350,91 @@ export default function AdminScreen() {
       }, 2000); // Update every 2 seconds
 
       try {
-        console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync...');
+        console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync with 60-second timeout...');
         const uploadStartTime = Date.now();
         
-        // Create a timeout promise (10 minutes for large files)
-        const timeoutMs = 10 * 60 * 1000; // 10 minutes
-        const timeoutPromise = new Promise((_, reject) => {
+        // FIX #1: Create a 60-second timeout promise
+        const timeoutMs = 60 * 1000; // 60 seconds
+        const timeoutPromise = new Promise<FileSystem.FileSystemUploadResult>((_, reject) => {
           setTimeout(() => {
-            reject(new Error(`Upload timed out after ${timeoutMs / 1000} seconds. The file may be too large or your connection may be too slow.`));
+            console.log('[AdminScreen] ⏰ Upload timeout reached after 60 seconds');
+            reject(new Error('TIMEOUT'));
           }, timeoutMs);
         });
 
         // Race between upload and timeout
-        const uploadPromise = FileSystem.uploadAsync(muxUploadUrl, videoUri, {
+        const uploadPromise = FileSystem.uploadAsync(muxUploadUrl, uploadUri, {
           httpMethod: 'PUT',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          mimeType: 'video/mp4',
+          mimeType: 'video/quicktime',
           headers: {
-            'Content-Type': 'video/mp4',
+            'Content-Type': 'video/quicktime',
           },
         });
 
-        console.log('[AdminScreen] ⏳ Upload in progress (timeout: 10 minutes)...');
-        const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as FileSystem.FileSystemUploadResult;
+        console.log('[AdminScreen] ⏳ Upload in progress (timeout: 60 seconds)...');
+        
+        let uploadResult: FileSystem.FileSystemUploadResult | null = null;
+        let didTimeout = false;
+        
+        try {
+          uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
+        } catch (raceError: any) {
+          if (raceError.message === 'TIMEOUT') {
+            didTimeout = true;
+            console.log('[AdminScreen] ⏰ Upload timed out after 60 seconds');
+            console.log('[AdminScreen] 📝 Saving record with status=processing and navigating away');
+            console.log('[AdminScreen] 🔄 Upload may still complete in background');
+          } else {
+            throw raceError;
+          }
+        }
 
         clearInterval(progressInterval);
         const uploadDuration = (Date.now() - uploadStartTime) / 1000;
         
-        // 🚨🚨🚨 CRITICAL LOGGING - Log the full uploadResult object
-        console.log('[AdminScreen] ========================================');
-        console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
-        console.log('[AdminScreen] ========================================');
-        console.log('[AdminScreen] uploadResult:', JSON.stringify(uploadResult, null, 2));
-        console.log('[AdminScreen] uploadResult.status:', uploadResult.status);
-        console.log('[AdminScreen] uploadResult.body:', uploadResult.body);
-        console.log('[AdminScreen] uploadResult.headers:', uploadResult.headers);
-        console.log('[AdminScreen] ========================================');
-        console.log('[AdminScreen] 🎯 MUX UPLOAD URL USED:');
-        console.log('[AdminScreen] ========================================');
-        console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
-        console.log('[AdminScreen] ========================================');
-        console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
-        console.log('[AdminScreen] 📊 Average speed:', formatFileSize(fileInfo.size / uploadDuration) + '/s');
+        // FIX #2: Log uploadResult immediately when it resolves (if not timeout)
+        if (!didTimeout && uploadResult) {
+          console.log('[AdminScreen] ========================================');
+          console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
+          console.log('[AdminScreen] ========================================');
+          console.log('[AdminScreen] uploadResult:', JSON.stringify(uploadResult, null, 2));
+          console.log('[AdminScreen] uploadResult.status:', uploadResult.status);
+          console.log('[AdminScreen] uploadResult.body:', uploadResult.body);
+          console.log('[AdminScreen] uploadResult.headers:', uploadResult.headers);
+          console.log('[AdminScreen] ========================================');
+          console.log('[AdminScreen] 🎯 MUX UPLOAD URL USED:');
+          console.log('[AdminScreen] ========================================');
+          console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
+          console.log('[AdminScreen] ========================================');
+          console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
+          console.log('[AdminScreen] 📊 Average speed:', formatFileSize(fileInfo.size / uploadDuration) + '/s');
 
-        if (uploadResult.status < 200 || uploadResult.status >= 300) {
-          console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
-          console.error('[AdminScreen] Response body:', uploadResult.body);
-          throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+          if (uploadResult.status < 200 || uploadResult.status >= 300) {
+            console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
+            console.error('[AdminScreen] Response body:', uploadResult.body);
+            throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+          }
+
+          const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
+          console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
+        } else if (didTimeout) {
+          console.log('[AdminScreen] ⏰ Timeout occurred - proceeding to save with status=processing');
         }
-
-        const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-        console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
         
         // ========================================
         // STEP 3: Immediately set progress to 100% and show success state
         // ========================================
         setUploadProgress(100);
-        setUploadStatus('Upload complete! Processing in background…');
+        setUploadStatus(didTimeout 
+          ? 'Upload timed out - saving as processing...' 
+          : 'Upload complete! Processing in background…'
+        );
         setIsUploading(false); // Remove spinning loader
         setUploadComplete(true); // Show success state (checkmark)
         console.log('[AdminScreen] ✅ Upload complete! Mux is now processing the video...');
 
-      } catch (uploadError) {
+      } catch (uploadError: any) {
         clearInterval(progressInterval);
         console.error('[AdminScreen] 💥 Upload error caught:', uploadError);
         throw uploadError;
@@ -388,7 +446,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] 🖼️ Generating thumbnail...');
       let thumbnailUrl: string | null = null;
       try {
-        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
+        const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(uploadUri, {
           time: 1000,
           quality: 0.9,
         });
@@ -426,7 +484,7 @@ export default function AdminScreen() {
       // ========================================
       // STEP 5: Save to database immediately with status='processing'
       // ========================================
-      const metadata = await validateVideoMetadata(videoUri);
+      const metadata = await validateVideoMetadata(uploadUri);
       const duration = metadata ? formatDuration(metadata.duration) : null;
       const durationSeconds = metadata?.duration || null;
       const resolutionWidth = metadata?.width || null;
@@ -488,14 +546,16 @@ export default function AdminScreen() {
       // Provide more specific error messages
       if (errorMessage.includes('network') || errorMessage.includes('Network')) {
         errorMessage = 'Network connection lost during upload. Please check your internet connection and try again.';
-      } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
-        errorMessage = 'Upload timed out. This can happen with large files on slow connections. Please try again with a better connection.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout') || errorMessage.includes('TIMEOUT')) {
+        errorMessage = 'Upload timed out after 60 seconds. The video may still be uploading in the background. Check back in a few minutes.';
       } else if (errorMessage.includes('cancelled')) {
         errorMessage = 'Upload was cancelled.';
       } else if (errorMessage.includes('Failed to create Mux upload')) {
         errorMessage = 'Failed to initialize Mux upload. Please try again.';
       } else if (errorMessage.includes('Mux upload failed with status')) {
         errorMessage = `Upload to Mux failed. ${errorMessage}`;
+      } else if (errorMessage.includes('Failed to prepare video file')) {
+        errorMessage = error.message; // Use the specific error message
       }
       
       Alert.alert('Upload Failed', errorMessage);
