@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import Video, { OnLoadData, OnProgressData, OnBufferData, OnPlaybackStateChangedData, OnAudioBecomingNoisyData, OnPlaybackRateChangeData } from 'react-native-video';
+import Video, { OnLoadData, OnProgressData, OnBufferData } from 'react-native-video';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -487,7 +487,7 @@ export default function VideoPlayerV2Screen() {
         activeOpacity={1}
         onPress={toggleControls}
       >
-        {/* Main video player with ALL audio fixes */}
+        {/* Main video player - removed onPlaybackStateChanged, onAudioBecomingNoisy, onPlaybackRateChange */}
         <Video
           ref={videoRef}
           source={videoSource}
@@ -500,8 +500,7 @@ export default function VideoPlayerV2Screen() {
             console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
             setDuration(data.duration);
             setIsBuffering(false);
-            isAudioActiveRef.current = true;
-            eightSecondRefreshTriggered.current = false; // Reset for new video
+            lastBufferEndTimeRef.current = Date.now();
           }}
           onProgress={handleProgress}
           onBuffer={handleBuffer}
@@ -513,9 +512,6 @@ export default function VideoPlayerV2Screen() {
             console.log('[VideoPlayerV2] Video ended');
             setIsPlaying(false);
           }}
-          onPlaybackStateChanged={handlePlaybackStateChanged}
-          onAudioBecomingNoisy={handleAudioBecomingNoisy}
-          onPlaybackRateChange={handlePlaybackRateChange}
           repeat={false}
           playInBackground={false}
           playWhenInactive={false}
@@ -664,7 +660,7 @@ export default function VideoPlayerV2Screen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
         <View style={styles.videoContainer}>
-          {/* Main video player with ALL audio fixes */}
+          {/* Main video player - removed onPlaybackStateChanged, onAudioBecomingNoisy, onPlaybackRateChange */}
           <Video
             ref={videoRef}
             source={videoSource}
@@ -677,8 +673,7 @@ export default function VideoPlayerV2Screen() {
               console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
               setDuration(data.duration);
               setIsBuffering(false);
-              isAudioActiveRef.current = true;
-              eightSecondRefreshTriggered.current = false; // Reset for new video
+              lastBufferEndTimeRef.current = Date.now();
             }}
             onProgress={handleProgress}
             onBuffer={handleBuffer}
@@ -690,9 +685,6 @@ export default function VideoPlayerV2Screen() {
               console.log('[VideoPlayerV2] Video ended');
               setIsPlaying(false);
             }}
-            onPlaybackStateChanged={handlePlaybackStateChanged}
-            onAudioBecomingNoisy={handleAudioBecomingNoisy}
-            onPlaybackRateChange={handlePlaybackRateChange}
             repeat={false}
             playInBackground={false}
             playWhenInactive={false}
@@ -735,7 +727,7 @@ export default function VideoPlayerV2Screen() {
               <ActivityIndicator size="large" color="#FFFFFF" />
               <Text style={styles.bufferingText}>Buffering...</Text>
             </View>
-          )}
+            )}
           
           <View style={styles.videoOverlay}>
             <TouchableOpacity
