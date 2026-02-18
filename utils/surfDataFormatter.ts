@@ -15,6 +15,7 @@
 export function getESTDate(): string {
   const now = new Date();
   
+  // 🚨 CRITICAL FIX: Force EST timezone calculation
   // Get the date in EST timezone using toLocaleDateString which is more reliable
   const estDateString = now.toLocaleDateString('en-US', { 
     timeZone: 'America/New_York',
@@ -28,9 +29,14 @@ export function getESTDate(): string {
   
   const estDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  console.log('[getESTDate] Raw EST date string:', estDateString);
-  console.log('[getESTDate] Parsed components:', { month, day, year });
-  console.log('[getESTDate] Current EST date for Charleston, SC:', estDate);
+  // 🚨 DEBUG: Log the actual date being calculated
+  console.log('═══════════════════════════════════════════════════');
+  console.log('[getESTDate] 🕐 UTC Time:', now.toISOString());
+  console.log('[getESTDate] 🕐 EST Date String from toLocaleDateString:', estDateString);
+  console.log('[getESTDate] 📅 Parsed components:', { month, day, year });
+  console.log('[getESTDate] ✅ FINAL EST DATE (Charleston, SC):', estDate);
+  console.log('[getESTDate] 🌍 User timezone:', Intl.DateTimeFormat().resolvedOptions().timeZone);
+  console.log('═══════════════════════════════════════════════════');
   
   return estDate;
 }
@@ -141,7 +147,11 @@ export function getESTDateOffset(daysOffset: number): string {
   const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
   const resultDay = String(date.getDate()).padStart(2, '0');
   
-  return `${resultYear}-${resultMonth}-${resultDay}`;
+  const result = `${resultYear}-${resultMonth}-${resultDay}`;
+  
+  console.log(`[getESTDateOffset] Offset ${daysOffset} days from EST date → ${result}`);
+  
+  return result;
 }
 
 /**
