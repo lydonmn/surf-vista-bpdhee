@@ -355,7 +355,19 @@ export default function AdminScreen() {
         clearInterval(progressInterval);
         const uploadDuration = (Date.now() - uploadStartTime) / 1000;
         
-        console.log('[AdminScreen] 📤 Upload result status:', uploadResult.status);
+        // 🚨🚨🚨 CRITICAL LOGGING - Log the full uploadResult object
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] uploadResult:', JSON.stringify(uploadResult, null, 2));
+        console.log('[AdminScreen] uploadResult.status:', uploadResult.status);
+        console.log('[AdminScreen] uploadResult.body:', uploadResult.body);
+        console.log('[AdminScreen] uploadResult.headers:', uploadResult.headers);
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] 🎯 MUX UPLOAD URL USED:');
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
+        console.log('[AdminScreen] ========================================');
         console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
         console.log('[AdminScreen] 📊 Average speed:', formatSpeed(fileInfo.size / uploadDuration));
 
