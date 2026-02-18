@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import Video, { OnLoadData, OnProgressData, OnBufferData } from 'react-native-video';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -13,18 +13,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
+import { configureAudioSession, setupAudioInterruptionHandling, activateAudioSession, deactivateAudioSession } from '@/utils/audioSession';
 
 const CONTROLS_HIDE_DELAY = 3000;
+const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
   
   const [video, setVideo] = useState<VideoType | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
@@ -33,20 +36,14 @@ export default function VideoPlayerV2Screen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   
-  // Audio recovery state
-  const [forceAudioRefresh, setForceAudioRefresh] = useState(0);
-  
-  const videoRef = useRef<Video>(null);
-  const nextVideoRef = useRef<Video>(null);
   const isSeekingRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
-  
-  // Track audio recovery timing
-  const audioRecoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastBufferEndTimeRef = useRef<number>(Date.now());
-  const playbackStartedAtRef = useRef<number | null>(null);
-  const eightSecondTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasLoadedRef = useRef(false);
+  const lastProgressUpdateRef = useRef(0);
+  const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
+  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -71,28 +68,75 @@ export default function VideoPlayerV2Screen() {
     ? videos[currentVideoIndex + 1]
     : null;
 
-  // Audio recovery function - rapid pause/resume
-  const triggerAudioRecovery = useCallback(() => {
-    if (Platform.OS !== 'ios') return;
-    
-    console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Triggering rapid pause/resume cycle to restore audio track');
-    
-    // Rapid pause/resume cycle to force AVPlayer to reselect audio track
-    setIsPlaying(false);
-    
-    setTimeout(() => {
-      console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Resuming playback after 50ms');
-      setIsPlaying(true);
-    }, 50); // 50ms pause is imperceptible to users
-  }, []);
-
-  // Effect to handle forceAudioRefresh state changes
+  // Configure audio session for continuous playback
   useEffect(() => {
-    if (forceAudioRefresh > 0) {
-      console.log('[VideoPlayerV2] 🔄 forceAudioRefresh triggered (count:', forceAudioRefresh, ')');
-      triggerAudioRecovery();
-    }
-  }, [forceAudioRefresh, triggerAudioRecovery]);
+    console.log('[VideoPlayerV2] ⚡ Configuring audio session for CONTINUOUS playback...');
+    
+    let isActive = true;
+    
+    const setupAudio = async () => {
+      try {
+        await configureAudioSession({
+          category: 'playback',
+          mode: 'moviePlayback',
+          mixWithOthers: false,
+        });
+
+        if (isActive) {
+          await activateAudioSession();
+          console.log('[VideoPlayerV2] ✅ Audio session activated for continuous playback');
+
+          // Reactivate audio every 5 seconds to prevent iOS from cutting audio
+          audioReactivationIntervalRef.current = setInterval(async () => {
+            if (isActive) {
+              console.log('[VideoPlayerV2] 🔄 Reactivating audio session (preventing 8-second cutoff)');
+              try {
+                await activateAudioSession();
+              } catch (err) {
+                console.error('[VideoPlayerV2] Failed to reactivate audio:', err);
+              }
+            }
+          }, 5000);
+
+          const cleanup = setupAudioInterruptionHandling(
+            () => {
+              console.log('[VideoPlayerV2] ⚠️ Audio interruption began');
+            },
+            () => {
+              console.log('[VideoPlayerV2] ✅ Audio interruption ended - reactivating');
+              if (isActive) {
+                activateAudioSession().catch(err => 
+                  console.error('[VideoPlayerV2] Failed to reactivate audio after interruption:', err)
+                );
+              }
+            }
+          );
+          audioInterruptionCleanupRef.current = cleanup;
+        }
+      } catch (audioError) {
+        console.error('[VideoPlayerV2] Failed to setup audio:', audioError);
+      }
+    };
+
+    setupAudio();
+
+    return () => {
+      console.log('[VideoPlayerV2] Cleaning up audio session...');
+      isActive = false;
+      
+      if (audioReactivationIntervalRef.current) {
+        clearInterval(audioReactivationIntervalRef.current);
+        audioReactivationIntervalRef.current = null;
+      }
+      
+      if (audioInterruptionCleanupRef.current) {
+        audioInterruptionCleanupRef.current();
+      }
+      deactivateAudioSession().catch(err => 
+        console.error('[VideoPlayerV2] Failed to deactivate audio:', err)
+      );
+    };
+  }, []);
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -132,16 +176,26 @@ export default function VideoPlayerV2Screen() {
     console.log('[VideoPlayerV2] Loading video:', videoId);
     
     const loadVideo = async () => {
+      if (hasLoadedRef.current) {
+        console.log('[VideoPlayerV2] Already loaded, skipping...');
+        return;
+      }
+
       try {
         setIsLoading(true);
         setError(null);
 
-        const { data, error: fetchError } = await supabase
-          .from('videos')
-          .select('*')
-          .eq('id', videoId)
-          .single();
+        const [sessionResult, videoResult] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase.from('videos').select('*').eq('id', videoId).single()
+        ]);
 
+        const { data: { session } } = sessionResult;
+        if (!session) {
+          throw new Error('Not authenticated. Please log in again.');
+        }
+
+        const { data, error: fetchError } = videoResult;
         if (fetchError) {
           console.error('[VideoPlayerV2] Error loading video:', fetchError);
           throw fetchError;
@@ -149,10 +203,52 @@ export default function VideoPlayerV2Screen() {
 
         console.log('[VideoPlayerV2] Video loaded:', data.title);
         setVideo(data);
-        
-        if (data.duration_seconds) {
-          setDuration(data.duration_seconds);
+
+        // Check if this is a Mux HLS URL - if so, use it directly without signing
+        if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
+          console.log('[VideoPlayerV2] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
+          setVideoUrl(data.video_url);
+          hasLoadedRef.current = true;
+          setIsLoading(false);
+          return;
         }
+
+        // For Supabase storage URLs, generate signed URL
+        console.log('[VideoPlayerV2] Generating signed URL for Supabase storage video');
+        
+        let fileName = '';
+        try {
+          const urlParts = data.video_url.split('/videos/');
+          if (urlParts.length === 2) {
+            fileName = urlParts[1].split('?')[0];
+          } else {
+            const url = new URL(data.video_url);
+            const pathParts = url.pathname.split('/');
+            fileName = pathParts[pathParts.length - 1];
+          }
+        } catch (e) {
+          console.error('[VideoPlayerV2] Error parsing URL:', e);
+          throw new Error('Invalid video URL format');
+        }
+
+        if (!fileName) {
+          throw new Error('Could not extract filename from video URL');
+        }
+
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('videos')
+          .createSignedUrl(fileName, 7200);
+
+        if (signedUrlError || !signedUrlData?.signedUrl) {
+          console.error('[VideoPlayerV2] Signed URL error:', signedUrlError);
+          throw new Error('Failed to generate streaming URL');
+        }
+
+        const generatedUrl = signedUrlData.signedUrl;
+        console.log('[VideoPlayerV2] ✓ Signed URL created');
+        
+        setVideoUrl(generatedUrl);
+        hasLoadedRef.current = true;
       } catch (loadError: unknown) {
         console.error('[VideoPlayerV2] Exception loading video:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
@@ -165,6 +261,195 @@ export default function VideoPlayerV2Screen() {
     loadVideo();
   }, [videoId]);
 
+  // Initialize video player with expo-video
+  const player = useVideoPlayer(videoUrl || '', (player) => {
+    if (videoUrl) {
+      console.log('[VideoPlayerV2] ⚡ Initializing player with expo-video');
+      player.loop = false;
+      player.muted = false;
+      player.volume = volume;
+      player.allowsExternalPlayback = true;
+      
+      console.log('[VideoPlayerV2] ✅ Player configured');
+      
+      activateAudioSession().catch(err => 
+        console.error('[VideoPlayerV2] Failed to activate audio for player:', err)
+      );
+    }
+  });
+
+  // Set up player event listeners
+  useEffect(() => {
+    if (!player || !videoUrl) return;
+
+    console.log('[VideoPlayerV2] Setting up player event listeners');
+
+    const statusListener = player.addListener('statusChange', (status) => {
+      console.log('[VideoPlayerV2] Status:', status.status);
+      
+      if (status.error) {
+        console.error('[VideoPlayerV2] ❌ Player error:', status.error);
+        setError(`Playback error: ${status.error}`);
+        setIsBuffering(false);
+      }
+      
+      if (status.status === 'readyToPlay') {
+        const videoDuration = status.duration || 0;
+        console.log('[VideoPlayerV2] ✅ Video ready to play, duration:', videoDuration.toFixed(2));
+        
+        if (videoDuration > 0) {
+          setDuration(videoDuration);
+        }
+        
+        setIsBuffering(false);
+        
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+        
+        // Start playback automatically
+        activateAudioSession()
+          .then(() => {
+            console.log('[VideoPlayerV2] ✅ Audio session active - starting playback');
+            if (!isPlaying) {
+              setTimeout(() => {
+                if (player) {
+                  player.play();
+                }
+              }, 50);
+            }
+          })
+          .catch(err => {
+            console.error('[VideoPlayerV2] Failed to activate audio before playback:', err);
+            if (!isPlaying && player) {
+              player.play();
+            }
+          });
+      }
+      
+      if (status.status === 'loading') {
+        console.log('[VideoPlayerV2] Video buffering...');
+        setIsBuffering(true);
+        
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+        }
+        bufferingTimeoutRef.current = setTimeout(() => {
+          console.log('[VideoPlayerV2] ⚠️ Buffering timeout - forcing clear');
+          setIsBuffering(false);
+        }, 2000);
+      }
+      
+      if (status.status === 'idle' || status.status === 'error') {
+        setIsBuffering(false);
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+      }
+    });
+
+    const playingListener = player.addListener('playingChange', (newIsPlaying) => {
+      console.log('[VideoPlayerV2] Playing state changed:', newIsPlaying);
+      setIsPlaying(newIsPlaying);
+      
+      if (newIsPlaying) {
+        console.log('[VideoPlayerV2] ✅ Video playing - clearing buffering');
+        setIsBuffering(false);
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+        
+        activateAudioSession().catch(err => 
+          console.error('[VideoPlayerV2] Failed to reactivate audio during playback:', err)
+        );
+      }
+    });
+
+    const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
+      const newTime = timeUpdate.currentTime || 0;
+      
+      const now = Date.now();
+      if (now - lastProgressUpdateRef.current < 100) return;
+      lastProgressUpdateRef.current = now;
+      
+      if (!isSeekingRef.current) {
+        setCurrentTime(newTime);
+      }
+      
+      // Update duration from player if we don't have it yet
+      if (player.duration && player.duration > 0) {
+        setDuration(prevDuration => {
+          if (prevDuration === 0 || Math.abs(prevDuration - player.duration) > 1) {
+            console.log('[VideoPlayerV2] 🎯 Updating duration from player:', player.duration);
+            return player.duration;
+          }
+          return prevDuration;
+        });
+      }
+
+      setIsBuffering(false);
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
+    });
+
+    return () => {
+      console.log('[VideoPlayerV2] Cleaning up event listeners');
+      statusListener.remove();
+      playingListener.remove();
+      timeUpdateListener.remove();
+      
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
+    };
+  }, [player, videoUrl, isPlaying]);
+
+  // Load video source
+  useEffect(() => {
+    if (videoUrl && player) {
+      console.log('[VideoPlayerV2] ⚡ Loading video source...');
+      try {
+        player.replace(videoUrl);
+        console.log('[VideoPlayerV2] ✅ Video source loaded');
+      } catch (e) {
+        console.error('[VideoPlayerV2] Error loading source:', e);
+        setError('Failed to load video source');
+      }
+    }
+  }, [videoUrl, player]);
+
+  // Update player volume
+  useEffect(() => {
+    if (player) {
+      player.volume = volume;
+    }
+  }, [volume, player]);
+
+  // Update current time while playing
+  useEffect(() => {
+    if (!player || !isPlaying) return;
+
+    const interval = setInterval(() => {
+      if (!isSeekingRef.current && player.currentTime !== undefined) {
+        setCurrentTime(player.currentTime);
+      }
+      
+      // Continuously check for duration from player
+      if (player.duration && player.duration > 0 && duration === 0) {
+        console.log('[VideoPlayerV2] 🎯 Got duration from player during playback:', player.duration);
+        setDuration(player.duration);
+      }
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [player, isPlaying, duration]);
+
   // Handle app state changes
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -174,8 +459,8 @@ export default function VideoPlayerV2Screen() {
         console.log('[VideoPlayerV2] 🔄 App returned to foreground');
         
         // Resume playback when app comes back
-        if (isPlaying && videoRef.current) {
-          videoRef.current.seek(currentTime);
+        if (isPlaying && player) {
+          player.play();
         }
       }
 
@@ -185,7 +470,7 @@ export default function VideoPlayerV2Screen() {
     return () => {
       subscription.remove();
     };
-  }, [isPlaying, currentTime]);
+  }, [isPlaying, player]);
 
   // Controls auto-hide
   useEffect(() => {
@@ -201,57 +486,20 @@ export default function VideoPlayerV2Screen() {
     };
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
-  // Cleanup audio recovery timeouts on unmount
-  useEffect(() => {
-    return () => {
-      if (audioRecoveryTimeoutRef.current) {
-        clearTimeout(audioRecoveryTimeoutRef.current);
-        audioRecoveryTimeoutRef.current = null;
-      }
-      if (eightSecondTimeoutRef.current) {
-        clearTimeout(eightSecondTimeoutRef.current);
-        eightSecondTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  // Set up 8-second safety net once when playback starts
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    
-    // Only set up once when playback truly starts
-    if (isPlaying && !playbackStartedAtRef.current) {
-      playbackStartedAtRef.current = Date.now();
-      
-      console.log('[VideoPlayerV2] ⏰ Setting up 8-second safety net audio refresh (one-time)');
-      
-      // Clear any existing timeout
-      if (eightSecondTimeoutRef.current) {
-        clearTimeout(eightSecondTimeoutRef.current);
-      }
-      
-      // Schedule audio refresh at 8 seconds from now
-      eightSecondTimeoutRef.current = setTimeout(() => {
-        console.log('[VideoPlayerV2] 🛡️ 8-SECOND SAFETY NET: Triggering preventive audio refresh');
-        setForceAudioRefresh(prev => prev + 1);
-      }, 8000);
-    }
-    
-    // Reset when video stops
-    if (!isPlaying && playbackStartedAtRef.current) {
-      playbackStartedAtRef.current = null;
-      if (eightSecondTimeoutRef.current) {
-        clearTimeout(eightSecondTimeoutRef.current);
-        eightSecondTimeoutRef.current = null;
-      }
-    }
-  }, [isPlaying]);
-
   const handleExitPlayer = useCallback(async () => {
     console.log('[VideoPlayerV2] User exiting video player');
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    
+    if (player) {
+      try {
+        player.pause();
+        console.log('[VideoPlayerV2] Stopped playback');
+      } catch (e) {
+        console.log('[VideoPlayerV2] Error stopping playback:', e);
+      }
     }
     
     if (isFullscreen && Platform.OS !== 'web') {
@@ -263,16 +511,39 @@ export default function VideoPlayerV2Screen() {
     }
     
     router.back();
-  }, [isFullscreen]);
+  }, [player, isFullscreen]);
 
   const togglePlayPause = useCallback(() => {
+    if (!player) return;
+    
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    setIsPlaying(!isPlaying);
-    resetControlsTimeout();
-  }, [isPlaying, resetControlsTimeout]);
+    const currentlyPlaying = player.playing;
+    console.log('[VideoPlayerV2] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
+    
+    if (currentlyPlaying) {
+      player.pause();
+      setIsPlaying(false);
+      setControlsVisible(true);
+      clearControlsTimeout();
+    } else {
+      activateAudioSession()
+        .then(() => {
+          console.log('[VideoPlayerV2] ✅ Audio reactivated - playing');
+          player.play();
+          setIsPlaying(true);
+          resetControlsTimeout();
+        })
+        .catch(err => {
+          console.error('[VideoPlayerV2] Failed to reactivate audio:', err);
+          player.play();
+          setIsPlaying(true);
+          resetControlsTimeout();
+        });
+    }
+  }, [player, resetControlsTimeout, clearControlsTimeout]);
 
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayerV2] Seek started');
@@ -292,8 +563,14 @@ export default function VideoPlayerV2Screen() {
   const handleSeekComplete = useCallback((value: number) => {
     console.log('[VideoPlayerV2] Seek to:', value.toFixed(2));
     
-    if (videoRef.current) {
-      videoRef.current.seek(value);
+    if (player) {
+      const clampedValue = Math.max(0, Math.min(value, duration));
+      player.currentTime = clampedValue;
+      setCurrentTime(clampedValue);
+      
+      activateAudioSession().catch(err => 
+        console.error('[VideoPlayerV2] Failed to reactivate audio after seek:', err)
+      );
     }
     
     isSeekingRef.current = false;
@@ -302,7 +579,7 @@ export default function VideoPlayerV2Screen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  }, [resetControlsTimeout]);
+  }, [player, duration, resetControlsTimeout]);
 
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
@@ -336,41 +613,6 @@ export default function VideoPlayerV2Screen() {
     }
   }, [isFullscreen, isPlaying, startControlsTimeout]);
 
-  // Handle buffer events with automatic audio recovery
-  const handleBuffer = useCallback((data: OnBufferData) => {
-    if (data.isBuffering) {
-      console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
-      setIsBuffering(true);
-    } else {
-      console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
-      setIsBuffering(false);
-      
-      // After buffer refill completes, schedule audio recovery after 500ms
-      if (Platform.OS === 'ios') {
-        lastBufferEndTimeRef.current = Date.now();
-        
-        // Clear any existing recovery timeout
-        if (audioRecoveryTimeoutRef.current) {
-          clearTimeout(audioRecoveryTimeoutRef.current);
-        }
-        
-        // Wait 500ms then trigger audio recovery
-        audioRecoveryTimeoutRef.current = setTimeout(() => {
-          console.log('[VideoPlayerV2] 🔧 500ms post-buffer check: Triggering audio recovery');
-          setForceAudioRefresh(prev => prev + 1);
-        }, 500);
-      }
-    }
-  }, [currentTime]);
-
-  // Simple progress handler - no critical window checks
-  const handleProgress = useCallback((data: OnProgressData) => {
-    if (!isSeekingRef.current) {
-      setCurrentTime(data.currentTime);
-    }
-    setIsBuffering(false);
-  }, []);
-
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -386,27 +628,13 @@ export default function VideoPlayerV2Screen() {
     return `${mb.toFixed(2)} MB`;
   };
 
-  // iOS-specific buffer config with increased minBufferMs
-  const bufferConfig = Platform.select({
-    ios: {
-      minBufferMs: 5000,
-      maxBufferMs: 60000,
-      bufferForPlaybackMs: 1000,
-      bufferForPlaybackAfterRebufferMs: 2000,
-    },
-    android: {
-      minBufferMs: 5000,
-      maxBufferMs: 60000,
-      bufferForPlaybackMs: 1000,
-      bufferForPlaybackAfterRebufferMs: 2000,
-    },
-  });
+  const headerTopPadding = Platform.OS === 'ios' ? insets.top : (Platform.OS === 'android' ? 48 : 12);
 
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
-          style={[styles.headerBackButton, { paddingTop: Math.max(insets.top, 16) }]}
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
         >
           <IconSymbol
@@ -430,7 +658,7 @@ export default function VideoPlayerV2Screen() {
     return (
       <View style={[styles.container, { backgroundColor: '#000000' }]}>
         <TouchableOpacity
-          style={[styles.headerBackButton, { paddingTop: Math.max(insets.top, 16) }]}
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
           onPress={handleExitPlayer}
         >
           <IconSymbol
@@ -463,6 +691,30 @@ export default function VideoPlayerV2Screen() {
     );
   }
 
+  if (!videoUrl) {
+    return (
+      <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <TouchableOpacity
+          style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
+          onPress={handleExitPlayer}
+        >
+          <IconSymbol
+            ios_icon_name="chevron.left"
+            android_material_icon_name="arrow-back"
+            size={24}
+            color="#FFFFFF"
+          />
+          <Text style={styles.headerBackText}>Back</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Preparing video...</Text>
+        </View>
+      </View>
+    );
+  }
+
   // Get the best source (local or remote)
   const videoSource = getSource(video.video_url);
   const nextVideoSource = nextVideo ? getSource(nextVideo.video_url) : null;
@@ -487,67 +739,14 @@ export default function VideoPlayerV2Screen() {
         activeOpacity={1}
         onPress={toggleControls}
       >
-        {/* Main video player - removed onPlaybackStateChanged, onAudioBecomingNoisy, onPlaybackRateChange */}
-        <Video
-          ref={videoRef}
-          source={videoSource}
+        <VideoView
           style={styles.fullscreenVideo}
-          paused={!isPlaying}
-          volume={volume}
-          muted={false}
-          resizeMode="contain"
-          onLoad={(data: OnLoadData) => {
-            console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
-            setDuration(data.duration);
-            setIsBuffering(false);
-            lastBufferEndTimeRef.current = Date.now();
-          }}
-          onProgress={handleProgress}
-          onBuffer={handleBuffer}
-          onError={(error) => {
-            console.error('[VideoPlayerV2] Video error:', error);
-            setError('Playback error occurred');
-          }}
-          onEnd={() => {
-            console.log('[VideoPlayerV2] Video ended');
-            setIsPlaying(false);
-          }}
-          repeat={false}
-          playInBackground={false}
-          playWhenInactive={false}
-          ignoreSilentSwitch="ignore"
-          audioOnly={false}
-          selectedAudioTrack={{ type: 'system' }}
-          preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-          bufferConfig={bufferConfig}
-          automaticallyWaitsToMinimizeStalling={false}
-          poster={video.thumbnail_url || undefined}
-          posterResizeMode="cover"
+          player={player}
+          allowsFullscreen={false}
+          allowsPictureInPicture
+          contentFit="contain"
+          nativeControls={false}
         />
-
-        {/* Pre-buffer next video off-screen (silent) */}
-        {nextVideoSource && (
-          <Video
-            ref={nextVideoRef}
-            source={nextVideoSource}
-            style={styles.hiddenVideo}
-            paused={true}
-            volume={0}
-            muted={true}
-            resizeMode="contain"
-            onLoad={() => {
-              if (__DEV__) {
-                console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
-              }
-            }}
-            ignoreSilentSwitch="ignore"
-            audioOnly={false}
-            selectedAudioTrack={{ type: 'system' }}
-            preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            bufferConfig={bufferConfig}
-            automaticallyWaitsToMinimizeStalling={false}
-          />
-        )}
         
         {isBuffering && (
           <View style={styles.bufferingOverlay}>
@@ -646,7 +845,7 @@ export default function VideoPlayerV2Screen() {
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
       <TouchableOpacity
-        style={[styles.headerBackButton, { paddingTop: Math.max(insets.top, 16) }]}
+        style={[styles.headerBackButton, { paddingTop: headerTopPadding }]}
         onPress={handleExitPlayer}
       >
         <IconSymbol
@@ -660,74 +859,21 @@ export default function VideoPlayerV2Screen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
         <View style={styles.videoContainer}>
-          {/* Main video player - removed onPlaybackStateChanged, onAudioBecomingNoisy, onPlaybackRateChange */}
-          <Video
-            ref={videoRef}
-            source={videoSource}
+          <VideoView
             style={styles.video}
-            paused={!isPlaying}
-            volume={volume}
-            muted={false}
-            resizeMode="contain"
-            onLoad={(data: OnLoadData) => {
-              console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
-              setDuration(data.duration);
-              setIsBuffering(false);
-              lastBufferEndTimeRef.current = Date.now();
-            }}
-            onProgress={handleProgress}
-            onBuffer={handleBuffer}
-            onError={(error) => {
-              console.error('[VideoPlayerV2] Video error:', error);
-              setError('Playback error occurred');
-            }}
-            onEnd={() => {
-              console.log('[VideoPlayerV2] Video ended');
-              setIsPlaying(false);
-            }}
-            repeat={false}
-            playInBackground={false}
-            playWhenInactive={false}
-            ignoreSilentSwitch="ignore"
-            audioOnly={false}
-            selectedAudioTrack={{ type: 'system' }}
-            preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            bufferConfig={bufferConfig}
-            automaticallyWaitsToMinimizeStalling={false}
-            poster={video.thumbnail_url || undefined}
-            posterResizeMode="cover"
+            player={player}
+            allowsFullscreen={false}
+            allowsPictureInPicture
+            contentFit="contain"
+            nativeControls={false}
           />
-
-          {/* Pre-buffer next video off-screen (silent) */}
-          {nextVideoSource && (
-            <Video
-              ref={nextVideoRef}
-              source={nextVideoSource}
-              style={styles.hiddenVideo}
-              paused={true}
-              volume={0}
-              muted={true}
-              resizeMode="contain"
-              onLoad={() => {
-                if (__DEV__) {
-                  console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
-                }
-              }}
-              ignoreSilentSwitch="ignore"
-              audioOnly={false}
-              selectedAudioTrack={{ type: 'system' }}
-              preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-              bufferConfig={bufferConfig}
-              automaticallyWaitsToMinimizeStalling={false}
-            />
-          )}
           
           {isBuffering && (
             <View style={styles.bufferingOverlay}>
               <ActivityIndicator size="large" color="#FFFFFF" />
               <Text style={styles.bufferingText}>Buffering...</Text>
             </View>
-            )}
+          )}
           
           <View style={styles.videoOverlay}>
             <TouchableOpacity
@@ -923,19 +1069,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   fullscreenVideo: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     width: '100%',
     height: '100%',
-  },
-  hiddenVideo: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
   },
   videoOverlay: {
     position: 'absolute',
