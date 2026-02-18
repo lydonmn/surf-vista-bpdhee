@@ -1,8 +1,16 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
-import RNBackgroundDownloader from 'react-native-background-downloader';
 import CryptoJS from 'crypto-js';
 import { Platform } from 'react-native';
+
+// Conditional import for react-native-background-downloader
+let RNBackgroundDownloader: any = null;
+try {
+  RNBackgroundDownloader = require('react-native-background-downloader').default;
+  console.log('[VideoDownloadManager] ✅ react-native-background-downloader loaded successfully');
+} catch (error) {
+  console.warn('[VideoDownloadManager] ⚠️ react-native-background-downloader not available, falling back to streaming-only mode:', error);
+}
 
 interface DownloadTask {
   id: string;
@@ -21,12 +29,20 @@ interface CacheEntry {
 }
 
 const MAX_CACHE_SIZE_BYTES = 500 * 1024 * 1024; // 500MB
-const CACHE_DIR = `${FileSystem.cacheDirectory}videos/`;
+
+// Fallback to FileSystem.cacheDirectory if native module is unavailable
+const getCacheDirectory = (): string => {
+  if (RNBackgroundDownloader?.documents) {
+    return `${RNBackgroundDownloader.documents}/videos/`;
+  }
+  return `${FileSystem.cacheDirectory}videos/`;
+};
 
 class VideoDownloadManagerClass {
   private downloads: Map<string, DownloadTask> = new Map();
   private cache: Map<string, CacheEntry> = new Map();
   private initialized = false;
+  private CACHE_DIR: string = '';
 
   /**
    * Initialize the download manager and cache directory
@@ -37,11 +53,19 @@ class VideoDownloadManagerClass {
     console.log('[VideoDownloadManager] 🚀 Initializing...');
 
     try {
+      // Set cache directory with fallback
+      this.CACHE_DIR = getCacheDirectory();
+      console.log('[VideoDownloadManager] Using cache directory:', this.CACHE_DIR);
+
+      if (!RNBackgroundDownloader) {
+        console.log('[VideoDownloadManager] ⚠️ Operating in streaming-only mode (no background downloads)');
+      }
+
       // Create cache directory if it doesn't exist
-      const dirInfo = await FileSystem.getInfoAsync(CACHE_DIR);
+      const dirInfo = await FileSystem.getInfoAsync(this.CACHE_DIR);
       if (!dirInfo.exists) {
-        console.log('[VideoDownloadManager] Creating cache directory:', CACHE_DIR);
-        await FileSystem.makeDirectoryAsync(CACHE_DIR, { intermediates: true });
+        console.log('[VideoDownloadManager] Creating cache directory:', this.CACHE_DIR);
+        await FileSystem.makeDirectoryAsync(this.CACHE_DIR, { intermediates: true });
       }
 
       // Load existing cache entries
@@ -51,7 +75,8 @@ class VideoDownloadManagerClass {
       console.log('[VideoDownloadManager] ✅ Initialized successfully');
     } catch (error) {
       console.error('[VideoDownloadManager] ❌ Initialization failed:', error);
-      throw error;
+      // Don't throw - allow app to continue without caching
+      this.initialized = true;
     }
   }
 
@@ -60,12 +85,12 @@ class VideoDownloadManagerClass {
    */
   private async loadCacheIndex(): Promise<void> {
     try {
-      const files = await FileSystem.readDirectoryAsync(CACHE_DIR);
+      const files = await FileSystem.readDirectoryAsync(this.CACHE_DIR);
       console.log('[VideoDownloadManager] Found', files.length, 'cached files');
 
       for (const file of files) {
         if (file.endsWith('.m3u8') || file.endsWith('.mp4')) {
-          const filePath = `${CACHE_DIR}${file}`;
+          const filePath = `${this.CACHE_DIR}${file}`;
           const fileInfo = await FileSystem.getInfoAsync(filePath);
 
           if (fileInfo.exists && fileInfo.size) {
@@ -101,7 +126,7 @@ class VideoDownloadManagerClass {
   private getLocalPath(url: string): string {
     const hash = this.hashUrl(url);
     const extension = url.includes('.m3u8') ? '.m3u8' : '.mp4';
-    return `${CACHE_DIR}${hash}${extension}`;
+    return `${this.CACHE_DIR}${hash}${extension}`;
   }
 
   /**
@@ -154,6 +179,12 @@ class VideoDownloadManagerClass {
       await this.initialize();
     }
 
+    // If native module is not available, skip downloading
+    if (!RNBackgroundDownloader) {
+      console.log('[VideoDownloadManager] ⚠️ Preload skipped (native module unavailable), will stream:', url.substring(0, 60));
+      return;
+    }
+
     // Check if already cached
     const cachedPath = await this.getLocalPathIfCached(url);
     if (cachedPath) {
@@ -195,11 +226,11 @@ class VideoDownloadManagerClass {
       this.downloads.set(url, downloadTask);
 
       // Set up progress listener
-      task.begin((expectedBytes) => {
+      task.begin((expectedBytes: number) => {
         console.log('[VideoDownloadManager] Download started, expected size:', expectedBytes);
       });
 
-      task.progress((percent) => {
+      task.progress((percent: number) => {
         downloadTask.progress = percent;
         if (percent % 25 === 0) {
           console.log('[VideoDownloadManager] Download progress:', Math.round(percent), '%');
@@ -229,14 +260,14 @@ class VideoDownloadManagerClass {
         });
       });
 
-      task.error((error) => {
+      task.error((error: string) => {
         console.error('[VideoDownloadManager] ❌ Download failed:', error);
         downloadTask.status = 'failed';
         this.downloads.delete(url);
       });
     } catch (error) {
       console.error('[VideoDownloadManager] Error starting download:', error);
-      throw error;
+      // Don't throw - allow app to continue with streaming
     }
   }
 
@@ -295,13 +326,15 @@ class VideoDownloadManagerClass {
     console.log('[VideoDownloadManager] 🗑️ Clearing all cached videos...');
 
     try {
-      // Cancel all active downloads
-      for (const download of this.downloads.values()) {
-        if (download.task && download.status === 'downloading') {
-          try {
-            download.task.stop();
-          } catch (error) {
-            console.error('[VideoDownloadManager] Error stopping download:', error);
+      // Cancel all active downloads (only if native module is available)
+      if (RNBackgroundDownloader) {
+        for (const download of this.downloads.values()) {
+          if (download.task && download.status === 'downloading') {
+            try {
+              download.task.stop();
+            } catch (error) {
+              console.error('[VideoDownloadManager] Error stopping download:', error);
+            }
           }
         }
       }
@@ -309,10 +342,10 @@ class VideoDownloadManagerClass {
       this.downloads.clear();
 
       // Delete cache directory
-      const dirInfo = await FileSystem.getInfoAsync(CACHE_DIR);
+      const dirInfo = await FileSystem.getInfoAsync(this.CACHE_DIR);
       if (dirInfo.exists) {
-        await FileSystem.deleteAsync(CACHE_DIR, { idempotent: true });
-        await FileSystem.makeDirectoryAsync(CACHE_DIR, { intermediates: true });
+        await FileSystem.deleteAsync(this.CACHE_DIR, { idempotent: true });
+        await FileSystem.makeDirectoryAsync(this.CACHE_DIR, { intermediates: true });
       }
 
       this.cache.clear();
@@ -343,6 +376,11 @@ class VideoDownloadManagerClass {
    * Cancel a specific download
    */
   cancelDownload(url: string): void {
+    if (!RNBackgroundDownloader) {
+      console.log('[VideoDownloadManager] Cannot cancel download: native module unavailable');
+      return;
+    }
+
     const download = this.downloads.get(url);
     if (download && download.task && download.status === 'downloading') {
       console.log('[VideoDownloadManager] Cancelling download:', url.substring(0, 60));
@@ -365,6 +403,13 @@ class VideoDownloadManagerClass {
   isDownloading(url: string): boolean {
     const download = this.downloads.get(url);
     return download?.status === 'downloading';
+  }
+
+  /**
+   * Check if background downloading is available
+   */
+  isBackgroundDownloadAvailable(): boolean {
+    return RNBackgroundDownloader !== null;
   }
 }
 

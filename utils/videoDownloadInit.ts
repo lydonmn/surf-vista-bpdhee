@@ -13,13 +13,17 @@ export async function initializeVideoDownloads(): Promise<void> {
     await VideoDownloadManager.initialize();
     
     const stats = await VideoDownloadManager.getCacheStats();
+    const isBackgroundAvailable = VideoDownloadManager.isBackgroundDownloadAvailable();
+    
     console.log('[VideoDownloadInit] ✅ Video download system ready');
+    console.log('[VideoDownloadInit] Background downloads:', isBackgroundAvailable ? 'ENABLED' : 'DISABLED (streaming only)');
     console.log('[VideoDownloadInit] Cache stats:', {
       totalSize: `${(stats.totalSize / 1024 / 1024).toFixed(2)} MB`,
       fileCount: stats.fileCount,
     });
   } catch (error) {
     console.error('[VideoDownloadInit] ❌ Failed to initialize video downloads:', error);
+    // Don't throw - allow app to continue
   }
 }
 

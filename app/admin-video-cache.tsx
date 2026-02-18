@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import { colors } from '@/styles/commonStyles';
@@ -14,6 +14,8 @@ export default function AdminVideoCacheScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [cacheStats, setCacheStats] = useState<{ totalSize: number; fileCount: number } | null>(null);
   const [isClearing, setIsClearing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isBackgroundDownloadAvailable, setIsBackgroundDownloadAvailable] = useState(false);
 
   const loadCacheStats = useCallback(async () => {
     try {
@@ -22,12 +24,17 @@ export default function AdminVideoCacheScreen() {
       
       await VideoDownloadManager.initialize();
       const stats = await VideoDownloadManager.getCacheStats();
+      const bgAvailable = VideoDownloadManager.isBackgroundDownloadAvailable();
       
       console.log('[AdminVideoCache] Cache stats:', stats);
+      console.log('[AdminVideoCache] Background downloads available:', bgAvailable);
+      
       setCacheStats(stats);
+      setIsBackgroundDownloadAvailable(bgAvailable);
     } catch (error) {
       console.error('[AdminVideoCache] Error loading cache stats:', error);
-      Alert.alert('Error', 'Failed to load cache statistics');
+      // Don't show alert - just log the error
+      setCacheStats({ totalSize: 0, fileCount: 0 });
     } finally {
       setIsLoading(false);
     }
@@ -40,36 +47,22 @@ export default function AdminVideoCacheScreen() {
   }, [user, profile, loadCacheStats]);
 
   const handleClearCache = useCallback(async () => {
-    Alert.alert(
-      'Clear Video Cache',
-      'This will delete all cached videos. They will need to be downloaded again. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear Cache',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsClearing(true);
-              console.log('[AdminVideoCache] Clearing cache...');
-              
-              await VideoDownloadManager.clearCache();
-              
-              console.log('[AdminVideoCache] ✅ Cache cleared');
-              Alert.alert('Success', 'Video cache cleared successfully');
-              
-              // Reload stats
-              await loadCacheStats();
-            } catch (error) {
-              console.error('[AdminVideoCache] Error clearing cache:', error);
-              Alert.alert('Error', 'Failed to clear cache');
-            } finally {
-              setIsClearing(false);
-            }
-          },
-        },
-      ]
-    );
+    try {
+      setIsClearing(true);
+      setShowConfirmModal(false);
+      console.log('[AdminVideoCache] Clearing cache...');
+      
+      await VideoDownloadManager.clearCache();
+      
+      console.log('[AdminVideoCache] ✅ Cache cleared');
+      
+      // Reload stats
+      await loadCacheStats();
+    } catch (error) {
+      console.error('[AdminVideoCache] Error clearing cache:', error);
+    } finally {
+      setIsClearing(false);
+    }
   }, [loadCacheStats]);
 
   const handleGoBack = useCallback(() => {
@@ -129,6 +122,25 @@ export default function AdminVideoCacheScreen() {
           </View>
         ) : (
           <>
+            {!isBackgroundDownloadAvailable && (
+              <View style={[styles.warningCard, { backgroundColor: '#FFF3CD', borderColor: '#FFC107' }]}>
+                <IconSymbol
+                  ios_icon_name="exclamationmark.triangle.fill"
+                  android_material_icon_name="warning"
+                  size={24}
+                  color="#FF9800"
+                />
+                <View style={styles.warningTextContainer}>
+                  <Text style={[styles.warningTitle, { color: '#856404' }]}>
+                    Streaming Mode
+                  </Text>
+                  <Text style={[styles.warningText, { color: '#856404' }]}>
+                    Background downloading is not available. Videos will stream directly without caching.
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={[styles.statsCard, { backgroundColor: theme.colors.card }]}>
               <View style={styles.statsHeader}>
                 <IconSymbol
@@ -193,27 +205,52 @@ export default function AdminVideoCacheScreen() {
                 <Text style={[styles.infoTitle, { color: theme.colors.text }]}>
                   How Video Caching Works
                 </Text>
-                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  • Videos are downloaded in the background, even when the app is minimized
-                </Text>
-                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  • The next 2-3 videos are automatically preloaded for instant playback
-                </Text>
-                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  • Cache limit is 500MB with automatic LRU (Least Recently Used) eviction
-                </Text>
-                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  • Cached videos play instantly without buffering
-                </Text>
-                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  • Downloads resume aggressively when app returns to foreground
-                </Text>
+                {isBackgroundDownloadAvailable ? (
+                  <>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Videos are downloaded in the background, even when the app is minimized
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • The next 2-3 videos are automatically preloaded for instant playback
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Cache limit is 500MB with automatic LRU (Least Recently Used) eviction
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Cached videos play instantly without buffering
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Downloads resume aggressively when app returns to foreground
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Background downloading is not available in this environment
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Videos will stream directly from the server
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • This is normal in Expo Go or simulator
+                    </Text>
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                      • Background downloads will work in production builds
+                    </Text>
+                  </>
+                )}
               </View>
             </View>
 
             <TouchableOpacity
-              style={[styles.clearButton, { backgroundColor: '#F44336' }]}
-              onPress={handleClearCache}
+              style={[
+                styles.clearButton, 
+                { 
+                  backgroundColor: '#F44336',
+                  opacity: (isClearing || (cacheStats?.fileCount || 0) === 0) ? 0.5 : 1
+                }
+              ]}
+              onPress={() => setShowConfirmModal(true)}
               disabled={isClearing || (cacheStats?.fileCount || 0) === 0}
             >
               {isClearing ? (
@@ -235,12 +272,47 @@ export default function AdminVideoCacheScreen() {
 
             {(cacheStats?.fileCount || 0) === 0 && (
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No videos cached yet. Videos will be cached automatically as you watch them.
+                {isBackgroundDownloadAvailable 
+                  ? 'No videos cached yet. Videos will be cached automatically as you watch them.'
+                  : 'Background downloading is not available. Videos will stream directly.'}
               </Text>
             )}
           </>
         )}
       </ScrollView>
+
+      {/* Confirmation Modal */}
+      <Modal
+        visible={showConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+              Clear Video Cache
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              This will delete all cached videos. They will need to be downloaded again. Continue?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.textSecondary }]}
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#F44336' }]}
+                onPress={handleClearCache}
+              >
+                <Text style={styles.modalButtonText}>Clear Cache</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -290,6 +362,27 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginTop: 16,
+  },
+  warningCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  warningTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  warningText: {
+    fontSize: 13,
+    lineHeight: 20,
   },
   statsCard: {
     borderRadius: 12,
@@ -376,5 +469,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    gap: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

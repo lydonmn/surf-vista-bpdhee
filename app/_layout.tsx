@@ -30,14 +30,23 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // Initialize video download system on app startup
+  // Initialize video download system on app startup with graceful error handling
   useEffect(() => {
-    console.log('[RootLayout] 🚀 Initializing video download system...');
-    
-    configureBackgroundDownloads();
-    initializeVideoDownloads().catch((error) => {
-      console.error('[RootLayout] Failed to initialize video downloads:', error);
-    });
+    const initializeVideoSystem = async () => {
+      try {
+        console.log('[RootLayout] 🚀 Initializing video download system...');
+        
+        configureBackgroundDownloads();
+        await initializeVideoDownloads();
+        
+        console.log('[RootLayout] ✅ Video system initialized');
+      } catch (error) {
+        console.error('[RootLayout] ⚠️ Video system initialization failed, app will continue with streaming:', error);
+        // App continues normally - videos will stream instead of downloading
+      }
+    };
+
+    initializeVideoSystem();
   }, []);
 
   useEffect(() => {
