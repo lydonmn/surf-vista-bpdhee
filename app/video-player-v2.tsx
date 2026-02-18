@@ -202,9 +202,10 @@ export default function VideoPlayerV2Screen() {
         }
 
         console.log('[VideoPlayerV2] Video loaded:', data.title);
+        console.log('[VideoPlayerV2] 🎬 Video URL:', data.video_url);
         setVideo(data);
 
-        // Check if this is a Mux HLS URL - if so, use it directly without signing
+        // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
           console.log('[VideoPlayerV2] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
           setVideoUrl(data.video_url);

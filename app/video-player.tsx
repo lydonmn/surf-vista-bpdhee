@@ -309,7 +309,7 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] ⚠️ NOT using database duration - will wait for video onLoad callback');
         setVideo(data);
 
-        // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, use it directly without signing
+        // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
           console.log('[VideoPlayer] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
           setVideoUrl(data.video_url);
