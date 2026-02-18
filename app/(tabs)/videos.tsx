@@ -12,6 +12,9 @@ import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
 
+// 🎬 Mux HLS URL prefix for detection
+const MUX_HLS_PREFIX = 'https://stream.mux.com/';
+
 export default function VideosScreen() {
   const theme = useTheme();
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
@@ -60,21 +63,27 @@ export default function VideosScreen() {
               setDeletingVideoId(videoId);
               console.log('[VideosScreen] Deleting video:', videoId);
 
-              // Extract filename from URL
-              const urlParts = videoUrl.split('/videos/');
-              if (urlParts.length === 2) {
-                const fileName = urlParts[1];
-                console.log('[VideosScreen] Deleting file from storage:', fileName);
+              // 🎬 CRITICAL FIX: Only delete from Supabase storage if it's NOT a Mux URL
+              if (!videoUrl.startsWith(MUX_HLS_PREFIX)) {
+                // Extract filename from Supabase URL
+                const urlParts = videoUrl.split('/videos/');
+                if (urlParts.length === 2) {
+                  const fileName = urlParts[1];
+                  console.log('[VideosScreen] Deleting file from storage:', fileName);
 
-                // Delete from storage
-                const { error: storageError } = await supabase.storage
-                  .from('videos')
-                  .remove([fileName]);
+                  // Delete from storage
+                  const { error: storageError } = await supabase.storage
+                    .from('videos')
+                    .remove([fileName]);
 
-                if (storageError) {
-                  console.error('[VideosScreen] Error deleting from storage:', storageError);
-                  // Continue anyway to delete from database
+                  if (storageError) {
+                    console.error('[VideosScreen] Error deleting from storage:', storageError);
+                    // Continue anyway to delete from database
+                  }
                 }
+              } else {
+                console.log('[VideosScreen] 🎬 Mux video detected - skipping Supabase storage deletion (video is on Mux)');
+                // TODO: Add Mux asset deletion via Edge Function if needed
               }
 
               // Delete from database
@@ -126,6 +135,24 @@ export default function VideosScreen() {
         preloadedUrl: preloadedUrl || '',
       }
     });
+  }, []);
+
+  // Helper function to get the correct video source for preview
+  const getVideoPreviewSource = React.useCallback((video: any) => {
+    // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly
+    if (video.video_url.startsWith(MUX_HLS_PREFIX)) {
+      console.log('[VideosScreen] 🎬 Using Mux HLS URL for preview:', video.id);
+      return { uri: video.video_url };
+    }
+    
+    // For Supabase videos, use signed URL if available, otherwise use video_url
+    if (video.signed_url) {
+      console.log('[VideosScreen] Using signed URL for preview:', video.id);
+      return { uri: video.signed_url };
+    }
+    
+    console.log('[VideosScreen] Using video_url for preview:', video.id);
+    return { uri: video.video_url };
   }, []);
 
   // ✅ ATOMIC JSX: Extract location-specific subtitle text
@@ -254,6 +281,7 @@ export default function VideosScreen() {
         <React.Fragment>
           {videos.map((video) => {
             const isDeleting = deletingVideoId === video.id;
+            const videoSource = getVideoPreviewSource(video);
             
             return (
               <React.Fragment key={video.id}>
@@ -267,7 +295,7 @@ export default function VideosScreen() {
                     <View style={styles.videoPreviewContainer}>
                       <ExpoVideo
                         ref={(ref) => { videoRefs.current[video.id] = ref; }}
-                        source={{ uri: video.video_url }}
+                        source={videoSource}
                         style={styles.videoPreview}
                         resizeMode={ResizeMode.COVER}
                         shouldPlay={true}
