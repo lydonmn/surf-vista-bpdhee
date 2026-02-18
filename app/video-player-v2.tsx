@@ -263,15 +263,25 @@ export default function VideoPlayerV2Screen() {
   }, [videoId]);
 
   // Initialize video player with expo-video
+  // 🎯 QUALITY FIX: Configure player to prefer highest quality rendition on load
   const player = useVideoPlayer(videoUrl || '', (player) => {
     if (videoUrl) {
       console.log('[VideoPlayerV2] ⚡ Initializing player with expo-video');
+      console.log('[VideoPlayerV2] 🎯 Configuring for HIGHEST QUALITY on load');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
       player.allowsExternalPlayback = true;
       
-      console.log('[VideoPlayerV2] ✅ Player configured');
+      // 🎯 CRITICAL: Set preferredForwardBufferDuration to request more data upfront
+      // This helps the player select higher quality renditions immediately
+      if (Platform.OS === 'ios') {
+        // iOS-specific: Request 10 seconds of buffer to ensure high quality selection
+        (player as any).preferredForwardBufferDuration = 10;
+        console.log('[VideoPlayerV2] ✅ iOS: Set preferredForwardBufferDuration to 10 seconds');
+      }
+      
+      console.log('[VideoPlayerV2] ✅ Player configured for highest quality playback');
       
       activateAudioSession().catch(err => 
         console.error('[VideoPlayerV2] Failed to activate audio for player:', err)

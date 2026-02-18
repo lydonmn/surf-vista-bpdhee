@@ -11,12 +11,56 @@ interface VideoPreviewThumbnailProps {
 }
 
 /**
+ * Helper to extract Mux playback ID from video URL
+ */
+function extractMuxPlaybackId(videoUrl: string): string | null {
+  try {
+    // Mux HLS URLs are in format: https://stream.mux.com/{playback_id}.m3u8
+    if (videoUrl.includes('stream.mux.com/')) {
+      const parts = videoUrl.split('stream.mux.com/');
+      if (parts.length === 2) {
+        const playbackId = parts[1].split('.m3u8')[0];
+        console.log('[VideoPreviewThumbnail] Extracted Mux playback ID:', playbackId);
+        return playbackId;
+      }
+    }
+  } catch (e) {
+    console.error('[VideoPreviewThumbnail] Error extracting playback ID:', e);
+  }
+  return null;
+}
+
+/**
+ * Generate high-quality Mux thumbnail URL
+ * 🎯 QUALITY FIX: Append quality parameters for max resolution
+ */
+function getMuxThumbnailUrl(videoUrl: string): string | null {
+  const playbackId = extractMuxPlaybackId(videoUrl);
+  if (!playbackId) return null;
+  
+  // 🎯 CRITICAL: Add quality parameters for max resolution
+  // width=1920: Request 1080p resolution
+  // fit_mode=preserve: Maintain aspect ratio
+  // time=1: Use frame at 1 second (better than default 0)
+  const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.jpg?width=1920&fit_mode=preserve&time=1`;
+  console.log('[VideoPreviewThumbnail] 🎯 Generated high-quality Mux thumbnail URL:', thumbnailUrl);
+  return thumbnailUrl;
+}
+
+/**
  * Simple video preview component for thumbnails/cards
  * Autoplays muted and looping - separate from full player logic
  */
 export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPreviewThumbnailProps) {
   const [isReady, setIsReady] = useState(false);
   const [showPoster, setShowPoster] = useState(true);
+
+  // 🎯 QUALITY FIX: Try to get high-quality Mux thumbnail first
+  const highQualityThumbnail = getMuxThumbnailUrl(videoUrl);
+  const finalThumbnailUrl = highQualityThumbnail || thumbnailUrl;
+
+  console.log('[VideoPreviewThumbnail] Using thumbnail URL:', finalThumbnailUrl);
+  console.log('[VideoPreviewThumbnail] Is Mux thumbnail:', !!highQualityThumbnail);
 
   // Create a simple muted looping player
   const player = useVideoPlayer(videoUrl, (playerInstance) => {
@@ -59,9 +103,9 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
   return (
     <View style={[styles.container, style]}>
       {/* Poster/thumbnail image - shows while loading */}
-      {showPoster && thumbnailUrl && (
+      {showPoster && finalThumbnailUrl && (
         <Image
-          source={{ uri: thumbnailUrl }}
+          source={{ uri: finalThumbnailUrl }}
           style={styles.poster}
           resizeMode="cover"
         />
