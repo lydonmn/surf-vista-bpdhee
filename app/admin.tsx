@@ -1,19 +1,19 @@
 
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { supabase } from '@/app/integrations/supabase/client';
+import { useLocation } from '@/contexts/LocationContext';
 import { Video } from 'expo-av';
-import { useTheme } from '@react-navigation/native';
+import { useState, useEffect, useRef } from 'react';
+import 'react-native-url-polyfill/auto';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import * as VideoThumbnails from 'expo-video-thumbnails';
+import { colors } from '@/styles/commonStyles';
+import { IconSymbol } from '@/components/IconSymbol';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useTheme } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { supabase } from '@/app/integrations/supabase/client';
 import { useVideos } from '@/hooks/useVideos';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { IconSymbol } from '@/components/IconSymbol';
-import { colors } from '@/styles/commonStyles';
-import 'react-native-url-polyfill/auto';
-import { useLocation } from '@/contexts/LocationContext';
 
 interface VideoMetadata {
   width: number;
@@ -34,14 +34,12 @@ export default function AdminScreen() {
   const [selectedLocation, setSelectedLocation] = useState<string>('folly-beach');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadSpeed, setUploadSpeed] = useState<string>('');
-  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string>('');
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const { user, profile } = useAuth();
   const { refreshVideos } = useVideos();
   const { locations } = useLocation();
   const [availableLocations, setAvailableLocations] = useState<typeof locations>([]);
   const uploadStartTimeRef = useRef<number>(0);
-  const lastBytesUploadedRef = useRef<number>(0);
   const cancellationFlagRef = useRef<boolean>(false);
 
   // Determine which locations this user can upload to
@@ -90,18 +88,6 @@ export default function AdminScreen() {
     if (width >= 1920 && height >= 1080) return 'Full HD';
     if (width >= 1280 && height >= 720) return 'HD';
     return `${width}x${height}`;
-  };
-
-  const formatSpeed = (bytesPerSecond: number): string => {
-    if (bytesPerSecond < 1024) return `${bytesPerSecond.toFixed(0)} B/s`;
-    if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(2)} KB/s`;
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(2)} MB/s`;
-  };
-
-  const formatTimeRemaining = (seconds: number): string => {
-    if (seconds < 60) return `${Math.ceil(seconds)}s`;
-    if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
-    return `${Math.ceil(seconds / 3600)}h ${Math.ceil((seconds % 3600) / 60)}m`;
   };
 
   const validateVideoMetadata = async (uri: string): Promise<VideoMetadata | null> => {
@@ -244,10 +230,8 @@ export default function AdminScreen() {
     try {
       setIsUploading(true);
       setUploadProgress(0);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
+      setUploadStatus('');
       uploadStartTimeRef.current = Date.now();
-      lastBytesUploadedRef.current = 0;
       cancellationFlagRef.current = false;
       
       console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
@@ -274,6 +258,7 @@ export default function AdminScreen() {
       // ========================================
       console.log('[AdminScreen] 🎬 Creating Mux upload URL...');
       setUploadProgress(5);
+      setUploadStatus('Creating upload URL...');
       
       const createUploadResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/mux-create-upload`, {
         method: 'POST',
@@ -314,13 +299,13 @@ export default function AdminScreen() {
       console.log('[AdminScreen] 📊 File size:', formatFileSize(fileInfo.size));
       console.log('[AdminScreen] 🎯 Mux upload URL:', muxUploadUrl);
       setUploadProgress(10);
-      setUploadSpeed('Uploading to Mux...');
+      setUploadStatus('Uploading to Mux...');
 
       // Start a progress simulation since FileSystem.uploadAsync doesn't provide progress callbacks
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
-          // Slowly increment from 10% to 90% over time
-          if (prev < 90) {
+          // Slowly increment from 10% to 95% over time
+          if (prev < 95) {
             return prev + 2;
           }
           return prev;
@@ -369,7 +354,7 @@ export default function AdminScreen() {
         console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
         console.log('[AdminScreen] ========================================');
         console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
-        console.log('[AdminScreen] 📊 Average speed:', formatSpeed(fileInfo.size / uploadDuration));
+        console.log('[AdminScreen] 📊 Average speed:', formatFileSize(fileInfo.size / uploadDuration) + '/s');
 
         if (uploadResult.status < 200 || uploadResult.status >= 300) {
           console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
@@ -379,6 +364,14 @@ export default function AdminScreen() {
 
         const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
         console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
+        
+        // ========================================
+        // STEP 3: Immediately set progress to 100% and show success
+        // ========================================
+        setUploadProgress(100);
+        setUploadStatus('Upload complete! Processing...');
+        console.log('[AdminScreen] ✅ Upload complete! Mux is now processing the video...');
+
       } catch (uploadError) {
         clearInterval(progressInterval);
         console.error('[AdminScreen] 💥 Upload error caught:', uploadError);
@@ -386,74 +379,7 @@ export default function AdminScreen() {
       }
 
       // ========================================
-      // STEP 3: Poll for Mux asset ready status
-      // ========================================
-      console.log('[AdminScreen] ⏳ Waiting for Mux to process video...');
-      setUploadProgress(95);
-      setUploadSpeed('Processing...');
-      setEstimatedTimeRemaining('');
-
-      let assetReady = false;
-      let muxAssetId = '';
-      let playbackId = '';
-      let pollAttempts = 0;
-      const maxPollAttempts = 60; // 5 minutes max (5s intervals)
-
-      while (!assetReady && pollAttempts < maxPollAttempts) {
-        // Check cancellation flag
-        if (cancellationFlagRef.current) {
-          throw new Error('Upload cancelled by user');
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
-        pollAttempts++;
-
-        console.log(`[AdminScreen] 🔍 Checking Mux asset status (attempt ${pollAttempts})...`);
-
-        const assetStatusResponse = await fetch(
-          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?uploadId=${uploadId}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
-
-        if (!assetStatusResponse.ok) {
-          console.error('[AdminScreen] ❌ Failed to get Mux asset status');
-          throw new Error('Failed to get Mux asset status');
-        }
-
-        const assetData = await assetStatusResponse.json();
-        console.log('[AdminScreen] 📊 Mux asset status response:', assetData);
-
-        if (assetData.status === 'ready') {
-          assetReady = true;
-          muxAssetId = assetData.asset_id;
-          playbackId = assetData.playback_id;
-          console.log('[AdminScreen] ✅ Mux asset ready!');
-          console.log('[AdminScreen] - Asset ID:', muxAssetId);
-          console.log('[AdminScreen] - Playback ID:', playbackId);
-        } else if (assetData.status === 'errored') {
-          console.error('[AdminScreen] ❌ Mux asset processing failed');
-          throw new Error('Mux asset processing failed');
-        } else {
-          console.log('[AdminScreen] ⏳ Mux asset status:', assetData.status);
-        }
-      }
-
-      if (!assetReady) {
-        throw new Error('Mux asset processing timed out');
-      }
-
-      // ========================================
-      // STEP 4: Construct HLS URL
-      // ========================================
-      const videoUrl = `https://stream.mux.com/${playbackId}.m3u8`;
-      console.log('[AdminScreen] 🎥 Mux HLS URL:', videoUrl);
-
-      // ========================================
-      // STEP 5: Generate thumbnail
+      // STEP 4: Generate thumbnail
       // ========================================
       console.log('[AdminScreen] 🖼️ Generating thumbnail...');
       let thumbnailUrl: string | null = null;
@@ -494,7 +420,7 @@ export default function AdminScreen() {
       }
 
       // ========================================
-      // STEP 6: Save to database
+      // STEP 5: Save to database immediately with status='processing'
       // ========================================
       const metadata = await validateVideoMetadata(videoUri);
       const duration = metadata ? formatDuration(metadata.duration) : null;
@@ -506,7 +432,7 @@ export default function AdminScreen() {
       const isPortraitVideo = resolutionHeight && resolutionWidth && resolutionHeight > resolutionWidth;
       const orientationInfo = isPortraitVideo ? 'portrait' : 'landscape';
       
-      console.log('[AdminScreen] 💾 Saving to database with location:', selectedLocation);
+      console.log('[AdminScreen] 💾 Saving to database with status=processing, location:', selectedLocation);
       console.log('[AdminScreen] 📐 Video orientation:', orientationInfo, `(${resolutionWidth}x${resolutionHeight})`);
       
       const { error: dbError } = await supabase
@@ -514,7 +440,7 @@ export default function AdminScreen() {
         .insert({
           title: videoTitle.trim(),
           description: videoDescription.trim() || null,
-          video_url: videoUrl, // Mux HLS URL
+          video_url: '', // Will be updated by background polling when ready
           thumbnail_url: thumbnailUrl,
           uploaded_by: user.id,
           duration,
@@ -523,7 +449,8 @@ export default function AdminScreen() {
           resolution_height: resolutionHeight,
           file_size_bytes: fileSizeBytes,
           location: selectedLocation,
-          mux_asset_id: muxAssetId, // Store Mux asset ID
+          mux_upload_id: uploadId, // Store Mux upload ID for polling
+          status: 'processing', // 🚨 NEW: Set status to processing
         });
 
       if (dbError) {
@@ -531,32 +458,32 @@ export default function AdminScreen() {
         throw dbError;
       }
 
-      console.log('[AdminScreen] ✅ Video saved to database');
-      setUploadProgress(100);
+      console.log('[AdminScreen] ✅ Video saved to database with status=processing');
       
       const selectedLocationData = locations.find(loc => loc.id === selectedLocation);
       const locationName = selectedLocationData?.displayName || selectedLocation;
       
       const totalUploadTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-      const avgSpeed = fileSizeBytes ? formatSpeed(fileSizeBytes / totalUploadTime) : 'N/A';
       
       Alert.alert(
         '🎉 Upload Complete!', 
-        `Your video is ready for instant playback via Mux!\n\n✅ Video tagged to: ${locationName}\n✅ Upload time: ${totalUploadTime.toFixed(1)}s\n✅ Average speed: ${avgSpeed}\n✅ Mux HLS streaming enabled!\n\n🚀 Direct upload to Mux - optimized for streaming!`
+        `Your video has been uploaded successfully!\n\n✅ Video tagged to: ${locationName}\n✅ Upload time: ${totalUploadTime.toFixed(1)}s\n\n⏳ Mux is now processing your video. It will appear in the video library once ready (usually 1-2 minutes).\n\nYou can navigate away now!`
       );
 
+      // Reset form
       setVideoUri(null);
       setVideoTitle('');
       setVideoDescription('');
       setUploadProgress(0);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
+      setUploadStatus('');
       
       if (availableLocations.length > 0) {
         setSelectedLocation(availableLocations[0].id);
       }
 
+      // Refresh videos list to show the processing video
       await refreshVideos();
+      
     } catch (error: any) {
       console.error('[AdminScreen] ❌ Error uploading video:', error);
       console.error('[AdminScreen] Error type:', typeof error);
@@ -582,8 +509,7 @@ export default function AdminScreen() {
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setIsUploading(false);
-      setUploadSpeed('');
-      setEstimatedTimeRemaining('');
+      setUploadStatus('');
       cancellationFlagRef.current = false;
     }
   };
@@ -762,6 +688,9 @@ export default function AdminScreen() {
             <Text style={[styles.infoText, { marginTop: 4, fontSize: 12 }]}>
               ✅ Automatic transcoding and adaptive bitrate streaming
             </Text>
+            <Text style={[styles.infoText, { marginTop: 4, fontSize: 12, fontStyle: 'italic' }]}>
+              ⏳ Videos will show &quot;Processing...&quot; badge until Mux finishes transcoding
+            </Text>
           </View>
 
           {videoUri && (
@@ -850,7 +779,7 @@ export default function AdminScreen() {
           {isUploading && (
             <View style={styles.progressContainer}>
               <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                Uploading: {uploadProgress}%
+                {uploadStatus || `Uploading: ${uploadProgress}%`}
               </Text>
               <View style={[styles.progressBar, { backgroundColor: colors.cardBackground }]}>
                 <View 
@@ -860,34 +789,12 @@ export default function AdminScreen() {
                   ]} 
                 />
               </View>
-              {uploadSpeed && (
-                <Text style={[styles.progressSubtext, { color: colors.textSecondary }]}>
-                  {uploadSpeed}
-                </Text>
-              )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
                 🎬 Direct upload to Mux - optimized for streaming!
               </Text>
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4, fontSize: 11 }]}>
                 Large files may take several minutes. Please be patient.
               </Text>
-              
-              <TouchableOpacity
-                style={[styles.cancelButton, { backgroundColor: '#EF4444' }]}
-                onPress={() => {
-                  console.log('[AdminScreen] 🛑 User requested upload cancellation');
-                  cancellationFlagRef.current = true;
-                  Alert.alert('Cancelling', 'Upload is being cancelled...');
-                }}
-              >
-                <IconSymbol
-                  ios_icon_name="xmark.circle.fill"
-                  android_material_icon_name="cancel"
-                  size={18}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.cancelButtonText}>Cancel Upload</Text>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -1128,20 +1035,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
-  },
-  cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  cancelButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

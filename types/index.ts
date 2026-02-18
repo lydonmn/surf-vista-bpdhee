@@ -115,4 +115,7 @@ export interface Video {
   uploaded_by?: string;
   created_at?: string;
   updated_at?: string;
+  mux_upload_id?: string;
+  mux_asset_id?: string;
+  status?: 'active' | 'processing' | 'errored'; // 🚨 NEW: Video processing status
 }

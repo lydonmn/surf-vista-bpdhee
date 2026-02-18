@@ -124,7 +124,13 @@ export default function VideosScreen() {
     }
   }, []);
 
-  const handleVideoPress = React.useCallback((videoId: string, preloadedUrl?: string) => {
+  const handleVideoPress = React.useCallback((videoId: string, preloadedUrl?: string, videoStatus?: string) => {
+    // Don't allow playing processing videos
+    if (videoStatus === 'processing') {
+      Alert.alert('Video Processing', 'This video is still being processed by Mux. Please wait a moment and try again.');
+      return;
+    }
+
     console.log('[VideosScreen] Opening fullscreen video player for:', videoId);
     console.log('[VideosScreen] Preloaded URL available:', !!preloadedUrl);
     
@@ -139,6 +145,11 @@ export default function VideosScreen() {
 
   // Helper function to get the correct video source for preview
   const getVideoPreviewSource = React.useCallback((video: any) => {
+    // Don't try to preview processing videos
+    if (video.status === 'processing') {
+      return null;
+    }
+
     // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly
     if (video.video_url.startsWith(MUX_HLS_PREFIX)) {
       console.log('[VideosScreen] 🎬 Using Mux HLS URL for preview:', video.id);
@@ -282,45 +293,67 @@ export default function VideosScreen() {
           {videos.map((video) => {
             const isDeleting = deletingVideoId === video.id;
             const videoSource = getVideoPreviewSource(video);
+            const isProcessing = video.status === 'processing';
             
             return (
               <React.Fragment key={video.id}>
                 <View style={[styles.videoCard, { backgroundColor: theme.colors.card }]}>
                   <TouchableOpacity
                     style={styles.videoTouchable}
-                    onPress={() => handleVideoPress(video.id, video.signed_url)}
-                    disabled={isDeleting}
+                    onPress={() => handleVideoPress(video.id, video.signed_url, video.status)}
+                    disabled={isDeleting || isProcessing}
                     activeOpacity={0.7}
                   >
                     <View style={styles.videoPreviewContainer}>
-                      <ExpoVideo
-                        ref={(ref) => { videoRefs.current[video.id] = ref; }}
-                        source={videoSource}
-                        style={styles.videoPreview}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay={true}
-                        isLooping={false}
-                        isMuted={true}
-                        onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate(video.id)}
-                      />
-                      <View style={styles.videoOverlay}>
-                        <View style={styles.playButtonContainer}>
-                          <IconSymbol
-                            ios_icon_name="play.circle.fill"
-                            android_material_icon_name="play_circle"
-                            size={64}
-                            color="rgba(255, 255, 255, 0.9)"
+                      {videoSource ? (
+                        <>
+                          <ExpoVideo
+                            ref={(ref) => { videoRefs.current[video.id] = ref; }}
+                            source={videoSource}
+                            style={styles.videoPreview}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay={true}
+                            isLooping={false}
+                            isMuted={true}
+                            onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate(video.id)}
                           />
-                          <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                          <View style={styles.videoOverlay}>
+                            <View style={styles.playButtonContainer}>
+                              <IconSymbol
+                                ios_icon_name="play.circle.fill"
+                                android_material_icon_name="play_circle"
+                                size={64}
+                                color="rgba(255, 255, 255, 0.9)"
+                              />
+                              <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                            </View>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.placeholderContainer}>
+                          <IconSymbol
+                            ios_icon_name="video.fill"
+                            android_material_icon_name="videocam"
+                            size={48}
+                            color={colors.textSecondary}
+                          />
                         </View>
-                      </View>
+                      )}
+                      
+                      {/* 🚨 NEW: Processing badge overlay */}
+                      {isProcessing && (
+                        <View style={styles.processingBadge}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={styles.processingText}>Processing...</Text>
+                        </View>
+                      )}
                     </View>
                     {video.duration && (
                       <View style={styles.durationBadge}>
                         <Text style={styles.durationText}>{video.duration}</Text>
                       </View>
                     )}
-                    {video.signed_url && (
+                    {video.signed_url && !isProcessing && (
                       <View style={styles.preloadBadge}>
                         <VideoPreloadIndicator isPreloaded={true} size="small" />
                       </View>
@@ -342,6 +375,11 @@ export default function VideosScreen() {
                           numberOfLines={2}
                         >
                           {video.description}
+                        </Text>
+                      )}
+                      {isProcessing && (
+                        <Text style={[styles.processingNote, { color: colors.accent }]}>
+                          ⏳ Mux is transcoding this video. It will be ready soon!
                         </Text>
                       )}
                     </View>
@@ -520,6 +558,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  placeholderContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   videoOverlay: {
     position: 'absolute',
     top: 0,
@@ -561,6 +606,22 @@ const styles = StyleSheet.create({
     top: 12,
     right: 12,
   },
+  processingBadge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  processingText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   videoInfo: {
     padding: 12,
   },
@@ -576,6 +637,11 @@ const styles = StyleSheet.create({
   videoDescription: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  processingNote: {
+    fontSize: 12,
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   adminActions: {
     flexDirection: 'row',

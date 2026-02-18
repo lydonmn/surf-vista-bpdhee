@@ -7,6 +7,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 type Video = Database['public']['Tables']['videos']['Row'] & {
   signed_url?: string;
+  status?: string;
+  mux_upload_id?: string;
 };
 
 // 🎬 Mux HLS URL prefix for detection
@@ -24,11 +26,13 @@ export function useVideos() {
   const lastActivityRef = useRef<number>(Date.now());
   const isFetchingRef = useRef(false);
   const currentLocationRef = useRef(currentLocation);
+  const processingPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour
   const PRELOAD_SIZE = 20 * 1024 * 1024; // 20MB preload for instant start
   const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (more frequent)
   const REFRESH_INTERVAL = 8 * 60 * 1000; // 8 minutes (more frequent)
+  const PROCESSING_POLL_INTERVAL = 10000; // 10 seconds for processing videos
 
   useEffect(() => {
     currentLocationRef.current = currentLocation;
@@ -165,6 +169,92 @@ export function useVideos() {
     }
   }, [PRELOAD_SIZE]);
 
+  // 🚨 NEW: Background polling for processing videos
+  const pollProcessingVideos = useCallback(async (processingVideos: Video[]) => {
+    if (processingVideos.length === 0) {
+      return;
+    }
+
+    console.log('[useVideos] 🔄 Polling Mux asset status for', processingVideos.length, 'processing videos...');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn('[useVideos] No session available for polling');
+      return;
+    }
+
+    for (const video of processingVideos) {
+      if (!video.mux_upload_id) {
+        console.warn('[useVideos] Video missing mux_upload_id:', video.id);
+        continue;
+      }
+
+      try {
+        console.log('[useVideos] 🔍 Checking Mux asset status for video:', video.id);
+        
+        const assetStatusResponse = await fetch(
+          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?uploadId=${video.mux_upload_id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+
+        if (!assetStatusResponse.ok) {
+          console.error('[useVideos] ❌ Failed to get Mux asset status for video:', video.id);
+          continue;
+        }
+
+        const assetData = await assetStatusResponse.json();
+        console.log('[useVideos] 📊 Mux asset status for video', video.id, ':', assetData);
+
+        if (assetData.status === 'ready' && assetData.playback_id) {
+          // 🚨 CRITICAL: Update video record with final HLS URL and set status to active
+          const hlsUrl = `https://stream.mux.com/${assetData.playback_id}.m3u8`;
+          console.log('[useVideos] ✅ Mux asset ready! Updating video:', video.id);
+          console.log('[useVideos] 🎥 HLS URL:', hlsUrl);
+          console.log('[useVideos] 🎬 Asset ID:', assetData.asset_id);
+
+          const { error: updateError } = await supabase
+            .from('videos')
+            .update({
+              video_url: hlsUrl,
+              status: 'active',
+              mux_asset_id: assetData.asset_id,
+            })
+            .eq('id', video.id);
+
+          if (updateError) {
+            console.error('[useVideos] ❌ Error updating video record:', updateError);
+          } else {
+            console.log('[useVideos] ✅ Video updated to active status');
+            // Trigger a refresh to update the UI
+            fetchVideos();
+          }
+        } else if (assetData.status === 'errored') {
+          console.error('[useVideos] ❌ Mux asset processing failed for video:', video.id);
+          
+          // Update status to errored
+          const { error: updateError } = await supabase
+            .from('videos')
+            .update({
+              status: 'errored',
+            })
+            .eq('id', video.id);
+
+          if (updateError) {
+            console.error('[useVideos] ❌ Error updating video to errored status:', updateError);
+          }
+        } else {
+          console.log('[useVideos] ⏳ Mux asset still processing for video:', video.id, '- status:', assetData.status);
+        }
+      } catch (error) {
+        console.error('[useVideos] Error polling Mux asset status for video:', video.id, error);
+      }
+    }
+  }, []);
+
   const fetchVideosRef = useRef<() => Promise<void>>();
   
   fetchVideosRef.current = async () => {
@@ -204,6 +294,11 @@ export function useVideos() {
 
       const videosWithSignedUrls = await Promise.all(
         data.map(async (video) => {
+          // Skip signing for processing videos (they don't have a video_url yet)
+          if (video.status === 'processing') {
+            return video;
+          }
+
           const signedUrl = await generateSignedUrl(video.video_url, video.id);
           
           if (signedUrl) {
@@ -215,7 +310,7 @@ export function useVideos() {
       );
 
       const preloadPromises = videosWithSignedUrls
-        .filter(video => video.signed_url)
+        .filter(video => video.signed_url && video.status !== 'processing')
         .map(video => 
           preloadVideo(video.signed_url!, video.id)
             .catch(err => console.warn('[useVideos] Preload failed:', video.id, err))
@@ -267,6 +362,9 @@ export function useVideos() {
       }
 
       const refreshPromises = data.map(async (video) => {
+        if (video.status === 'processing') {
+          return;
+        }
         const signedUrl = await generateSignedUrl(video.video_url, video.id);
         if (signedUrl) {
           preloadVideo(signedUrl, video.id).catch(() => {
@@ -286,6 +384,44 @@ export function useVideos() {
     console.log('[useVideos] Location changed to:', currentLocation);
     fetchVideos();
   }, [currentLocation, fetchVideos]);
+
+  // 🚨 NEW: Set up background polling for processing videos
+  useEffect(() => {
+    const processingVideos = videos.filter(v => v.status === 'processing');
+    
+    if (processingVideos.length > 0) {
+      console.log('[useVideos] 🔄 Found', processingVideos.length, 'processing videos - starting background polling...');
+      
+      // Clear any existing interval
+      if (processingPollIntervalRef.current) {
+        clearInterval(processingPollIntervalRef.current);
+      }
+
+      // Start polling every 10 seconds
+      processingPollIntervalRef.current = setInterval(() => {
+        console.log('[useVideos] ⏰ Polling processing videos...');
+        pollProcessingVideos(processingVideos);
+      }, PROCESSING_POLL_INTERVAL);
+
+      // Also poll immediately
+      pollProcessingVideos(processingVideos);
+
+      return () => {
+        if (processingPollIntervalRef.current) {
+          console.log('[useVideos] 🛑 Stopping processing video polling');
+          clearInterval(processingPollIntervalRef.current);
+          processingPollIntervalRef.current = null;
+        }
+      };
+    } else {
+      // No processing videos, clear interval if it exists
+      if (processingPollIntervalRef.current) {
+        console.log('[useVideos] ✅ No processing videos - stopping polling');
+        clearInterval(processingPollIntervalRef.current);
+        processingPollIntervalRef.current = null;
+      }
+    }
+  }, [videos, pollProcessingVideos, PROCESSING_POLL_INTERVAL]);
 
   useEffect(() => {
     console.log('[useVideos] Initializing video preloading system...');
@@ -337,6 +473,11 @@ export function useVideos() {
       if (keepAliveIntervalRef.current) {
         clearInterval(keepAliveIntervalRef.current);
         keepAliveIntervalRef.current = null;
+      }
+      
+      if (processingPollIntervalRef.current) {
+        clearInterval(processingPollIntervalRef.current);
+        processingPollIntervalRef.current = null;
       }
       
       clearInterval(refreshInterval);
