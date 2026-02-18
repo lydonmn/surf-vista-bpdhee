@@ -113,10 +113,20 @@ class VideoDownloadManagerClass {
   }
 
   /**
+   * Strip query parameters from URL to get base URL
+   * This ensures consistent cache keys for Supabase storage URLs with rotating tokens
+   */
+  private getBaseUrl(url: string): string {
+    return url.split('?')[0];
+  }
+
+  /**
    * Generate a consistent hash for a URL
+   * Uses base URL (without query params) to ensure same video = same cache key
    */
   private hashUrl(url: string): string {
-    const hash = CryptoJS.MD5(url).toString();
+    const baseUrl = this.getBaseUrl(url);
+    const hash = CryptoJS.MD5(baseUrl).toString();
     return hash;
   }
 
@@ -137,13 +147,14 @@ class VideoDownloadManagerClass {
       await this.initialize();
     }
 
+    const baseUrl = this.getBaseUrl(url);
     const localPath = this.getLocalPath(url);
     
     try {
       const fileInfo = await FileSystem.getInfoAsync(localPath);
       
       if (fileInfo.exists && fileInfo.size && fileInfo.size > 0) {
-        console.log('[VideoDownloadManager] ✅ Cache HIT for:', url.substring(0, 60));
+        console.log('[Cache] HIT for:', baseUrl);
         
         // Update last accessed time
         const hash = this.hashUrl(url);
@@ -165,7 +176,7 @@ class VideoDownloadManagerClass {
         return localPath;
       }
     } catch (error) {
-      console.log('[VideoDownloadManager] Cache MISS for:', url.substring(0, 60));
+      console.log('[VideoDownloadManager] Cache MISS for:', baseUrl);
     }
 
     return null;
@@ -179,9 +190,11 @@ class VideoDownloadManagerClass {
       await this.initialize();
     }
 
+    const baseUrl = this.getBaseUrl(url);
+
     // If native module is not available, skip downloading
     if (!RNBackgroundDownloader) {
-      console.log('[VideoDownloadManager] ⚠️ Preload skipped (native module unavailable), will stream:', url.substring(0, 60));
+      console.log('[VideoDownloadManager] ⚠️ Preload skipped (native module unavailable), will stream:', baseUrl);
       return;
     }
 
@@ -204,7 +217,7 @@ class VideoDownloadManagerClass {
     const localPath = this.getLocalPath(url);
     const taskId = this.hashUrl(url);
 
-    console.log('[VideoDownloadManager] 📥 Starting background download for:', url.substring(0, 60));
+    console.log('[VideoDownloadManager] 📥 Starting background download for:', baseUrl);
 
     try {
       // Create download task
@@ -238,7 +251,8 @@ class VideoDownloadManagerClass {
       });
 
       task.done(() => {
-        console.log('[VideoDownloadManager] ✅ Download completed:', url.substring(0, 60));
+        const baseUrl = this.getBaseUrl(url);
+        console.log('[VideoDownloadManager] ✅ Download completed:', baseUrl);
         downloadTask.status = 'completed';
 
         // Add to cache
@@ -302,7 +316,8 @@ class VideoDownloadManagerClass {
           break;
         }
 
-        console.log('[VideoDownloadManager] Evicting:', entry.url.substring(0, 60));
+        const baseUrl = this.getBaseUrl(entry.url);
+        console.log('[VideoDownloadManager] Evicting:', baseUrl);
 
         try {
           await FileSystem.deleteAsync(entry.localPath, { idempotent: true });
@@ -383,7 +398,8 @@ class VideoDownloadManagerClass {
 
     const download = this.downloads.get(url);
     if (download && download.task && download.status === 'downloading') {
-      console.log('[VideoDownloadManager] Cancelling download:', url.substring(0, 60));
+      const baseUrl = this.getBaseUrl(url);
+      console.log('[VideoDownloadManager] Cancelling download:', baseUrl);
       download.task.stop();
       this.downloads.delete(url);
     }

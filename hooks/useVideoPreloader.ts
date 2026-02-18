@@ -12,6 +12,14 @@ interface UseVideoPreloaderResult {
 }
 
 /**
+ * Strip query parameters from URL to get base URL
+ * This ensures consistent cache keys for Supabase storage URLs with rotating tokens
+ */
+function getBaseUrl(url: string): string {
+  return url.split('?')[0];
+}
+
+/**
  * Hook to manage video preloading queue
  * Preloads 2-3 videos ahead and returns the best available source (local or remote)
  * 
@@ -59,17 +67,19 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
 
       for (const url of videosToPreload) {
         try {
+          const baseUrl = getBaseUrl(url);
+          
           // Check if already cached
           const cachedPath = await VideoDownloadManager.getLocalPathIfCached(url);
           
           if (cachedPath) {
             if (__DEV__) {
-              console.log('[useVideoPreloader] ✅ Video already cached:', url.substring(0, 60));
+              console.log('[useVideoPreloader] ✅ Video already cached:', baseUrl);
             }
             newLocalPaths.set(url, cachedPath);
           } else if (!VideoDownloadManager.isDownloading(url)) {
             if (__DEV__) {
-              console.log('[useVideoPreloader] 📥 Starting IMMEDIATE silent background download:', url.substring(0, 60));
+              console.log('[useVideoPreloader] 📥 Starting IMMEDIATE silent background download:', baseUrl);
             }
             
             // Start background download (no UI feedback)
@@ -77,7 +87,7 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
               if (localPath) {
                 setLocalPaths(prev => new Map(prev).set(url, localPath));
                 if (__DEV__) {
-                  console.log('[useVideoPreloader] ✅ Download complete (silent):', url.substring(0, 60));
+                  console.log('[useVideoPreloader] ✅ Download complete (silent):', baseUrl);
                 }
               }
             }).catch((error) => {
