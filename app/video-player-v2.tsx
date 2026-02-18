@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import Video, { OnLoadData, OnProgressData, OnBufferData, OnPlaybackStateChangedData, OnAudioBecomingNoisyData } from 'react-native-video';
+import Video, { OnLoadData, OnProgressData, OnBufferData, OnPlaybackStateChangedData, OnAudioBecomingNoisyData, OnPlaybackRateChangeData } from 'react-native-video';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -33,16 +33,26 @@ export default function VideoPlayerV2Screen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   
+  // 🚨 CRITICAL FIX #2: Add forceAudioRefresh state counter
+  const [forceAudioRefresh, setForceAudioRefresh] = useState(0);
+  
   const videoRef = useRef<Video>(null);
   const nextVideoRef = useRef<Video>(null);
   const isSeekingRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   
-  // 🚨 CRITICAL FIX: Track audio state to detect when it drops
+  // Track audio state to detect when it drops
   const isAudioActiveRef = useRef(true);
   const audioRecoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastBufferEndTimeRef = useRef<number>(0);
+  
+  // 🚨 CRITICAL FIX #5: Track if 8-second safety net has been triggered
+  const eightSecondRefreshTriggered = useRef(false);
+  const eightSecondTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 🚨 CRITICAL FIX #3: Track if we're in the critical 8-16 second window
+  const inCriticalWindowRef = useRef(false);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -67,21 +77,70 @@ export default function VideoPlayerV2Screen() {
     ? videos[currentVideoIndex + 1]
     : null;
 
-  // 🚨 CRITICAL FIX: Automatic audio recovery function
+  // 🚨 CRITICAL FIX: Automatic audio recovery function - rapid pause/resume
   const triggerAudioRecovery = useCallback(() => {
     if (Platform.OS !== 'ios') return;
     
-    console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Triggering pause/resume cycle to restore audio track');
+    console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Triggering rapid pause/resume cycle to restore audio track');
     
-    // Tiny pause/resume cycle to force AVPlayer to reselect audio track
+    // Rapid pause/resume cycle to force AVPlayer to reselect audio track
     setIsPlaying(false);
     
     setTimeout(() => {
-      console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Resuming playback');
+      console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Resuming playback after 50ms');
       setIsPlaying(true);
       isAudioActiveRef.current = true;
     }, 50); // 50ms pause is imperceptible to users
   }, []);
+
+  // 🚨 CRITICAL FIX #2: Effect to handle forceAudioRefresh state changes
+  useEffect(() => {
+    if (forceAudioRefresh > 0) {
+      console.log('[VideoPlayerV2] 🔄 forceAudioRefresh triggered (count:', forceAudioRefresh, ')');
+      triggerAudioRecovery();
+    }
+  }, [forceAudioRefresh, triggerAudioRecovery]);
+
+  // 🚨 CRITICAL FIX #1: Handle playback rate changes (steady state detection)
+  const handlePlaybackRateChange = useCallback((data: OnPlaybackRateChangeData) => {
+    console.log('[VideoPlayerV2] 📊 Playback rate changed to:', data.playbackRate);
+    
+    if (Platform.OS === 'ios' && data.playbackRate === 1.0) {
+      // Rate returns to 1.0 after initial buffer, indicating steady state streaming
+      console.log('[VideoPlayerV2] 🎯 Steady state detected (rate = 1.0) - scheduling audio refresh in 300ms');
+      
+      setTimeout(() => {
+        console.log('[VideoPlayerV2] 🔧 Triggering audio refresh after steady state transition');
+        setForceAudioRefresh(prev => prev + 1);
+      }, 300);
+    }
+  }, []);
+
+  // 🚨 CRITICAL FIX #5: Set up 8-second safety net when playback starts
+  useEffect(() => {
+    if (Platform.OS === 'ios' && isPlaying && currentTime > 0 && currentTime < 2 && !eightSecondRefreshTriggered.current) {
+      console.log('[VideoPlayerV2] ⏰ Setting up 8-second safety net audio refresh');
+      
+      // Clear any existing timeout
+      if (eightSecondTimeoutRef.current) {
+        clearTimeout(eightSecondTimeoutRef.current);
+      }
+      
+      // Schedule audio refresh at 8 seconds
+      eightSecondTimeoutRef.current = setTimeout(() => {
+        console.log('[VideoPlayerV2] 🛡️ 8-SECOND SAFETY NET: Triggering preventive audio refresh');
+        setForceAudioRefresh(prev => prev + 1);
+        eightSecondRefreshTriggered.current = true;
+      }, 8000);
+    }
+    
+    return () => {
+      if (eightSecondTimeoutRef.current) {
+        clearTimeout(eightSecondTimeoutRef.current);
+        eightSecondTimeoutRef.current = null;
+      }
+    };
+  }, [isPlaying, currentTime]);
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -190,12 +249,16 @@ export default function VideoPlayerV2Screen() {
     };
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
-  // 🚨 CRITICAL FIX: Cleanup audio recovery timeout on unmount
+  // Cleanup audio recovery timeout on unmount
   useEffect(() => {
     return () => {
       if (audioRecoveryTimeoutRef.current) {
         clearTimeout(audioRecoveryTimeoutRef.current);
         audioRecoveryTimeoutRef.current = null;
+      }
+      if (eightSecondTimeoutRef.current) {
+        clearTimeout(eightSecondTimeoutRef.current);
+        eightSecondTimeoutRef.current = null;
       }
     };
   }, []);
@@ -298,7 +361,7 @@ export default function VideoPlayerV2Screen() {
       console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
       setIsBuffering(false);
       
-      // 🚨 CRITICAL FIX: After buffer refill completes, check audio after 500ms
+      // After buffer refill completes, check audio after 500ms
       if (Platform.OS === 'ios') {
         lastBufferEndTimeRef.current = Date.now();
         
@@ -311,14 +374,14 @@ export default function VideoPlayerV2Screen() {
         audioRecoveryTimeoutRef.current = setTimeout(() => {
           if (!isAudioActiveRef.current && isPlaying) {
             console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED after buffer refill - triggering automatic recovery');
-            triggerAudioRecovery();
+            setForceAudioRefresh(prev => prev + 1);
           } else {
             console.log('[VideoPlayerV2] ✅ Audio still active after buffer refill');
           }
         }, 500);
       }
     }
-  }, [currentTime, isPlaying, triggerAudioRecovery]);
+  }, [currentTime, isPlaying]);
 
   // 🚨 CRITICAL FIX: Handle playback state changes to detect audio drops
   const handlePlaybackStateChanged = useCallback((data: OnPlaybackStateChangedData) => {
@@ -330,12 +393,12 @@ export default function VideoPlayerV2Screen() {
       
       if (shouldHaveAudio && !isAudioActiveRef.current) {
         console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED via playback state change - triggering recovery');
-        triggerAudioRecovery();
+        setForceAudioRefresh(prev => prev + 1);
       }
       
       isAudioActiveRef.current = shouldHaveAudio;
     }
-  }, [volume, triggerAudioRecovery]);
+  }, [volume]);
 
   // 🚨 CRITICAL FIX: Handle audio becoming noisy (headphones unplugged, etc.)
   const handleAudioBecomingNoisy = useCallback((data: OnAudioBecomingNoisyData) => {
@@ -344,9 +407,49 @@ export default function VideoPlayerV2Screen() {
     if (Platform.OS === 'ios') {
       // This event can indicate audio track issues
       console.log('[VideoPlayerV2] 🚨 AUDIO INTERRUPTION - triggering recovery');
-      triggerAudioRecovery();
+      setForceAudioRefresh(prev => prev + 1);
     }
-  }, [triggerAudioRecovery]);
+  }, []);
+
+  // 🚨 CRITICAL FIX #3: Enhanced onProgress with critical window monitoring
+  const handleProgress = useCallback((data: OnProgressData) => {
+    if (!isSeekingRef.current) {
+      setCurrentTime(data.currentTime);
+    }
+    setIsBuffering(false);
+    
+    if (Platform.OS === 'ios') {
+      const time = data.currentTime;
+      
+      // Track if we're in the critical 8-16 second window
+      const wasInCriticalWindow = inCriticalWindowRef.current;
+      const isInCriticalWindow = time >= 8 && time <= 16;
+      inCriticalWindowRef.current = isInCriticalWindow;
+      
+      // Log when entering critical window
+      if (isInCriticalWindow && !wasInCriticalWindow) {
+        console.log('[VideoPlayerV2] ⚠️ ENTERING CRITICAL WINDOW (8-16 seconds) - monitoring for audio drops');
+      }
+      
+      // Track audio activity during playback
+      if (isPlaying && volume > 0) {
+        isAudioActiveRef.current = true;
+        
+        // 🚨 CRITICAL FIX #3: In critical window, if time is advancing but audio appears lost
+        // This is a heuristic check - if we're in the window and haven't refreshed recently
+        if (isInCriticalWindow && time >= 10 && time <= 14) {
+          const timeSinceLastRefresh = Date.now() - lastBufferEndTimeRef.current;
+          
+          // If it's been more than 2 seconds since last buffer event and we're in the danger zone
+          if (timeSinceLastRefresh > 2000) {
+            console.log('[VideoPlayerV2] 🚨 CRITICAL WINDOW AUDIO CHECK: Time advancing in danger zone (10-14s) - triggering preventive refresh');
+            setForceAudioRefresh(prev => prev + 1);
+            lastBufferEndTimeRef.current = Date.now(); // Reset to prevent rapid triggers
+          }
+        }
+      }
+    }
+  }, [isPlaying, volume]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -362,6 +465,22 @@ export default function VideoPlayerV2Screen() {
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(2)} MB`;
   };
+
+  // 🚨 CRITICAL FIX #4: iOS-specific buffer config with increased minBufferMs
+  const bufferConfig = Platform.select({
+    ios: {
+      minBufferMs: 5000, // Increased from default to fill buffer more completely
+      maxBufferMs: 60000,
+      bufferForPlaybackMs: 1000,
+      bufferForPlaybackAfterRebufferMs: 2000,
+    },
+    android: {
+      minBufferMs: 5000,
+      maxBufferMs: 60000,
+      bufferForPlaybackMs: 1000,
+      bufferForPlaybackAfterRebufferMs: 2000,
+    },
+  });
 
   if (isLoading) {
     return (
@@ -448,7 +567,7 @@ export default function VideoPlayerV2Screen() {
         activeOpacity={1}
         onPress={toggleControls}
       >
-        {/* Main video player */}
+        {/* Main video player with ALL audio fixes */}
         <Video
           ref={videoRef}
           source={videoSource}
@@ -462,18 +581,9 @@ export default function VideoPlayerV2Screen() {
             setDuration(data.duration);
             setIsBuffering(false);
             isAudioActiveRef.current = true;
+            eightSecondRefreshTriggered.current = false; // Reset for new video
           }}
-          onProgress={(data: OnProgressData) => {
-            if (!isSeekingRef.current) {
-              setCurrentTime(data.currentTime);
-            }
-            setIsBuffering(false);
-            
-            // Track audio activity
-            if (Platform.OS === 'ios' && isPlaying && volume > 0) {
-              isAudioActiveRef.current = true;
-            }
-          }}
+          onProgress={handleProgress}
           onBuffer={handleBuffer}
           onError={(error) => {
             console.error('[VideoPlayerV2] Video error:', error);
@@ -485,6 +595,7 @@ export default function VideoPlayerV2Screen() {
           }}
           onPlaybackStateChanged={handlePlaybackStateChanged}
           onAudioBecomingNoisy={handleAudioBecomingNoisy}
+          onPlaybackRateChange={handlePlaybackRateChange}
           repeat={false}
           playInBackground={false}
           playWhenInactive={false}
@@ -492,12 +603,7 @@ export default function VideoPlayerV2Screen() {
           audioOnly={false}
           selectedAudioTrack={{ type: 'system' }}
           preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-          bufferConfig={Platform.OS === 'android' ? {
-            minBufferMs: 5000,
-            maxBufferMs: 60000,
-            bufferForPlaybackMs: 1000,
-            bufferForPlaybackAfterRebufferMs: 2000,
-          } : undefined}
+          bufferConfig={bufferConfig}
           automaticallyWaitsToMinimizeStalling={false}
           poster={video.thumbnail_url || undefined}
           posterResizeMode="cover"
@@ -522,12 +628,7 @@ export default function VideoPlayerV2Screen() {
             audioOnly={false}
             selectedAudioTrack={{ type: 'system' }}
             preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            bufferConfig={Platform.OS === 'android' ? {
-              minBufferMs: 5000,
-              maxBufferMs: 60000,
-              bufferForPlaybackMs: 1000,
-              bufferForPlaybackAfterRebufferMs: 2000,
-            } : undefined}
+            bufferConfig={bufferConfig}
             automaticallyWaitsToMinimizeStalling={false}
           />
         )}
@@ -643,7 +744,7 @@ export default function VideoPlayerV2Screen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
         <View style={styles.videoContainer}>
-          {/* Main video player */}
+          {/* Main video player with ALL audio fixes */}
           <Video
             ref={videoRef}
             source={videoSource}
@@ -657,18 +758,9 @@ export default function VideoPlayerV2Screen() {
               setDuration(data.duration);
               setIsBuffering(false);
               isAudioActiveRef.current = true;
+              eightSecondRefreshTriggered.current = false; // Reset for new video
             }}
-            onProgress={(data: OnProgressData) => {
-              if (!isSeekingRef.current) {
-                setCurrentTime(data.currentTime);
-              }
-              setIsBuffering(false);
-              
-              // Track audio activity
-              if (Platform.OS === 'ios' && isPlaying && volume > 0) {
-                isAudioActiveRef.current = true;
-              }
-            }}
+            onProgress={handleProgress}
             onBuffer={handleBuffer}
             onError={(error) => {
               console.error('[VideoPlayerV2] Video error:', error);
@@ -680,6 +772,7 @@ export default function VideoPlayerV2Screen() {
             }}
             onPlaybackStateChanged={handlePlaybackStateChanged}
             onAudioBecomingNoisy={handleAudioBecomingNoisy}
+            onPlaybackRateChange={handlePlaybackRateChange}
             repeat={false}
             playInBackground={false}
             playWhenInactive={false}
@@ -687,12 +780,7 @@ export default function VideoPlayerV2Screen() {
             audioOnly={false}
             selectedAudioTrack={{ type: 'system' }}
             preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            bufferConfig={Platform.OS === 'android' ? {
-              minBufferMs: 5000,
-              maxBufferMs: 60000,
-              bufferForPlaybackMs: 1000,
-              bufferForPlaybackAfterRebufferMs: 2000,
-            } : undefined}
+            bufferConfig={bufferConfig}
             automaticallyWaitsToMinimizeStalling={false}
             poster={video.thumbnail_url || undefined}
             posterResizeMode="cover"
@@ -717,12 +805,7 @@ export default function VideoPlayerV2Screen() {
               audioOnly={false}
               selectedAudioTrack={{ type: 'system' }}
               preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-              bufferConfig={Platform.OS === 'android' ? {
-                minBufferMs: 5000,
-                maxBufferMs: 60000,
-                bufferForPlaybackMs: 1000,
-                bufferForPlaybackAfterRebufferMs: 2000,
-              } : undefined}
+              bufferConfig={bufferConfig}
               automaticallyWaitsToMinimizeStalling={false}
             />
           )}
