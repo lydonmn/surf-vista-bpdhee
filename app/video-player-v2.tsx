@@ -50,6 +50,11 @@ export default function VideoPlayerV2Screen() {
     ? videoUrls.slice(currentVideoIndex, currentVideoIndex + 3)
     : videoUrls.slice(0, 3);
 
+  // 🚨 CRITICAL FIX: Verify preloading starts immediately on mount
+  console.log('[VideoPlayerV2] 📥 Preload queue initialized:', preloadQueue.length, 'videos');
+  console.log('[VideoPlayerV2] Current video index:', currentVideoIndex);
+  console.log('[VideoPlayerV2] Preloading should start NOW (not waiting for user interaction)');
+
   // Use video preloader hook (silent background operation)
   const { getSource } = useVideoPreloader(preloadQueue);
 
@@ -375,6 +380,12 @@ export default function VideoPlayerV2Screen() {
             setIsBuffering(false);
           }}
           onBuffer={(data: OnBufferData) => {
+            // 🚨 CRITICAL FIX: Log buffering events to diagnose frequency
+            if (data.isBuffering) {
+              console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
+            } else {
+              console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+            }
             setIsBuffering(data.isBuffering);
           }}
           onError={(error) => {
@@ -388,9 +399,14 @@ export default function VideoPlayerV2Screen() {
           repeat={false}
           playInBackground={false}
           playWhenInactive={false}
+          // 🚨 CRITICAL FIX: ignoreSilentSwitch prevents audio from being killed by silent switch
+          ignoreSilentSwitch="ignore"
+          // 🚨 CRITICAL FIX: iOS buffer optimization - buffer 10 seconds ahead
+          preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
+          // 🚨 CRITICAL FIX: Android buffer optimization - increased buffer sizes
           bufferConfig={Platform.OS === 'android' ? {
-            minBufferMs: 2500,
-            maxBufferMs: 50000,
+            minBufferMs: 5000, // Increased from 2500 to 5000
+            maxBufferMs: 60000, // Increased from 50000 to 60000
             bufferForPlaybackMs: 1000,
             bufferForPlaybackAfterRebufferMs: 2000,
           } : undefined}
@@ -414,9 +430,14 @@ export default function VideoPlayerV2Screen() {
                 console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
               }
             }}
+            // 🚨 CRITICAL FIX: ignoreSilentSwitch on pre-buffered video too
+            ignoreSilentSwitch="ignore"
+            // 🚨 CRITICAL FIX: iOS buffer optimization for next video
+            preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
+            // 🚨 CRITICAL FIX: Android buffer optimization for next video
             bufferConfig={Platform.OS === 'android' ? {
-              minBufferMs: 2500,
-              maxBufferMs: 50000,
+              minBufferMs: 5000,
+              maxBufferMs: 60000,
               bufferForPlaybackMs: 1000,
               bufferForPlaybackAfterRebufferMs: 2000,
             } : undefined}
@@ -557,6 +578,12 @@ export default function VideoPlayerV2Screen() {
               setIsBuffering(false);
             }}
             onBuffer={(data: OnBufferData) => {
+              // 🚨 CRITICAL FIX: Log buffering events to diagnose frequency
+              if (data.isBuffering) {
+                console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
+              } else {
+                console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+              }
               setIsBuffering(data.isBuffering);
             }}
             onError={(error) => {
@@ -570,9 +597,14 @@ export default function VideoPlayerV2Screen() {
             repeat={false}
             playInBackground={false}
             playWhenInactive={false}
+            // 🚨 CRITICAL FIX: ignoreSilentSwitch prevents audio from being killed by silent switch
+            ignoreSilentSwitch="ignore"
+            // 🚨 CRITICAL FIX: iOS buffer optimization - buffer 10 seconds ahead
+            preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
+            // 🚨 CRITICAL FIX: Android buffer optimization - increased buffer sizes
             bufferConfig={Platform.OS === 'android' ? {
-              minBufferMs: 2500,
-              maxBufferMs: 50000,
+              minBufferMs: 5000, // Increased from 2500 to 5000
+              maxBufferMs: 60000, // Increased from 50000 to 60000
               bufferForPlaybackMs: 1000,
               bufferForPlaybackAfterRebufferMs: 2000,
             } : undefined}
@@ -596,9 +628,14 @@ export default function VideoPlayerV2Screen() {
                   console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
                 }
               }}
+              // 🚨 CRITICAL FIX: ignoreSilentSwitch on pre-buffered video too
+              ignoreSilentSwitch="ignore"
+              // 🚨 CRITICAL FIX: iOS buffer optimization for next video
+              preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
+              // 🚨 CRITICAL FIX: Android buffer optimization for next video
               bufferConfig={Platform.OS === 'android' ? {
-                minBufferMs: 2500,
-                maxBufferMs: 50000,
+                minBufferMs: 5000,
+                maxBufferMs: 60000,
                 bufferForPlaybackMs: 1000,
                 bufferForPlaybackAfterRebufferMs: 2000,
               } : undefined}

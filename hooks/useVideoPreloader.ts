@@ -17,6 +17,8 @@ interface UseVideoPreloaderResult {
  * 
  * ⚠️ SILENT OPERATION: This hook performs all preloading in the background
  * with NO UI feedback. Users should not see any preloading indicators.
+ * 
+ * 🚨 CRITICAL FIX: Preloading starts IMMEDIATELY on mount, not waiting for user interaction
  */
 export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
   const [localPaths, setLocalPaths] = useState<Map<string, string>>(new Map());
@@ -27,6 +29,7 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
   /**
    * Preload the next 2-3 videos in the queue
    * This runs SILENTLY in the background with no UI feedback
+   * 🚨 CRITICAL: This is called IMMEDIATELY on mount, not waiting for user interaction
    */
   const preloadNextVideos = useCallback(async (currentQueue: string[]) => {
     if (isPreloadingRef.current) {
@@ -42,7 +45,8 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
 
     // Silent background logging only (no UI updates)
     if (__DEV__) {
-      console.log('[useVideoPreloader] 📥 Starting silent background preload for', Math.min(3, currentQueue.length), 'videos');
+      console.log('[useVideoPreloader] 📥 Starting IMMEDIATE silent background preload for', Math.min(3, currentQueue.length), 'videos');
+      console.log('[useVideoPreloader] ✅ Preloading triggered on MOUNT (not waiting for user interaction)');
     }
 
     try {
@@ -65,7 +69,7 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
             newLocalPaths.set(url, cachedPath);
           } else if (!VideoDownloadManager.isDownloading(url)) {
             if (__DEV__) {
-              console.log('[useVideoPreloader] 📥 Starting silent background download:', url.substring(0, 60));
+              console.log('[useVideoPreloader] 📥 Starting IMMEDIATE silent background download:', url.substring(0, 60));
             }
             
             // Start background download (no UI feedback)
@@ -110,7 +114,7 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
 
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         if (__DEV__) {
-          console.log('[useVideoPreloader] 🔄 App returned to foreground - resuming silent preloading');
+          console.log('[useVideoPreloader] 🔄 App returned to foreground - resuming IMMEDIATE silent preloading');
         }
         
         // Resume preloading when app comes back to foreground
@@ -128,14 +132,16 @@ export function useVideoPreloader(queue: string[]): UseVideoPreloaderResult {
   }, [preloadNextVideos]);
 
   /**
-   * Update preload queue when queue changes
+   * 🚨 CRITICAL FIX: Update preload queue when queue changes
+   * Preloading starts IMMEDIATELY on mount, not waiting for user interaction
    */
   useEffect(() => {
     preloadQueueRef.current = queue;
 
     if (queue.length > 0 && appState.current === 'active') {
       if (__DEV__) {
-        console.log('[useVideoPreloader] Queue updated, starting silent preload');
+        console.log('[useVideoPreloader] Queue updated, starting IMMEDIATE silent preload');
+        console.log('[useVideoPreloader] ✅ Preloading called on MOUNT (not waiting for tap/interaction)');
       }
       preloadNextVideos(queue);
     }

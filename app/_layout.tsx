@@ -12,6 +12,7 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { initializeVideoDownloads, configureBackgroundDownloads } from '@/utils/videoDownloadInit';
+import { configureAudioSession } from '@/utils/audioSession';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -30,23 +31,34 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // Initialize video download system on app startup with graceful error handling
+  // 🚨 CRITICAL FIX: Configure iOS audio session on app startup
+  // This prevents audio cutout at ~10 seconds into video playback
   useEffect(() => {
-    const initializeVideoSystem = async () => {
+    const initializeAudioAndVideo = async () => {
       try {
-        console.log('[RootLayout] 🚀 Initializing video download system...');
+        console.log('[RootLayout] 🎵 Configuring iOS audio session for continuous video playback...');
         
+        // 🚨 CRITICAL: Configure audio session FIRST before any video playback
+        await configureAudioSession({
+          category: 'playback',
+          mode: 'moviePlayback',
+          mixWithOthers: false, // Exclusive audio control prevents cutouts
+        });
+        
+        console.log('[RootLayout] ✅ iOS audio session configured - audio cutout fix applied');
+        
+        // Then initialize video download system
+        console.log('[RootLayout] 🚀 Initializing video download system...');
         configureBackgroundDownloads();
         await initializeVideoDownloads();
-        
         console.log('[RootLayout] ✅ Video system initialized');
       } catch (error) {
-        console.error('[RootLayout] ⚠️ Video system initialization failed, app will continue with streaming:', error);
+        console.error('[RootLayout] ⚠️ Initialization failed, app will continue:', error);
         // App continues normally - videos will stream instead of downloading
       }
     };
 
-    initializeVideoSystem();
+    initializeAudioAndVideo();
   }, []);
 
   useEffect(() => {

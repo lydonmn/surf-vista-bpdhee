@@ -135,9 +135,14 @@ export function OptimizedVideoPlayer({
   }, []);
 
   const handleBuffer = useCallback((data: OnBufferData) => {
-    console.log('[OptimizedVideoPlayer] Buffering:', data.isBuffering);
+    // 🚨 CRITICAL FIX: Log buffering events to diagnose frequency
+    if (data.isBuffering) {
+      console.log('[OptimizedVideoPlayer] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
+    } else {
+      console.log('[OptimizedVideoPlayer] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+    }
     setIsBuffering(data.isBuffering);
-  }, []);
+  }, [currentTime]);
 
   const handleError = useCallback((error: any) => {
     console.error('[OptimizedVideoPlayer] Video error:', error);
@@ -193,14 +198,17 @@ export function OptimizedVideoPlayer({
         repeat={false}
         playInBackground={false}
         playWhenInactive={false}
-        // Android buffer config for instant playback
+        // 🚨 CRITICAL FIX: ignoreSilentSwitch prevents audio from being killed by silent switch
+        ignoreSilentSwitch="ignore"
+        // 🚨 CRITICAL FIX: iOS buffer optimization - buffer 10 seconds ahead
+        preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
+        // 🚨 CRITICAL FIX: Android buffer optimization - increased buffer sizes
         bufferConfig={Platform.OS === 'android' ? {
-          minBufferMs: 2500,
-          maxBufferMs: 50000,
+          minBufferMs: 5000, // Increased from 2500 to 5000
+          maxBufferMs: 60000, // Increased from 50000 to 60000
           bufferForPlaybackMs: 1000,
           bufferForPlaybackAfterRebufferMs: 2000,
         } : undefined}
-        // iOS optimization
         automaticallyWaitsToMinimizeStalling={false}
         poster={poster}
         posterResizeMode="cover"
