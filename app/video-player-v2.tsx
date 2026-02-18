@@ -33,7 +33,7 @@ export default function VideoPlayerV2Screen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   
-  // 🚨 CRITICAL FIX #2: Add forceAudioRefresh state counter
+  // Audio recovery state
   const [forceAudioRefresh, setForceAudioRefresh] = useState(0);
   
   const videoRef = useRef<Video>(null);
@@ -42,17 +42,11 @@ export default function VideoPlayerV2Screen() {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   
-  // Track audio state to detect when it drops
-  const isAudioActiveRef = useRef(true);
+  // Track audio recovery timing
   const audioRecoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastBufferEndTimeRef = useRef<number>(0);
-  
-  // 🚨 CRITICAL FIX #5: Track if 8-second safety net has been triggered
-  const eightSecondRefreshTriggered = useRef(false);
+  const lastBufferEndTimeRef = useRef<number>(Date.now());
+  const playbackStartedAtRef = useRef<number | null>(null);
   const eightSecondTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // 🚨 CRITICAL FIX #3: Track if we're in the critical 8-16 second window
-  const inCriticalWindowRef = useRef(false);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -77,7 +71,7 @@ export default function VideoPlayerV2Screen() {
     ? videos[currentVideoIndex + 1]
     : null;
 
-  // 🚨 CRITICAL FIX: Automatic audio recovery function - rapid pause/resume
+  // Audio recovery function - rapid pause/resume
   const triggerAudioRecovery = useCallback(() => {
     if (Platform.OS !== 'ios') return;
     
@@ -89,58 +83,16 @@ export default function VideoPlayerV2Screen() {
     setTimeout(() => {
       console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Resuming playback after 50ms');
       setIsPlaying(true);
-      isAudioActiveRef.current = true;
     }, 50); // 50ms pause is imperceptible to users
   }, []);
 
-  // 🚨 CRITICAL FIX #2: Effect to handle forceAudioRefresh state changes
+  // Effect to handle forceAudioRefresh state changes
   useEffect(() => {
     if (forceAudioRefresh > 0) {
       console.log('[VideoPlayerV2] 🔄 forceAudioRefresh triggered (count:', forceAudioRefresh, ')');
       triggerAudioRecovery();
     }
   }, [forceAudioRefresh, triggerAudioRecovery]);
-
-  // 🚨 CRITICAL FIX #1: Handle playback rate changes (steady state detection)
-  const handlePlaybackRateChange = useCallback((data: OnPlaybackRateChangeData) => {
-    console.log('[VideoPlayerV2] 📊 Playback rate changed to:', data.playbackRate);
-    
-    if (Platform.OS === 'ios' && data.playbackRate === 1.0) {
-      // Rate returns to 1.0 after initial buffer, indicating steady state streaming
-      console.log('[VideoPlayerV2] 🎯 Steady state detected (rate = 1.0) - scheduling audio refresh in 300ms');
-      
-      setTimeout(() => {
-        console.log('[VideoPlayerV2] 🔧 Triggering audio refresh after steady state transition');
-        setForceAudioRefresh(prev => prev + 1);
-      }, 300);
-    }
-  }, []);
-
-  // 🚨 CRITICAL FIX #5: Set up 8-second safety net when playback starts
-  useEffect(() => {
-    if (Platform.OS === 'ios' && isPlaying && currentTime > 0 && currentTime < 2 && !eightSecondRefreshTriggered.current) {
-      console.log('[VideoPlayerV2] ⏰ Setting up 8-second safety net audio refresh');
-      
-      // Clear any existing timeout
-      if (eightSecondTimeoutRef.current) {
-        clearTimeout(eightSecondTimeoutRef.current);
-      }
-      
-      // Schedule audio refresh at 8 seconds
-      eightSecondTimeoutRef.current = setTimeout(() => {
-        console.log('[VideoPlayerV2] 🛡️ 8-SECOND SAFETY NET: Triggering preventive audio refresh');
-        setForceAudioRefresh(prev => prev + 1);
-        eightSecondRefreshTriggered.current = true;
-      }, 8000);
-    }
-    
-    return () => {
-      if (eightSecondTimeoutRef.current) {
-        clearTimeout(eightSecondTimeoutRef.current);
-        eightSecondTimeoutRef.current = null;
-      }
-    };
-  }, [isPlaying, currentTime]);
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -249,7 +201,7 @@ export default function VideoPlayerV2Screen() {
     };
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
-  // Cleanup audio recovery timeout on unmount
+  // Cleanup audio recovery timeouts on unmount
   useEffect(() => {
     return () => {
       if (audioRecoveryTimeoutRef.current) {
@@ -262,6 +214,38 @@ export default function VideoPlayerV2Screen() {
       }
     };
   }, []);
+
+  // Set up 8-second safety net once when playback starts
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    
+    // Only set up once when playback truly starts
+    if (isPlaying && !playbackStartedAtRef.current) {
+      playbackStartedAtRef.current = Date.now();
+      
+      console.log('[VideoPlayerV2] ⏰ Setting up 8-second safety net audio refresh (one-time)');
+      
+      // Clear any existing timeout
+      if (eightSecondTimeoutRef.current) {
+        clearTimeout(eightSecondTimeoutRef.current);
+      }
+      
+      // Schedule audio refresh at 8 seconds from now
+      eightSecondTimeoutRef.current = setTimeout(() => {
+        console.log('[VideoPlayerV2] 🛡️ 8-SECOND SAFETY NET: Triggering preventive audio refresh');
+        setForceAudioRefresh(prev => prev + 1);
+      }, 8000);
+    }
+    
+    // Reset when video stops
+    if (!isPlaying && playbackStartedAtRef.current) {
+      playbackStartedAtRef.current = null;
+      if (eightSecondTimeoutRef.current) {
+        clearTimeout(eightSecondTimeoutRef.current);
+        eightSecondTimeoutRef.current = null;
+      }
+    }
+  }, [isPlaying]);
 
   const handleExitPlayer = useCallback(async () => {
     console.log('[VideoPlayerV2] User exiting video player');
@@ -352,7 +336,7 @@ export default function VideoPlayerV2Screen() {
     }
   }, [isFullscreen, isPlaying, startControlsTimeout]);
 
-  // 🚨 CRITICAL FIX: Handle buffer events with automatic audio recovery
+  // Handle buffer events with automatic audio recovery
   const handleBuffer = useCallback((data: OnBufferData) => {
     if (data.isBuffering) {
       console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
@@ -361,7 +345,7 @@ export default function VideoPlayerV2Screen() {
       console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
       setIsBuffering(false);
       
-      // After buffer refill completes, check audio after 500ms
+      // After buffer refill completes, schedule audio recovery after 500ms
       if (Platform.OS === 'ios') {
         lastBufferEndTimeRef.current = Date.now();
         
@@ -370,86 +354,22 @@ export default function VideoPlayerV2Screen() {
           clearTimeout(audioRecoveryTimeoutRef.current);
         }
         
-        // Wait 500ms then check if audio is still active
+        // Wait 500ms then trigger audio recovery
         audioRecoveryTimeoutRef.current = setTimeout(() => {
-          if (!isAudioActiveRef.current && isPlaying) {
-            console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED after buffer refill - triggering automatic recovery');
-            setForceAudioRefresh(prev => prev + 1);
-          } else {
-            console.log('[VideoPlayerV2] ✅ Audio still active after buffer refill');
-          }
+          console.log('[VideoPlayerV2] 🔧 500ms post-buffer check: Triggering audio recovery');
+          setForceAudioRefresh(prev => prev + 1);
         }, 500);
       }
     }
-  }, [currentTime, isPlaying]);
+  }, [currentTime]);
 
-  // 🚨 CRITICAL FIX: Handle playback state changes to detect audio drops
-  const handlePlaybackStateChanged = useCallback((data: OnPlaybackStateChangedData) => {
-    console.log('[VideoPlayerV2] 🎬 Playback state changed:', data.isPlaying);
-    
-    if (Platform.OS === 'ios') {
-      // Track if audio should be active
-      const shouldHaveAudio = data.isPlaying && volume > 0;
-      
-      if (shouldHaveAudio && !isAudioActiveRef.current) {
-        console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED via playback state change - triggering recovery');
-        setForceAudioRefresh(prev => prev + 1);
-      }
-      
-      isAudioActiveRef.current = shouldHaveAudio;
-    }
-  }, [volume]);
-
-  // 🚨 CRITICAL FIX: Handle audio becoming noisy (headphones unplugged, etc.)
-  const handleAudioBecomingNoisy = useCallback((data: OnAudioBecomingNoisyData) => {
-    console.log('[VideoPlayerV2] 🔊 Audio becoming noisy event detected');
-    
-    if (Platform.OS === 'ios') {
-      // This event can indicate audio track issues
-      console.log('[VideoPlayerV2] 🚨 AUDIO INTERRUPTION - triggering recovery');
-      setForceAudioRefresh(prev => prev + 1);
-    }
-  }, []);
-
-  // 🚨 CRITICAL FIX #3: Enhanced onProgress with critical window monitoring
+  // Simple progress handler - no critical window checks
   const handleProgress = useCallback((data: OnProgressData) => {
     if (!isSeekingRef.current) {
       setCurrentTime(data.currentTime);
     }
     setIsBuffering(false);
-    
-    if (Platform.OS === 'ios') {
-      const time = data.currentTime;
-      
-      // Track if we're in the critical 8-16 second window
-      const wasInCriticalWindow = inCriticalWindowRef.current;
-      const isInCriticalWindow = time >= 8 && time <= 16;
-      inCriticalWindowRef.current = isInCriticalWindow;
-      
-      // Log when entering critical window
-      if (isInCriticalWindow && !wasInCriticalWindow) {
-        console.log('[VideoPlayerV2] ⚠️ ENTERING CRITICAL WINDOW (8-16 seconds) - monitoring for audio drops');
-      }
-      
-      // Track audio activity during playback
-      if (isPlaying && volume > 0) {
-        isAudioActiveRef.current = true;
-        
-        // 🚨 CRITICAL FIX #3: In critical window, if time is advancing but audio appears lost
-        // This is a heuristic check - if we're in the window and haven't refreshed recently
-        if (isInCriticalWindow && time >= 10 && time <= 14) {
-          const timeSinceLastRefresh = Date.now() - lastBufferEndTimeRef.current;
-          
-          // If it's been more than 2 seconds since last buffer event and we're in the danger zone
-          if (timeSinceLastRefresh > 2000) {
-            console.log('[VideoPlayerV2] 🚨 CRITICAL WINDOW AUDIO CHECK: Time advancing in danger zone (10-14s) - triggering preventive refresh');
-            setForceAudioRefresh(prev => prev + 1);
-            lastBufferEndTimeRef.current = Date.now(); // Reset to prevent rapid triggers
-          }
-        }
-      }
-    }
-  }, [isPlaying, volume]);
+  }, []);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -466,10 +386,10 @@ export default function VideoPlayerV2Screen() {
     return `${mb.toFixed(2)} MB`;
   };
 
-  // 🚨 CRITICAL FIX #4: iOS-specific buffer config with increased minBufferMs
+  // iOS-specific buffer config with increased minBufferMs
   const bufferConfig = Platform.select({
     ios: {
-      minBufferMs: 5000, // Increased from default to fill buffer more completely
+      minBufferMs: 5000,
       maxBufferMs: 60000,
       bufferForPlaybackMs: 1000,
       bufferForPlaybackAfterRebufferMs: 2000,
