@@ -28,7 +28,7 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
     mode: 'moviePlayback',
     allowBluetooth: true,
     allowAirPlay: true,
-    mixWithOthers: false, // 🚨 CRITICAL: Prevents audio cutout
+    mixWithOthers: false, // 🚨 CRITICAL: Prevents audio cutout - exclusive audio control
   };
 
   const finalConfig = { ...defaultConfig, ...config };
@@ -38,6 +38,7 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
     console.log('[AudioSession] Config:', finalConfig);
 
     // 🚨 CRITICAL FIX: Configure audio mode for uninterrupted video playback
+    // mixWithOthers: false prevents conflicting audio session modes that cause track drops
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true, // Play audio even when silent switch is on
       staysActiveInBackground: false, // Don't play in background (video stops anyway)
@@ -49,7 +50,7 @@ export async function configureAudioSession(config?: Partial<AudioSessionConfig>
     console.log('[AudioSession] - ✅ Continuous playback enabled (no 10-second cutoffs)');
     console.log('[AudioSession] - ✅ Silent mode override enabled (ignoreSilentSwitch)');
     console.log('[AudioSession] - ✅ Playback category set (prevents audio session deactivation)');
-    console.log('[AudioSession] - ✅ mixWithOthers: false (exclusive audio control)');
+    console.log('[AudioSession] - ✅ mixWithOthers: false (exclusive audio control - prevents track drops)');
   } catch (error) {
     console.error('[AudioSession] ❌ Failed to configure iOS audio session:', error);
     console.error('[AudioSession] Audio may cut out during playback');

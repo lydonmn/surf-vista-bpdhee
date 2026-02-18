@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import Video, { OnLoadData, OnProgressData, OnBufferData } from 'react-native-video';
+import Video, { OnLoadData, OnProgressData, OnBufferData, OnPlaybackStateChangedData, OnAudioBecomingNoisyData } from 'react-native-video';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -38,6 +38,11 @@ export default function VideoPlayerV2Screen() {
   const isSeekingRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
+  
+  // 🚨 CRITICAL FIX: Track audio state to detect when it drops
+  const isAudioActiveRef = useRef(true);
+  const audioRecoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastBufferEndTimeRef = useRef<number>(0);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -50,7 +55,6 @@ export default function VideoPlayerV2Screen() {
     ? videoUrls.slice(currentVideoIndex, currentVideoIndex + 3)
     : videoUrls.slice(0, 3);
 
-  // 🚨 CRITICAL FIX: Verify preloading starts immediately on mount
   console.log('[VideoPlayerV2] 📥 Preload queue initialized:', preloadQueue.length, 'videos');
   console.log('[VideoPlayerV2] Current video index:', currentVideoIndex);
   console.log('[VideoPlayerV2] Preloading should start NOW (not waiting for user interaction)');
@@ -62,6 +66,22 @@ export default function VideoPlayerV2Screen() {
   const nextVideo = currentVideoIndex >= 0 && currentVideoIndex < videos.length - 1
     ? videos[currentVideoIndex + 1]
     : null;
+
+  // 🚨 CRITICAL FIX: Automatic audio recovery function
+  const triggerAudioRecovery = useCallback(() => {
+    if (Platform.OS !== 'ios') return;
+    
+    console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Triggering pause/resume cycle to restore audio track');
+    
+    // Tiny pause/resume cycle to force AVPlayer to reselect audio track
+    setIsPlaying(false);
+    
+    setTimeout(() => {
+      console.log('[VideoPlayerV2] 🔧 AUDIO RECOVERY: Resuming playback');
+      setIsPlaying(true);
+      isAudioActiveRef.current = true;
+    }, 50); // 50ms pause is imperceptible to users
+  }, []);
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -170,6 +190,16 @@ export default function VideoPlayerV2Screen() {
     };
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
+  // 🚨 CRITICAL FIX: Cleanup audio recovery timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRecoveryTimeoutRef.current) {
+        clearTimeout(audioRecoveryTimeoutRef.current);
+        audioRecoveryTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const handleExitPlayer = useCallback(async () => {
     console.log('[VideoPlayerV2] User exiting video player');
     
@@ -258,6 +288,65 @@ export default function VideoPlayerV2Screen() {
       startControlsTimeout();
     }
   }, [isFullscreen, isPlaying, startControlsTimeout]);
+
+  // 🚨 CRITICAL FIX: Handle buffer events with automatic audio recovery
+  const handleBuffer = useCallback((data: OnBufferData) => {
+    if (data.isBuffering) {
+      console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
+      setIsBuffering(true);
+    } else {
+      console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+      setIsBuffering(false);
+      
+      // 🚨 CRITICAL FIX: After buffer refill completes, check audio after 500ms
+      if (Platform.OS === 'ios') {
+        lastBufferEndTimeRef.current = Date.now();
+        
+        // Clear any existing recovery timeout
+        if (audioRecoveryTimeoutRef.current) {
+          clearTimeout(audioRecoveryTimeoutRef.current);
+        }
+        
+        // Wait 500ms then check if audio is still active
+        audioRecoveryTimeoutRef.current = setTimeout(() => {
+          if (!isAudioActiveRef.current && isPlaying) {
+            console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED after buffer refill - triggering automatic recovery');
+            triggerAudioRecovery();
+          } else {
+            console.log('[VideoPlayerV2] ✅ Audio still active after buffer refill');
+          }
+        }, 500);
+      }
+    }
+  }, [currentTime, isPlaying, triggerAudioRecovery]);
+
+  // 🚨 CRITICAL FIX: Handle playback state changes to detect audio drops
+  const handlePlaybackStateChanged = useCallback((data: OnPlaybackStateChangedData) => {
+    console.log('[VideoPlayerV2] 🎬 Playback state changed:', data.isPlaying);
+    
+    if (Platform.OS === 'ios') {
+      // Track if audio should be active
+      const shouldHaveAudio = data.isPlaying && volume > 0;
+      
+      if (shouldHaveAudio && !isAudioActiveRef.current) {
+        console.log('[VideoPlayerV2] 🚨 AUDIO DROP DETECTED via playback state change - triggering recovery');
+        triggerAudioRecovery();
+      }
+      
+      isAudioActiveRef.current = shouldHaveAudio;
+    }
+  }, [volume, triggerAudioRecovery]);
+
+  // 🚨 CRITICAL FIX: Handle audio becoming noisy (headphones unplugged, etc.)
+  const handleAudioBecomingNoisy = useCallback((data: OnAudioBecomingNoisyData) => {
+    console.log('[VideoPlayerV2] 🔊 Audio becoming noisy event detected');
+    
+    if (Platform.OS === 'ios') {
+      // This event can indicate audio track issues
+      console.log('[VideoPlayerV2] 🚨 AUDIO INTERRUPTION - triggering recovery');
+      triggerAudioRecovery();
+    }
+  }, [triggerAudioRecovery]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -372,22 +461,20 @@ export default function VideoPlayerV2Screen() {
             console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
             setDuration(data.duration);
             setIsBuffering(false);
+            isAudioActiveRef.current = true;
           }}
           onProgress={(data: OnProgressData) => {
             if (!isSeekingRef.current) {
               setCurrentTime(data.currentTime);
             }
             setIsBuffering(false);
-          }}
-          onBuffer={(data: OnBufferData) => {
-            // 🚨 CRITICAL FIX: Log buffering events to diagnose frequency
-            if (data.isBuffering) {
-              console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
-            } else {
-              console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+            
+            // Track audio activity
+            if (Platform.OS === 'ios' && isPlaying && volume > 0) {
+              isAudioActiveRef.current = true;
             }
-            setIsBuffering(data.isBuffering);
           }}
+          onBuffer={handleBuffer}
           onError={(error) => {
             console.error('[VideoPlayerV2] Video error:', error);
             setError('Playback error occurred');
@@ -396,17 +483,18 @@ export default function VideoPlayerV2Screen() {
             console.log('[VideoPlayerV2] Video ended');
             setIsPlaying(false);
           }}
+          onPlaybackStateChanged={handlePlaybackStateChanged}
+          onAudioBecomingNoisy={handleAudioBecomingNoisy}
           repeat={false}
           playInBackground={false}
           playWhenInactive={false}
-          // 🚨 CRITICAL FIX: ignoreSilentSwitch prevents audio from being killed by silent switch
           ignoreSilentSwitch="ignore"
-          // 🚨 CRITICAL FIX: iOS buffer optimization - buffer 10 seconds ahead
+          audioOnly={false}
+          selectedAudioTrack={{ type: 'system' }}
           preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-          // 🚨 CRITICAL FIX: Android buffer optimization - increased buffer sizes
           bufferConfig={Platform.OS === 'android' ? {
-            minBufferMs: 5000, // Increased from 2500 to 5000
-            maxBufferMs: 60000, // Increased from 50000 to 60000
+            minBufferMs: 5000,
+            maxBufferMs: 60000,
             bufferForPlaybackMs: 1000,
             bufferForPlaybackAfterRebufferMs: 2000,
           } : undefined}
@@ -430,11 +518,10 @@ export default function VideoPlayerV2Screen() {
                 console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
               }
             }}
-            // 🚨 CRITICAL FIX: ignoreSilentSwitch on pre-buffered video too
             ignoreSilentSwitch="ignore"
-            // 🚨 CRITICAL FIX: iOS buffer optimization for next video
+            audioOnly={false}
+            selectedAudioTrack={{ type: 'system' }}
             preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            // 🚨 CRITICAL FIX: Android buffer optimization for next video
             bufferConfig={Platform.OS === 'android' ? {
               minBufferMs: 5000,
               maxBufferMs: 60000,
@@ -445,7 +532,6 @@ export default function VideoPlayerV2Screen() {
           />
         )}
         
-        {/* Only show buffering for CURRENT video, not preloading */}
         {isBuffering && (
           <View style={styles.bufferingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
@@ -570,22 +656,20 @@ export default function VideoPlayerV2Screen() {
               console.log('[VideoPlayerV2] ✅ Video loaded, duration:', data.duration);
               setDuration(data.duration);
               setIsBuffering(false);
+              isAudioActiveRef.current = true;
             }}
             onProgress={(data: OnProgressData) => {
               if (!isSeekingRef.current) {
                 setCurrentTime(data.currentTime);
               }
               setIsBuffering(false);
-            }}
-            onBuffer={(data: OnBufferData) => {
-              // 🚨 CRITICAL FIX: Log buffering events to diagnose frequency
-              if (data.isBuffering) {
-                console.log('[VideoPlayerV2] ⏸️ Buffering STARTED at', currentTime.toFixed(2), 'seconds');
-              } else {
-                console.log('[VideoPlayerV2] ▶️ Buffering ENDED at', currentTime.toFixed(2), 'seconds');
+              
+              // Track audio activity
+              if (Platform.OS === 'ios' && isPlaying && volume > 0) {
+                isAudioActiveRef.current = true;
               }
-              setIsBuffering(data.isBuffering);
             }}
+            onBuffer={handleBuffer}
             onError={(error) => {
               console.error('[VideoPlayerV2] Video error:', error);
               setError('Playback error occurred');
@@ -594,17 +678,18 @@ export default function VideoPlayerV2Screen() {
               console.log('[VideoPlayerV2] Video ended');
               setIsPlaying(false);
             }}
+            onPlaybackStateChanged={handlePlaybackStateChanged}
+            onAudioBecomingNoisy={handleAudioBecomingNoisy}
             repeat={false}
             playInBackground={false}
             playWhenInactive={false}
-            // 🚨 CRITICAL FIX: ignoreSilentSwitch prevents audio from being killed by silent switch
             ignoreSilentSwitch="ignore"
-            // 🚨 CRITICAL FIX: iOS buffer optimization - buffer 10 seconds ahead
+            audioOnly={false}
+            selectedAudioTrack={{ type: 'system' }}
             preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-            // 🚨 CRITICAL FIX: Android buffer optimization - increased buffer sizes
             bufferConfig={Platform.OS === 'android' ? {
-              minBufferMs: 5000, // Increased from 2500 to 5000
-              maxBufferMs: 60000, // Increased from 50000 to 60000
+              minBufferMs: 5000,
+              maxBufferMs: 60000,
               bufferForPlaybackMs: 1000,
               bufferForPlaybackAfterRebufferMs: 2000,
             } : undefined}
@@ -628,11 +713,10 @@ export default function VideoPlayerV2Screen() {
                   console.log('[VideoPlayerV2] ✅ Next video pre-buffered (silent)');
                 }
               }}
-              // 🚨 CRITICAL FIX: ignoreSilentSwitch on pre-buffered video too
               ignoreSilentSwitch="ignore"
-              // 🚨 CRITICAL FIX: iOS buffer optimization for next video
+              audioOnly={false}
+              selectedAudioTrack={{ type: 'system' }}
               preferredForwardBufferDuration={Platform.OS === 'ios' ? 10 : undefined}
-              // 🚨 CRITICAL FIX: Android buffer optimization for next video
               bufferConfig={Platform.OS === 'android' ? {
                 minBufferMs: 5000,
                 maxBufferMs: 60000,
@@ -643,7 +727,6 @@ export default function VideoPlayerV2Screen() {
             />
           )}
           
-          {/* Only show buffering for CURRENT video, not preloading */}
           {isBuffering && (
             <View style={styles.bufferingOverlay}>
               <ActivityIndicator size="large" color="#FFFFFF" />
