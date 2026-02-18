@@ -311,29 +311,67 @@ export default function AdminScreen() {
       // STEP 2: Upload video directly to Mux using FileSystem.uploadAsync
       // ========================================
       console.log('[AdminScreen] ⚡ Uploading video directly to Mux using FileSystem.uploadAsync...');
+      console.log('[AdminScreen] 📊 File size:', formatFileSize(fileInfo.size));
+      console.log('[AdminScreen] 🎯 Mux upload URL:', muxUploadUrl);
       setUploadProgress(10);
-      setUploadSpeed('Uploading...');
+      setUploadSpeed('Uploading to Mux...');
 
-      // Use FileSystem.uploadAsync for reliable large file uploads
-      const uploadResult = await FileSystem.uploadAsync(muxUploadUrl, videoUri, {
-        httpMethod: 'PUT',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        mimeType: 'video/mp4',
-        headers: {
-          'Content-Type': 'video/mp4',
-        },
-      });
+      // Start a progress simulation since FileSystem.uploadAsync doesn't provide progress callbacks
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          // Slowly increment from 10% to 90% over time
+          if (prev < 90) {
+            return prev + 2;
+          }
+          return prev;
+        });
+      }, 2000); // Update every 2 seconds
 
-      console.log('[AdminScreen] 📤 Upload result status:', uploadResult.status);
+      try {
+        console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync...');
+        const uploadStartTime = Date.now();
+        
+        // Create a timeout promise (10 minutes for large files)
+        const timeoutMs = 10 * 60 * 1000; // 10 minutes
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Upload timed out after ${timeoutMs / 1000} seconds. The file may be too large or your connection may be too slow.`));
+          }, timeoutMs);
+        });
 
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
-        console.error('[AdminScreen] Response body:', uploadResult.body);
-        throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+        // Race between upload and timeout
+        const uploadPromise = FileSystem.uploadAsync(muxUploadUrl, videoUri, {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          mimeType: 'video/mp4',
+          headers: {
+            'Content-Type': 'video/mp4',
+          },
+        });
+
+        console.log('[AdminScreen] ⏳ Upload in progress (timeout: 10 minutes)...');
+        const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as FileSystem.FileSystemUploadResult;
+
+        clearInterval(progressInterval);
+        const uploadDuration = (Date.now() - uploadStartTime) / 1000;
+        
+        console.log('[AdminScreen] 📤 Upload result status:', uploadResult.status);
+        console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
+        console.log('[AdminScreen] 📊 Average speed:', formatSpeed(fileInfo.size / uploadDuration));
+
+        if (uploadResult.status < 200 || uploadResult.status >= 300) {
+          console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+        }
+
+        const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
+        console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
+      } catch (uploadError) {
+        clearInterval(progressInterval);
+        console.error('[AdminScreen] 💥 Upload error caught:', uploadError);
+        throw uploadError;
       }
-
-      const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-      console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
 
       // ========================================
       // STEP 3: Poll for Mux asset ready status
@@ -509,13 +547,24 @@ export default function AdminScreen() {
       await refreshVideos();
     } catch (error: any) {
       console.error('[AdminScreen] ❌ Error uploading video:', error);
-      console.error('[AdminScreen] Error stack:', error.stack);
+      console.error('[AdminScreen] Error type:', typeof error);
+      console.error('[AdminScreen] Error name:', error?.name);
+      console.error('[AdminScreen] Error message:', error?.message);
+      console.error('[AdminScreen] Error stack:', error?.stack);
       
       let errorMessage = error.message || 'Failed to upload video';
-      if (errorMessage.includes('network')) {
-        errorMessage = 'Network connection lost. Please check your internet connection and try again.';
-      } else if (errorMessage.includes('timeout')) {
-        errorMessage = 'Upload timed out. Please check your internet connection and try again.';
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('network') || errorMessage.includes('Network')) {
+        errorMessage = 'Network connection lost during upload. Please check your internet connection and try again.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+        errorMessage = 'Upload timed out. This can happen with large files on slow connections. Please try again with a better connection.';
+      } else if (errorMessage.includes('cancelled')) {
+        errorMessage = 'Upload was cancelled.';
+      } else if (errorMessage.includes('Failed to create Mux upload')) {
+        errorMessage = 'Failed to initialize Mux upload. Please try again.';
+      } else if (errorMessage.includes('Mux upload failed with status')) {
+        errorMessage = `Upload to Mux failed. ${errorMessage}`;
       }
       
       Alert.alert('Upload Failed', errorMessage);
@@ -807,6 +856,26 @@ export default function AdminScreen() {
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
                 🎬 Direct upload to Mux - optimized for streaming!
               </Text>
+              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4, fontSize: 11 }]}>
+                Large files may take several minutes. Please be patient.
+              </Text>
+              
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: '#EF4444' }]}
+                onPress={() => {
+                  console.log('[AdminScreen] 🛑 User requested upload cancellation');
+                  cancellationFlagRef.current = true;
+                  Alert.alert('Cancelling', 'Upload is being cancelled...');
+                }}
+              >
+                <IconSymbol
+                  ios_icon_name="xmark.circle.fill"
+                  android_material_icon_name="cancel"
+                  size={18}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.cancelButtonText}>Cancel Upload</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1047,5 +1116,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  cancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
