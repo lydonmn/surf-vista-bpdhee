@@ -414,6 +414,41 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] ✅ Public URL:', urlData.publicUrl);
 
+      // 🎬 TRIGGER VIDEO TRANSCODING
+      console.log('[AdminScreen] 🎬 Triggering video transcoding for compression...');
+      try {
+        const transcodeResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/transcode-video`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            videoUrl: urlData.publicUrl,
+            fileName: fileName,
+            targetResolution: '1080p', // Compress to 1080p max
+            targetBitrate: '2500k', // Optimize bitrate for streaming
+          }),
+        });
+
+        if (!transcodeResponse.ok) {
+          console.warn('[AdminScreen] ⚠️ Transcoding failed (non-critical):', await transcodeResponse.text());
+          // Continue with original video if transcoding fails
+        } else {
+          const transcodeResult = await transcodeResponse.json();
+          console.log('[AdminScreen] ✅ Video transcoded successfully!');
+          console.log('[AdminScreen] 📊 Compression ratio:', transcodeResult.compressionRatio);
+          console.log('[AdminScreen] 📦 Original size:', formatFileSize(transcodeResult.originalSize));
+          console.log('[AdminScreen] 📦 Compressed size:', formatFileSize(transcodeResult.compressedSize));
+          
+          // Update the video URL to use the compressed version
+          urlData.publicUrl = transcodeResult.transcodedUrl;
+        }
+      } catch (transcodeError) {
+        console.warn('[AdminScreen] ⚠️ Transcoding error (non-critical):', transcodeError);
+        // Continue with original video if transcoding fails
+      }
+
       console.log('[AdminScreen] 🖼️ Generating thumbnail...');
       let thumbnailUrl: string | null = null;
       try {
