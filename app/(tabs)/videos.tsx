@@ -348,11 +348,6 @@ export default function VideosScreen() {
                         </View>
                       )}
                     </View>
-                    {video.duration && (
-                      <View style={styles.durationBadge}>
-                        <Text style={styles.durationText}>{video.duration}</Text>
-                      </View>
-                    )}
                     {video.signed_url && !isProcessing && (
                       <View style={styles.preloadBadge}>
                         <VideoPreloadIndicator isPreloaded={true} size="small" />
@@ -586,20 +581,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-  },
-  durationBadge: {
-    position: 'absolute',
-    top: 170,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  durationText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
   preloadBadge: {
     position: 'absolute',
