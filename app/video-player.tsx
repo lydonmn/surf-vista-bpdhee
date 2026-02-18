@@ -27,6 +27,8 @@ interface Video {
 }
 
 const CONTROLS_HIDE_DELAY = 3000;
+// 🎬 Mux HLS URL prefix for detection
+const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export default function VideoPlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -302,11 +304,22 @@ export default function VideoPlayerScreen() {
 
         console.log('[VideoPlayer] Video loaded:', data.title);
         console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
+        console.log('[VideoPlayer] 🎬 Video URL:', data.video_url);
         // 🚨 CRITICAL FIX: Do NOT set duration from database - wait for video metadata
         console.log('[VideoPlayer] ⚠️ NOT using database duration - will wait for video onLoad callback');
         setVideo(data);
 
-        // ✅ INSTANT PLAYBACK: Use preloaded URL if available
+        // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, use it directly without signing
+        if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
+          console.log('[VideoPlayer] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
+          setVideoUrl(data.video_url);
+          hasLoadedRef.current = true;
+          setIsLoading(false);
+          setIsBuffering(false);
+          return;
+        }
+
+        // ✅ INSTANT PLAYBACK: Use preloaded URL if available (for Supabase videos)
         if (preloadedUrl && typeof preloadedUrl === 'string') {
           console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           setVideoUrl(preloadedUrl);

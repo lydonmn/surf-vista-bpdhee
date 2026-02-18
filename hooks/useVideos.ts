@@ -9,6 +9,9 @@ type Video = Database['public']['Tables']['videos']['Row'] & {
   signed_url?: string;
 };
 
+// 🎬 Mux HLS URL prefix for detection
+const MUX_HLS_PREFIX = 'https://stream.mux.com/';
+
 export function useVideos() {
   const { currentLocation } = useLocation();
   const [videos, setVideos] = useState<Video[]>([]);
@@ -33,6 +36,12 @@ export function useVideos() {
 
   const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
     try {
+      // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, return it as-is (no signing needed)
+      if (videoUrl.startsWith(MUX_HLS_PREFIX)) {
+        console.log('[useVideos] 🎬 Mux HLS URL detected, returning as-is (publicly accessible):', videoUrl);
+        return videoUrl;
+      }
+
       const cached = preloadedUrlsRef.current.get(videoIdParam);
       if (cached) {
         const age = Date.now() - cached.timestamp;
