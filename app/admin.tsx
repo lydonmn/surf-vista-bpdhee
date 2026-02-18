@@ -35,6 +35,7 @@ export default function AdminScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [uploadComplete, setUploadComplete] = useState(false);
   const { user, profile } = useAuth();
   const { refreshVideos } = useVideos();
   const { locations } = useLocation();
@@ -231,6 +232,7 @@ export default function AdminScreen() {
       setIsUploading(true);
       setUploadProgress(0);
       setUploadStatus('');
+      setUploadComplete(false);
       uploadStartTimeRef.current = Date.now();
       cancellationFlagRef.current = false;
       
@@ -366,10 +368,12 @@ export default function AdminScreen() {
         console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
         
         // ========================================
-        // STEP 3: Immediately set progress to 100% and show success
+        // STEP 3: Immediately set progress to 100% and show success state
         // ========================================
         setUploadProgress(100);
-        setUploadStatus('Upload complete! Processing...');
+        setUploadStatus('Upload complete! Processing in background…');
+        setIsUploading(false); // Remove spinning loader
+        setUploadComplete(true); // Show success state (checkmark)
         console.log('[AdminScreen] ✅ Upload complete! Mux is now processing the video...');
 
       } catch (uploadError) {
@@ -460,29 +464,17 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] ✅ Video saved to database with status=processing');
       
-      const selectedLocationData = locations.find(loc => loc.id === selectedLocation);
-      const locationName = selectedLocationData?.displayName || selectedLocation;
-      
-      const totalUploadTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-      
-      Alert.alert(
-        '🎉 Upload Complete!', 
-        `Your video has been uploaded successfully!\n\n✅ Video tagged to: ${locationName}\n✅ Upload time: ${totalUploadTime.toFixed(1)}s\n\n⏳ Mux is now processing your video. It will appear in the video library once ready (usually 1-2 minutes).\n\nYou can navigate away now!`
-      );
-
-      // Reset form
-      setVideoUri(null);
-      setVideoTitle('');
-      setVideoDescription('');
-      setUploadProgress(0);
-      setUploadStatus('');
-      
-      if (availableLocations.length > 0) {
-        setSelectedLocation(availableLocations[0].id);
-      }
-
       // Refresh videos list to show the processing video
       await refreshVideos();
+      
+      // ========================================
+      // STEP 6: Wait 1.5 seconds then navigate back automatically
+      // ========================================
+      console.log('[AdminScreen] ⏳ Waiting 1.5 seconds before navigating back...');
+      setTimeout(() => {
+        console.log('[AdminScreen] 🔙 Navigating back to previous screen');
+        router.back();
+      }, 1500);
       
     } catch (error: any) {
       console.error('[AdminScreen] ❌ Error uploading video:', error);
@@ -508,8 +500,11 @@ export default function AdminScreen() {
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
-      setIsUploading(false);
-      setUploadStatus('');
+      // Only reset if there was an error (uploadComplete will be false)
+      if (!uploadComplete) {
+        setIsUploading(false);
+        setUploadStatus('');
+      }
       cancellationFlagRef.current = false;
     }
   };
@@ -776,25 +771,44 @@ export default function AdminScreen() {
             </View>
           </View>
 
-          {isUploading && (
+          {(isUploading || uploadComplete) && (
             <View style={styles.progressContainer}>
-              <Text style={[styles.progressText, { color: theme.colors.text }]}>
-                {uploadStatus || `Uploading: ${uploadProgress}%`}
-              </Text>
-              <View style={[styles.progressBar, { backgroundColor: colors.cardBackground }]}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${uploadProgress}%`, backgroundColor: colors.primary }
-                  ]} 
-                />
-              </View>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                🎬 Direct upload to Mux - optimized for streaming!
-              </Text>
-              <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4, fontSize: 11 }]}>
-                Large files may take several minutes. Please be patient.
-              </Text>
+              {uploadComplete ? (
+                <View style={styles.successContainer}>
+                  <IconSymbol
+                    ios_icon_name="checkmark.circle.fill"
+                    android_material_icon_name="check_circle"
+                    size={48}
+                    color="#4CAF50"
+                  />
+                  <Text style={[styles.successText, { color: '#4CAF50' }]}>
+                    {uploadStatus}
+                  </Text>
+                  <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 8 }]}>
+                    Navigating back...
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={[styles.progressText, { color: theme.colors.text }]}>
+                    {uploadStatus || `Uploading: ${uploadProgress}%`}
+                  </Text>
+                  <View style={[styles.progressBar, { backgroundColor: colors.cardBackground }]}>
+                    <View 
+                      style={[
+                        styles.progressFill, 
+                        { width: `${uploadProgress}%`, backgroundColor: colors.primary }
+                      ]} 
+                    />
+                  </View>
+                  <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
+                    🎬 Direct upload to Mux - optimized for streaming!
+                  </Text>
+                  <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4, fontSize: 11 }]}>
+                    Large files may take several minutes. Please be patient.
+                  </Text>
+                </>
+              )}
             </View>
           )}
 
@@ -986,6 +1000,17 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     marginBottom: 16,
+  },
+  successContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  successText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 12,
+    textAlign: 'center',
   },
   progressText: {
     fontSize: 14,
