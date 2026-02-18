@@ -1,56 +1,41 @@
 
-import { Audio } from 'expo-audio';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { Platform } from 'react-native';
-
-export interface AudioSessionConfig {
-  category: 'playback' | 'ambient' | 'soloAmbient';
-  mode: 'default' | 'moviePlayback' | 'videoRecording';
-  allowBluetooth?: boolean;
-  allowAirPlay?: boolean;
-  mixWithOthers: boolean;
-}
 
 /**
  * Configure iOS audio session for continuous video playback
  * 🚨 CRITICAL FIX: Prevents audio cutout at ~10 seconds
  * 
  * This MUST be called once on app startup in app/_layout.tsx
- * Sets AVAudioSession category to Playback with mixWithOthers disabled
+ * Uses InterruptionModeIOS.DoNotMix for exclusive audio session control
  */
-export async function configureAudioSession(config?: Partial<AudioSessionConfig>): Promise<void> {
+export async function configureAudioSession(): Promise<void> {
   if (Platform.OS !== 'ios') {
     console.log('[AudioSession] Skipping iOS audio session config on', Platform.OS);
     return;
   }
 
-  const defaultConfig: AudioSessionConfig = {
-    category: 'playback',
-    mode: 'moviePlayback',
-    allowBluetooth: true,
-    allowAirPlay: true,
-    mixWithOthers: false, // 🚨 CRITICAL: Prevents audio cutout - exclusive audio control
-  };
-
-  const finalConfig = { ...defaultConfig, ...config };
-
   try {
     console.log('[AudioSession] ⚡ Configuring iOS audio session for CONTINUOUS video playback...');
-    console.log('[AudioSession] Config:', finalConfig);
 
-    // 🚨 CRITICAL FIX: Configure audio mode for uninterrupted video playback
-    // mixWithOthers: false prevents conflicting audio session modes that cause track drops
+    // 🚨 CRITICAL FIX: InterruptionModeIOS.DoNotMix is the key setting
+    // This maps to AVAudioSession category Playback with exclusive control
+    // It prevents AVPlayer from dropping the audio track during buffer transitions
     await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true, // Play audio even when silent switch is on
-      staysActiveInBackground: false, // Don't play in background (video stops anyway)
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix, // 🚨 CRITICAL: Exclusive audio control
       shouldDuckAndroid: false,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
       playThroughEarpieceAndroid: false,
     });
 
-    console.log('[AudioSession] ✅ iOS audio session configured for UNINTERRUPTED playback');
-    console.log('[AudioSession] - ✅ Continuous playback enabled (no 10-second cutoffs)');
-    console.log('[AudioSession] - ✅ Silent mode override enabled (ignoreSilentSwitch)');
-    console.log('[AudioSession] - ✅ Playback category set (prevents audio session deactivation)');
-    console.log('[AudioSession] - ✅ mixWithOthers: false (exclusive audio control - prevents track drops)');
+    console.log('[AudioSession] ✅ iOS audio session configured with InterruptionModeIOS.DoNotMix');
+    console.log('[AudioSession] - ✅ Exclusive audio control enabled (prevents track drops)');
+    console.log('[AudioSession] - ✅ Silent mode override enabled');
+    console.log('[AudioSession] - ✅ Background playback disabled (video stops anyway)');
+    console.log('[AudioSession] - ✅ DoNotMix mode prevents audio session conflicts');
   } catch (error) {
     console.error('[AudioSession] ❌ Failed to configure iOS audio session:', error);
     console.error('[AudioSession] Audio may cut out during playback');
@@ -70,9 +55,12 @@ export async function activateAudioSession(): Promise<void> {
     console.log('[AudioSession] ⚡ Activating audio session for video playback...');
     
     await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       shouldDuckAndroid: false,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
       playThroughEarpieceAndroid: false,
     });
     
@@ -96,9 +84,12 @@ export async function deactivateAudioSession(): Promise<void> {
     
     // Reset to default audio mode
     await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
       playsInSilentModeIOS: false,
       staysActiveInBackground: false,
+      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
       shouldDuckAndroid: true,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
       playThroughEarpieceAndroid: false,
     });
     
