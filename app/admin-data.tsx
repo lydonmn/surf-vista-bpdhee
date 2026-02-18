@@ -337,17 +337,17 @@ export default function AdminDataScreen() {
     console.log('[AdminData] ═══════════════════════════════════════');
     
     setIsLoading(true);
-    addLog(`Regenerating report narrative for ${locationDisplayName}...`, 'info');
+    addLog(`Regenerating surf narrative for ${locationDisplayName}...`, 'info');
+    addLog(`  • Using existing surf and weather data from database`, 'info');
 
     try {
       console.log(`[AdminData] ═══════════════════════════════════════`);
-      console.log(`[AdminData] 📝 MANUAL REPORT GENERATION`);
-      console.log(`[AdminData] ✅ Using EXISTING data from database`);
+      console.log(`[AdminData] 📝 SIMPLIFIED NARRATIVE GENERATION`);
+      console.log(`[AdminData] ✅ Drawing from existing surf_conditions & weather_data`);
       console.log(`[AdminData] ❌ NOT pulling fresh data from buoy`);
-      console.log(`[AdminData] 📊 Data source: surf_conditions, weather_data, tide_data tables`);
-      console.log(`[AdminData] 🎯 Purpose: Regenerate narrative text only`);
+      console.log(`[AdminData] 🎯 Purpose: Generate 300-400 character narrative for surfers`);
       console.log(`[AdminData] ═══════════════════════════════════════`);
-      console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId} with isManualTrigger=true`);
+      console.log(`[AdminData] Invoking daily-6am-report-with-retry for ${locationId}`);
       
       const { data, error } = await supabase.functions.invoke('daily-6am-report-with-retry', {
         body: { 
@@ -370,19 +370,23 @@ export default function AdminDataScreen() {
       }
 
       if (data && data.success === false) {
-        const errorMsg = data.error || data.message || 'Report generation failed';
+        const errorMsg = data.error || data.message || 'Narrative generation failed';
         console.error('[AdminData] ❌ Edge Function reported failure:', errorMsg);
         
         if (data.stack) {
           console.error('[AdminData] Stack trace:', data.stack);
         }
         
+        // Check if it's a "no data" error
+        if (errorMsg.includes('No surf data available') || errorMsg.includes('Please update data first')) {
+          throw new Error(`No surf data available for ${locationDisplayName}. Please click "Update Data" first to pull fresh buoy data, then try regenerating the narrative.`);
+        }
+        
         throw new Error(errorMsg);
       }
 
       console.log('[AdminData] ✅ Edge Function call successful');
-      addLog(`✅ Report narrative regenerated for ${locationDisplayName}`, 'success');
-      addLog(`  • Used existing data from database (no fresh buoy pull)`, 'info');
+      addLog(`✅ Surf narrative regenerated for ${locationDisplayName}`, 'success');
       
       if (data.results && data.results.length > 0) {
         const result = data.results[0];
@@ -392,39 +396,22 @@ export default function AdminDataScreen() {
           addLog(`  • Generated ${result.narrativeLength} character narrative`, 'success');
           console.log('[AdminData] ✅ Narrative length:', result.narrativeLength);
         }
-        if (result.usedFallbackData) {
-          addLog(`  • Used most recent available data from scheduled updates`, 'info');
+        if (result.rating) {
+          addLog(`  • Stoke rating: ${result.rating}/10`, 'success');
         }
       }
       
-      // 🚨 CRITICAL FIX: Aggressive refresh with cache invalidation
-      console.log('[AdminData] ═══════════════════════════════════════');
-      console.log('[AdminData] 🔄 STARTING AGGRESSIVE REFRESH WITH CACHE INVALIDATION');
-      console.log('[AdminData] ═══════════════════════════════════════');
-      
-      // Wait for database write to complete
-      console.log('[AdminData] Waiting 2s for database write...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Refresh with cache invalidation
-      console.log('[AdminData] Refreshing with cache invalidation...');
+      // Refresh to show updated narrative
+      console.log('[AdminData] 🔄 Refreshing location reports...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await loadLocationReports();
-      
-      // Additional refresh after delay to catch any delayed propagation
-      console.log('[AdminData] Waiting 2s for propagation...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await loadLocationReports();
-      
-      console.log('[AdminData] ═══════════════════════════════════════');
-      console.log('[AdminData] ✅ REFRESH COMPLETE');
-      console.log('[AdminData] ═══════════════════════════════════════');
       
       addLog(`✅ Report data refreshed for ${locationDisplayName}`, 'success');
     } catch (error) {
-      console.error('[AdminData] ❌ Error generating report:', error);
+      console.error('[AdminData] ❌ Error generating narrative:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`❌ Failed to generate report for ${locationDisplayName}: ${errorMessage}`, 'error');
-      showErrorModal('Report Generation Failed', errorMessage);
+      addLog(`❌ Failed to generate narrative for ${locationDisplayName}: ${errorMessage}`, 'error');
+      showErrorModal('Narrative Generation Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -522,7 +509,16 @@ export default function AdminDataScreen() {
             />
             <View style={{ flex: 1 }}>
               <Text style={[styles.infoText, { color: '#2196F3', fontWeight: '600' }]}>
-                Data Flow: Scheduled updates pull fresh buoy data → Report page displays it → Regenerate Text uses that data
+                Simplified Workflow
+              </Text>
+              <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12, marginTop: 4 }]}>
+                1. Update Data - Pulls fresh surf & weather from NOAA buoy
+              </Text>
+              <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12 }]}>
+                2. Generate Narrative - Creates 300-400 char surf report from existing data
+              </Text>
+              <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12 }]}>
+                3. Report page displays the narrative to surfers
               </Text>
             </View>
           </View>
@@ -604,7 +600,7 @@ export default function AdminDataScreen() {
                     style={[styles.actionButton, styles.secondaryButton]}
                     onPress={() => {
                       console.log('[AdminData] ═══════════════════════════════════════');
-                      console.log('[AdminData] 📝 REGENERATE TEXT BUTTON PRESSED');
+                      console.log('[AdminData] 📝 GENERATE NARRATIVE BUTTON PRESSED');
                       console.log('[AdminData] Location:', report.location);
                       console.log('[AdminData] Location ID:', report.locationId);
                       console.log('[AdminData] Is Loading:', isLoading);
@@ -619,7 +615,7 @@ export default function AdminDataScreen() {
                       size={16}
                       color={colors.primary}
                     />
-                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Regenerate Text</Text>
+                    <Text style={[styles.actionButtonText, { color: colors.primary }]}>Generate Narrative</Text>
                   </TouchableOpacity>
                 </View>
               </View>
