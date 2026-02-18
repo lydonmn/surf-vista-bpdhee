@@ -14,7 +14,6 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import 'react-native-url-polyfill/auto';
 import { useLocation } from '@/contexts/LocationContext';
-import * as tus from 'tus-js-client';
 
 interface VideoMetadata {
   width: number;
@@ -43,7 +42,7 @@ export default function AdminScreen() {
   const [availableLocations, setAvailableLocations] = useState<typeof locations>([]);
   const uploadStartTimeRef = useRef<number>(0);
   const lastBytesUploadedRef = useRef<number>(0);
-  const currentUploadRef = useRef<tus.Upload | null>(null);
+  const currentUploadRef = useRef<XMLHttpRequest | null>(null);
 
   // Determine which locations this user can upload to
   useEffect(() => {
@@ -250,7 +249,7 @@ export default function AdminScreen() {
       uploadStartTimeRef.current = Date.now();
       lastBytesUploadedRef.current = 0;
       
-      console.log('[AdminScreen] 🚀 Starting MEMORY-SAFE video upload for location:', selectedLocation);
+      console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
 
       const fileInfo = await FileSystem.getInfoAsync(videoUri);
       if (!fileInfo.exists) {
@@ -263,192 +262,177 @@ export default function AdminScreen() {
       const fileName = `video_${timestamp}.mp4`;
       console.log('[AdminScreen] 📝 Uploading as:', fileName);
 
-      // Get Supabase project details
+      // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      const projectUrl = supabase.supabaseUrl;
-      const bucketName = 'videos';
+      // ========================================
+      // STEP 1: Create Mux Direct Upload URL
+      // ========================================
+      console.log('[AdminScreen] 🎬 Creating Mux upload URL...');
+      setUploadProgress(5);
       
-      console.log('[AdminScreen] ⚡ Using MEMORY-SAFE TUS resumable upload...');
+      const createUploadResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/mux-create-upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ 
+          filename: fileName,
+          corsOrigin: '*', // Allow uploads from any origin
+        }),
+      });
 
-      // 🚨 CRITICAL FIX: Use TUS with file URI directly instead of loading entire blob into memory
-      await new Promise<void>((resolve, reject) => {
-        // Create a custom file reader that streams from the file system
-        // This prevents loading the entire video into memory
-        const createFileReader = () => {
-          let position = 0;
-          const chunkSize = 15 * 1024 * 1024; // 15MB chunks for optimal speed/stability balance
-          
-          return {
-            read: async (length: number) => {
-              try {
-                // Read chunk from file system without loading entire file
-                const chunk = await FileSystem.readAsStringAsync(videoUri, {
-                  encoding: FileSystem.EncodingType.Base64,
-                  position: position,
-                  length: Math.min(length, chunkSize),
-                });
-                
-                position += chunk.length;
-                
-                // Convert base64 to Uint8Array
-                const binaryString = atob(chunk);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
-                }
-                
-                return bytes;
-              } catch (error) {
-                console.error('[AdminScreen] ❌ Error reading file chunk:', error);
-                throw error;
-              }
-            },
-            size: fileInfo.size,
-          };
-        };
+      if (!createUploadResponse.ok) {
+        const errorText = await createUploadResponse.text();
+        console.error('[AdminScreen] ❌ Failed to create Mux upload:', errorText);
+        throw new Error(`Failed to create Mux upload: ${errorText}`);
+      }
 
-        // 🚨 CRITICAL: For React Native, we need to use fetch to get the blob
-        // but we'll do it in a memory-efficient way with streaming
-        console.log('[AdminScreen] 📦 Preparing video for upload (memory-safe)...');
-        
-        // Use XMLHttpRequest for better memory handling on mobile
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', videoUri, true);
-        xhr.responseType = 'blob';
-        
+      const { id: uploadId, url: muxUploadUrl, asset_id: muxAssetId } = await createUploadResponse.json();
+      console.log('[AdminScreen] ✅ Mux upload URL created:', muxUploadUrl);
+      console.log('[AdminScreen] 📦 Mux asset ID:', muxAssetId);
+
+      // ========================================
+      // STEP 2: Upload video directly to Mux
+      // ========================================
+      console.log('[AdminScreen] ⚡ Uploading video directly to Mux...');
+      setUploadProgress(10);
+
+      // Read video file as blob for direct upload
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', videoUri, true);
+      xhr.responseType = 'blob';
+      
+      const videoBlob = await new Promise<Blob>((resolve, reject) => {
         xhr.onload = () => {
           if (xhr.status === 200) {
-            const blob = xhr.response;
-            console.log('[AdminScreen] ✅ Video blob prepared, starting upload...');
-            
-            const upload = new tus.Upload(blob, {
-              endpoint: `${projectUrl}/storage/v1/upload/resumable`,
-              retryDelays: [0, 500, 1000, 3000, 5000], // Aggressive retry for flaky connections
-              headers: {
-                authorization: `Bearer ${session.access_token}`,
-                'x-upsert': 'false',
-              },
-              uploadDataDuringCreation: true,
-              removeFingerprintOnSuccess: true,
-              metadata: {
-                bucketName: bucketName,
-                objectName: fileName,
-                contentType: 'video/mp4',
-                cacheControl: '3600',
-              },
-              chunkSize: 15 * 1024 * 1024, // 🚀 OPTIMIZED: 15MB chunks for best speed/stability
-              parallelUploads: 1,
-              onError: (error) => {
-                console.error('[AdminScreen] ❌ TUS upload error:', error);
-                console.error('[AdminScreen] Error details:', JSON.stringify(error, null, 2));
-                
-                // Check if it's a network error that can be retried
-                if (error.message?.includes('network') || error.message?.includes('timeout')) {
-                  console.log('[AdminScreen] 🔄 Network error detected, TUS will auto-retry...');
-                } else {
-                  reject(error);
-                }
-              },
-              onProgress: (bytesUploaded, bytesTotal) => {
-                const percentage = Math.round((bytesUploaded / bytesTotal) * 100);
-                setUploadProgress(percentage);
-                
-                // Calculate upload speed and ETA
-                const currentTime = Date.now();
-                const elapsedSeconds = (currentTime - uploadStartTimeRef.current) / 1000;
-                
-                if (elapsedSeconds > 1) { // Wait at least 1 second for accurate speed
-                  const bytesPerSecond = bytesUploaded / elapsedSeconds;
-                  const speedText = formatSpeed(bytesPerSecond);
-                  setUploadSpeed(speedText);
-                  
-                  // Calculate ETA
-                  const bytesRemaining = bytesTotal - bytesUploaded;
-                  const secondsRemaining = bytesRemaining / bytesPerSecond;
-                  const etaText = formatTimeRemaining(secondsRemaining);
-                  setEstimatedTimeRemaining(etaText);
-                  
-                  // Log progress every 5% for better monitoring
-                  const progressMilestone = Math.floor(percentage / 5) * 5;
-                  if (progressMilestone !== lastBytesUploadedRef.current && progressMilestone > 0) {
-                    console.log(`[AdminScreen] 📤 Upload progress: ${percentage}% (${speedText}) - ETA: ${etaText}`);
-                    lastBytesUploadedRef.current = progressMilestone;
-                  }
-                }
-              },
-              onSuccess: () => {
-                const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-                console.log('[AdminScreen] ✅ TUS upload complete in', totalTime.toFixed(1), 'seconds');
-                currentUploadRef.current = null;
-                resolve();
-              },
-            });
-
-            // Store reference for potential cancellation
-            currentUploadRef.current = upload;
-
-            // Start the upload
-            console.log('[AdminScreen] 🚀 Starting memory-safe TUS upload with 15MB chunks...');
-            upload.start();
+            resolve(xhr.response);
           } else {
             reject(new Error(`Failed to load video: ${xhr.status}`));
           }
         };
-        
-        xhr.onerror = () => {
-          reject(new Error('Failed to load video file'));
-        };
-        
+        xhr.onerror = () => reject(new Error('Failed to load video file'));
         xhr.send();
       });
 
-      console.log('[AdminScreen] 🔗 Getting public URL...');
+      console.log('[AdminScreen] 📦 Video blob prepared, uploading to Mux...');
 
-      const { data: urlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-
-      console.log('[AdminScreen] ✅ Public URL:', urlData.publicUrl);
-
-      // 🎬 TRIGGER VIDEO TRANSCODING
-      console.log('[AdminScreen] 🎬 Triggering video transcoding for compression...');
-      try {
-        const transcodeResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/transcode-video`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            videoUrl: urlData.publicUrl,
-            fileName: fileName,
-            targetResolution: '1080p', // Compress to 1080p max
-            targetBitrate: '2500k', // Optimize bitrate for streaming
-          }),
+      // Upload directly to Mux with progress tracking
+      const muxUploadXhr = new XMLHttpRequest();
+      currentUploadRef.current = muxUploadXhr; // Store reference for cancellation
+      
+      await new Promise<void>((resolve, reject) => {
+        muxUploadXhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percentage = Math.round((e.loaded / e.total) * 85) + 10; // 10-95% for upload
+            setUploadProgress(percentage);
+            
+            // Calculate upload speed and ETA
+            const currentTime = Date.now();
+            const elapsedSeconds = (currentTime - uploadStartTimeRef.current) / 1000;
+            
+            if (elapsedSeconds > 1) {
+              const bytesPerSecond = e.loaded / elapsedSeconds;
+              const speedText = formatSpeed(bytesPerSecond);
+              setUploadSpeed(speedText);
+              
+              const bytesRemaining = e.total - e.loaded;
+              const secondsRemaining = bytesRemaining / bytesPerSecond;
+              const etaText = formatTimeRemaining(secondsRemaining);
+              setEstimatedTimeRemaining(etaText);
+              
+              // Log progress every 10%
+              const progressMilestone = Math.floor(percentage / 10) * 10;
+              if (progressMilestone !== lastBytesUploadedRef.current && progressMilestone > 0) {
+                console.log(`[AdminScreen] 📤 Mux upload progress: ${percentage}% (${speedText}) - ETA: ${etaText}`);
+                lastBytesUploadedRef.current = progressMilestone;
+              }
+            }
+          }
         });
 
-        if (!transcodeResponse.ok) {
-          console.warn('[AdminScreen] ⚠️ Transcoding failed (non-critical):', await transcodeResponse.text());
-          // Continue with original video if transcoding fails
-        } else {
-          const transcodeResult = await transcodeResponse.json();
-          console.log('[AdminScreen] ✅ Video transcoded successfully!');
-          console.log('[AdminScreen] 📊 Compression ratio:', transcodeResult.compressionRatio);
-          console.log('[AdminScreen] 📦 Original size:', formatFileSize(transcodeResult.originalSize));
-          console.log('[AdminScreen] 📦 Compressed size:', formatFileSize(transcodeResult.compressedSize));
-          
-          // Update the video URL to use the compressed version
-          urlData.publicUrl = transcodeResult.transcodedUrl;
+        muxUploadXhr.addEventListener('load', () => {
+          if (muxUploadXhr.status >= 200 && muxUploadXhr.status < 300) {
+            const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
+            console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
+            currentUploadRef.current = null;
+            resolve();
+          } else {
+            reject(new Error(`Mux upload failed: ${muxUploadXhr.status} ${muxUploadXhr.statusText}`));
+          }
+        });
+
+        muxUploadXhr.addEventListener('error', () => {
+          reject(new Error('Mux upload network error'));
+        });
+
+        muxUploadXhr.open('PUT', muxUploadUrl);
+        muxUploadXhr.setRequestHeader('Content-Type', 'video/mp4');
+        muxUploadXhr.send(videoBlob);
+      });
+
+      // ========================================
+      // STEP 3: Poll for Mux asset ready status
+      // ========================================
+      console.log('[AdminScreen] ⏳ Waiting for Mux to process video...');
+      setUploadProgress(95);
+      setUploadSpeed('Processing...');
+      setEstimatedTimeRemaining('');
+
+      let assetReady = false;
+      let playbackId = '';
+      let pollAttempts = 0;
+      const maxPollAttempts = 60; // 5 minutes max (5s intervals)
+
+      while (!assetReady && pollAttempts < maxPollAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
+        pollAttempts++;
+
+        console.log(`[AdminScreen] 🔍 Checking Mux asset status (attempt ${pollAttempts})...`);
+
+        const assetStatusResponse = await fetch(
+          `${supabase.supabaseUrl}/functions/v1/mux-asset-status?asset_id=${muxAssetId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          }
+        );
+
+        if (!assetStatusResponse.ok) {
+          console.error('[AdminScreen] ❌ Failed to get Mux asset status');
+          throw new Error('Failed to get Mux asset status');
         }
-      } catch (transcodeError) {
-        console.warn('[AdminScreen] ⚠️ Transcoding error (non-critical):', transcodeError);
-        // Continue with original video if transcoding fails
+
+        const assetData = await assetStatusResponse.json();
+        console.log('[AdminScreen] 📊 Mux asset status:', assetData.status);
+
+        if (assetData.status === 'ready') {
+          assetReady = true;
+          playbackId = assetData.playback_ids[0].id;
+          console.log('[AdminScreen] ✅ Mux asset ready! Playback ID:', playbackId);
+        } else if (assetData.status === 'errored') {
+          throw new Error('Mux asset processing failed');
+        }
       }
 
+      if (!assetReady) {
+        throw new Error('Mux asset processing timed out');
+      }
+
+      // ========================================
+      // STEP 4: Construct HLS URL
+      // ========================================
+      const videoUrl = `https://stream.mux.com/${playbackId}.m3u8`;
+      console.log('[AdminScreen] 🎥 Mux HLS URL:', videoUrl);
+
+      // ========================================
+      // STEP 5: Generate thumbnail
+      // ========================================
       console.log('[AdminScreen] 🖼️ Generating thumbnail...');
       let thumbnailUrl: string | null = null;
       try {
@@ -461,7 +445,6 @@ export default function AdminScreen() {
 
         const thumbnailFileName = `thumbnail_${timestamp}.jpg`;
         
-        // Upload thumbnail using fetch (small file, safe to use base64)
         const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -488,6 +471,9 @@ export default function AdminScreen() {
         console.error('[AdminScreen] ⚠️ Error generating thumbnail (non-critical):', thumbnailError);
       }
 
+      // ========================================
+      // STEP 6: Save to database
+      // ========================================
       const metadata = await validateVideoMetadata(videoUri);
       const duration = metadata ? formatDuration(metadata.duration) : null;
       const durationSeconds = metadata?.duration || null;
@@ -495,7 +481,6 @@ export default function AdminScreen() {
       const resolutionHeight = metadata?.height || null;
       const fileSizeBytes = metadata?.size || null;
 
-      // 🚨 CRITICAL: Determine orientation from resolution for proper playback
       const isPortraitVideo = resolutionHeight && resolutionWidth && resolutionHeight > resolutionWidth;
       const orientationInfo = isPortraitVideo ? 'portrait' : 'landscape';
       
@@ -507,7 +492,7 @@ export default function AdminScreen() {
         .insert({
           title: videoTitle.trim(),
           description: videoDescription.trim() || null,
-          video_url: urlData.publicUrl,
+          video_url: videoUrl, // Mux HLS URL
           thumbnail_url: thumbnailUrl,
           uploaded_by: user.id,
           duration,
@@ -516,6 +501,7 @@ export default function AdminScreen() {
           resolution_height: resolutionHeight,
           file_size_bytes: fileSizeBytes,
           location: selectedLocation,
+          mux_asset_id: muxAssetId, // Store Mux asset ID
         });
 
       if (dbError) {
@@ -524,19 +510,7 @@ export default function AdminScreen() {
       }
 
       console.log('[AdminScreen] ✅ Video saved to database');
-      
-      console.log('[AdminScreen] ⚡ Triggering immediate video preparation for instant playback...');
-      try {
-        const response = await fetch(urlData.publicUrl, {
-          method: 'HEAD',
-        });
-        
-        if (response.ok) {
-          console.log('[AdminScreen] ✅ Video prepared and ready for instant playback');
-        }
-      } catch (prepError) {
-        console.warn('[AdminScreen] ⚠️ Video preparation failed (non-critical):', prepError);
-      }
+      setUploadProgress(100);
       
       const selectedLocationData = locations.find(loc => loc.id === selectedLocation);
       const locationName = selectedLocationData?.displayName || selectedLocation;
@@ -546,7 +520,7 @@ export default function AdminScreen() {
       
       Alert.alert(
         '🎉 Upload Complete!', 
-        `Your video is ready for instant playback!\n\n✅ Video tagged to: ${locationName}\n✅ Upload time: ${totalUploadTime.toFixed(1)}s\n✅ Average speed: ${avgSpeed}\n✅ Full quality preserved - no compression!\n\n🚀 Memory-safe upload with 15MB chunks!`
+        `Your video is ready for instant playback via Mux!\n\n✅ Video tagged to: ${locationName}\n✅ Upload time: ${totalUploadTime.toFixed(1)}s\n✅ Average speed: ${avgSpeed}\n✅ Mux HLS streaming enabled!\n\n🚀 Direct upload to Mux - optimized for streaming!`
       );
 
       setVideoUri(null);
@@ -556,7 +530,6 @@ export default function AdminScreen() {
       setUploadSpeed('');
       setEstimatedTimeRemaining('');
       
-      // Reset to first available location
       if (availableLocations.length > 0) {
         setSelectedLocation(availableLocations[0].id);
       }
@@ -566,20 +539,14 @@ export default function AdminScreen() {
       console.error('[AdminScreen] ❌ Error uploading video:', error);
       console.error('[AdminScreen] Error stack:', error.stack);
       
-      // Provide more helpful error messages
       let errorMessage = error.message || 'Failed to upload video';
       if (errorMessage.includes('network')) {
-        errorMessage = 'Network connection lost. The upload will automatically resume when connection is restored.';
+        errorMessage = 'Network connection lost. Please check your internet connection and try again.';
       } else if (errorMessage.includes('timeout')) {
         errorMessage = 'Upload timed out. Please check your internet connection and try again.';
-      } else if (errorMessage.includes('memory')) {
-        errorMessage = 'Out of memory. Please try uploading a smaller video or restart the app.';
       }
       
-      Alert.alert(
-        'Upload Failed', 
-        `${errorMessage}\n\nThe upload is resumable - you can try again and it will continue from where it left off.`
-      );
+      Alert.alert('Upload Failed', errorMessage);
     } finally {
       setIsUploading(false);
       setUploadSpeed('');
@@ -592,7 +559,7 @@ export default function AdminScreen() {
   useEffect(() => {
     return () => {
       if (currentUploadRef.current) {
-        console.log('[AdminScreen] 🛑 Component unmounting, aborting upload...');
+        console.log('[AdminScreen] 🛑 Component unmounting, aborting Mux upload...');
         currentUploadRef.current.abort();
       }
     };
@@ -751,16 +718,16 @@ export default function AdminScreen() {
                 size={20}
                 color={colors.primary}
               />
-              <Text style={styles.infoTitle}>⚡ Memory-Safe High-Speed Upload</Text>
+              <Text style={styles.infoTitle}>🎬 Mux Direct Upload</Text>
             </View>
             <Text style={styles.infoText}>
               {locationInfoText}
             </Text>
             <Text style={[styles.infoText, { marginTop: 8, fontWeight: '600' }]}>
-              🚀 FIXED: Memory-safe streaming + 15MB chunks = No more crashes on large videos!
+              🚀 Direct upload to Mux for optimized HLS streaming!
             </Text>
             <Text style={[styles.infoText, { marginTop: 4, fontSize: 12 }]}>
-              ✅ Handles 50+ second 6K videos without memory issues
+              ✅ Automatic transcoding and adaptive bitrate streaming
             </Text>
           </View>
 
@@ -866,7 +833,7 @@ export default function AdminScreen() {
                 </Text>
               )}
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                🚀 Memory-safe streaming upload - no crashes!
+                🎬 Direct upload to Mux - optimized for streaming!
               </Text>
             </View>
           )}
