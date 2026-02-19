@@ -1,6 +1,6 @@
 
 import { useLocation } from '@/contexts/LocationContext';
-import { Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useState, useEffect, useRef } from 'react';
 import 'react-native-url-polyfill/auto';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
@@ -26,9 +26,12 @@ const MAX_DURATION_SECONDS = 600;
 const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024;
 
 export default function AdminScreen() {
-  const videoRef = useRef<Video>(null);
   const theme = useTheme();
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  const player = useVideoPlayer(videoUri || '', (player) => {
+    player.loop = false;
+    player.muted = false;
+  });
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<string>('folly-beach');
@@ -750,12 +753,11 @@ export default function AdminScreen() {
 
           {videoUri && (
             <View style={styles.videoPreview}>
-              <Video
-                ref={videoRef}
-                source={{ uri: videoUri }}
+              <VideoView
+                player={player}
                 style={styles.video}
-                useNativeControls
-                resizeMode="contain"
+                nativeControls
+                contentFit="contain"
               />
             </View>
           )}
