@@ -42,11 +42,18 @@ export function useVideos() {
 
   const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
     try {
-      // 🎬 CRITICAL FIX #1: Mux URLs bypass ALL validation and signing
+      // 🎬 CRITICAL FIX: Mux URLs bypass ALL validation and signing
       // Mux stream URLs (https://stream.mux.com/*) are publicly accessible HLS streams
       // They do NOT need Supabase signed URLs and should be returned directly
-      if (videoUrl.startsWith(MUX_HLS_PREFIX)) {
-        console.log('[useVideos] ✅ Mux stream URL detected - bypassing validation and signing:', videoUrl);
+      // This check MUST be first before any other validation
+      if (videoUrl && videoUrl.startsWith(MUX_HLS_PREFIX)) {
+        console.log('[useVideos] ✅ Mux stream URL detected - bypassing ALL validation and signing:', videoUrl);
+        return videoUrl;
+      }
+
+      // 🚨 ADDITIONAL CHECK: If URL contains stream.mux.com anywhere, it's a Mux URL
+      if (videoUrl && videoUrl.includes('stream.mux.com')) {
+        console.log('[useVideos] ✅ Mux stream URL detected (alternate check) - bypassing ALL validation:', videoUrl);
         return videoUrl;
       }
 
@@ -61,10 +68,11 @@ export function useVideos() {
         }
       }
 
-      // Validate Supabase storage URL format
+      // Validate Supabase storage URL format (only for non-Mux URLs)
       const urlParts = videoUrl.split('/videos/');
       if (urlParts.length !== 2) {
-        console.error('[useVideos] Invalid video URL format:', videoUrl);
+        console.error('[useVideos] ❌ Invalid Supabase storage URL format (not a Mux URL):', videoUrl);
+        console.error('[useVideos] Expected format: .../videos/filename.mp4');
         return null;
       }
 
