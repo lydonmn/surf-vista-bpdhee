@@ -34,7 +34,7 @@ export function useVideos() {
   const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (more frequent)
   const REFRESH_INTERVAL = 8 * 60 * 1000; // 8 minutes (more frequent)
   const PROCESSING_POLL_INTERVAL = 15000; // 15 seconds for processing videos
-  const PROCESSING_MAX_DURATION = 360000; // 6 minutes maximum polling duration
+  const PROCESSING_MAX_DURATION = 600000; // 10 minutes maximum polling duration
 
   useEffect(() => {
     currentLocationRef.current = currentLocation;
