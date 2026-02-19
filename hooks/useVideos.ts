@@ -12,8 +12,6 @@ type Video = Database['public']['Tables']['videos']['Row'] & {
 };
 
 // 🎬 Mux HLS URL prefix for detection
-// CRITICAL: URLs starting with this prefix are publicly accessible HLS streams
-// They bypass ALL URL validation and signing logic - returned directly as-is
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export function useVideos() {
@@ -42,22 +40,12 @@ export function useVideos() {
 
   const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
     try {
-      // 🎬 CRITICAL FIX: Mux URLs bypass ALL validation and signing
-      // Mux stream URLs (https://stream.mux.com/*) are publicly accessible HLS streams
-      // They do NOT need Supabase signed URLs and should be returned directly
-      // This check MUST be first before any other validation
-      if (videoUrl && videoUrl.startsWith(MUX_HLS_PREFIX)) {
-        console.log('[useVideos] ✅ Mux stream URL detected - bypassing ALL validation and signing:', videoUrl);
+      // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, return it as-is (no signing needed)
+      if (videoUrl.startsWith(MUX_HLS_PREFIX)) {
+        console.log('[useVideos] 🎬 Mux HLS URL detected, returning as-is (publicly accessible):', videoUrl);
         return videoUrl;
       }
 
-      // 🚨 ADDITIONAL CHECK: If URL contains stream.mux.com anywhere, it's a Mux URL
-      if (videoUrl && videoUrl.includes('stream.mux.com')) {
-        console.log('[useVideos] ✅ Mux stream URL detected (alternate check) - bypassing ALL validation:', videoUrl);
-        return videoUrl;
-      }
-
-      // Check cache for non-Mux URLs
       const cached = preloadedUrlsRef.current.get(videoIdParam);
       if (cached) {
         const age = Date.now() - cached.timestamp;
@@ -68,17 +56,14 @@ export function useVideos() {
         }
       }
 
-      // Validate Supabase storage URL format (only for non-Mux URLs)
       const urlParts = videoUrl.split('/videos/');
       if (urlParts.length !== 2) {
-        console.error('[useVideos] ❌ Invalid Supabase storage URL format (not a Mux URL):', videoUrl);
-        console.error('[useVideos] Expected format: .../videos/filename.mp4');
+        console.error('[useVideos] Invalid video URL format:', videoUrl);
         return null;
       }
 
       const filePath = urlParts[1].split('?')[0];
 
-      // Generate signed URL for Supabase storage
       const { data, error } = await supabase.storage
         .from('videos')
         .createSignedUrl(filePath, 7200);
@@ -93,7 +78,6 @@ export function useVideos() {
         return null;
       }
       
-      // Cache the signed URL
       preloadedUrlsRef.current.set(videoIdParam, {
         url: data.signedUrl,
         timestamp: Date.now()
@@ -143,13 +127,6 @@ export function useVideos() {
       preloadingQueueRef.current.add(videoIdParam);
       
       lastActivityRef.current = Date.now();
-      
-      // 🎬 Mux URLs are HLS streams - they don't need preloading like regular MP4s
-      // HLS streams are adaptive and load on-demand, so we just verify the URL is accessible
-      if (signedUrl.startsWith(MUX_HLS_PREFIX)) {
-        console.log('[useVideos] ✅ Mux HLS stream - skipping preload (adaptive streaming):', videoIdParam);
-        return;
-      }
       
       console.log('[useVideos] ⚡ Preloading video for instant playback:', videoIdParam);
       
