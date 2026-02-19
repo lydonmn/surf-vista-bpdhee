@@ -39,13 +39,11 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] ===== LOADING FRESH REPORT =====');
       console.log('[EditReportScreen] Current location:', currentLocation, locationData.displayName);
       
-      // 🚨 CRITICAL FIX: Always use getESTDate() for today's date
       const todayDate = getESTDate();
       console.log('[EditReportScreen] Today\'s date (EST):', todayDate);
       
       let reportToEdit: SurfReport | null = null;
 
-      // If a specific report ID is provided, load that report
       if (reportId) {
         console.log('[EditReportScreen] Loading specific report by ID:', reportId);
         
@@ -69,7 +67,6 @@ export default function EditReportScreen() {
         }
       }
 
-      // If no specific report ID or loading failed, load TODAY's report for current location
       if (!reportToEdit) {
         console.log('[EditReportScreen] Loading TODAY\'S report for current location:', currentLocation);
         console.log('[EditReportScreen] Using date:', todayDate);
@@ -107,7 +104,6 @@ export default function EditReportScreen() {
         reportToEdit = data;
       }
 
-      // Verify the report is for the current location
       if (reportToEdit.location !== currentLocation) {
         console.warn('[EditReportScreen] Report location mismatch:', {
           reportLocation: reportToEdit.location,
@@ -140,8 +136,7 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Report location:', reportToEdit.location, locationData.displayName);
       console.log('[EditReportScreen] Has report_text (edited):', !!reportToEdit.report_text);
       console.log('[EditReportScreen] Has conditions (auto):', !!reportToEdit.conditions);
-      console.log('[EditReportScreen] report_text length:', reportToEdit.report_text?.length || 0);
-      console.log('[EditReportScreen] conditions length:', reportToEdit.conditions?.length || 0);
+      console.log('[EditReportScreen] Current rating:', reportToEdit.rating);
 
       setReport(reportToEdit);
       
@@ -204,6 +199,7 @@ export default function EditReportScreen() {
     try {
       setSaving(true);
 
+      // 🚨 FIX: Save both report_text AND rating to the database
       const { data, error } = await supabase
         .from('surf_reports')
         .update({
@@ -227,6 +223,41 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Saved report_text length:', data.report_text?.length || 0);
       console.log('[EditReportScreen] Saved rating:', data.rating);
       console.log('[EditReportScreen] Saved text preview:', data.report_text ? data.report_text.substring(0, 100) + '...' : 'none');
+
+      // 🎓 LEARNING FEATURE: Store the edit as a training example
+      // This will help the AI learn from your edits over time
+      if (report.conditions && report.conditions !== trimmedText) {
+        console.log('[EditReportScreen] 🎓 Storing edit as training example for AI learning');
+        
+        // Store the original auto-generated text and the edited version
+        // This creates a training pair that can be used to improve future generations
+        const { error: learningError } = await supabase
+          .from('narrative_learning_examples')
+          .insert({
+            location: report.location,
+            report_date: report.date,
+            original_narrative: report.conditions,
+            edited_narrative: trimmedText,
+            surf_conditions: {
+              wave_height: report.wave_height,
+              wave_period: report.wave_period,
+              swell_direction: report.swell_direction,
+              wind_speed: report.wind_speed,
+              wind_direction: report.wind_direction,
+              water_temp: report.water_temp,
+              surf_height: (report as any).surf_height,
+            },
+            edited_by: user.id,
+            created_at: new Date().toISOString(),
+          });
+
+        if (learningError) {
+          console.warn('[EditReportScreen] ⚠️ Failed to store learning example:', learningError);
+          // Don't fail the save if learning storage fails
+        } else {
+          console.log('[EditReportScreen] ✅ Learning example stored successfully');
+        }
+      }
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -391,14 +422,13 @@ export default function EditReportScreen() {
     );
   }
 
-  // 🚨 CRITICAL FIX: Use formatDateString utility to ensure correct year display
   const reportDateFormatted = formatDateString(report.date);
   const backIconName = 'chevron.left';
   const backMaterialIconName = 'chevron-left';
   const titleText = 'Edit Surf Report';
   const infoIconName = 'info.circle.fill';
   const infoMaterialIconName = 'info';
-  const infoMessageText = `Your edited narrative will appear on both the home page and report page for ${locationData.displayName}.`;
+  const infoMessageText = `Your edited narrative and stoke rating will appear on both the home page and report page for ${locationData.displayName}.`;
   const reportDataTitle = 'Report Data';
   const locationLabelText = 'Location:';
   const waveHeightLabelText = 'Wave Height:';
@@ -434,7 +464,7 @@ export default function EditReportScreen() {
   const successIconName = 'checkmark.circle.fill';
   const successMaterialIconName = 'check-circle';
   const successTitle = 'Success!';
-  const successMessage = 'Report updated successfully! The updated narrative will now appear on both the home page and report page.';
+  const successMessage = 'Report updated successfully! The updated narrative and stoke rating will now appear on both the home page and report page.';
   const doneButtonText = 'Done';
   const resetModalIconName = 'arrow.counterclockwise';
   const resetModalMaterialIconName = 'refresh';
