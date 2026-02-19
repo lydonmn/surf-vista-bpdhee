@@ -322,6 +322,12 @@ export default function ReportScreen() {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
         console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
+        
+        // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
+        if (videoData.video_url && videoData.video_url.startsWith('https://stream.mux.com/')) {
+          console.log('[ReportScreen] 🎬 Mux HLS URL detected, using directly (no signing needed):', videoData.video_url);
+        }
+        
         setLatestVideo(videoData);
         hasLoadedVideoRef.current = true;
       } else {
