@@ -27,12 +27,14 @@ export function useVideos() {
   const isFetchingRef = useRef(false);
   const currentLocationRef = useRef(currentLocation);
   const processingPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingStartTimesRef = useRef<Map<string, number>>(new Map()); // Track when each video started processing
 
   const SIGNED_URL_CACHE_DURATION = 3600000; // 1 hour
   const PRELOAD_SIZE = 20 * 1024 * 1024; // 20MB preload for instant start
   const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (more frequent)
   const REFRESH_INTERVAL = 8 * 60 * 1000; // 8 minutes (more frequent)
-  const PROCESSING_POLL_INTERVAL = 10000; // 10 seconds for processing videos
+  const PROCESSING_POLL_INTERVAL = 15000; // 15 seconds for processing videos
+  const PROCESSING_MAX_DURATION = 5 * 60 * 1000; // 5 minutes maximum polling duration
 
   useEffect(() => {
     currentLocationRef.current = currentLocation;
@@ -155,11 +157,46 @@ export function useVideos() {
 
     console.log('[useVideos] 🔄 Polling Mux asset status for', processingVideos.length, 'processing videos...');
 
+    const now = Date.now();
+
     for (const video of processingVideos) {
       if (!video.mux_upload_id) {
         console.warn('[useVideos] ⚠️ Video missing mux_upload_id:', video.id);
         continue;
       }
+
+      // Track when we started polling this video
+      if (!processingStartTimesRef.current.has(video.id)) {
+        processingStartTimesRef.current.set(video.id, now);
+        console.log('[useVideos] 📝 Started tracking processing time for video:', video.id);
+      }
+
+      // Check if we've been polling for more than 5 minutes
+      const startTime = processingStartTimesRef.current.get(video.id)!;
+      const elapsedTime = now - startTime;
+      const elapsedMinutes = Math.floor(elapsedTime / 60000);
+      const elapsedSeconds = Math.floor((elapsedTime % 60000) / 1000);
+
+      if (elapsedTime > PROCESSING_MAX_DURATION) {
+        console.error('[useVideos] ⏱️ Video', video.id, 'has been processing for over 5 minutes - giving up and marking as errored');
+        
+        // Update status to errored after timeout
+        const { error: updateError } = await supabase
+          .from('videos')
+          .update({ status: 'errored' })
+          .eq('id', video.id);
+
+        if (updateError) {
+          console.error('[useVideos] ❌ Error updating video to errored status after timeout:', updateError);
+        } else {
+          console.log('[useVideos] ✅ Video status updated to errored after 5 minute timeout');
+          processingStartTimesRef.current.delete(video.id); // Clean up tracking
+          fetchVideos();
+        }
+        continue;
+      }
+
+      console.log(`[useVideos] ⏱️ Video ${video.id} processing time: ${elapsedMinutes}m ${elapsedSeconds}s / 5m 0s`);
 
       try {
         console.log('[useVideos] 🔍 Checking Mux asset status for video:', video.id, 'with mux_upload_id:', video.mux_upload_id);
@@ -180,6 +217,8 @@ export function useVideos() {
 
           if (updateError) {
             console.error('[useVideos] ❌ Error updating video to errored status:', updateError);
+          } else {
+            processingStartTimesRef.current.delete(video.id); // Clean up tracking
           }
           continue;
         }
@@ -210,6 +249,7 @@ export function useVideos() {
             console.error('[useVideos] ❌ Error updating video record in database:', updateError);
           } else {
             console.log('[useVideos] ✅ Video successfully updated to active status with HLS URL');
+            processingStartTimesRef.current.delete(video.id); // Clean up tracking
             // Trigger a refresh to update the UI
             fetchVideos();
           }
@@ -226,6 +266,7 @@ export function useVideos() {
             console.error('[useVideos] ❌ Error updating video to errored status:', updateError);
           } else {
             console.log('[useVideos] ✅ Video status updated to errored');
+            processingStartTimesRef.current.delete(video.id); // Clean up tracking
             fetchVideos();
           }
         } else {
@@ -240,12 +281,13 @@ export function useVideos() {
             .from('videos')
             .update({ status: 'errored' })
             .eq('id', video.id);
+          processingStartTimesRef.current.delete(video.id); // Clean up tracking
         } catch (updateError) {
           console.error('[useVideos] ❌ Error updating video to errored status after exception:', updateError);
         }
       }
     }
-  }, []);
+  }, [PROCESSING_MAX_DURATION]);
 
   const fetchVideosRef = useRef<() => Promise<void>>();
   
