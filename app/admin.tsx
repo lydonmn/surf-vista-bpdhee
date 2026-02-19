@@ -242,7 +242,7 @@ export default function AdminScreen() {
       console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
 
       // ========================================
-      // FIX #3: Check if video URI is local, copy if needed
+      // Check if video URI is local, copy if needed
       // ========================================
       let uploadUri = videoUri;
       console.log('[AdminScreen] 🔍 Checking video URI type:', videoUri);
@@ -331,8 +331,7 @@ export default function AdminScreen() {
 
       // ========================================
       // STEP 2: Upload video directly to Mux using FileSystem.uploadAsync
-      // FIX #1: Add 60-second timeout with Promise.race
-      // FIX #2: Log uploadResult immediately when it resolves
+      // FIX: Only navigate away if FileSystem.uploadAsync hasn't returned
       // ========================================
       console.log('[AdminScreen] ⚡ Uploading video directly to Mux using FileSystem.uploadAsync...');
       console.log('[AdminScreen] 📊 File size:', formatFileSize(fileInfo.size));
@@ -352,20 +351,14 @@ export default function AdminScreen() {
         });
       }, 2000); // Update every 2 seconds
 
+      let uploadResult: FileSystem.FileSystemUploadResult | null = null;
+      let uploadCompleted = false;
+
       try {
-        console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync with 60-second timeout...');
+        console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync...');
         const uploadStartTime = Date.now();
         
-        // FIX #1: Create a 60-second timeout promise
-        const timeoutMs = 60 * 1000; // 60 seconds
-        const timeoutPromise = new Promise<FileSystem.FileSystemUploadResult>((_, reject) => {
-          setTimeout(() => {
-            console.log('[AdminScreen] ⏰ Upload timeout reached after 60 seconds');
-            reject(new Error('TIMEOUT'));
-          }, timeoutMs);
-        });
-
-        // Race between upload and timeout
+        // Start the upload
         const uploadPromise = FileSystem.uploadAsync(muxUploadUrl, uploadUri, {
           httpMethod: 'PUT',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
@@ -375,64 +368,44 @@ export default function AdminScreen() {
           },
         });
 
-        console.log('[AdminScreen] ⏳ Upload in progress (timeout: 60 seconds)...');
+        console.log('[AdminScreen] ⏳ Upload in progress...');
         
-        let uploadResult: FileSystem.FileSystemUploadResult | null = null;
-        let didTimeout = false;
+        // Wait for upload to complete
+        uploadResult = await uploadPromise;
+        uploadCompleted = true;
         
-        try {
-          uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
-        } catch (raceError: any) {
-          if (raceError.message === 'TIMEOUT') {
-            didTimeout = true;
-            console.log('[AdminScreen] ⏰ Upload timed out after 60 seconds');
-            console.log('[AdminScreen] 📝 Saving record with status=processing and navigating away');
-            console.log('[AdminScreen] 🔄 Upload may still complete in background');
-          } else {
-            throw raceError;
-          }
-        }
-
         clearInterval(progressInterval);
         const uploadDuration = (Date.now() - uploadStartTime) / 1000;
         
-        // FIX #2: Log uploadResult immediately when it resolves (if not timeout)
-        if (!didTimeout && uploadResult) {
-          console.log('[AdminScreen] ========================================');
-          console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
-          console.log('[AdminScreen] ========================================');
-          console.log('[AdminScreen] uploadResult:', JSON.stringify(uploadResult, null, 2));
-          console.log('[AdminScreen] uploadResult.status:', uploadResult.status);
-          console.log('[AdminScreen] uploadResult.body:', uploadResult.body);
-          console.log('[AdminScreen] uploadResult.headers:', uploadResult.headers);
-          console.log('[AdminScreen] ========================================');
-          console.log('[AdminScreen] 🎯 MUX UPLOAD URL USED:');
-          console.log('[AdminScreen] ========================================');
-          console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
-          console.log('[AdminScreen] ========================================');
-          console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
-          console.log('[AdminScreen] 📊 Average speed:', formatFileSize(fileInfo.size / uploadDuration) + '/s');
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] uploadResult:', JSON.stringify(uploadResult, null, 2));
+        console.log('[AdminScreen] uploadResult.status:', uploadResult.status);
+        console.log('[AdminScreen] uploadResult.body:', uploadResult.body);
+        console.log('[AdminScreen] uploadResult.headers:', uploadResult.headers);
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] 🎯 MUX UPLOAD URL USED:');
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] muxUploadUrl:', muxUploadUrl);
+        console.log('[AdminScreen] ========================================');
+        console.log('[AdminScreen] ⏱️ Upload took:', uploadDuration.toFixed(1), 'seconds');
+        console.log('[AdminScreen] 📊 Average speed:', formatFileSize(fileInfo.size / uploadDuration) + '/s');
 
-          if (uploadResult.status < 200 || uploadResult.status >= 300) {
-            console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
-            console.error('[AdminScreen] Response body:', uploadResult.body);
-            throw new Error(`Mux upload failed with status ${uploadResult.status}`);
-          }
-
-          const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
-          console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
-        } else if (didTimeout) {
-          console.log('[AdminScreen] ⏰ Timeout occurred - proceeding to save with status=processing');
+        if (uploadResult.status < 200 || uploadResult.status >= 300) {
+          console.error('[AdminScreen] ❌ Mux upload failed with status:', uploadResult.status);
+          console.error('[AdminScreen] Response body:', uploadResult.body);
+          throw new Error(`Mux upload failed with status ${uploadResult.status}`);
         }
+
+        const totalTime = (Date.now() - uploadStartTimeRef.current) / 1000;
+        console.log('[AdminScreen] ✅ Mux upload complete in', totalTime.toFixed(1), 'seconds');
         
         // ========================================
-        // STEP 3: Immediately set progress to 100% and show success state
+        // STEP 3: Set progress to 100% and show success state
         // ========================================
         setUploadProgress(100);
-        setUploadStatus(didTimeout 
-          ? 'Upload timed out - saving as processing...' 
-          : 'Upload complete! Processing in background…'
-        );
+        setUploadStatus('Upload complete! Processing in background…');
         setIsUploading(false); // Remove spinning loader
         setUploadComplete(true); // Show success state (checkmark)
         console.log('[AdminScreen] ✅ Upload complete! Mux is now processing the video...');
@@ -485,57 +458,60 @@ export default function AdminScreen() {
       }
 
       // ========================================
-      // STEP 5: Save to database immediately with status='processing'
+      // STEP 5: Save to database with status='processing'
+      // Only do this if upload completed successfully
       // ========================================
-      const metadata = await validateVideoMetadata(uploadUri);
-      const duration = metadata ? formatDuration(metadata.duration) : null;
-      const durationSeconds = metadata?.duration || null;
-      const resolutionWidth = metadata?.width || null;
-      const resolutionHeight = metadata?.height || null;
-      const fileSizeBytes = metadata?.size || null;
+      if (uploadCompleted) {
+        const metadata = await validateVideoMetadata(uploadUri);
+        const duration = metadata ? formatDuration(metadata.duration) : null;
+        const durationSeconds = metadata?.duration || null;
+        const resolutionWidth = metadata?.width || null;
+        const resolutionHeight = metadata?.height || null;
+        const fileSizeBytes = metadata?.size || null;
 
-      const isPortraitVideo = resolutionHeight && resolutionWidth && resolutionHeight > resolutionWidth;
-      const orientationInfo = isPortraitVideo ? 'portrait' : 'landscape';
-      
-      console.log('[AdminScreen] 💾 Saving to database with status=processing, location:', selectedLocation);
-      console.log('[AdminScreen] 📐 Video orientation:', orientationInfo, `(${resolutionWidth}x${resolutionHeight})`);
-      
-      const { error: dbError } = await supabase
-        .from('videos')
-        .insert({
-          title: videoTitle.trim(),
-          description: videoDescription.trim() || null,
-          video_url: '', // Will be updated by background polling when ready
-          thumbnail_url: thumbnailUrl,
-          uploaded_by: user.id,
-          duration,
-          duration_seconds: durationSeconds,
-          resolution_width: resolutionWidth,
-          resolution_height: resolutionHeight,
-          file_size_bytes: fileSizeBytes,
-          location: selectedLocation,
-          mux_upload_id: uploadId, // Store Mux upload ID for polling
-          status: 'processing', // 🚨 NEW: Set status to processing
-        });
+        const isPortraitVideo = resolutionHeight && resolutionWidth && resolutionHeight > resolutionWidth;
+        const orientationInfo = isPortraitVideo ? 'portrait' : 'landscape';
+        
+        console.log('[AdminScreen] 💾 Saving to database with status=processing, location:', selectedLocation);
+        console.log('[AdminScreen] 📐 Video orientation:', orientationInfo, `(${resolutionWidth}x${resolutionHeight})`);
+        
+        const { error: dbError } = await supabase
+          .from('videos')
+          .insert({
+            title: videoTitle.trim(),
+            description: videoDescription.trim() || null,
+            video_url: '', // Will be updated by background polling when ready
+            thumbnail_url: thumbnailUrl,
+            uploaded_by: user.id,
+            duration,
+            duration_seconds: durationSeconds,
+            resolution_width: resolutionWidth,
+            resolution_height: resolutionHeight,
+            file_size_bytes: fileSizeBytes,
+            location: selectedLocation,
+            mux_upload_id: uploadId, // Store Mux upload ID for polling
+            status: 'processing', // Set status to processing
+          });
 
-      if (dbError) {
-        console.error('[AdminScreen] ❌ Error saving to database:', dbError);
-        throw dbError;
+        if (dbError) {
+          console.error('[AdminScreen] ❌ Error saving to database:', dbError);
+          throw dbError;
+        }
+
+        console.log('[AdminScreen] ✅ Video saved to database with status=processing');
+        
+        // Refresh videos list to show the processing video
+        await refreshVideos();
+        
+        // ========================================
+        // STEP 6: Wait 1.5 seconds then navigate back automatically
+        // ========================================
+        console.log('[AdminScreen] ⏳ Waiting 1.5 seconds before navigating back...');
+        setTimeout(() => {
+          console.log('[AdminScreen] 🔙 Navigating back to previous screen');
+          router.back();
+        }, 1500);
       }
-
-      console.log('[AdminScreen] ✅ Video saved to database with status=processing');
-      
-      // Refresh videos list to show the processing video
-      await refreshVideos();
-      
-      // ========================================
-      // STEP 6: Wait 1.5 seconds then navigate back automatically
-      // ========================================
-      console.log('[AdminScreen] ⏳ Waiting 1.5 seconds before navigating back...');
-      setTimeout(() => {
-        console.log('[AdminScreen] 🔙 Navigating back to previous screen');
-        router.back();
-      }, 1500);
       
     } catch (error: any) {
       console.error('[AdminScreen] ❌ Error uploading video:', error);
@@ -550,7 +526,7 @@ export default function AdminScreen() {
       if (errorMessage.includes('network') || errorMessage.includes('Network')) {
         errorMessage = 'Network connection lost during upload. Please check your internet connection and try again.';
       } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout') || errorMessage.includes('TIMEOUT')) {
-        errorMessage = 'Upload timed out after 60 seconds. The video may still be uploading in the background. Check back in a few minutes.';
+        errorMessage = 'Upload timed out. The video may still be uploading in the background. Check back in a few minutes.';
       } else if (errorMessage.includes('cancelled')) {
         errorMessage = 'Upload was cancelled.';
       } else if (errorMessage.includes('Failed to create Mux upload')) {
