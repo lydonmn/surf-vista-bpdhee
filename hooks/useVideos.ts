@@ -34,7 +34,7 @@ export function useVideos() {
   const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (more frequent)
   const REFRESH_INTERVAL = 8 * 60 * 1000; // 8 minutes (more frequent)
   const PROCESSING_POLL_INTERVAL = 15000; // 15 seconds for processing videos
-  const PROCESSING_MAX_DURATION = 600000; // 10 minutes maximum polling duration
+  const PROCESSING_MAX_DURATION = 900000; // 15 minutes maximum polling duration
 
   useEffect(() => {
     currentLocationRef.current = currentLocation;
@@ -171,14 +171,14 @@ export function useVideos() {
         console.log('[useVideos] 📝 Started tracking processing time for video:', video.id);
       }
 
-      // Check if we've been polling for more than 5 minutes
+      // Check if we've been polling for more than 15 minutes
       const startTime = processingStartTimesRef.current.get(video.id)!;
       const elapsedTime = now - startTime;
       const elapsedMinutes = Math.floor(elapsedTime / 60000);
       const elapsedSeconds = Math.floor((elapsedTime % 60000) / 1000);
 
       if (elapsedTime > PROCESSING_MAX_DURATION) {
-        console.error('[useVideos] ⏱️ Video', video.id, 'has been processing for over 5 minutes - giving up and marking as errored');
+        console.error('[useVideos] ⏱️ Video', video.id, 'has been processing for over 15 minutes - giving up and marking as errored');
         
         // Update status to errored after timeout
         const { error: updateError } = await supabase
@@ -189,14 +189,14 @@ export function useVideos() {
         if (updateError) {
           console.error('[useVideos] ❌ Error updating video to errored status after timeout:', updateError);
         } else {
-          console.log('[useVideos] ✅ Video status updated to errored after 5 minute timeout');
+          console.log('[useVideos] ✅ Video status updated to errored after 15 minute timeout');
           processingStartTimesRef.current.delete(video.id); // Clean up tracking
           fetchVideos();
         }
         continue;
       }
 
-      console.log(`[useVideos] ⏱️ Video ${video.id} processing time: ${elapsedMinutes}m ${elapsedSeconds}s / 5m 0s`);
+      console.log(`[useVideos] ⏱️ Video ${video.id} processing time: ${elapsedMinutes}m ${elapsedSeconds}s / 15m 0s`);
 
       try {
         console.log('[useVideos] 🔍 Checking Mux asset status for video:', video.id, 'with mux_upload_id:', video.mux_upload_id);
