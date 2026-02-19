@@ -39,53 +39,31 @@ export function useVideos() {
   }, [currentLocation]);
 
   const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
+    if (!videoUrl) return null;
+    
+    if (videoUrl.includes('stream.mux.com')) return videoUrl;
+    
+    const cached = preloadedUrlsRef.current.get(videoIdParam);
+    if (cached && cached.timestamp > Date.now() - SIGNED_URL_CACHE_DURATION) return cached.url;
+    
     try {
-      // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, return it as-is (no signing needed)
-      if (videoUrl.startsWith(MUX_HLS_PREFIX)) {
-        console.log('[useVideos] 🎬 Mux HLS URL detected, returning as-is (publicly accessible):', videoUrl);
-        return videoUrl;
-      }
-
-      const cached = preloadedUrlsRef.current.get(videoIdParam);
-      if (cached) {
-        const age = Date.now() - cached.timestamp;
-        if (age < SIGNED_URL_CACHE_DURATION) {
-          return cached.url;
-        } else {
-          preloadedUrlsRef.current.delete(videoIdParam);
-        }
-      }
-
-      const urlParts = videoUrl.split('/videos/');
-      if (urlParts.length !== 2) {
-        console.error('[useVideos] Invalid video URL format:', videoUrl);
-        return null;
-      }
-
-      const filePath = urlParts[1].split('?')[0];
-
+      const path = videoUrl.includes('/videos/') 
+        ? videoUrl.split('/videos/').pop()! 
+        : videoUrl;
+        
       const { data, error } = await supabase.storage
         .from('videos')
-        .createSignedUrl(filePath, 7200);
-
-      if (error) {
-        console.error('[useVideos] Error generating signed URL:', error);
-        return null;
-      }
-
-      if (!data?.signedUrl) {
-        console.error('[useVideos] No signed URL returned');
-        return null;
-      }
+        .createSignedUrl(path, 3600);
+        
+      if (error || !data?.signedUrl) return null;
       
       preloadedUrlsRef.current.set(videoIdParam, {
         url: data.signedUrl,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-
+      
       return data.signedUrl;
-    } catch (error) {
-      console.error('[useVideos] Exception generating signed URL:', error);
+    } catch {
       return null;
     }
   }, [SIGNED_URL_CACHE_DURATION]);
