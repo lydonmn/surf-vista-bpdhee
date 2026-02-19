@@ -12,6 +12,8 @@ type Video = Database['public']['Tables']['videos']['Row'] & {
 };
 
 // 🎬 Mux HLS URL prefix for detection
+// CRITICAL: URLs starting with this prefix are publicly accessible HLS streams
+// They bypass ALL URL validation and signing logic - returned directly as-is
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export function useVideos() {
@@ -40,12 +42,15 @@ export function useVideos() {
 
   const generateSignedUrl = useCallback(async (videoUrl: string, videoIdParam: string): Promise<string | null> => {
     try {
-      // 🎬 CRITICAL: Check if this is a Mux HLS URL - if so, return it as-is (no signing needed)
+      // 🎬 CRITICAL FIX #1: Mux URLs bypass ALL validation and signing
+      // Mux stream URLs (https://stream.mux.com/*) are publicly accessible HLS streams
+      // They do NOT need Supabase signed URLs and should be returned directly
       if (videoUrl.startsWith(MUX_HLS_PREFIX)) {
-        console.log('[useVideos] 🎬 Mux HLS URL detected, returning as-is (publicly accessible):', videoUrl);
+        console.log('[useVideos] ✅ Mux stream URL detected - bypassing validation and signing:', videoUrl);
         return videoUrl;
       }
 
+      // Check cache for non-Mux URLs
       const cached = preloadedUrlsRef.current.get(videoIdParam);
       if (cached) {
         const age = Date.now() - cached.timestamp;
@@ -56,6 +61,7 @@ export function useVideos() {
         }
       }
 
+      // Validate Supabase storage URL format
       const urlParts = videoUrl.split('/videos/');
       if (urlParts.length !== 2) {
         console.error('[useVideos] Invalid video URL format:', videoUrl);
@@ -64,6 +70,7 @@ export function useVideos() {
 
       const filePath = urlParts[1].split('?')[0];
 
+      // Generate signed URL for Supabase storage
       const { data, error } = await supabase.storage
         .from('videos')
         .createSignedUrl(filePath, 7200);
@@ -78,6 +85,7 @@ export function useVideos() {
         return null;
       }
       
+      // Cache the signed URL
       preloadedUrlsRef.current.set(videoIdParam, {
         url: data.signedUrl,
         timestamp: Date.now()
@@ -127,6 +135,13 @@ export function useVideos() {
       preloadingQueueRef.current.add(videoIdParam);
       
       lastActivityRef.current = Date.now();
+      
+      // 🎬 Mux URLs are HLS streams - they don't need preloading like regular MP4s
+      // HLS streams are adaptive and load on-demand, so we just verify the URL is accessible
+      if (signedUrl.startsWith(MUX_HLS_PREFIX)) {
+        console.log('[useVideos] ✅ Mux HLS stream - skipping preload (adaptive streaming):', videoIdParam);
+        return;
+      }
       
       console.log('[useVideos] ⚡ Preloading video for instant playback:', videoIdParam);
       
