@@ -232,10 +232,9 @@ export default function EditReportScreen() {
         // Store the original auto-generated text and the edited version
         // This creates a training pair that can be used to improve future generations
         const { error: learningError } = await supabase
-          .from('narrative_learning_examples')
+          .from('narrative_edits')
           .insert({
-            location: report.location,
-            report_date: report.date,
+            location_id: report.location,
             original_narrative: report.conditions,
             edited_narrative: trimmedText,
             surf_conditions: {
@@ -247,7 +246,6 @@ export default function EditReportScreen() {
               water_temp: report.water_temp,
               surf_height: (report as any).surf_height,
             },
-            edited_by: user.id,
             created_at: new Date().toISOString(),
           });
 

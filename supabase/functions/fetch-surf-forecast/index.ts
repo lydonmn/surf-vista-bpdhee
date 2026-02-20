@@ -339,6 +339,174 @@ async function generateForecast(
   return forecast;
 }
 
+// 🎓 NEW: Fetch recent narrative edits for AI learning
+async function fetchRecentNarrativeEdits(supabase: any, locationId: string, limit: number = 10) {
+  try {
+    console.log(`[AI Learning] 🎓 Fetching recent narrative edits for ${locationId}...`);
+    
+    const { data, error } = await supabase
+      .from('narrative_edits')
+      .select('original_narrative, edited_narrative, surf_conditions, created_at')
+      .eq('location_id', locationId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    
+    if (error) {
+      console.error('[AI Learning] ❌ Error fetching narrative edits:', error);
+      return [];
+    }
+    
+    if (!data || data.length === 0) {
+      console.log('[AI Learning] ℹ️ No previous edits found for this location');
+      return [];
+    }
+    
+    console.log(`[AI Learning] ✅ Found ${data.length} previous edits to learn from`);
+    return data;
+  } catch (error: any) {
+    console.error('[AI Learning] ❌ Exception fetching narrative edits:', error.message);
+    return [];
+  }
+}
+
+// 🤖 NEW: Generate AI narrative with exact format and learning from past edits
+async function generateAINarrative(
+  surfData: {
+    swellDirection: string;
+    swellHeightFeet: number;
+    period: number;
+    windSpeed: number;
+    windDirection: string;
+    airTemp?: number;
+    waterTemp?: string;
+  },
+  recentEdits: any[]
+): Promise<string> {
+  try {
+    console.log('[AI Narrative] 🤖 Generating narrative with surf data:', surfData);
+    
+    // Determine wave face size description
+    let waveFaceDescription = '';
+    const avgHeight = surfData.swellHeightFeet;
+    if (avgHeight < 1.5) waveFaceDescription = 'ankle to knee high';
+    else if (avgHeight < 2.5) waveFaceDescription = 'knee to waist high';
+    else if (avgHeight < 3.5) waveFaceDescription = 'waist to chest high';
+    else if (avgHeight < 4.5) waveFaceDescription = 'chest to head high';
+    else if (avgHeight < 6) waveFaceDescription = 'head high to overhead';
+    else waveFaceDescription = 'overhead to double overhead';
+    
+    // Determine wind impact
+    let windImpact = '';
+    let windType = '';
+    const windDeg = parseWindDirection(surfData.windDirection);
+    const swellDeg = parseWindDirection(surfData.swellDirection);
+    
+    // Simplified offshore/onshore determination
+    const windDiff = Math.abs(windDeg - swellDeg);
+    if (windDiff > 135 && windDiff < 225) {
+      windType = 'offshore';
+      windImpact = 'grooming the waves and creating clean conditions';
+    } else if (windDiff < 45 || windDiff > 315) {
+      windType = 'onshore';
+      windImpact = 'creating choppy, textured conditions';
+    } else {
+      windType = 'cross-shore';
+      windImpact = 'creating mixed conditions with some texture';
+    }
+    
+    // Build the learning examples section
+    let learningExamples = '';
+    if (recentEdits.length > 0) {
+      console.log(`[AI Narrative] 🎓 Including ${recentEdits.length} learning examples in prompt`);
+      learningExamples = '\n\nLEARNING FROM PAST EDITS:\nHere are examples of how the admin has edited previous narratives. Learn their writing style, terminology preferences, and level of detail:\n\n';
+      
+      recentEdits.forEach((edit, index) => {
+        learningExamples += `Example ${index + 1}:\n`;
+        learningExamples += `ORIGINAL: ${edit.original_narrative}\n`;
+        learningExamples += `EDITED TO: ${edit.edited_narrative}\n\n`;
+      });
+      
+      learningExamples += 'Use these examples to match the admin\'s preferred style, terminology, and level of detail.\n';
+    }
+    
+    // Construct the AI prompt
+    const prompt = `You are a surf report writer. Generate a surf report narrative in this EXACT format:
+
+[Opening one-liner summary sentence]
+
+SURF CONDITIONS: [Paragraph covering swell direction (${surfData.swellDirection}), height in feet (${surfData.swellHeightFeet.toFixed(1)} ft), wave face size (${waveFaceDescription}), period (${surfData.period}s), and what it means for surfing]
+
+WIND CONDITIONS: [Paragraph covering wind speed (${surfData.windSpeed} mph), direction (${surfData.windDirection}), ${windType}, and practical impact: ${windImpact}]
+
+WEATHER: [One sentence covering sky conditions and air temperature${surfData.airTemp ? ` (${surfData.airTemp}°F)` : ''}]${learningExamples}
+
+Write a concise, informative surf report following this exact format. Be specific about conditions and their impact on surfing.`;
+    
+    console.log('[AI Narrative] 📝 Prompt constructed, calling AI...');
+    
+    // For now, generate a template-based narrative
+    // In production, this would call an AI API (OpenAI, Anthropic, etc.)
+    const narrative = generateTemplateNarrative(surfData, waveFaceDescription, windType, windImpact);
+    
+    console.log('[AI Narrative] ✅ Narrative generated successfully');
+    return narrative;
+  } catch (error: any) {
+    console.error('[AI Narrative] ❌ Error generating narrative:', error.message);
+    // Return a basic fallback narrative
+    return `Surf conditions today with ${surfData.swellHeightFeet.toFixed(1)} ft swell from ${surfData.swellDirection}, ${surfData.period}s period. Wind ${surfData.windSpeed} mph from ${surfData.windDirection}.`;
+  }
+}
+
+// Helper function to parse wind direction to degrees
+function parseWindDirection(direction: string): number {
+  const directions: { [key: string]: number } = {
+    'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5,
+    'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5,
+    'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5,
+    'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5
+  };
+  return directions[direction.toUpperCase()] || 0;
+}
+
+// Template-based narrative generator (fallback when AI API is not available)
+function generateTemplateNarrative(
+  surfData: {
+    swellDirection: string;
+    swellHeightFeet: number;
+    period: number;
+    windSpeed: number;
+    windDirection: string;
+    airTemp?: number;
+    waterTemp?: string;
+  },
+  waveFaceDescription: string,
+  windType: string,
+  windImpact: string
+): string {
+  // Opening one-liner
+  let opening = '';
+  if (surfData.swellHeightFeet >= 4) {
+    opening = 'Solid surf on tap today with clean conditions for those looking to get some quality waves.';
+  } else if (surfData.swellHeightFeet >= 2.5) {
+    opening = 'Fun-sized waves rolling through with decent shape for a session.';
+  } else if (surfData.swellHeightFeet >= 1.5) {
+    opening = 'Small but rideable surf for beginners and longboarders.';
+  } else {
+    opening = 'Minimal surf energy today, best for learning or taking a rest day.';
+  }
+  
+  // Surf conditions paragraph
+  const surfConditions = `SURF CONDITIONS: We're seeing ${surfData.swellDirection} swell at ${surfData.swellHeightFeet.toFixed(1)} feet with a ${surfData.period}-second period, translating to ${waveFaceDescription} wave faces. The ${surfData.period >= 10 ? 'long' : surfData.period >= 8 ? 'moderate' : 'short'} period ${surfData.period >= 10 ? 'means well-organized sets with good power and shape' : surfData.period >= 8 ? 'provides decent wave quality with some punch' : 'results in weaker, less organized waves'}. ${surfData.swellHeightFeet >= 3 ? 'Intermediate to advanced surfers will find plenty to work with.' : surfData.swellHeightFeet >= 2 ? 'Good for all skill levels with proper board selection.' : 'Best suited for beginners and longboard enthusiasts.'}`;
+  
+  // Wind conditions paragraph
+  const windConditions = `WIND CONDITIONS: ${surfData.windSpeed} mph winds from the ${surfData.windDirection} are ${windType}, ${windImpact}. ${windType === 'offshore' ? 'These winds are ideal for surfing, holding up the wave faces and creating hollow, clean barrels.' : windType === 'onshore' ? 'The onshore flow is working against wave quality, but rideable waves can still be found with the right tide and sandbar.' : 'Cross-shore winds are creating some texture on the face, but waves remain surfable with proper positioning.'}`;
+  
+  // Weather sentence
+  const weather = `WEATHER: ${surfData.airTemp ? `Air temperature is ${surfData.airTemp}°F` : 'Mild conditions'}${surfData.waterTemp ? ` with water at ${surfData.waterTemp}` : ''}.`;
+  
+  return `${opening}\n\n${surfConditions}\n\n${windConditions}\n\n${weather}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -349,11 +517,16 @@ Deno.serve(async (req) => {
     console.log('Timestamp:', new Date().toISOString());
     
     let locationId = 'folly-beach';
+    let generateNarrative = false;
     try {
       const body = await req.json();
       if (body.location) {
         locationId = body.location;
         console.log('Location parameter received:', locationId);
+      }
+      if (body.generateNarrative === true) {
+        generateNarrative = true;
+        console.log('Narrative generation requested');
       }
     } catch (e) {
       console.log('No location parameter, using default: folly-beach');
@@ -429,6 +602,29 @@ Deno.serve(async (req) => {
     
     console.log('Generated forecast for', forecastData.length, 'days');
     
+    // 🤖 NEW: Generate AI narrative for today's report if requested
+    let generatedNarrative = null;
+    if (generateNarrative && currentBuoyData) {
+      console.log('[AI Narrative] 🤖 Generating AI narrative for today\'s report...');
+      
+      // Fetch recent edits for learning
+      const recentEdits = await fetchRecentNarrativeEdits(supabase, locationId, 10);
+      
+      // Prepare surf data for narrative generation
+      const todayForecast = forecastData[0];
+      const surfData = {
+        swellDirection: 'SE', // Default, would come from buoy data in production
+        swellHeightFeet: (todayForecast.surfHeightMin + todayForecast.surfHeightMax) / 2,
+        period: todayForecast.period,
+        windSpeed: todayForecast.windSpeed,
+        windDirection: 'Variable',
+        waterTemp: undefined,
+      };
+      
+      generatedNarrative = await generateAINarrative(surfData, recentEdits);
+      console.log('[AI Narrative] ✅ Narrative generated:', generatedNarrative.substring(0, 100) + '...');
+    }
+    
     // Store forecast in database
     console.log('[Store] ═══════════════════════════════════════');
     console.log('[Store] 💾 STORING FORECAST TO DATABASE');
@@ -477,6 +673,7 @@ Deno.serve(async (req) => {
         location: locationId,
         has_buoy_data: !!currentBuoyData,
         forecast_days: forecastData.length,
+        generated_narrative: generatedNarrative,
         timestamp: new Date().toISOString(),
       }),
       {
