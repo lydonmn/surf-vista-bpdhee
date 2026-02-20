@@ -226,26 +226,34 @@ export default function HomeScreen() {
   // 3. Manual "Regenerate Text" button uses this SAME surf_conditions data (no fresh pull)
   // 4. This ensures report generator always uses the data that's already on the home/report pages
   
-  // ✅ Calculate rating early (before conditional returns)
+  // 🚨 CRITICAL FIX: Respect manually edited ratings, otherwise calculate from surf_conditions
   const ratingValue = useMemo(() => {
     console.log('[HomeScreen] ===== CALCULATING CURRENT RATING =====');
     console.log('[HomeScreen] Has surfConditions:', !!surfConditions);
     console.log('[HomeScreen] Has todaysReport:', !!todaysReport);
+    console.log('[HomeScreen] Today\'s report rating:', todaysReport?.rating);
+    console.log('[HomeScreen] Today\'s report edited_at:', todaysReport?.edited_at);
     
-    // ALWAYS use surf_conditions if available (most current data from scheduled updates)
+    // 🚨 PRIORITY 1: If today's report has been manually edited (has edited_at timestamp), use its rating
+    if (todaysReport?.rating && todaysReport?.edited_at) {
+      console.log('[HomeScreen] ✅ Using EDITED rating from report (manually set by admin):', todaysReport.rating);
+      return todaysReport.rating;
+    }
+    
+    // 🚨 PRIORITY 2: Use surf_conditions if available (most current data from scheduled updates)
     if (surfConditions) {
       const rating = calculateSurfRating(surfConditions);
-      console.log('[HomeScreen] ✅ Using rating from surf_conditions (from scheduled updates):', rating);
+      console.log('[HomeScreen] ✅ Using calculated rating from surf_conditions (from scheduled updates):', rating);
       return rating;
     }
     
-    // Fallback to report rating if no surf_conditions
+    // 🚨 PRIORITY 3: Fallback to report rating if no surf_conditions
     if (todaysReport?.rating) {
       console.log('[HomeScreen] Using rating from report (stored):', todaysReport.rating);
       return todaysReport.rating;
     }
     
-    // Last resort: calculate from report data
+    // 🚨 PRIORITY 4: Last resort - calculate from report data
     if (todaysReport) {
       const rating = calculateSurfRating(todaysReport);
       console.log('[HomeScreen] Calculated rating from report data:', rating);
