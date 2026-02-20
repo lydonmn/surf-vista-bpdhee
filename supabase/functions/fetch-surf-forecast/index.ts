@@ -73,6 +73,60 @@ function calculateSurfRating(surfHeightMin: number, surfHeightMax: number, perio
   return Math.max(1, Math.min(10, Math.round(rating)));
 }
 
+// 🚨 NEW: Helper function to convert meters per second to knots
+function convertMetersPerSecondToKnots(ms: number): number {
+  return ms * 1.94384; // 1 m/s = 1.94384 knots
+}
+
+// 🚨 NEW: Fetch wind data from Open-Meteo API as fallback
+async function fetchOpenMeteoWind(latitude: number, longitude: number, locationName: string): Promise<{ windSpeedMph: number; windDirectionDegrees: number } | null> {
+  try {
+    console.log(`[Open-Meteo] 🌐 Fetching wind data for ${locationName} (${latitude}, ${longitude})`);
+    
+    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+    
+    const response = await fetch(openMeteoUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error(`[Open-Meteo] ❌ HTTP ${response.status} for ${locationName}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (!data.current_weather || 
+        typeof data.current_weather.windspeed !== 'number' || 
+        typeof data.current_weather.winddirection !== 'number') {
+      console.error(`[Open-Meteo] ❌ Invalid data structure for ${locationName}:`, data);
+      return null;
+    }
+    
+    // Convert m/s to knots, then knots to mph (1 knot = 1.15078 mph)
+    const windSpeedKnots = convertMetersPerSecondToKnots(data.current_weather.windspeed);
+    const windSpeedMph = windSpeedKnots * 1.15078;
+    const windDirectionDegrees = data.current_weather.winddirection;
+    
+    console.log(`[Open-Meteo] ✅ Successfully fetched wind data for ${locationName}:`, {
+      windspeed_ms: data.current_weather.windspeed,
+      windspeed_knots: windSpeedKnots.toFixed(2),
+      windspeed_mph: windSpeedMph.toFixed(2),
+      winddirection: windDirectionDegrees
+    });
+    
+    return {
+      windSpeedMph,
+      windDirectionDegrees
+    };
+  } catch (error: any) {
+    console.error(`[Open-Meteo] ❌ Error fetching wind data for ${locationName}:`, error.message);
+    return null;
+  }
+}
+
 async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: number = 3): Promise<{ waveHeight: number; period: number; windSpeed: number } | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -157,10 +211,6 @@ async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: num
   return null;
 }
 
-// 🚨 CRITICAL FIX: Calculate confidence based on data quality and recency
-// This function determines how confident we are in the forecast
-// NOTE: We do NOT look for future buoy data because it doesn't exist
-// We only use CURRENT buoy data to inform future predictions
 function calculateConfidence(
   hasBuoyData: boolean,
   hasHistoricalData: boolean,
@@ -174,21 +224,18 @@ function calculateConfidence(
     dataQuality,
   });
   
-  let baseConfidence = 50; // Start at 50%
+  let baseConfidence = 50;
   
-  // Boost for having live buoy data (current conditions)
   if (hasBuoyData) {
     baseConfidence += 20;
     console.log('[calculateConfidence] +20% for live buoy data');
   }
   
-  // Boost for having historical trend data
   if (hasHistoricalData) {
     baseConfidence += 15;
     console.log('[calculateConfidence] +15% for historical data');
   }
   
-  // Data quality adjustment
   if (dataQuality === 'excellent') {
     baseConfidence += 10;
     console.log('[calculateConfidence] +10% for excellent data quality');
@@ -200,14 +247,6 @@ function calculateConfidence(
     console.log('[calculateConfidence] -10% for poor data quality');
   }
   
-  // Decay confidence as we go further into the future
-  // Day 0 (today): 100% of base
-  // Day 1: 95% of base
-  // Day 2: 90% of base
-  // Day 3: 85% of base
-  // Day 4: 80% of base
-  // Day 5: 75% of base
-  // Day 6: 70% of base
   const decayFactor = Math.max(0.7, 1 - (daysOut * 0.05));
   const finalConfidence = Math.round(baseConfidence * decayFactor);
   
@@ -215,7 +254,6 @@ function calculateConfidence(
   console.log('[calculateConfidence] Base confidence:', baseConfidence);
   console.log('[calculateConfidence] Final confidence:', finalConfidence);
   
-  // Clamp between 30% and 95%
   const clampedConfidence = Math.max(30, Math.min(95, finalConfidence));
   console.log('[calculateConfidence] ✅ Clamped confidence:', clampedConfidence);
   
@@ -238,7 +276,6 @@ async function generateForecast(
   const basePeriod = currentBuoyData?.period || 8;
   const baseWindSpeed = currentBuoyData?.windSpeed || 10;
   
-  // 🚨 CRITICAL: Determine data quality for confidence calculation
   let dataQuality: 'excellent' | 'good' | 'fair' | 'poor' = 'fair';
   if (currentBuoyData) {
     if (currentBuoyData.period >= 10 && currentBuoyData.waveHeight > 0) {
@@ -270,14 +307,11 @@ async function generateForecast(
     const { min, max } = calculateSurfHeight(waveHeight, period);
     const rating = calculateSurfRating(min, max, period, windSpeed);
     
-    // 🚨 CRITICAL FIX: Calculate confidence for each day
-    // NOTE: We use CURRENT buoy data to inform ALL future predictions
-    // We do NOT look for future buoy data because it doesn't exist
     const confidence = calculateConfidence(
-      !!currentBuoyData, // Do we have current buoy data?
-      !!currentBuoyData, // hasHistoricalData - true if we have current data
-      i, // daysOut - how many days in the future
-      dataQuality // Quality of the current data
+      !!currentBuoyData,
+      !!currentBuoyData,
+      i,
+      dataQuality
     );
     
     console.log(`[generateForecast] Day ${i} (${date}):`, {
@@ -296,7 +330,7 @@ async function generateForecast(
       surfHeightMin: min,
       surfHeightMax: max,
       rating,
-      confidence, // ✅ Now calculated and included
+      confidence,
     });
   }
   
@@ -334,10 +368,10 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
-    // Get location details
+    // 🚨 CRITICAL FIX: Get location details including latitude and longitude for Open-Meteo fallback
     const { data: locationData, error: locationError } = await supabase
       .from('locations')
-      .select('buoy_id')
+      .select('buoy_id, latitude, longitude, name')
       .eq('id', locationId)
       .single();
     
@@ -347,23 +381,50 @@ Deno.serve(async (req) => {
     }
     
     const buoyId = locationData.buoy_id;
+    const latitude = parseFloat(locationData.latitude);
+    const longitude = parseFloat(locationData.longitude);
+    const locationName = locationData.name;
+    
     console.log('Using buoy:', buoyId, 'for location:', locationId);
+    console.log('Location coordinates:', { latitude, longitude });
     
-    // 🚨 CRITICAL: Try to fetch CURRENT buoy data
-    // We do NOT look for future buoy data because it doesn't exist
-    // We use current conditions to inform future predictions
-    console.log('[Forecast] Fetching CURRENT buoy data (not future data)...');
-    const currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
+    // Fetch CURRENT buoy data
+    console.log('[Forecast] Fetching CURRENT buoy data...');
+    let currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
+    // 🚨 CRITICAL FIX: Check if wind data is invalid (99.0 or 999.0) and use Open-Meteo fallback
     if (currentBuoyData) {
-      console.log('✅ Live CURRENT buoy data available:', currentBuoyData);
-      console.log('✅ This will be used to inform ALL future predictions');
+      const windSpeed = currentBuoyData.windSpeed;
+      
+      console.log(`[Wind Check] Buoy ${buoyId} wind speed: ${windSpeed} mph`);
+      
+      // Check for invalid NOAA wind data (99.0 or 999.0)
+      if (windSpeed === 99.0 || windSpeed === 999.0) {
+        console.log(`[Wind Fallback] 🚨 Invalid NOAA wind data detected (${windSpeed} mph) for ${locationName}`);
+        console.log(`[Wind Fallback] 🌐 Attempting Open-Meteo fallback...`);
+        
+        const openMeteoWind = await fetchOpenMeteoWind(latitude, longitude, locationName);
+        
+        if (openMeteoWind) {
+          console.log(`[Wind Fallback] ✅ Successfully replaced invalid wind data with Open-Meteo data`);
+          console.log(`[Wind Fallback] Old: ${windSpeed} mph → New: ${openMeteoWind.windSpeedMph.toFixed(2)} mph`);
+          
+          // Replace the invalid wind data with Open-Meteo data
+          currentBuoyData.windSpeed = openMeteoWind.windSpeedMph;
+          
+          console.log(`[Wind Fallback] ✅ Wind data updated successfully`);
+        } else {
+          console.error(`[Wind Fallback] ❌ Open-Meteo fallback failed for ${locationName}`);
+          console.error(`[Wind Fallback] ⚠️ Using invalid wind data (${windSpeed} mph) as last resort`);
+        }
+      } else {
+        console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
+      }
     } else {
       console.log('⚠️ No live CURRENT buoy data, using baseline estimates');
-      console.log('⚠️ Confidence levels will be lower without current data');
     }
     
-    // Generate 7-day forecast using current buoy data
+    // Generate 7-day forecast using current buoy data (with potentially corrected wind data)
     const forecastData = await generateForecast(currentBuoyData, 7);
     
     console.log('Generated forecast for', forecastData.length, 'days');
@@ -384,7 +445,7 @@ Deno.serve(async (req) => {
         wind_direction: 'Variable',
         precipitation_chance: null,
         swell_height_range: `${day.surfHeightMin.toFixed(1)}-${day.surfHeightMax.toFixed(1)} ft`,
-        prediction_confidence: day.confidence, // ✅ CRITICAL: Store as integer (0-100)
+        prediction_confidence: day.confidence,
         updated_at: new Date().toISOString(),
       };
       
@@ -393,7 +454,6 @@ Deno.serve(async (req) => {
         date: day.date,
         swell_height_range: forecastRecord.swell_height_range,
         prediction_confidence: forecastRecord.prediction_confidence,
-        confidence_type: typeof forecastRecord.prediction_confidence,
       });
       
       const { error: upsertError } = await supabase
@@ -408,34 +468,6 @@ Deno.serve(async (req) => {
     }
     
     console.log('[Store] ═══════════════════════════════════════');
-    
-    // 🚨 VERIFICATION: Read back the data to confirm confidence was stored
-    console.log('[Verification] ═══════════════════════════════════════');
-    console.log('[Verification] 🔍 READING BACK STORED DATA');
-    console.log('[Verification] ═══════════════════════════════════════');
-    
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('weather_forecast')
-      .select('date, swell_height_range, prediction_confidence')
-      .eq('location', locationId)
-      .gte('date', getESTDate())
-      .order('date')
-      .limit(7);
-    
-    if (verifyError) {
-      console.error('[Verification] ❌ Error reading back data:', verifyError);
-    } else {
-      console.log('[Verification] ✅ Stored forecast data:');
-      verifyData?.forEach(row => {
-        console.log(`  ${row.date}: ${row.swell_height_range}, confidence: ${row.prediction_confidence}%`);
-        
-        if (row.prediction_confidence === null || row.prediction_confidence === undefined) {
-          console.error(`  ❌ CRITICAL: Confidence is NULL for ${row.date}!`);
-        }
-      });
-    }
-    
-    console.log('[Verification] ═══════════════════════════════════════');
     console.log('=== FETCH SURF FORECAST COMPLETED ===');
     
     return new Response(
