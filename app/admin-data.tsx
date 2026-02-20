@@ -321,7 +321,12 @@ export default function AdminDataScreen() {
     addLog(`Updating 7-day forecast for ${locationDisplayName}...`, 'info');
 
     try {
-      console.log(`[AdminData] Invoking fetch-surf-forecast for location: ${locationId}`);
+      console.log(`[AdminData] ═══════════════════════════════════════`);
+      console.log(`[AdminData] 📈 UPDATE FORECAST BUTTON CLICKED`);
+      console.log(`[AdminData] Location:`, locationDisplayName);
+      console.log(`[AdminData] Location ID:`, locationId);
+      console.log(`[AdminData] Timestamp:`, new Date().toISOString());
+      console.log(`[AdminData] ═══════════════════════════════════════`);
       
       const requestBody = { location: locationId };
       console.log('[AdminData] Request body:', requestBody);
@@ -330,7 +335,13 @@ export default function AdminDataScreen() {
         body: requestBody,
       });
 
-      console.log('[AdminData] Forecast update response:', { data, error });
+      console.log('[AdminData] ═══════════════════════════════════════');
+      console.log('[AdminData] 📥 FORECAST UPDATE RESPONSE');
+      console.log('[AdminData] Success:', data?.success);
+      console.log('[AdminData] Error:', error);
+      console.log('[AdminData] Has buoy data:', data?.has_buoy_data);
+      console.log('[AdminData] Forecast days:', data?.forecast_days);
+      console.log('[AdminData] ═══════════════════════════════════════');
 
       if (error) {
         console.error('[AdminData] Edge function error:', error);
@@ -365,8 +376,36 @@ export default function AdminDataScreen() {
         addLog(`  • Detected trend: ${trendText} (${rateText})`, 'info');
       }
       
+      // 🚨 CRITICAL: Force refresh by adding a small delay to ensure database has committed
+      console.log('[AdminData] 🔄 Waiting 2 seconds for database to commit...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('[AdminData] 🔄 Refreshing data counts and location reports...');
       await loadDataCounts();
       await loadLocationReports();
+      
+      // 🚨 CRITICAL: Verify the forecast was actually stored
+      console.log('[AdminData] 🔍 Verifying forecast was stored in database...');
+      const dateStr = getESTDate();
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('weather_forecast')
+        .select('date, swell_height_range, prediction_confidence')
+        .eq('location', locationId)
+        .gte('date', dateStr)
+        .order('date')
+        .limit(7);
+      
+      if (verifyError) {
+        console.error('[AdminData] ❌ Error verifying forecast:', verifyError);
+        addLog(`⚠️ Warning: Could not verify forecast was stored`, 'warning');
+      } else {
+        console.log('[AdminData] ✅ Verified forecast data in database:');
+        verifyData?.forEach(row => {
+          console.log(`  ${row.date}: ${row.swell_height_range}, confidence: ${row.prediction_confidence}%`);
+        });
+        addLog(`✅ Verified ${verifyData?.length || 0} days of forecast data stored`, 'success');
+      }
+      
     } catch (error) {
       console.error('[AdminData] Error updating forecast:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -563,10 +602,42 @@ export default function AdminDataScreen() {
                 1. Update Data - Pulls fresh surf & weather from NOAA buoy
               </Text>
               <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12 }]}>
-                2. Generate Narrative - Creates 300-400 char surf report from existing data
+                2. Update Forecast - Generates 7-day forecast (stored in database)
               </Text>
               <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12 }]}>
-                3. Report page displays the narrative to surfers
+                3. Generate Narrative - Creates 300-400 char surf report from existing data
+              </Text>
+              <Text style={[styles.infoText, { color: '#2196F3', fontSize: 12 }]}>
+                4. Report page displays the narrative & forecast to surfers
+              </Text>
+            </View>
+          </View>
+          
+          <View style={[styles.infoBox, { marginBottom: 16, backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={16}
+              color="#FF9800"
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoText, { color: '#FF9800', fontWeight: '600' }]}>
+                Troubleshooting Forecast Issues
+              </Text>
+              <Text style={[styles.infoText, { color: '#FF9800', fontSize: 12, marginTop: 4 }]}>
+                If forecast is not updating on the Report page:
+              </Text>
+              <Text style={[styles.infoText, { color: '#FF9800', fontSize: 12 }]}>
+                1. Click "Update Forecast" button for the location
+              </Text>
+              <Text style={[styles.infoText, { color: '#FF9800', fontSize: 12 }]}>
+                2. Click "Check Forecast DB" to verify data was stored
+              </Text>
+              <Text style={[styles.infoText, { color: '#FF9800', fontSize: 12 }]}>
+                3. If data is in DB but not showing, try force-closing and reopening the app
+              </Text>
+              <Text style={[styles.infoText, { color: '#FF9800', fontSize: 12 }]}>
+                4. The app has real-time sync - changes should appear automatically
               </Text>
             </View>
           </View>
@@ -607,6 +678,39 @@ export default function AdminDataScreen() {
                       Preview: {report.narrativePreview}...
                     </Text>
                   )}
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: '#2196F3', marginTop: 8 }]}
+                    onPress={async () => {
+                      console.log('[AdminData] 🔍 Checking forecast data for:', report.location, report.locationId);
+                      const dateStr = getESTDate();
+                      const { data, error } = await supabase
+                        .from('weather_forecast')
+                        .select('date, swell_height_range, prediction_confidence')
+                        .eq('location', report.locationId)
+                        .gte('date', dateStr)
+                        .order('date')
+                        .limit(7);
+                      
+                      if (error) {
+                        console.error('[AdminData] ❌ Error fetching forecast:', error);
+                        showErrorModal('Forecast Check Failed', error.message);
+                      } else {
+                        console.log('[AdminData] ✅ Forecast data for', report.location, ':', data);
+                        const forecastText = data && data.length > 0
+                          ? data.map(d => `${d.date}: ${d.swell_height_range} (${d.prediction_confidence}%)`).join('\n')
+                          : 'No forecast data found';
+                        showErrorModal(`Forecast for ${report.location}`, forecastText);
+                      }
+                    }}
+                  >
+                    <IconSymbol
+                      ios_icon_name="magnifyingglass"
+                      android_material_icon_name="search"
+                      size={14}
+                      color="#FFFFFF"
+                    />
+                    <Text style={[styles.actionButtonText, { fontSize: 11 }]}>Check Forecast DB</Text>
+                  </TouchableOpacity>
                 </View>
 
                 <View style={styles.locationActions}>
