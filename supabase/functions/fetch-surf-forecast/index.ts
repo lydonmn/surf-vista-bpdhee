@@ -112,12 +112,29 @@ async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: num
       const dataLine = lines[2];
       const values = dataLine.split(/\s+/);
       
-      const waveHeight = parseFloat(values[8]);
-      const period = parseFloat(values[9]);
-      const windSpeed = parseFloat(values[6]);
+      // Parse wave height (column 8) - handle MM (missing data)
+      const waveHeightStr = values[8];
+      const waveHeight = waveHeightStr === 'MM' ? NaN : parseFloat(waveHeightStr);
+      
+      // Parse period (column 9) - handle MM (missing data)
+      const periodStr = values[9];
+      const period = periodStr === 'MM' ? NaN : parseFloat(periodStr);
+      
+      // Parse wind speed (column 6) - handle MM (missing data)
+      const windSpeedStr = values[6];
+      const windSpeed = windSpeedStr === 'MM' ? NaN : parseFloat(windSpeedStr);
+      
+      console.log(`[fetchBuoyData] Raw values for buoy ${buoyId}:`, {
+        waveHeightStr,
+        periodStr,
+        windSpeedStr,
+        waveHeight,
+        period,
+        windSpeed
+      });
       
       if (isNaN(waveHeight) || isNaN(period) || isNaN(windSpeed)) {
-        console.warn(`[fetchBuoyData] Invalid numeric values for buoy ${buoyId}`);
+        console.warn(`[fetchBuoyData] Invalid numeric values for buoy ${buoyId} - may have MM (missing data)`);
         if (attempt < retries) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           continue;
