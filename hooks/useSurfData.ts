@@ -65,6 +65,7 @@ export function useSurfData() {
   const isFetchingRef = useRef(false);
   const lastFetchTimeRef = useRef<number>(0);
   const currentLocationRef = useRef(currentLocation);
+  const lastFetchDateRef = useRef<string>(getESTDate()); // Track the date of last fetch
 
   // Stable fetchData function with no dependencies
   const fetchDataRef = useRef<() => Promise<void>>();
@@ -73,16 +74,26 @@ export function useSurfData() {
     // Prevent concurrent fetches and debounce rapid calls
     const now = Date.now();
     const timeSinceLastFetch = now - lastFetchTimeRef.current;
+    const currentDate = getESTDate();
+    const dateChanged = currentDate !== lastFetchDateRef.current;
     
     if (!isMountedRef.current || isFetchingRef.current) {
       console.log('[useSurfData] Fetch already in progress or component unmounted, skipping...');
       return;
     }
 
-    // Debounce - don't fetch if we just fetched within last 5 seconds
-    if (timeSinceLastFetch < DEBOUNCE_DELAY) {
-      console.log('[useSurfData] Fetch called too soon after last fetch (', timeSinceLastFetch, 'ms), skipping...');
-      return;
+    // 🚨 CRITICAL FIX: Always fetch if the date has changed (new day)
+    if (dateChanged) {
+      console.log('[useSurfData] 📅 DATE CHANGED! Last fetch:', lastFetchDateRef.current, '→ Current:', currentDate);
+      console.log('[useSurfData] Forcing immediate refresh for new day...');
+      lastFetchDateRef.current = currentDate;
+      // Skip debounce check when date changes
+    } else {
+      // Debounce - don't fetch if we just fetched within last 5 seconds (same day only)
+      if (timeSinceLastFetch < DEBOUNCE_DELAY) {
+        console.log('[useSurfData] Fetch called too soon after last fetch (', timeSinceLastFetch, 'ms), skipping...');
+        return;
+      }
     }
 
     isFetchingRef.current = true;
@@ -99,6 +110,8 @@ export function useSurfData() {
       console.log('[useSurfData] 🔄 FETCHING DATA');
       console.log('[useSurfData] Location:', location);
       console.log('[useSurfData] EST date:', today);
+      console.log('[useSurfData] Last fetch date:', lastFetchDateRef.current);
+      console.log('[useSurfData] Date changed:', dateChanged);
       console.log('[useSurfData] Timestamp:', new Date().toISOString());
       console.log('[useSurfData] ═══════════════════════════════════════');
       
@@ -425,20 +438,34 @@ export function useSurfData() {
     }
   }, [currentLocation, fetchData]);
 
-  // Stable periodic refresh setup
+  // Stable periodic refresh setup with date change detection
   useEffect(() => {
-    console.log('[useSurfData] Setting up periodic refresh (every 30 minutes)...');
+    console.log('[useSurfData] Setting up periodic refresh (every 30 minutes) with date change detection...');
     
     // Clear existing interval
     if (refreshIntervalRef.current) {
       clearInterval(refreshIntervalRef.current);
     }
 
-    // Set up new interval
+    // Set up new interval - check every 30 minutes
     refreshIntervalRef.current = setInterval(() => {
-      console.log('[useSurfData] Periodic refresh triggered');
-      if (!isFetchingRef.current) {
-        fetchData();
+      const currentDate = getESTDate();
+      const dateChanged = currentDate !== lastFetchDateRef.current;
+      
+      if (dateChanged) {
+        console.log('[useSurfData] 📅 DATE CHANGED during periodic check!');
+        console.log('[useSurfData] Last fetch:', lastFetchDateRef.current, '→ Current:', currentDate);
+        console.log('[useSurfData] Forcing immediate refresh for new day...');
+        lastFetchDateRef.current = currentDate;
+        lastFetchTimeRef.current = 0; // Reset debounce
+        if (!isFetchingRef.current) {
+          fetchData();
+        }
+      } else {
+        console.log('[useSurfData] Periodic refresh triggered (same day)');
+        if (!isFetchingRef.current) {
+          fetchData();
+        }
       }
     }, REFRESH_INTERVAL);
 
@@ -450,13 +477,25 @@ export function useSurfData() {
     };
   }, [fetchData]);
 
-  // Stable app state change handler
+  // Stable app state change handler with date change detection
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
       
       if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
-        console.log('[useSurfData] App came to foreground, refreshing data...');
+        const currentDate = getESTDate();
+        const dateChanged = currentDate !== lastFetchDateRef.current;
+        
+        if (dateChanged) {
+          console.log('[useSurfData] 📅 DATE CHANGED while app was in background!');
+          console.log('[useSurfData] Last fetch:', lastFetchDateRef.current, '→ Current:', currentDate);
+          console.log('[useSurfData] Forcing immediate refresh for new day...');
+          lastFetchDateRef.current = currentDate;
+          lastFetchTimeRef.current = 0; // Reset debounce
+        } else {
+          console.log('[useSurfData] App came to foreground (same day), refreshing data...');
+        }
+        
         if (!isFetchingRef.current) {
           fetchData();
         }
