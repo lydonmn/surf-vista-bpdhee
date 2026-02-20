@@ -10,6 +10,7 @@ import { useSurfData } from '@/hooks/useSurfData';
 import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 import { openPaywall } from '@/utils/paywallHelper';
+import { useLocation } from '@/contexts/LocationContext';
 
 interface DayForecast {
   date: string;
@@ -115,6 +116,7 @@ function calculateSurfRating(surfData: any): number {
 export default function ForecastScreen() {
   const theme = useTheme();
   const { user, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
+  const { currentLocation, locationData } = useLocation();
   const isSubscribed = checkSubscription();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -122,11 +124,11 @@ export default function ForecastScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
-    console.log('[ForecastScreen] 🔄 Manual refresh triggered');
+    console.log('[ForecastScreen] 🔄 Manual refresh triggered for location:', currentLocation);
     setIsRefreshing(true);
     await refreshData();
     setIsRefreshing(false);
-  }, [refreshData]);
+  }, [refreshData, currentLocation]);
 
   const handleSubscribeNow = async () => {
     console.log('[ForecastScreen] 🔘 Subscribe button pressed');
@@ -148,7 +150,7 @@ export default function ForecastScreen() {
   };
 
   const combinedForecast: DayForecast[] = React.useMemo(() => {
-    console.log('[ForecastScreen] 🔍 Building combined forecast...');
+    console.log('[ForecastScreen] 🔍 Building combined forecast for location:', currentLocation);
     console.log('[ForecastScreen] Surf reports count:', surfReports.length);
     console.log('[ForecastScreen] Weather forecast count:', weatherForecast.length);
     console.log('[ForecastScreen] Tide data count:', tideData.length);
@@ -156,6 +158,7 @@ export default function ForecastScreen() {
     const forecastMap = new Map<string, DayForecast>();
     const today = getTodayDateString();
 
+    // Add surf reports
     surfReports.forEach(report => {
       if (report.date >= today) {
         console.log(`[ForecastScreen] Adding surf report for ${report.date}:`, {
@@ -179,6 +182,7 @@ export default function ForecastScreen() {
       }
     });
 
+    // Add weather forecasts
     weatherForecast.forEach(forecast => {
       if (forecast.date >= today) {
         console.log(`[ForecastScreen] Adding weather forecast for ${forecast.date}:`, {
@@ -204,6 +208,7 @@ export default function ForecastScreen() {
       }
     });
 
+    // Add tide data
     tideData.forEach(tide => {
       if (tide.date >= today && forecastMap.has(tide.date)) {
         const existing = forecastMap.get(tide.date)!;
@@ -211,9 +216,11 @@ export default function ForecastScreen() {
       }
     });
 
+    // Ensure we have entries for all 7 days
     for (let i = 0; i < 7; i++) {
       const date = getDateNDaysFromNow(i);
       if (!forecastMap.has(date)) {
+        console.log(`[ForecastScreen] ⚠️ No data for ${date}, creating placeholder`);
         forecastMap.set(date, {
           date,
           dayName: getDayName(date),
@@ -233,11 +240,12 @@ export default function ForecastScreen() {
       dayName: d.dayName,
       hasSurfReport: !!d.surfReport,
       hasWeatherForecast: !!d.weatherForecast,
+      swellHeight: d.weatherForecast?.swell_height_range || 'N/A',
       confidence: d.weatherForecast?.prediction_confidence,
     })));
     
     return result;
-  }, [surfReports, weatherForecast, tideData]);
+  }, [surfReports, weatherForecast, tideData, currentLocation]);
 
   const toggleDay = (date: string) => {
     console.log('[ForecastScreen] Toggling day:', date);
@@ -275,8 +283,6 @@ export default function ForecastScreen() {
     return `${Math.round(numTemp)}°`;
   };
 
-  // 🚨 CRITICAL FIX: Format confidence value correctly
-  // Backend stores as percentage (0-100), so just display it directly
   const formatConfidence = (confidence: number | null | undefined): string => {
     console.log('[ForecastScreen] formatConfidence called with:', {
       value: confidence,
@@ -296,7 +302,6 @@ export default function ForecastScreen() {
       return 'N/A';
     }
     
-    // Backend stores as percentage (0-100), display directly
     const displayValue = Math.round(numConfidence);
     console.log('[ForecastScreen] ✅ Displaying confidence as:', displayValue + '%');
     return `${displayValue}%`;
@@ -368,6 +373,7 @@ export default function ForecastScreen() {
 
   const noForecastText = 'No forecast data available';
   const pullToRefreshText = 'Pull down to refresh';
+  const locationNameText = locationData?.displayName || currentLocation;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -375,7 +381,10 @@ export default function ForecastScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <IconSymbol ios_icon_name="chevron.left" android_material_icon_name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>7-Day Forecast</Text>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>7-Day Forecast</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{locationNameText}</Text>
+        </View>
         <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh} disabled={isRefreshing}>
           <IconSymbol ios_icon_name="arrow.clockwise" android_material_icon_name="refresh" size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -593,9 +602,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: 2,
   },
   errorBanner: {
     flexDirection: 'row',
