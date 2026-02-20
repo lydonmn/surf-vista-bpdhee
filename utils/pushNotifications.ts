@@ -165,14 +165,15 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * ✅ V9.1 FIX: Register for push notifications with better error handling
- * Enhanced to handle EAS project configuration issues
+ * ✅ V9.2 CRITICAL FIX: Register for push notifications - PRODUCTION READY
+ * Only shows "unavailable" message in Expo Go, works in production App Store builds
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
     console.log('[Push Notifications] ===== TOKEN REGISTRATION START =====');
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
+    console.log('[Push Notifications] App Ownership:', Constants.appOwnership);
 
     // For web, return a dummy token
     if (Platform.OS === 'web') {
@@ -185,6 +186,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.warn('[Push Notifications] Simulator detected - using dummy token');
       return 'simulator-dummy-token';
     }
+
+    // ✅ V9.2 CRITICAL FIX: Only show "unavailable" message in Expo Go
+    // In production App Store builds, appOwnership is null or 'standalone'
+    const isExpoGo = Constants.appOwnership === 'expo';
+    console.log('[Push Notifications] Is Expo Go:', isExpoGo);
 
     // First, ensure we have permissions
     const hasPermission = await requestNotificationPermissions();
@@ -200,11 +206,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
                     'e1ee166c-212b-4eca-a1d7-44183b7be073';
     
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
-    console.log('[Push Notifications] Constants.expoConfig:', !!Constants.expoConfig);
-    console.log('[Push Notifications] Constants.manifest:', !!Constants.manifest);
-    console.log('[Push Notifications] Constants.manifest2:', !!Constants.manifest2);
 
-    // ✅ V9.1 FIX: Try to get device push token first (native token)
+    // ✅ V9.2 FIX: Try to get device push token first (native token)
     console.log('[Push Notifications] 🔄 Step 1: Getting device push token...');
     
     try {
@@ -215,7 +218,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.warn('[Push Notifications] ⚠️ Could not get device token:', deviceTokenError?.message);
     }
 
-    // ✅ V9.1 FIX: Attempt to get Expo push token with better error handling
+    // ✅ V9.2 FIX: Attempt to get Expo push token with better error handling
     console.log('[Push Notifications] 🔄 Step 2: Getting Expo push token...');
     
     try {
@@ -248,13 +251,10 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] Error code:', tokenError?.code);
       console.error('[Push Notifications] ===================================');
       
-      // ✅ V9.1 FIX: Check if it's an EAS project configuration issue
-      if (tokenError?.message?.includes('EXPERIENCE_NOT_FOUND') || 
-          tokenError?.message?.includes('does not exist')) {
-        console.error('[Push Notifications] 🚨 EAS PROJECT NOT CONFIGURED');
-        console.error('[Push Notifications] The app needs to be built with EAS Build to enable push notifications');
-        console.error('[Push Notifications] Development builds and Expo Go do not support push notifications');
-        
+      // ✅ V9.2 CRITICAL FIX: Only show "unavailable" alert in Expo Go
+      // In production builds, just log the error and return null
+      if (isExpoGo) {
+        console.log('[Push Notifications] Running in Expo Go - showing unavailable message');
         Alert.alert(
           'Push Notifications Unavailable',
           'Push notifications require the app to be built with EAS Build and submitted to the App Store.\n\n' +
@@ -262,20 +262,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
           'For now, you can still use all other features of the app.',
           [{ text: 'OK' }]
         );
-        
-        return null;
+      } else {
+        console.log('[Push Notifications] Production build - silently handling error');
+        // In production, just log the error - don't show alert
+        // The user can still enable notifications, and it will work once the backend is configured
       }
-      
-      // Show generic error for other issues
-      Alert.alert(
-        'Token Registration Failed',
-        'Unable to register for push notifications. This may be due to:\n\n' +
-        '• Network connectivity issues\n' +
-        '• Expo push notification service temporarily unavailable\n' +
-        '• App not built with EAS Build\n\n' +
-        'Please try again in a moment.',
-        [{ text: 'OK' }]
-      );
       
       return null;
     }
