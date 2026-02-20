@@ -121,11 +121,14 @@ export function formatDateString(dateStr: string): string {
 
 /**
  * Get date N days from now in EST timezone (YYYY-MM-DD format)
+ * 🚨 CRITICAL FIX: Properly calculate future dates in EST timezone
  * 
  * @param daysOffset - Number of days to offset (positive for future, negative for past)
  * @returns Date string in YYYY-MM-DD format
  */
 export function getESTDateOffset(daysOffset: number): string {
+  console.log(`[getESTDateOffset] Calculating date ${daysOffset} days from now...`);
+  
   const now = new Date();
   
   // Get current EST date using toLocaleDateString
@@ -139,17 +142,22 @@ export function getESTDateOffset(daysOffset: number): string {
   // Parse the date string (format: "MM/DD/YYYY")
   const [month, day, year] = estDateString.split('/');
   
-  // Create a date object and add days
-  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  date.setDate(date.getDate() + daysOffset);
+  // Create a Date object at noon EST to avoid timezone boundary issues
+  const estDate = new Date(`${year}-${month}-${day}T12:00:00`);
   
-  const resultYear = date.getFullYear();
-  const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
-  const resultDay = String(date.getDate()).padStart(2, '0');
+  console.log(`[getESTDateOffset] Current EST date:`, estDate.toISOString().split('T')[0]);
+  
+  // Add the specified number of days
+  estDate.setDate(estDate.getDate() + daysOffset);
+  
+  // Format as YYYY-MM-DD
+  const resultYear = estDate.getFullYear();
+  const resultMonth = String(estDate.getMonth() + 1).padStart(2, '0');
+  const resultDay = String(estDate.getDate()).padStart(2, '0');
   
   const result = `${resultYear}-${resultMonth}-${resultDay}`;
   
-  console.log(`[getESTDateOffset] Offset ${daysOffset} days from EST date → ${result}`);
+  console.log(`[getESTDateOffset] ✅ Date ${daysOffset} days from now: ${result}`);
   
   return result;
 }
