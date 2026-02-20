@@ -203,20 +203,68 @@ export default function AdminDataScreen() {
   }, [locations]);
 
   const calculateNextCompleteDataTime = useCallback(() => {
+    console.log('[calculateNextCompleteDataTime] ═══════════════════════════════════════');
+    console.log('[calculateNextCompleteDataTime] 🕐 CALCULATING NEXT 6 AM UPDATE TIME');
+    
     const now = new Date();
-    const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    console.log('[calculateNextCompleteDataTime] Current UTC time:', now.toISOString());
     
-    const next6AM = new Date(estNow);
-    next6AM.setHours(6, 0, 0, 0);
+    // 🚨 CRITICAL FIX: Get EST time components directly without creating invalid Date
+    const estTimeString = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
     
-    if (estNow.getHours() >= 6) {
+    console.log('[calculateNextCompleteDataTime] EST time string:', estTimeString);
+    
+    // Parse the EST time string (format: "MM/DD/YYYY, HH:mm:ss")
+    const [datePart, timePart] = estTimeString.split(', ');
+    const [month, day, year] = datePart.split('/').map(Number);
+    const [hour, minute, second] = timePart.split(':').map(Number);
+    
+    console.log('[calculateNextCompleteDataTime] Parsed EST components:', {
+      year, month, day, hour, minute, second
+    });
+    
+    // Create Date object for current EST time
+    const estNow = new Date(year, month - 1, day, hour, minute, second);
+    console.log('[calculateNextCompleteDataTime] EST now:', estNow.toString());
+    console.log('[calculateNextCompleteDataTime] Current EST hour:', hour);
+    
+    // Create Date object for next 6 AM EST
+    const next6AM = new Date(year, month - 1, day, 6, 0, 0, 0);
+    
+    // If it's already past 6 AM today, set to 6 AM tomorrow
+    if (hour >= 6) {
       next6AM.setDate(next6AM.getDate() + 1);
+      console.log('[calculateNextCompleteDataTime] Already past 6 AM, setting to tomorrow');
+    } else {
+      console.log('[calculateNextCompleteDataTime] Before 6 AM, setting to today');
     }
     
-    const hoursUntil = Math.floor((next6AM.getTime() - estNow.getTime()) / (1000 * 60 * 60));
-    const minutesUntil = Math.floor(((next6AM.getTime() - estNow.getTime()) % (1000 * 60 * 60)) / (1000 * 60));
+    console.log('[calculateNextCompleteDataTime] Next 6 AM EST:', next6AM.toString());
     
-    setNextCompleteDataTime(`${hoursUntil}h ${minutesUntil}m`);
+    // Calculate time difference
+    const diffMs = next6AM.getTime() - estNow.getTime();
+    console.log('[calculateNextCompleteDataTime] Time difference (ms):', diffMs);
+    
+    const hoursUntil = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutesUntil = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    console.log('[calculateNextCompleteDataTime] Hours until:', hoursUntil);
+    console.log('[calculateNextCompleteDataTime] Minutes until:', minutesUntil);
+    
+    const timeString = `${hoursUntil}h ${minutesUntil}m`;
+    console.log('[calculateNextCompleteDataTime] ✅ Final time string:', timeString);
+    console.log('[calculateNextCompleteDataTime] ═══════════════════════════════════════');
+    
+    setNextCompleteDataTime(timeString);
   }, []);
 
   useEffect(() => {
