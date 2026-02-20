@@ -412,20 +412,25 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
-            // 🚨 CRITICAL FIX: Use weatherForecast.swell_height_range first (this is the forecast data)
-            // Then fall back to surfReport data (which is today's actual data)
+            // 🚨 CRITICAL FIX: Use weatherForecast.swell_height_range for ALL days (including today)
+            // This is the forecast data that should be displayed
             const forecastSwellHeight = day.weatherForecast?.swell_height_range;
-            const surfHeightValue = (day.surfReport as any)?.surf_height;
-            const waveHeightValue = day.surfReport?.wave_height;
-            const displayHeight = forecastSwellHeight || surfHeightValue || waveHeightValue || 'N/A';
+            
+            // Only use surfReport data as fallback for today if forecast is missing
+            const isToday = day.date === getTodayDateString();
+            const surfHeightValue = isToday ? ((day.surfReport as any)?.surf_height || day.surfReport?.wave_height) : null;
+            
+            // Display forecast first, then fall back to today's actual data
+            const displayHeight = forecastSwellHeight || surfHeightValue || 'N/A';
             
             console.log(`[ForecastScreen] Rendering ${day.date}:`, {
+              isToday,
               forecastSwellHeight,
               surfHeightValue,
-              waveHeightValue,
               displayHeight,
               confidence: day.weatherForecast?.prediction_confidence,
               confidenceType: typeof day.weatherForecast?.prediction_confidence,
+              hasWeatherForecast: !!day.weatherForecast,
             });
             
             const hasSurfData = displayHeight !== 'N/A';
