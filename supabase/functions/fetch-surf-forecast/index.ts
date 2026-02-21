@@ -83,7 +83,8 @@ async function fetchOpenMeteoWind(latitude: number, longitude: number, locationN
   try {
     console.log(`[Open-Meteo] 🌐 Fetching wind data for ${locationName} (${latitude}, ${longitude})`);
     
-    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
+    // Use the specific Open-Meteo API endpoint with wind_speed_10m and wind_direction_10m in mph
+    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=mph`;
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
@@ -98,23 +99,21 @@ async function fetchOpenMeteoWind(latitude: number, longitude: number, locationN
     
     const data = await response.json();
     
-    if (!data.current_weather || 
-        typeof data.current_weather.windspeed !== 'number' || 
-        typeof data.current_weather.winddirection !== 'number') {
+    // Check for the correct data structure with current.wind_speed_10m and current.wind_direction_10m
+    if (!data.current || 
+        typeof data.current.wind_speed_10m !== 'number' || 
+        typeof data.current.wind_direction_10m !== 'number') {
       console.error(`[Open-Meteo] ❌ Invalid data structure for ${locationName}:`, data);
       return null;
     }
     
-    // Convert m/s to knots, then knots to mph (1 knot = 1.15078 mph)
-    const windSpeedKnots = convertMetersPerSecondToKnots(data.current_weather.windspeed);
-    const windSpeedMph = windSpeedKnots * 1.15078;
-    const windDirectionDegrees = data.current_weather.winddirection;
+    // Wind speed is already in mph from the API (wind_speed_unit=mph parameter)
+    const windSpeedMph = data.current.wind_speed_10m;
+    const windDirectionDegrees = data.current.wind_direction_10m;
     
     console.log(`[Open-Meteo] ✅ Successfully fetched wind data for ${locationName}:`, {
-      windspeed_ms: data.current_weather.windspeed,
-      windspeed_knots: windSpeedKnots.toFixed(2),
-      windspeed_mph: windSpeedMph.toFixed(2),
-      winddirection: windDirectionDegrees
+      wind_speed_10m_mph: windSpeedMph.toFixed(2),
+      wind_direction_10m: windDirectionDegrees
     });
     
     return {
@@ -588,32 +587,44 @@ Deno.serve(async (req) => {
     let currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
     // 🚨 CRITICAL FIX: Check if wind data is invalid (99.0 or 999.0) and use Open-Meteo fallback
+    // ONLY for Cisco Beach and Jupiter locations
     if (currentBuoyData) {
       const windSpeed = currentBuoyData.windSpeed;
       
-      console.log(`[Wind Check] Buoy ${buoyId} wind speed: ${windSpeed} mph`);
+      console.log(`[Wind Check] Buoy ${buoyId} wind speed: ${windSpeed} mph for ${locationName}`);
       
-      // Check for invalid NOAA wind data (99.0 or 999.0)
-      if (windSpeed === 99.0 || windSpeed === 999.0) {
-        console.log(`[Wind Fallback] 🚨 Invalid NOAA wind data detected (${windSpeed} mph) for ${locationName}`);
-        console.log(`[Wind Fallback] 🌐 Attempting Open-Meteo fallback...`);
+      // Check if this is Cisco Beach or Jupiter
+      const isCiscoBeach = locationId === 'cisco-beach' || locationName.toLowerCase().includes('cisco');
+      const isJupiter = locationId === 'jupiter' || locationName.toLowerCase().includes('jupiter');
+      
+      if (isCiscoBeach || isJupiter) {
+        console.log(`[Wind Check] 📍 Location is ${locationName} - Open-Meteo fallback enabled for invalid wind data`);
         
-        const openMeteoWind = await fetchOpenMeteoWind(latitude, longitude, locationName);
-        
-        if (openMeteoWind) {
-          console.log(`[Wind Fallback] ✅ Successfully replaced invalid wind data with Open-Meteo data`);
-          console.log(`[Wind Fallback] Old: ${windSpeed} mph → New: ${openMeteoWind.windSpeedMph.toFixed(2)} mph`);
+        // Check for invalid NOAA wind data (99.0 or 999.0)
+        if (windSpeed === 99.0 || windSpeed === 999.0) {
+          console.log(`[Wind Fallback] 🚨 Invalid NOAA wind data detected (${windSpeed} mph) for ${locationName}`);
+          console.log(`[Wind Fallback] 🌐 Attempting Open-Meteo fallback...`);
           
-          // Replace the invalid wind data with Open-Meteo data
-          currentBuoyData.windSpeed = openMeteoWind.windSpeedMph;
+          const openMeteoWind = await fetchOpenMeteoWind(latitude, longitude, locationName);
           
-          console.log(`[Wind Fallback] ✅ Wind data updated successfully`);
+          if (openMeteoWind) {
+            console.log(`[Wind Fallback] ✅ Successfully replaced invalid wind data with Open-Meteo data`);
+            console.log(`[Wind Fallback] Old: ${windSpeed} mph → New: ${openMeteoWind.windSpeedMph.toFixed(2)} mph`);
+            
+            // Replace the invalid wind data with Open-Meteo data
+            currentBuoyData.windSpeed = openMeteoWind.windSpeedMph;
+            
+            console.log(`[Wind Fallback] ✅ Wind data updated successfully`);
+          } else {
+            console.error(`[Wind Fallback] ❌ Open-Meteo fallback failed for ${locationName}`);
+            console.error(`[Wind Fallback] ⚠️ Using invalid wind data (${windSpeed} mph) as last resort`);
+          }
         } else {
-          console.error(`[Wind Fallback] ❌ Open-Meteo fallback failed for ${locationName}`);
-          console.error(`[Wind Fallback] ⚠️ Using invalid wind data (${windSpeed} mph) as last resort`);
+          console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
         }
       } else {
-        console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
+        console.log(`[Wind Check] 📍 Location is ${locationName} - Open-Meteo fallback NOT enabled (only for Cisco Beach and Jupiter)`);
+        console.log(`[Wind Check] ✅ Using NOAA wind data: ${windSpeed} mph`);
       }
     } else {
       console.log('[Forecast] ⚠️ No live CURRENT buoy data, using baseline estimates');
