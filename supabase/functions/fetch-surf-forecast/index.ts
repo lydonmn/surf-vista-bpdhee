@@ -516,21 +516,36 @@ Deno.serve(async (req) => {
     console.log('=== FETCH SURF FORECAST STARTED ===');
     console.log('Timestamp:', new Date().toISOString());
     
-    let locationId = 'folly-beach';
+    // 🚨 CRITICAL FIX: Better parameter parsing with detailed logging
+    let locationId: string | null = null;
     let generateNarrative = false;
+    
     try {
       const body = await req.json();
+      console.log('[Forecast] Request body received:', JSON.stringify(body));
+      
       if (body.location) {
         locationId = body.location;
-        console.log('Location parameter received:', locationId);
+        console.log('[Forecast] ✅ Location parameter extracted:', locationId);
+      } else {
+        console.warn('[Forecast] ⚠️ No location parameter in request body');
       }
+      
       if (body.generateNarrative === true) {
         generateNarrative = true;
-        console.log('Narrative generation requested');
+        console.log('[Forecast] ✅ Narrative generation requested');
       }
     } catch (e) {
-      console.log('No location parameter, using default: folly-beach');
+      console.warn('[Forecast] ⚠️ Failed to parse request body:', e);
     }
+    
+    // 🚨 CRITICAL FIX: If no location provided, throw error instead of defaulting
+    if (!locationId) {
+      console.error('[Forecast] ❌ CRITICAL: No location parameter provided');
+      throw new Error('Location parameter is required. Please provide { location: "location-id" } in request body.');
+    }
+    
+    console.log('[Forecast] 📍 Processing location:', locationId);
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -542,6 +557,8 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     // 🚨 CRITICAL FIX: Get location details including latitude and longitude for Open-Meteo fallback
+    console.log('[Forecast] 🔍 Fetching location details for:', locationId);
+    
     const { data: locationData, error: locationError } = await supabase
       .from('locations')
       .select('buoy_id, latitude, longitude, name')
@@ -549,8 +566,8 @@ Deno.serve(async (req) => {
       .single();
     
     if (locationError || !locationData) {
-      console.error('Location not found:', locationId);
-      throw new Error(`Location ${locationId} not found`);
+      console.error('[Forecast] ❌ Location not found:', locationId, locationError);
+      throw new Error(`Location ${locationId} not found in database`);
     }
     
     const buoyId = locationData.buoy_id;
@@ -558,11 +575,16 @@ Deno.serve(async (req) => {
     const longitude = parseFloat(locationData.longitude);
     const locationName = locationData.name;
     
-    console.log('Using buoy:', buoyId, 'for location:', locationId);
-    console.log('Location coordinates:', { latitude, longitude });
+    console.log('[Forecast] ✅ Location details:', {
+      locationId,
+      locationName,
+      buoyId,
+      latitude,
+      longitude
+    });
     
     // Fetch CURRENT buoy data
-    console.log('[Forecast] Fetching CURRENT buoy data...');
+    console.log('[Forecast] 🌊 Fetching CURRENT buoy data for buoy:', buoyId);
     let currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
     // 🚨 CRITICAL FIX: Check if wind data is invalid (99.0 or 999.0) and use Open-Meteo fallback
@@ -594,13 +616,14 @@ Deno.serve(async (req) => {
         console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
       }
     } else {
-      console.log('⚠️ No live CURRENT buoy data, using baseline estimates');
+      console.log('[Forecast] ⚠️ No live CURRENT buoy data, using baseline estimates');
     }
     
     // Generate 7-day forecast using current buoy data (with potentially corrected wind data)
+    console.log('[Forecast] 📊 Generating 7-day forecast...');
     const forecastData = await generateForecast(currentBuoyData, 7);
     
-    console.log('Generated forecast for', forecastData.length, 'days');
+    console.log('[Forecast] ✅ Generated forecast for', forecastData.length, 'days');
     
     // 🤖 NEW: Generate AI narrative for today's report if requested
     let generatedNarrative = null;
@@ -628,7 +651,11 @@ Deno.serve(async (req) => {
     // Store forecast in database
     console.log('[Store] ═══════════════════════════════════════');
     console.log('[Store] 💾 STORING FORECAST TO DATABASE');
+    console.log('[Store] Location:', locationId, '(', locationName, ')');
     console.log('[Store] ═══════════════════════════════════════');
+    
+    let successCount = 0;
+    let errorCount = 0;
     
     for (const day of forecastData) {
       const forecastRecord = {
@@ -658,21 +685,28 @@ Deno.serve(async (req) => {
       
       if (upsertError) {
         console.error('❌ Error storing forecast for', day.date, ':', upsertError);
+        errorCount++;
       } else {
         console.log(`✅ Forecast stored for ${day.date} with confidence ${day.confidence}%`);
+        successCount++;
       }
     }
     
+    console.log('[Store] ═══════════════════════════════════════');
+    console.log(`[Store] 📊 Results: ${successCount} success, ${errorCount} errors`);
     console.log('[Store] ═══════════════════════════════════════');
     console.log('=== FETCH SURF FORECAST COMPLETED ===');
     
     return new Response(
       JSON.stringify({
         success: true,
-        message: `7-day surf forecast generated for ${locationId}`,
+        message: `7-day surf forecast generated for ${locationName}`,
         location: locationId,
+        locationName: locationName,
         has_buoy_data: !!currentBuoyData,
         forecast_days: forecastData.length,
+        stored_successfully: successCount,
+        storage_errors: errorCount,
         generated_narrative: generatedNarrative,
         timestamp: new Date().toISOString(),
       }),
@@ -684,6 +718,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('=== FETCH SURF FORECAST FAILED ===');
     console.error('Error:', error);
+    console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
     
     return new Response(
       JSON.stringify({
