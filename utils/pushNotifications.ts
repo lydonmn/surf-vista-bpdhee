@@ -319,25 +319,32 @@ export async function savePushToken(userId: string, token: string): Promise<bool
 }
 
 /**
- * Get user's selected notification locations
+ * Get user's selected notification locations from notification_preferences table
  */
 export async function getNotificationLocations(userId: string): Promise<string[]> {
   try {
     console.log('[Push Notifications] Fetching notification locations for user:', userId);
     
+    // Fetch all enabled location preferences for this user
     const { data, error } = await supabase
-      .from('profiles')
-      .select('notification_locations')
-      .eq('id', userId)
-      .single();
+      .from('notification_preferences')
+      .select('location_id')
+      .eq('user_id', userId)
+      .eq('enabled', true);
 
     if (error) {
       console.error('[Push Notifications] Error fetching locations:', error);
       return ['folly-beach'];
     }
 
-    console.log('[Push Notifications] Notification locations:', data?.notification_locations);
-    return data?.notification_locations || ['folly-beach'];
+    if (!data || data.length === 0) {
+      console.log('[Push Notifications] No preferences found, returning default');
+      return ['folly-beach'];
+    }
+
+    const locationIds = data.map(pref => pref.location_id);
+    console.log('[Push Notifications] Notification locations:', locationIds);
+    return locationIds;
   } catch (error) {
     console.error('[Push Notifications] Exception fetching locations:', error);
     return ['folly-beach'];
@@ -345,7 +352,8 @@ export async function getNotificationLocations(userId: string): Promise<string[]
 }
 
 /**
- * Update user's selected notification locations
+ * Update user's selected notification locations in notification_preferences table
+ * This function handles the upsert logic for each location individually
  */
 export async function setNotificationLocations(userId: string, locationIds: string[]): Promise<boolean> {
   try {
@@ -353,30 +361,52 @@ export async function setNotificationLocations(userId: string, locationIds: stri
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Location IDs:', locationIds);
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ notification_locations: locationIds })
-      .eq('id', userId)
-      .select();
+    // Get all available locations
+    const { data: allLocations, error: locationsError } = await supabase
+      .from('locations')
+      .select('id')
+      .eq('is_active', true);
 
-    if (error) {
-      console.error('[Push Notifications] ===== UPDATE ERROR =====');
-      console.error('[Push Notifications] Error:', JSON.stringify(error, null, 2));
+    if (locationsError) {
+      console.error('[Push Notifications] Error fetching locations:', locationsError);
+      return false;
+    }
+
+    const allLocationIds = allLocations?.map(loc => loc.id) || [];
+    console.log('[Push Notifications] All available locations:', allLocationIds);
+
+    // For each location, upsert a preference record
+    const upsertPromises = allLocationIds.map(async (locationId) => {
+      const enabled = locationIds.includes(locationId);
       
-      Alert.alert(
-        'Update Failed',
-        `Failed to update notification locations:\n\n${error.message}`,
-        [{ text: 'OK' }]
-      );
-      return false;
-    }
+      console.log('[Push Notifications] Upserting preference:', { locationId, enabled });
+      
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert(
+          {
+            user_id: userId,
+            location_id: locationId,
+            enabled: enabled,
+            updated_at: new Date().toISOString()
+          },
+          {
+            onConflict: 'user_id,location_id'
+          }
+        );
 
-    if (!data || data.length === 0) {
-      console.error('[Push Notifications] ❌ No data returned from update');
-      return false;
-    }
+      if (error) {
+        console.error('[Push Notifications] Error upserting preference for', locationId, ':', error);
+        throw error;
+      }
 
-    console.log('[Push Notifications] ✅ Locations updated successfully');
+      return true;
+    });
+
+    // Wait for all upserts to complete
+    await Promise.all(upsertPromises);
+
+    console.log('[Push Notifications] ✅ All location preferences updated successfully');
     console.log('[Push Notifications] ===== SET NOTIFICATION LOCATIONS COMPLETE =====');
     return true;
   } catch (error) {
@@ -393,58 +423,57 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 }
 
 /**
- * ✅ V9.1 CRITICAL FIX: Enable or disable daily report notifications
- * Enhanced to handle EAS project configuration issues gracefully
+ * ✅ V9.2 PRODUCTION FIX: Enable or disable daily report notifications
+ * Registers push token with Expo and saves to profiles table
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
     console.log('[Push Notifications] ═══════════════════════════════════════');
-    console.log('[Push Notifications] V9.1 CRITICAL FIX: TOGGLE NOTIFICATIONS');
+    console.log('[Push Notifications] V9.2 PRODUCTION: TOGGLE NOTIFICATIONS');
     console.log('[Push Notifications] ═══════════════════════════════════════');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
     console.log('[Push Notifications] Platform:', Platform.OS);
     console.log('[Push Notifications] Is Device:', Device.isDevice);
 
-    // ✅ V9.1 FIX: If enabling, ALWAYS register token first
+    // Step 1: If enabling, register for push notifications and get token
     let pushToken = null;
     if (enabled) {
       console.log('[Push Notifications] 📲 User is ENABLING notifications - registering token...');
       
-      // ✅ V9.1 CRITICAL FIX: Add longer delay to ensure network is ready
-      console.log('[Push Notifications] ⏳ Waiting 1 second for network stability...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Check permissions first
+      const hasPermission = await requestNotificationPermissions();
+      if (!hasPermission) {
+        console.error('[Push Notifications] ❌ No notification permission');
+        return false;
+      }
       
+      // Get the Expo push token
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Token registration result:', pushToken ? 'SUCCESS ✓' : 'FAILED ✗');
       
-      // ✅ V9.1 CRITICAL FIX: If on physical device and no token, check if it's EAS config issue
+      // If on physical device and no token, fail
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
         console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
-        console.error('[Push Notifications] ❌ This is likely an EAS project configuration issue');
-        
-        // Don't show another alert here - registerForPushNotificationsAsync already showed one
         return false;
       }
     }
 
-    // ✅ V9.1 FIX: Build update data
+    // Step 2: Update the profiles table with the push token
     const updateData: any = {
       daily_report_notifications: enabled,
     };
 
-    // ✅ V9.1 CRITICAL FIX: ALWAYS update push_token field
     if (enabled && pushToken) {
       updateData.push_token = pushToken;
-      console.log('[Push Notifications] ✅ Will save push token:', pushToken.substring(0, 20) + '...');
+      console.log('[Push Notifications] ✅ Will save push token to profiles table');
     } else if (!enabled) {
       updateData.push_token = null;
       console.log('[Push Notifications] ℹ️ Will clear push token (notifications disabled)');
     }
 
-    console.log('[Push Notifications] 💾 Updating profile with data:', JSON.stringify(updateData));
+    console.log('[Push Notifications] 💾 Updating profiles table...');
 
-    // ✅ V9.1 CRITICAL FIX: Single database update with immediate verification
     const { data, error } = await supabase
       .from('profiles')
       .update(updateData)
@@ -454,7 +483,6 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     if (error) {
       console.error('[Push Notifications] ===== DATABASE UPDATE ERROR =====');
       console.error('[Push Notifications] ❌ Error:', error.message);
-      console.error('[Push Notifications] Error details:', JSON.stringify(error, null, 2));
       console.error('[Push Notifications] ===================================');
       
       Alert.alert(
@@ -467,25 +495,51 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
 
     if (!data || data.length === 0) {
       console.error('[Push Notifications] ❌ No data returned from update');
-      Alert.alert(
-        'Update Failed',
-        'No data returned from database. Please try again.',
-        [{ text: 'OK' }]
-      );
       return false;
     }
 
-    // ✅ V9.1 CRITICAL FIX: Verify the data was actually saved
+    // Step 3: Initialize notification preferences for all locations if enabling
+    if (enabled) {
+      console.log('[Push Notifications] 📍 Initializing location preferences...');
+      
+      // Get all active locations
+      const { data: locations, error: locError } = await supabase
+        .from('locations')
+        .select('id')
+        .eq('is_active', true);
+
+      if (locError) {
+        console.error('[Push Notifications] ⚠️ Error fetching locations:', locError);
+        // Don't fail the whole operation, just log the error
+      } else if (locations && locations.length > 0) {
+        // Create default preferences for all locations (all enabled by default)
+        const preferences = locations.map(loc => ({
+          user_id: userId,
+          location_id: loc.id,
+          enabled: true,
+          updated_at: new Date().toISOString()
+        }));
+
+        const { error: prefError } = await supabase
+          .from('notification_preferences')
+          .upsert(preferences, { onConflict: 'user_id,location_id' });
+
+        if (prefError) {
+          console.error('[Push Notifications] ⚠️ Error creating preferences:', prefError);
+          // Don't fail the whole operation
+        } else {
+          console.log('[Push Notifications] ✅ Location preferences initialized');
+        }
+      }
+    }
+
+    // Verification
     console.log('[Push Notifications] ===== VERIFICATION =====');
     console.log('[Push Notifications] ✅ Database update successful');
-    console.log('[Push Notifications] Updated data:', JSON.stringify(data[0], null, 2));
     console.log('[Push Notifications] daily_report_notifications:', data[0]?.daily_report_notifications);
     console.log('[Push Notifications] push_token:', data[0]?.push_token ? 'Present ✓' : 'Missing ✗');
     
-    if (enabled && !data[0]?.push_token) {
-      console.error('[Push Notifications] ⚠️ WARNING: Notifications enabled but no token in database!');
-      console.error('[Push Notifications] ⚠️ User will NOT receive notifications!');
-    } else if (enabled && data[0]?.push_token) {
+    if (enabled && data[0]?.push_token) {
       console.log('[Push Notifications] ✅ SUCCESS: Notifications enabled with valid token');
       console.log('[Push Notifications] ✅ User WILL receive notifications at 6AM EST');
     }
@@ -555,7 +609,7 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
- * ✅ V9.1 VERIFIED: Force re-register push token for existing users
+ * ✅ V9.2 PRODUCTION: Ensure push token is registered for existing users
  * This function is called AUTOMATICALLY when:
  * - User opens the profile screen
  * - User refreshes profile data
@@ -591,7 +645,7 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
     console.log('[Push Notifications] - Has token:', !!profile.push_token);
     console.log('[Push Notifications] ===================================');
 
-    // ✅ V9.1 FIX: If notifications are enabled but no valid token, register one
+    // If notifications are enabled but no valid token, register one
     if (profile.daily_report_notifications && !profile.push_token) {
       console.log('[Push Notifications] 🔧 User has notifications enabled but no token - registering now...');
       
@@ -613,6 +667,50 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
           console.log('[Push Notifications] ✅ Token registered and saved successfully');
         } else {
           console.error('[Push Notifications] ❌ Failed to save token to database');
+        }
+      }
+    }
+
+    // Also ensure notification preferences are initialized
+    if (profile.daily_report_notifications) {
+      console.log('[Push Notifications] 📍 Checking location preferences...');
+      
+      // Check if user has any preferences
+      const { data: prefs, error: prefError } = await supabase
+        .from('notification_preferences')
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1);
+
+      if (prefError) {
+        console.error('[Push Notifications] ⚠️ Error checking preferences:', prefError);
+      } else if (!prefs || prefs.length === 0) {
+        console.log('[Push Notifications] 📍 No preferences found, initializing...');
+        
+        // Get all active locations
+        const { data: locations, error: locError } = await supabase
+          .from('locations')
+          .select('id')
+          .eq('is_active', true);
+
+        if (!locError && locations && locations.length > 0) {
+          // Create default preferences for all locations
+          const preferences = locations.map(loc => ({
+            user_id: userId,
+            location_id: loc.id,
+            enabled: true,
+            updated_at: new Date().toISOString()
+          }));
+
+          const { error: insertError } = await supabase
+            .from('notification_preferences')
+            .upsert(preferences, { onConflict: 'user_id,location_id' });
+
+          if (insertError) {
+            console.error('[Push Notifications] ⚠️ Error creating preferences:', insertError);
+          } else {
+            console.log('[Push Notifications] ✅ Location preferences initialized');
+          }
         }
       }
     }
