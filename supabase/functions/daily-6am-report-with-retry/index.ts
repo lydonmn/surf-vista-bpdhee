@@ -301,6 +301,33 @@ async function processLocation(
     console.log(`[${locationName}] Date: ${dateStr}`);
     console.log(`[${locationName}] Manual trigger: ${isManualTrigger}`);
     
+    // 🚨 NEW: Try to update forecast data first, but don't fail if it doesn't work
+    let forecastUpdateSuccess = false;
+    try {
+      console.log(`[${locationName}] 📊 Attempting to update forecast data...`);
+      
+      const forecastResult = await supabase.functions.invoke('fetch-surf-forecast', {
+        body: { 
+          location: locationId,
+          generateNarrative: false // We'll generate narrative ourselves
+        },
+      });
+      
+      if (forecastResult.error) {
+        console.warn(`[${locationName}] ⚠️ Forecast update failed: ${forecastResult.error.message}`);
+        console.log(`[${locationName}] 📝 Continuing with existing data...`);
+      } else if (forecastResult.data?.success) {
+        console.log(`[${locationName}] ✅ Forecast data updated successfully`);
+        forecastUpdateSuccess = true;
+      } else {
+        console.warn(`[${locationName}] ⚠️ Forecast update returned unsuccessful response`);
+        console.log(`[${locationName}] 📝 Continuing with existing data...`);
+      }
+    } catch (forecastError: any) {
+      console.warn(`[${locationName}] ⚠️ Forecast update exception: ${forecastError.message}`);
+      console.log(`[${locationName}] 📝 Continuing with existing data...`);
+    }
+    
     // Fetch latest surf conditions from database
     const { data: surfData, error: surfError } = await supabase
       .from('surf_conditions')
@@ -393,6 +420,7 @@ async function processLocation(
       date: dateStr,
       rating: rating,
       narrativeLength: narrative.length,
+      forecastUpdated: forecastUpdateSuccess,
     };
     
   } catch (error: any) {
@@ -480,7 +508,7 @@ Deno.serve(async (req) => {
     
     console.log('[Daily Report] Target date:', dateStr);
 
-    // Process each location
+    // Process each location - CRITICAL: Continue even if individual locations fail
     const results = [];
     
     for (const location of locationsData) {
@@ -488,18 +516,35 @@ Deno.serve(async (req) => {
       console.log(`[Daily Report] 📍 ${location.display_name}`);
       console.log(`[Daily Report] ═══════════════════════════════════════`);
       
-      const result = await processLocation(
-        supabase,
-        location.id,
-        location.display_name,
-        dateStr,
-        isManualTrigger
-      );
+      // 🚨 CRITICAL: Wrap in try-catch to ensure we continue processing other locations
+      let result;
+      try {
+        result = await processLocation(
+          supabase,
+          location.id,
+          location.display_name,
+          dateStr,
+          isManualTrigger
+        );
+      } catch (processError: any) {
+        console.error(`[Daily Report] ❌ Exception processing ${location.display_name}:`, processError.message);
+        result = {
+          success: false,
+          location: location.display_name,
+          locationId: location.id,
+          error: `Exception: ${processError.message}`,
+        };
+      }
       
       results.push(result);
       
       if (result.success) {
         console.log(`[Daily Report] ✅ ${location.display_name}: SUCCESS`);
+        if (result.forecastUpdated) {
+          console.log(`[Daily Report] 📊 Forecast data was updated`);
+        } else {
+          console.log(`[Daily Report] 📝 Used existing data (forecast update skipped)`);
+        }
         
         // Send push notifications for scheduled runs only
         if (!isManualTrigger) {
@@ -518,21 +563,43 @@ Deno.serve(async (req) => {
             } else {
               console.warn(`[Daily Report] ⚠️ Notification send failed`);
             }
-          } catch (notifError) {
-            console.error(`[Daily Report] ❌ Notification error:`, notifError);
+          } catch (notifError: any) {
+            console.error(`[Daily Report] ❌ Notification error:`, notifError.message);
+            // 🚨 CRITICAL: Don't fail the entire process if notifications fail
+            console.log(`[Daily Report] 📝 Continuing despite notification failure...`);
           }
         }
       } else {
         console.log(`[Daily Report] ❌ ${location.display_name}: FAILED - ${result.error}`);
+        console.log(`[Daily Report] 📝 Continuing with next location...`);
       }
     }
 
     const allSucceeded = results.every(r => r.success);
     const someSucceeded = results.some(r => r.success);
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.filter(r => !r.success).length;
 
     console.log('\n[Daily Report] ═══════════════════════════════════════');
-    console.log('[Daily Report] 📊 RESULTS:');
-    console.log(`[Daily Report] Successful: ${results.filter(r => r.success).length}/${results.length}`);
+    console.log('[Daily Report] 📊 FINAL RESULTS:');
+    console.log(`[Daily Report] Total locations: ${results.length}`);
+    console.log(`[Daily Report] ✅ Successful: ${successCount}`);
+    console.log(`[Daily Report] ❌ Failed: ${failureCount}`);
+    
+    if (successCount > 0) {
+      console.log('[Daily Report] Successful locations:');
+      results.filter(r => r.success).forEach(r => {
+        console.log(`[Daily Report]   ✅ ${r.location} (rating: ${r.rating}/10, forecast: ${r.forecastUpdated ? 'updated' : 'existing data'})`);
+      });
+    }
+    
+    if (failureCount > 0) {
+      console.log('[Daily Report] Failed locations:');
+      results.filter(r => !r.success).forEach(r => {
+        console.log(`[Daily Report]   ❌ ${r.location}: ${r.error}`);
+      });
+    }
+    
     console.log('[Daily Report] ═══════════════════════════════════════');
 
     if (allSucceeded) {
@@ -540,9 +607,12 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           message: targetLocationId 
-            ? `Narrative generated for ${locationsData[0].display_name}`
-            : 'Narratives generated for all locations',
+            ? `Report generated successfully for ${locationsData[0].display_name}`
+            : `All ${successCount} location reports generated successfully`,
           date: dateStr,
+          totalLocations: results.length,
+          successCount: successCount,
+          failureCount: failureCount,
           results: results,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -551,9 +621,13 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'Partial success - some locations failed',
+          message: `Partial success: ${successCount}/${results.length} locations succeeded. Daily report generation continued despite ${failureCount} failure(s).`,
           date: dateStr,
+          totalLocations: results.length,
+          successCount: successCount,
+          failureCount: failureCount,
           results: results,
+          warning: 'Some locations failed but the process continued',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -561,8 +635,11 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          message: 'All locations failed',
+          message: `All ${results.length} locations failed to generate reports`,
           date: dateStr,
+          totalLocations: results.length,
+          successCount: successCount,
+          failureCount: failureCount,
           results: results,
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
