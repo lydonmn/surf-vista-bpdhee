@@ -242,6 +242,8 @@ export default function ForecastScreen() {
       hasWeatherForecast: !!d.weatherForecast,
       swellHeight: d.weatherForecast?.swell_height_range || 'N/A',
       confidence: d.weatherForecast?.prediction_confidence,
+      highTemp: d.weatherForecast?.high_temp,
+      lowTemp: d.weatherForecast?.low_temp,
     })));
     
     return result;
@@ -277,10 +279,27 @@ export default function ForecastScreen() {
   };
 
   const formatTemp = (temp: any): string => {
-    if (temp === null || temp === undefined) return 'N/A';
+    console.log('[ForecastScreen] formatTemp called with:', {
+      value: temp,
+      type: typeof temp,
+      isNull: temp === null,
+      isUndefined: temp === undefined,
+    });
+    
+    if (temp === null || temp === undefined) {
+      console.log('[ForecastScreen] ⚠️ Temperature is null/undefined, returning N/A');
+      return 'N/A';
+    }
+    
     const numTemp = Number(temp);
-    if (isNaN(numTemp)) return 'N/A';
-    return `${Math.round(numTemp)}°`;
+    if (isNaN(numTemp)) {
+      console.log('[ForecastScreen] ⚠️ Temperature is NaN, returning N/A');
+      return 'N/A';
+    }
+    
+    const displayValue = Math.round(numTemp);
+    console.log('[ForecastScreen] ✅ Displaying temperature as:', displayValue + '°');
+    return `${displayValue}°`;
   };
 
   const formatConfidence = (confidence: number | null | undefined): string => {
@@ -412,8 +431,7 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
-            // 🚨 CRITICAL FIX: Use weatherForecast.swell_height_range for ALL days (including today)
-            // This is the forecast data that should be displayed
+            // Use weatherForecast.swell_height_range for ALL days (including today)
             const forecastSwellHeight = day.weatherForecast?.swell_height_range;
             
             // Only use surfReport data as fallback for today if forecast is missing
@@ -431,6 +449,8 @@ export default function ForecastScreen() {
               confidence: day.weatherForecast?.prediction_confidence,
               confidenceType: typeof day.weatherForecast?.prediction_confidence,
               hasWeatherForecast: !!day.weatherForecast,
+              highTemp: day.weatherForecast?.high_temp,
+              lowTemp: day.weatherForecast?.low_temp,
             });
             
             const hasSurfData = displayHeight !== 'N/A';
@@ -506,7 +526,6 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     
-                    {/* 🚨 CRITICAL FIX: Always show confidence badge if we have weather forecast data */}
                     {day.weatherForecast && (
                       <View style={[styles.confidenceBadge, { backgroundColor: confidenceValue ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
                         <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={18} color={confidenceColor} />

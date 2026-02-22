@@ -10,6 +10,7 @@ import { useSurfData } from '@/hooks/useSurfData';
 import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 import { openPaywall } from '@/utils/paywallHelper';
+import { useLocation } from '@/contexts/LocationContext';
 
 interface DayForecast {
   date: string;
@@ -115,6 +116,7 @@ function calculateSurfRating(surfData: any): number {
 export default function ForecastScreen() {
   const theme = useTheme();
   const { user, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
+  const { currentLocation, locationData } = useLocation();
   const isSubscribed = checkSubscription();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -122,11 +124,11 @@ export default function ForecastScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
-    console.log('[ForecastScreen] 🔄 Manual refresh triggered');
+    console.log('[ForecastScreen] 🔄 Manual refresh triggered for location:', currentLocation);
     setIsRefreshing(true);
     await refreshData();
     setIsRefreshing(false);
-  }, [refreshData]);
+  }, [refreshData, currentLocation]);
 
   const handleSubscribeNow = async () => {
     console.log('[ForecastScreen] 🔘 Subscribe button pressed');
@@ -148,7 +150,7 @@ export default function ForecastScreen() {
   };
 
   const combinedForecast: DayForecast[] = React.useMemo(() => {
-    console.log('[ForecastScreen] 🔍 Building combined forecast...');
+    console.log('[ForecastScreen] 🔍 Building combined forecast for location:', currentLocation);
     console.log('[ForecastScreen] Surf reports count:', surfReports.length);
     console.log('[ForecastScreen] Weather forecast count:', weatherForecast.length);
     console.log('[ForecastScreen] Tide data count:', tideData.length);
@@ -234,10 +236,12 @@ export default function ForecastScreen() {
       hasSurfReport: !!d.surfReport,
       hasWeatherForecast: !!d.weatherForecast,
       confidence: d.weatherForecast?.prediction_confidence,
+      highTemp: d.weatherForecast?.high_temp,
+      lowTemp: d.weatherForecast?.low_temp,
     })));
     
     return result;
-  }, [surfReports, weatherForecast, tideData]);
+  }, [surfReports, weatherForecast, tideData, currentLocation]);
 
   const toggleDay = (date: string) => {
     console.log('[ForecastScreen] Toggling day:', date);
@@ -269,10 +273,34 @@ export default function ForecastScreen() {
   };
 
   const formatTemp = (temp: any): string => {
-    if (temp === null || temp === undefined) return 'N/A';
+    console.log('[ForecastScreen] formatTemp called with:', {
+      value: temp,
+      type: typeof temp,
+      isNull: temp === null,
+      isUndefined: temp === undefined,
+    });
+    
+    if (temp === null || temp === undefined) {
+      console.log('[ForecastScreen] ⚠️ Temperature is null/undefined, returning N/A');
+      return 'N/A';
+    }
+    
     const numTemp = Number(temp);
-    if (isNaN(numTemp)) return 'N/A';
-    return `${Math.round(numTemp)}°`;
+    if (isNaN(numTemp)) {
+      console.log('[ForecastScreen] ⚠️ Temperature is NaN, returning N/A');
+      return 'N/A';
+    }
+    
+    const displayValue = Math.round(numTemp);
+    console.log('[ForecastScreen] ✅ Displaying temperature as:', displayValue + '°');
+    return `${displayValue}°`;
+  };
+
+  const formatConfidence = (confidence: number | null | undefined): string => {
+    if (confidence === null || confidence === undefined) return 'N/A';
+    const numConfidence = Number(confidence);
+    if (isNaN(numConfidence)) return 'N/A';
+    return `${Math.round(numConfidence)}%`;
   };
 
   if (!isInitialized || authLoading) {
@@ -341,6 +369,7 @@ export default function ForecastScreen() {
 
   const noForecastText = 'No forecast data available';
   const pullToRefreshText = 'Pull down to refresh';
+  const locationNameText = locationData?.displayName || currentLocation;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -348,7 +377,10 @@ export default function ForecastScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <IconSymbol ios_icon_name="chevron.left" android_material_icon_name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>7-Day Forecast</Text>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>7-Day Forecast</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{locationNameText}</Text>
+        </View>
         <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh} disabled={isRefreshing}>
           <IconSymbol ios_icon_name="arrow.clockwise" android_material_icon_name="refresh" size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -376,8 +408,7 @@ export default function ForecastScreen() {
           combinedForecast.map((day) => {
             const isExpanded = expandedDay === day.date;
             
-            // 🚨 CRITICAL FIX: Use weatherForecast.swell_height_range first (this is the forecast data)
-            // Then fall back to surfReport data (which is today's actual data)
+            // Use weatherForecast.swell_height_range first (this is the forecast data)
             const forecastSwellHeight = day.weatherForecast?.swell_height_range;
             const surfHeightValue = (day.surfReport as any)?.surf_height;
             const waveHeightValue = day.surfReport?.wave_height;
@@ -389,6 +420,8 @@ export default function ForecastScreen() {
               waveHeightValue,
               displayHeight,
               confidence: day.weatherForecast?.prediction_confidence,
+              highTemp: day.weatherForecast?.high_temp,
+              lowTemp: day.weatherForecast?.low_temp,
             });
             
             const hasSurfData = displayHeight !== 'N/A';
@@ -397,7 +430,7 @@ export default function ForecastScreen() {
             
             const confidenceValue = day.weatherForecast?.prediction_confidence;
             const confidenceColor = getConfidenceColor(confidenceValue);
-            const confidenceText = confidenceValue ? `${Math.round(confidenceValue)}%` : 'N/A';
+            const confidenceText = formatConfidence(confidenceValue);
 
             const highTempText = formatTemp(day.weatherForecast?.high_temp);
             const lowTempText = formatTemp(day.weatherForecast?.low_temp);
@@ -464,7 +497,6 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     
-                    {/* 🚨 CRITICAL FIX: Always show confidence badge if we have weather forecast data */}
                     {day.weatherForecast && (
                       <View style={[styles.confidenceBadge, { backgroundColor: confidenceValue ? (theme.dark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)') : (theme.dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
                         <IconSymbol ios_icon_name="chart.bar.fill" android_material_icon_name="bar-chart" size={18} color={confidenceColor} />
@@ -565,9 +597,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: 2,
   },
   errorBanner: {
     flexDirection: 'row',
