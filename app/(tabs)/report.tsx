@@ -587,13 +587,6 @@ export default function ReportScreen() {
     const waterTempValue = displayData.water_temp;
     const waterTempFormatted = isValidValue(waterTempValue) ? formatWaterTemp(waterTempValue) : null;
     
-    console.log('[ReportScreen] ===== WATER TEMPERATURE SOURCE =====');
-    console.log('[ReportScreen] 🌡️ Water temp from displayData:', waterTempValue);
-    console.log('[ReportScreen] 🌡️ Water temp formatted:', waterTempFormatted);
-    console.log('[ReportScreen] 🌡️ Data source:', surfConditions ? 'surf_conditions (FMNS1 buoy - updates every 15 min)' : 'report (stored)');
-    console.log('[ReportScreen] 🌡️ DisplayData updated at:', displayData.updated_at);
-    console.log('[ReportScreen] ==========================================');
-    
     const wavePeriodValue = displayData.wave_period;
     const wavePeriodDisplay = isValidValue(wavePeriodValue) ? wavePeriodValue : null;
     
@@ -1173,15 +1166,10 @@ export default function ReportScreen() {
             <Text style={{ fontWeight: 'bold' }}>Data Sources for {locationData.displayName}:</Text>
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-            • NOAA Buoy {locationData.buoyId} - Wave height, period, swell direction, wind
+            • NOAA Buoy {locationData.buoyId} - Wave height, period, swell direction
           </Text>
-          {currentLocation === 'folly-beach' && (
-            <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-              • NOAA Buoy FMNS1 - Water temperature (updates every 15 minutes)
-            </Text>
-          )}
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
-            • NOAA Weather Service - Forecasts and conditions
+            • NOAA Weather Service - Forecasts and wind conditions
           </Text>
           <Text style={[styles.infoSubtext, { color: colors.textSecondary }]}>
             • NOAA Tides & Currents (Station {locationData.tideStationId}) - Tide predictions

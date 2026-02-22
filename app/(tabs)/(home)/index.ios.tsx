@@ -485,13 +485,6 @@ export default function HomeScreen() {
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
   
-  console.log('[HomeScreen] ===== WATER TEMPERATURE SOURCE =====');
-  console.log('[HomeScreen] 🌡️ Water temp from surf_conditions (FMNS1 buoy):', surfConditions?.water_temp);
-  console.log('[HomeScreen] 🌡️ Water temp from report (fallback):', todaysReport?.water_temp);
-  console.log('[HomeScreen] 🌡️ Final water temp display:', waterTempDisplay);
-  console.log('[HomeScreen] 🌡️ Data source:', surfConditions ? 'surf_conditions (FMNS1 buoy - updates every 15 min)' : 'report (stored)');
-  console.log('[HomeScreen] =========================================');
-  
   const ratingColorValue = getRatingColor(ratingValue);
   const ratingLabel = 'Stoke Rating';
 

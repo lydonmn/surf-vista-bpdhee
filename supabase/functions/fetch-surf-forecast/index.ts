@@ -83,8 +83,7 @@ async function fetchOpenMeteoWind(latitude: number, longitude: number, locationN
   try {
     console.log(`[Open-Meteo] 🌐 Fetching wind data for ${locationName} (${latitude}, ${longitude})`);
     
-    // Use the specific Open-Meteo API endpoint with wind_speed_10m and wind_direction_10m in mph
-    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=mph`;
+    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
@@ -99,21 +98,23 @@ async function fetchOpenMeteoWind(latitude: number, longitude: number, locationN
     
     const data = await response.json();
     
-    // Check for the correct data structure with current.wind_speed_10m and current.wind_direction_10m
-    if (!data.current || 
-        typeof data.current.wind_speed_10m !== 'number' || 
-        typeof data.current.wind_direction_10m !== 'number') {
+    if (!data.current_weather || 
+        typeof data.current_weather.windspeed !== 'number' || 
+        typeof data.current_weather.winddirection !== 'number') {
       console.error(`[Open-Meteo] ❌ Invalid data structure for ${locationName}:`, data);
       return null;
     }
     
-    // Wind speed is already in mph from the API (wind_speed_unit=mph parameter)
-    const windSpeedMph = data.current.wind_speed_10m;
-    const windDirectionDegrees = data.current.wind_direction_10m;
+    // Convert m/s to knots, then knots to mph (1 knot = 1.15078 mph)
+    const windSpeedKnots = convertMetersPerSecondToKnots(data.current_weather.windspeed);
+    const windSpeedMph = windSpeedKnots * 1.15078;
+    const windDirectionDegrees = data.current_weather.winddirection;
     
     console.log(`[Open-Meteo] ✅ Successfully fetched wind data for ${locationName}:`, {
-      wind_speed_10m_mph: windSpeedMph.toFixed(2),
-      wind_direction_10m: windDirectionDegrees
+      windspeed_ms: data.current_weather.windspeed,
+      windspeed_knots: windSpeedKnots.toFixed(2),
+      windspeed_mph: windSpeedMph.toFixed(2),
+      winddirection: windDirectionDegrees
     });
     
     return {
@@ -207,87 +208,6 @@ async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: num
   }
   
   console.error(`[fetchBuoyData] ❌ All attempts failed for buoy ${buoyId}`);
-  return null;
-}
-
-// 🌡️ NEW: Fetch water temperature from NOAA buoy (for Folly Beach fmns1 buoy)
-async function fetchWaterTemperature(buoyId: string, FETCH_TIMEOUT: number, retries: number = 3): Promise<string | null> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(`[fetchWaterTemp] Attempt ${attempt}/${retries} for buoy ${buoyId}`);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-      
-      const response = await fetch(
-        `https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`,
-        { signal: controller.signal }
-      );
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.warn(`[fetchWaterTemp] HTTP ${response.status} for buoy ${buoyId}`);
-        if (attempt < retries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        return null;
-      }
-      
-      const text = await response.text();
-      const lines = text.trim().split('\n');
-      
-      if (lines.length < 3) {
-        console.warn(`[fetchWaterTemp] Insufficient data lines for buoy ${buoyId}`);
-        if (attempt < retries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        return null;
-      }
-      
-      const dataLine = lines[2];
-      const values = dataLine.split(/\s+/);
-      
-      // Parse water temperature (column 14) - handle MM (missing data)
-      const waterTempStr = values[14];
-      if (waterTempStr === 'MM' || !waterTempStr) {
-        console.warn(`[fetchWaterTemp] Water temperature missing (MM) for buoy ${buoyId}`);
-        if (attempt < retries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        return null;
-      }
-      
-      const waterTempCelsius = parseFloat(waterTempStr);
-      
-      if (isNaN(waterTempCelsius)) {
-        console.warn(`[fetchWaterTemp] Invalid water temperature value for buoy ${buoyId}: ${waterTempStr}`);
-        if (attempt < retries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        }
-        return null;
-      }
-      
-      // Convert Celsius to Fahrenheit
-      const waterTempFahrenheit = (waterTempCelsius * 9/5) + 32;
-      const waterTempFormatted = `${Math.round(waterTempFahrenheit)}°F`;
-      
-      console.log(`[fetchWaterTemp] ✅ Success for buoy ${buoyId}: ${waterTempCelsius}°C = ${waterTempFormatted}`);
-      return waterTempFormatted;
-      
-    } catch (error: any) {
-      console.error(`[fetchWaterTemp] Attempt ${attempt} error for buoy ${buoyId}:`, error.message);
-      if (attempt < retries) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    }
-  }
-  
-  console.error(`[fetchWaterTemp] ❌ All attempts failed for buoy ${buoyId}`);
   return null;
 }
 
@@ -667,60 +587,33 @@ Deno.serve(async (req) => {
     console.log('[Forecast] 🌊 Fetching CURRENT buoy data for buoy:', buoyId);
     let currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
-    // 🌡️ NEW: For Folly Beach only, fetch water temperature from fmns1 buoy
-    let waterTemperature: string | null = null;
-    const isFollyBeach = locationId === 'folly-beach' || locationName.toLowerCase().includes('folly');
-    
-    if (isFollyBeach) {
-      console.log('[Water Temp] 🌡️ Folly Beach detected - fetching water temperature from fmns1 buoy');
-      waterTemperature = await fetchWaterTemperature('FMNS1', FETCH_TIMEOUT);
-      
-      if (waterTemperature) {
-        console.log(`[Water Temp] ✅ Successfully fetched water temperature from fmns1: ${waterTemperature}`);
-      } else {
-        console.warn('[Water Temp] ⚠️ Failed to fetch water temperature from fmns1 buoy');
-      }
-    }
-    
     // 🚨 CRITICAL FIX: Check if wind data is invalid (99.0 or 999.0) and use Open-Meteo fallback
-    // ONLY for Cisco Beach and Jupiter locations
     if (currentBuoyData) {
       const windSpeed = currentBuoyData.windSpeed;
       
-      console.log(`[Wind Check] Buoy ${buoyId} wind speed: ${windSpeed} mph for ${locationName}`);
+      console.log(`[Wind Check] Buoy ${buoyId} wind speed: ${windSpeed} mph`);
       
-      // Check if this is Cisco Beach or Jupiter
-      const isCiscoBeach = locationId === 'cisco-beach' || locationName.toLowerCase().includes('cisco');
-      const isJupiter = locationId === 'jupiter' || locationName.toLowerCase().includes('jupiter');
-      
-      if (isCiscoBeach || isJupiter) {
-        console.log(`[Wind Check] 📍 Location is ${locationName} - Open-Meteo fallback enabled for invalid wind data`);
+      // Check for invalid NOAA wind data (99.0 or 999.0)
+      if (windSpeed === 99.0 || windSpeed === 999.0) {
+        console.log(`[Wind Fallback] 🚨 Invalid NOAA wind data detected (${windSpeed} mph) for ${locationName}`);
+        console.log(`[Wind Fallback] 🌐 Attempting Open-Meteo fallback...`);
         
-        // Check for invalid NOAA wind data (99.0 or 999.0)
-        if (windSpeed === 99.0 || windSpeed === 999.0) {
-          console.log(`[Wind Fallback] 🚨 Invalid NOAA wind data detected (${windSpeed} mph) for ${locationName}`);
-          console.log(`[Wind Fallback] 🌐 Attempting Open-Meteo fallback...`);
+        const openMeteoWind = await fetchOpenMeteoWind(latitude, longitude, locationName);
+        
+        if (openMeteoWind) {
+          console.log(`[Wind Fallback] ✅ Successfully replaced invalid wind data with Open-Meteo data`);
+          console.log(`[Wind Fallback] Old: ${windSpeed} mph → New: ${openMeteoWind.windSpeedMph.toFixed(2)} mph`);
           
-          const openMeteoWind = await fetchOpenMeteoWind(latitude, longitude, locationName);
+          // Replace the invalid wind data with Open-Meteo data
+          currentBuoyData.windSpeed = openMeteoWind.windSpeedMph;
           
-          if (openMeteoWind) {
-            console.log(`[Wind Fallback] ✅ Successfully replaced invalid wind data with Open-Meteo data`);
-            console.log(`[Wind Fallback] Old: ${windSpeed} mph → New: ${openMeteoWind.windSpeedMph.toFixed(2)} mph`);
-            
-            // Replace the invalid wind data with Open-Meteo data
-            currentBuoyData.windSpeed = openMeteoWind.windSpeedMph;
-            
-            console.log(`[Wind Fallback] ✅ Wind data updated successfully`);
-          } else {
-            console.error(`[Wind Fallback] ❌ Open-Meteo fallback failed for ${locationName}`);
-            console.error(`[Wind Fallback] ⚠️ Using invalid wind data (${windSpeed} mph) as last resort`);
-          }
+          console.log(`[Wind Fallback] ✅ Wind data updated successfully`);
         } else {
-          console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
+          console.error(`[Wind Fallback] ❌ Open-Meteo fallback failed for ${locationName}`);
+          console.error(`[Wind Fallback] ⚠️ Using invalid wind data (${windSpeed} mph) as last resort`);
         }
       } else {
-        console.log(`[Wind Check] 📍 Location is ${locationName} - Open-Meteo fallback NOT enabled (only for Cisco Beach and Jupiter)`);
-        console.log(`[Wind Check] ✅ Using NOAA wind data: ${windSpeed} mph`);
+        console.log(`[Wind Check] ✅ NOAA wind data is valid (${windSpeed} mph) - no fallback needed`);
       }
     } else {
       console.log('[Forecast] ⚠️ No live CURRENT buoy data, using baseline estimates');
@@ -811,7 +704,6 @@ Deno.serve(async (req) => {
         location: locationId,
         locationName: locationName,
         has_buoy_data: !!currentBuoyData,
-        water_temperature: waterTemperature,
         forecast_days: forecastData.length,
         stored_successfully: successCount,
         storage_errors: errorCount,
