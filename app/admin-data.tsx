@@ -587,6 +587,23 @@ export default function AdminDataScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location Reports</Text>
           
+          <View style={[styles.infoBox, { marginBottom: 16, backgroundColor: 'rgba(76, 175, 80, 0.1)' }]}>
+            <IconSymbol
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
+              size={16}
+              color="#4CAF50"
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoText, { color: '#4CAF50', fontWeight: '600' }]}>
+                ✅ Narrative Generator Fixed (v50)
+              </Text>
+              <Text style={[styles.infoText, { color: '#4CAF50', fontSize: 12, marginTop: 4 }]}>
+                The narrative generation function has been fixed. It was querying the wrong database column name (location_id instead of location), causing all narratives to fail. This has been corrected and narratives should now generate properly for all locations.
+              </Text>
+            </View>
+          </View>
+          
           <View style={[styles.infoBox, { marginBottom: 16, backgroundColor: 'rgba(33, 150, 243, 0.1)' }]}>
             <IconSymbol
               ios_icon_name="info.circle.fill"
