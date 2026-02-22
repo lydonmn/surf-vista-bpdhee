@@ -452,9 +452,50 @@ export default function HomeScreen() {
   console.log('[HomeScreen] 🏄 Final surf height display:', surfHeightDisplay);
   console.log('[HomeScreen] Data source:', surfConditions ? 'surf_conditions (real-time buoy)' : 'todaysReport (stored)');
   
-  const windSpeedValue = surfConditions?.wind_speed || weatherData?.wind_speed || todaysReport?.wind_speed;
-  const windDirValue = surfConditions?.wind_direction || weatherData?.wind_direction || todaysReport?.wind_direction;
-  const windDisplay = windSpeedValue && windDirValue ? `${windSpeedValue} ${windDirValue}` : 'N/A';
+  // 🚨 CRITICAL FIX: Use isValidValue helper to properly validate wind data
+  const isValidValue = (val: any): boolean => {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '' || trimmed.toLowerCase() === 'n/a') return false;
+      return true;
+    }
+    if (typeof val === 'number') return !isNaN(val);
+    return true;
+  };
+  
+  // Prioritize weatherData for wind (most accurate), then surfConditions, then report
+  const windSpeedValue = isValidValue(weatherData?.wind_speed) 
+    ? weatherData.wind_speed 
+    : isValidValue(surfConditions?.wind_speed)
+      ? surfConditions.wind_speed
+      : isValidValue(todaysReport?.wind_speed)
+        ? todaysReport.wind_speed
+        : null;
+  
+  const windDirValue = isValidValue(weatherData?.wind_direction)
+    ? weatherData.wind_direction
+    : isValidValue(surfConditions?.wind_direction)
+      ? surfConditions.wind_direction
+      : isValidValue(todaysReport?.wind_direction)
+        ? todaysReport.wind_direction
+        : null;
+  
+  const windDisplay = windSpeedValue && windDirValue 
+    ? `${typeof windSpeedValue === 'string' && windSpeedValue.includes('mph') ? windSpeedValue : `${Math.round(Number(windSpeedValue))} mph`} ${String(windDirValue).trim()}`
+    : 'N/A';
+  
+  console.log('[HomeScreen] 🌬️ WIND DATA DEBUG:', {
+    weatherData_wind_speed: weatherData?.wind_speed,
+    weatherData_wind_direction: weatherData?.wind_direction,
+    surfConditions_wind_speed: surfConditions?.wind_speed,
+    surfConditions_wind_direction: surfConditions?.wind_direction,
+    todaysReport_wind_speed: todaysReport?.wind_speed,
+    todaysReport_wind_direction: todaysReport?.wind_direction,
+    windSpeedValue,
+    windDirValue,
+    final_windDisplay: windDisplay,
+  });
   
   // 🚨 CRITICAL FIX: Use weather_forecast as fallback when weather_data is not available for today
   // Check if weatherData is from today, if not use forecast
