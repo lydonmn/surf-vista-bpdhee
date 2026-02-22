@@ -267,10 +267,17 @@ export function useSurfData() {
             if (val === null || val === undefined) return false;
             if (typeof val === 'string') {
               const trimmed = val.trim();
-              return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
+              // Check if it's not empty and not "N/A" (case insensitive)
+              if (trimmed === '' || trimmed.toLowerCase() === 'n/a') return false;
+              // If it's a numeric string, check if it's a valid number
+              const num = Number(trimmed);
+              if (!isNaN(num)) {
+                return true; // Valid numeric string (including "0")
+              }
+              return true; // Valid non-numeric string (like "E", "NW", etc.)
             }
             if (typeof val === 'number') {
-              return !isNaN(val); // Allow 0 for wind speed in merge
+              return !isNaN(val); // Valid number (including 0)
             }
             return true;
           };

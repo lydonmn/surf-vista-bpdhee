@@ -78,10 +78,17 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     if (val === null || val === undefined) return false;
     if (typeof val === 'string') {
       const trimmed = val.trim();
-      return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
+      // Check if it's not empty and not "N/A" (case insensitive)
+      if (trimmed === '' || trimmed.toLowerCase() === 'n/a') return false;
+      // If it's a numeric string, check if it's a valid number
+      const num = Number(trimmed);
+      if (!isNaN(num)) {
+        return true; // Valid numeric string (including "0")
+      }
+      return true; // Valid non-numeric string (like "E", "NW", etc.)
     }
     if (typeof val === 'number') {
-      return !isNaN(val) && val !== 0; // Consider 0 as invalid for wind speed
+      return !isNaN(val); // Valid number (including 0)
     }
     return true;
   };
@@ -90,14 +97,14 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const weatherConditionsDisplay = weather?.conditions || '';
   
   // CRITICAL FIX: Prioritize weather_data for wind, fallback to surfReport only if weather data is invalid
-  // Also handle numeric values properly
+  // Handle both string and numeric values properly
   const windSpeedDisplay = isValidValue(weather?.wind_speed) 
     ? `${Math.round(Number(weather.wind_speed))} mph` 
     : (isValidValue(surfReport?.wind_speed) ? `${Math.round(Number(surfReport.wind_speed))} mph` : '--');
   
   const windDirectionDisplay = isValidValue(weather?.wind_direction)
-    ? String(weather.wind_direction)
-    : (isValidValue(surfReport?.wind_direction) ? String(surfReport.wind_direction) : '');
+    ? String(weather.wind_direction).trim()
+    : (isValidValue(surfReport?.wind_direction) ? String(surfReport.wind_direction).trim() : '');
   
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
