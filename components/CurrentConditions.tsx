@@ -73,42 +73,74 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     );
   }
 
-  // Helper function to check if a value is valid (not null, not "N/A", not empty)
+  // 🚨 CRITICAL FIX: Improved validation function that handles string numbers correctly
   const isValidValue = (val: any) => {
-    if (val === null || val === undefined) return false;
+    // Null or undefined check
+    if (val === null || val === undefined) {
+      console.log('[CurrentConditions] isValidValue: null/undefined → false');
+      return false;
+    }
+    
+    // String handling
     if (typeof val === 'string') {
       const trimmed = val.trim();
-      // Check if it's not empty and not "N/A" (case insensitive)
-      if (trimmed === '' || trimmed.toLowerCase() === 'n/a') return false;
-      // If it's a numeric string, check if it's a valid number
-      const num = Number(trimmed);
-      if (!isNaN(num)) {
-        return true; // Valid numeric string (including "0")
+      
+      // Empty string check
+      if (trimmed === '') {
+        console.log('[CurrentConditions] isValidValue: empty string → false');
+        return false;
       }
-      return true; // Valid non-numeric string (like "E", "NW", etc.)
+      
+      // Case-insensitive "N/A" check
+      if (trimmed.toLowerCase() === 'n/a') {
+        console.log('[CurrentConditions] isValidValue: "N/A" string → false');
+        return false;
+      }
+      
+      // Valid string (including numeric strings like "17", "18", etc.)
+      console.log('[CurrentConditions] isValidValue: valid string →', trimmed, '→ true');
+      return true;
     }
+    
+    // Number handling (including 0)
     if (typeof val === 'number') {
-      return !isNaN(val); // Valid number (including 0)
+      const isValid = !isNaN(val);
+      console.log('[CurrentConditions] isValidValue: number →', val, '→', isValid);
+      return isValid;
     }
+    
+    // Default: accept other types
+    console.log('[CurrentConditions] isValidValue: other type →', typeof val, '→ true');
     return true;
   };
 
   const temperatureDisplay = weather?.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--';
   const weatherConditionsDisplay = weather?.conditions || '';
   
-  // CRITICAL FIX: Prioritize weather_data for wind, fallback to surfReport only if weather data is invalid
-  // Handle both string and numeric values properly
-  const windSpeedDisplay = isValidValue(weather?.wind_speed) 
-    ? `${Math.round(Number(weather.wind_speed))} mph` 
-    : (isValidValue(surfReport?.wind_speed) ? `${Math.round(Number(surfReport.wind_speed))} mph` : '--');
+  // 🚨 CRITICAL FIX: Prioritize weather_data for wind, handle string numbers correctly
+  const windSpeedRaw = isValidValue(weather?.wind_speed) 
+    ? weather.wind_speed 
+    : (isValidValue(surfReport?.wind_speed) ? surfReport.wind_speed : null);
   
-  const windDirectionDisplay = isValidValue(weather?.wind_direction)
-    ? String(weather.wind_direction).trim()
-    : (isValidValue(surfReport?.wind_direction) ? String(surfReport.wind_direction).trim() : '');
+  const windDirectionRaw = isValidValue(weather?.wind_direction)
+    ? weather.wind_direction
+    : (isValidValue(surfReport?.wind_direction) ? surfReport.wind_direction : null);
+  
+  // Format wind speed (handle both string and number)
+  const windSpeedDisplay = windSpeedRaw 
+    ? (typeof windSpeedRaw === 'string' && windSpeedRaw.includes('mph') 
+        ? windSpeedRaw  // Already formatted (e.g., "12 mph")
+        : `${Math.round(Number(windSpeedRaw))} mph`)  // Format number or numeric string
+    : '--';
+  
+  // Format wind direction (trim whitespace)
+  const windDirectionDisplay = windDirectionRaw 
+    ? String(windDirectionRaw).trim()
+    : '';
   
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
-  console.log('[CurrentConditions] Wind data sources:', {
+  console.log('[CurrentConditions] 🌬️ WIND DATA DEBUG:', {
     weather_wind_speed: weather?.wind_speed,
     weather_wind_speed_type: typeof weather?.wind_speed,
     weather_wind_direction: weather?.wind_direction,
@@ -121,6 +153,8 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     weather_wind_direction_valid: isValidValue(weather?.wind_direction),
     surfReport_wind_speed_valid: isValidValue(surfReport?.wind_speed),
     surfReport_wind_direction_valid: isValidValue(surfReport?.wind_direction),
+    windSpeedRaw,
+    windDirectionRaw,
     final_display: `${windSpeedDisplay} ${windDirectionDisplay}`,
   });
   
