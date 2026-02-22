@@ -707,6 +707,22 @@ export default function AdminScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#9C27B0' }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Cron Job Setup');
+                router.push('/admin-cron-setup');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="clock.fill"
+                android_material_icon_name="schedule"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Setup Cron Jobs</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.accent }]}
               onPress={() => {
                 console.log('[AdminScreen] Navigating to demo paywall for screenshots');
