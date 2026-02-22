@@ -189,6 +189,42 @@ export function useSurfData() {
       console.log('[useSurfData] Has weather data:', !!weatherResult.data);
       console.log('[useSurfData] Weather forecast count:', forecastResult.data?.length || 0);
       console.log('[useSurfData] Tide data count:', tideResult.data?.length || 0);
+      
+      // 🚨 CRITICAL DEBUG: Log wind data from all sources
+      if (weatherResult.data) {
+        console.log('[useSurfData] 🌬️ WEATHER DATA WIND:', {
+          wind_speed: weatherResult.data.wind_speed,
+          wind_speed_type: typeof weatherResult.data.wind_speed,
+          wind_direction: weatherResult.data.wind_direction,
+          wind_direction_type: typeof weatherResult.data.wind_direction,
+          location: weatherResult.data.location,
+          date: weatherResult.data.date,
+        });
+      }
+      
+      if (surfConditionsResult.data) {
+        console.log('[useSurfData] 🌊 SURF CONDITIONS WIND:', {
+          wind_speed: surfConditionsResult.data.wind_speed,
+          wind_speed_type: typeof surfConditionsResult.data.wind_speed,
+          wind_direction: surfConditionsResult.data.wind_direction,
+          wind_direction_type: typeof surfConditionsResult.data.wind_direction,
+          location: surfConditionsResult.data.location,
+          date: surfConditionsResult.data.date,
+        });
+      }
+      
+      const todayReportBeforeMerge = surfReportsResult.data?.find(r => r.date.split('T')[0] === today);
+      if (todayReportBeforeMerge) {
+        console.log('[useSurfData] 📋 TODAY\'S REPORT WIND (before merge):', {
+          wind_speed: todayReportBeforeMerge.wind_speed,
+          wind_speed_type: typeof todayReportBeforeMerge.wind_speed,
+          wind_direction: todayReportBeforeMerge.wind_direction,
+          wind_direction_type: typeof todayReportBeforeMerge.wind_direction,
+          location: todayReportBeforeMerge.location,
+          date: todayReportBeforeMerge.date,
+        });
+      }
+      
       console.log('[useSurfData] ═══════════════════════════════════════');
       
       // 🚨 CRITICAL FIX: Log the narrative from today's report
@@ -222,6 +258,8 @@ export function useSurfData() {
             conditions_surf_height: conditions.surf_height,
             report_wind: `${report.wind_speed} ${report.wind_direction}`,
             conditions_wind: `${conditions.wind_speed} ${conditions.wind_direction}`,
+            report_wind_types: `${typeof report.wind_speed} ${typeof report.wind_direction}`,
+            conditions_wind_types: `${typeof conditions.wind_speed} ${typeof conditions.wind_direction}`,
           });
           
           // Helper function to check if a value is valid (not null, not "N/A", not empty)
@@ -231,11 +269,14 @@ export function useSurfData() {
               const trimmed = val.trim();
               return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
             }
+            if (typeof val === 'number') {
+              return !isNaN(val); // Allow 0 for wind speed in merge
+            }
             return true;
           };
           
           // Only use surf_conditions values if they are valid, otherwise keep report values
-          return {
+          const merged = {
             ...report,
             wave_height: isValidValue(conditions.wave_height) ? conditions.wave_height : report.wave_height,
             surf_height: isValidValue(conditions.surf_height) ? conditions.surf_height : report.surf_height,
@@ -245,12 +286,33 @@ export function useSurfData() {
             wind_direction: isValidValue(conditions.wind_direction) ? conditions.wind_direction : report.wind_direction,
             water_temp: isValidValue(conditions.water_temp) ? conditions.water_temp : report.water_temp,
           };
+          
+          console.log(`[useSurfData] Merged result wind data:`, {
+            merged_wind_speed: merged.wind_speed,
+            merged_wind_direction: merged.wind_direction,
+            merged_wind_types: `${typeof merged.wind_speed} ${typeof merged.wind_direction}`,
+          });
+          
+          return merged;
         }
         
         return report;
       });
       
       console.log('[useSurfData] Merged reports with real-time conditions:', mergedReports.length);
+      
+      // 🚨 CRITICAL DEBUG: Log wind data after merge
+      const todayReportAfterMerge = mergedReports.find(r => r.date.split('T')[0] === today);
+      if (todayReportAfterMerge) {
+        console.log('[useSurfData] 📋 TODAY\'S REPORT WIND (after merge):', {
+          wind_speed: todayReportAfterMerge.wind_speed,
+          wind_speed_type: typeof todayReportAfterMerge.wind_speed,
+          wind_direction: todayReportAfterMerge.wind_direction,
+          wind_direction_type: typeof todayReportAfterMerge.wind_direction,
+          location: todayReportAfterMerge.location,
+          date: todayReportAfterMerge.date,
+        });
+      }
 
       // Check if we have any data for this location
       const hasData = (mergedReports && mergedReports.length > 0) ||

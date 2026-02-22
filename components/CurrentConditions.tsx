@@ -80,6 +80,9 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
       const trimmed = val.trim();
       return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
     }
+    if (typeof val === 'number') {
+      return !isNaN(val) && val !== 0; // Consider 0 as invalid for wind speed
+    }
     return true;
   };
 
@@ -87,21 +90,30 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
   const weatherConditionsDisplay = weather?.conditions || '';
   
   // CRITICAL FIX: Prioritize weather_data for wind, fallback to surfReport only if weather data is invalid
+  // Also handle numeric values properly
   const windSpeedDisplay = isValidValue(weather?.wind_speed) 
     ? `${Math.round(Number(weather.wind_speed))} mph` 
     : (isValidValue(surfReport?.wind_speed) ? `${Math.round(Number(surfReport.wind_speed))} mph` : '--');
   
   const windDirectionDisplay = isValidValue(weather?.wind_direction)
-    ? weather.wind_direction
-    : (isValidValue(surfReport?.wind_direction) ? surfReport.wind_direction : '');
+    ? String(weather.wind_direction)
+    : (isValidValue(surfReport?.wind_direction) ? String(surfReport.wind_direction) : '');
   
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
   
   console.log('[CurrentConditions] Wind data sources:', {
     weather_wind_speed: weather?.wind_speed,
+    weather_wind_speed_type: typeof weather?.wind_speed,
     weather_wind_direction: weather?.wind_direction,
+    weather_wind_direction_type: typeof weather?.wind_direction,
     surfReport_wind_speed: surfReport?.wind_speed,
+    surfReport_wind_speed_type: typeof surfReport?.wind_speed,
     surfReport_wind_direction: surfReport?.wind_direction,
+    surfReport_wind_direction_type: typeof surfReport?.wind_direction,
+    weather_wind_speed_valid: isValidValue(weather?.wind_speed),
+    weather_wind_direction_valid: isValidValue(weather?.wind_direction),
+    surfReport_wind_speed_valid: isValidValue(surfReport?.wind_speed),
+    surfReport_wind_direction_valid: isValidValue(surfReport?.wind_direction),
     final_display: `${windSpeedDisplay} ${windDirectionDisplay}`,
   });
   
