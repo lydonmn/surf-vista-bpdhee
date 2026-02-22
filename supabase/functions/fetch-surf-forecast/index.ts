@@ -210,6 +210,87 @@ async function fetchBuoyData(buoyId: string, FETCH_TIMEOUT: number, retries: num
   return null;
 }
 
+// 🌡️ NEW: Fetch water temperature from NOAA buoy (for Folly Beach fmns1 buoy)
+async function fetchWaterTemperature(buoyId: string, FETCH_TIMEOUT: number, retries: number = 3): Promise<string | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`[fetchWaterTemp] Attempt ${attempt}/${retries} for buoy ${buoyId}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+      
+      const response = await fetch(
+        `https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`,
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        console.warn(`[fetchWaterTemp] HTTP ${response.status} for buoy ${buoyId}`);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        return null;
+      }
+      
+      const text = await response.text();
+      const lines = text.trim().split('\n');
+      
+      if (lines.length < 3) {
+        console.warn(`[fetchWaterTemp] Insufficient data lines for buoy ${buoyId}`);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        return null;
+      }
+      
+      const dataLine = lines[2];
+      const values = dataLine.split(/\s+/);
+      
+      // Parse water temperature (column 14) - handle MM (missing data)
+      const waterTempStr = values[14];
+      if (waterTempStr === 'MM' || !waterTempStr) {
+        console.warn(`[fetchWaterTemp] Water temperature missing (MM) for buoy ${buoyId}`);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        return null;
+      }
+      
+      const waterTempCelsius = parseFloat(waterTempStr);
+      
+      if (isNaN(waterTempCelsius)) {
+        console.warn(`[fetchWaterTemp] Invalid water temperature value for buoy ${buoyId}: ${waterTempStr}`);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        return null;
+      }
+      
+      // Convert Celsius to Fahrenheit
+      const waterTempFahrenheit = (waterTempCelsius * 9/5) + 32;
+      const waterTempFormatted = `${Math.round(waterTempFahrenheit)}°F`;
+      
+      console.log(`[fetchWaterTemp] ✅ Success for buoy ${buoyId}: ${waterTempCelsius}°C = ${waterTempFormatted}`);
+      return waterTempFormatted;
+      
+    } catch (error: any) {
+      console.error(`[fetchWaterTemp] Attempt ${attempt} error for buoy ${buoyId}:`, error.message);
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+  }
+  
+  console.error(`[fetchWaterTemp] ❌ All attempts failed for buoy ${buoyId}`);
+  return null;
+}
+
 function calculateConfidence(
   hasBuoyData: boolean,
   hasHistoricalData: boolean,
@@ -586,6 +667,21 @@ Deno.serve(async (req) => {
     console.log('[Forecast] 🌊 Fetching CURRENT buoy data for buoy:', buoyId);
     let currentBuoyData = await fetchBuoyData(buoyId, FETCH_TIMEOUT);
     
+    // 🌡️ NEW: For Folly Beach only, fetch water temperature from fmns1 buoy
+    let waterTemperature: string | null = null;
+    const isFollyBeach = locationId === 'folly-beach' || locationName.toLowerCase().includes('folly');
+    
+    if (isFollyBeach) {
+      console.log('[Water Temp] 🌡️ Folly Beach detected - fetching water temperature from fmns1 buoy');
+      waterTemperature = await fetchWaterTemperature('FMNS1', FETCH_TIMEOUT);
+      
+      if (waterTemperature) {
+        console.log(`[Water Temp] ✅ Successfully fetched water temperature from fmns1: ${waterTemperature}`);
+      } else {
+        console.warn('[Water Temp] ⚠️ Failed to fetch water temperature from fmns1 buoy');
+      }
+    }
+    
     // 🚨 CRITICAL FIX: Check if wind data is invalid (99.0 or 999.0) and use Open-Meteo fallback
     // ONLY for Cisco Beach and Jupiter locations
     if (currentBuoyData) {
@@ -715,6 +811,7 @@ Deno.serve(async (req) => {
         location: locationId,
         locationName: locationName,
         has_buoy_data: !!currentBuoyData,
+        water_temperature: waterTemperature,
         forecast_days: forecastData.length,
         stored_successfully: successCount,
         storage_errors: errorCount,
