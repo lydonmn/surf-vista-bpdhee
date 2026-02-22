@@ -73,11 +73,37 @@ export function CurrentConditions({ weather, surfReport }: CurrentConditionsProp
     );
   }
 
+  // Helper function to check if a value is valid (not null, not "N/A", not empty)
+  const isValidValue = (val: any) => {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
+    }
+    return true;
+  };
+
   const temperatureDisplay = weather?.temperature ? `${Math.round(Number(weather.temperature))}°F` : '--';
   const weatherConditionsDisplay = weather?.conditions || '';
-  const windSpeedDisplay = weather?.wind_speed ? `${Math.round(Number(weather.wind_speed))} mph` : '--';
-  const windDirectionDisplay = weather?.wind_direction || '';
+  
+  // CRITICAL FIX: Prioritize weather_data for wind, fallback to surfReport only if weather data is invalid
+  const windSpeedDisplay = isValidValue(weather?.wind_speed) 
+    ? `${Math.round(Number(weather.wind_speed))} mph` 
+    : (isValidValue(surfReport?.wind_speed) ? `${Math.round(Number(surfReport.wind_speed))} mph` : '--');
+  
+  const windDirectionDisplay = isValidValue(weather?.wind_direction)
+    ? weather.wind_direction
+    : (isValidValue(surfReport?.wind_direction) ? surfReport.wind_direction : '');
+  
   const humidityDisplay = weather?.humidity ? `${weather.humidity}%` : '--';
+  
+  console.log('[CurrentConditions] Wind data sources:', {
+    weather_wind_speed: weather?.wind_speed,
+    weather_wind_direction: weather?.wind_direction,
+    surfReport_wind_speed: surfReport?.wind_speed,
+    surfReport_wind_direction: surfReport?.wind_direction,
+    final_display: `${windSpeedDisplay} ${windDirectionDisplay}`,
+  });
   
   const stokeRatingDisplay = surfReport?.rating ?? null;
   

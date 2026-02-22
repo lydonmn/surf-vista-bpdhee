@@ -220,18 +220,30 @@ export function useSurfData() {
             report_surf_height: report.surf_height,
             conditions_wave_height: conditions.wave_height,
             conditions_surf_height: conditions.surf_height,
+            report_wind: `${report.wind_speed} ${report.wind_direction}`,
+            conditions_wind: `${conditions.wind_speed} ${conditions.wind_direction}`,
           });
           
-          // Always use the most recent surf_conditions data for today
+          // Helper function to check if a value is valid (not null, not "N/A", not empty)
+          const isValidValue = (val: any) => {
+            if (val === null || val === undefined) return false;
+            if (typeof val === 'string') {
+              const trimmed = val.trim();
+              return trimmed !== '' && trimmed.toLowerCase() !== 'n/a';
+            }
+            return true;
+          };
+          
+          // Only use surf_conditions values if they are valid, otherwise keep report values
           return {
             ...report,
-            wave_height: conditions.wave_height || report.wave_height,
-            surf_height: conditions.surf_height || report.surf_height,
-            wave_period: conditions.wave_period || report.wave_period,
-            swell_direction: conditions.swell_direction || report.swell_direction,
-            wind_speed: conditions.wind_speed || report.wind_speed,
-            wind_direction: conditions.wind_direction || report.wind_direction,
-            water_temp: conditions.water_temp || report.water_temp,
+            wave_height: isValidValue(conditions.wave_height) ? conditions.wave_height : report.wave_height,
+            surf_height: isValidValue(conditions.surf_height) ? conditions.surf_height : report.surf_height,
+            wave_period: isValidValue(conditions.wave_period) ? conditions.wave_period : report.wave_period,
+            swell_direction: isValidValue(conditions.swell_direction) ? conditions.swell_direction : report.swell_direction,
+            wind_speed: isValidValue(conditions.wind_speed) ? conditions.wind_speed : report.wind_speed,
+            wind_direction: isValidValue(conditions.wind_direction) ? conditions.wind_direction : report.wind_direction,
+            water_temp: isValidValue(conditions.water_temp) ? conditions.water_temp : report.water_temp,
           };
         }
         
