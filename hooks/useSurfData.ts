@@ -122,8 +122,27 @@ export function useSurfData() {
         const surfHeight = data.surf_height;
         
         // Check if we have at least one valid wave measurement
-        const hasWave = waveHeight && waveHeight !== 'N/A' && waveHeight !== null && waveHeight !== '';
-        const hasSurf = surfHeight && surfHeight !== 'N/A' && surfHeight !== null && surfHeight !== '';
+        // Also check for numeric values (not just strings)
+        const hasWave = waveHeight && 
+                       waveHeight !== 'N/A' && 
+                       waveHeight !== null && 
+                       waveHeight !== '' &&
+                       waveHeight !== '99.0' &&
+                       waveHeight !== '99.0 ft';
+        const hasSurf = surfHeight && 
+                       surfHeight !== 'N/A' && 
+                       surfHeight !== null && 
+                       surfHeight !== '' &&
+                       surfHeight !== '99.0' &&
+                       surfHeight !== '99.0 ft';
+        
+        console.log('[useSurfData] hasValidWaveData check:', {
+          waveHeight,
+          surfHeight,
+          hasWave,
+          hasSurf,
+          result: hasWave || hasSurf
+        });
         
         return hasWave || hasSurf;
       };
