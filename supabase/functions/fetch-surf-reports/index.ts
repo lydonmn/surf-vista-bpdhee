@@ -343,9 +343,72 @@ Deno.serve(async (req) => {
       ? (windSpeed * 2.23694).toFixed(0)
       : 'N/A';
     
-    const waterTempF = hasWaterTemp
-      ? ((waterTemp * 9/5) + 32).toFixed(0)
-      : 'N/A';
+    // 🚨 CRITICAL FIX: Fetch water temperature from specific station if configured
+    let waterTempF = 'N/A';
+    
+    if (locationData.water_temp_station_id && locationData.water_temp_station_id !== locationData.buoy_id) {
+      // Fetch water temp from the specific station (e.g., 41076 for Folly Beach)
+      console.log(`Fetching water temperature from station ${locationData.water_temp_station_id} (separate from primary buoy ${locationData.buoy_id})`);
+      
+      try {
+        const waterTempStationUrl = `https://www.ndbc.noaa.gov/data/realtime2/${locationData.water_temp_station_id}.txt`;
+        console.log('Water temp station URL:', waterTempStationUrl);
+        
+        const waterTempResponse = await fetchWithTimeout(waterTempStationUrl);
+        
+        if (waterTempResponse.ok) {
+          const waterTempText = await waterTempResponse.text();
+          const waterTempLines = waterTempText.trim().split('\n');
+          
+          if (waterTempLines.length >= 3) {
+            const waterTempDataLine = waterTempLines[2].trim().split(/\s+/);
+            console.log('Water temp station data fields:', waterTempDataLine.length);
+            
+            if (waterTempDataLine.length >= 15) {
+              const stationWaterTemp = parseFloat(waterTempDataLine[14]); // WTMP field
+              
+              if (stationWaterTemp !== 999.0 && !isNaN(stationWaterTemp)) {
+                waterTempF = ((stationWaterTemp * 9/5) + 32).toFixed(0);
+                console.log(`✅ Water temperature from station ${locationData.water_temp_station_id}: ${waterTempF}°F`);
+              } else {
+                console.log(`⚠️ Water temp station ${locationData.water_temp_station_id} reporting invalid data, falling back to primary buoy`);
+                // Fall back to primary buoy water temp
+                if (hasWaterTemp) {
+                  waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+                }
+              }
+            } else {
+              console.log(`⚠️ Insufficient fields from water temp station ${locationData.water_temp_station_id}, falling back to primary buoy`);
+              if (hasWaterTemp) {
+                waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+              }
+            }
+          } else {
+            console.log(`⚠️ Insufficient data from water temp station ${locationData.water_temp_station_id}, falling back to primary buoy`);
+            if (hasWaterTemp) {
+              waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+            }
+          }
+        } else {
+          console.log(`⚠️ Failed to fetch from water temp station ${locationData.water_temp_station_id} (status ${waterTempResponse.status}), falling back to primary buoy`);
+          if (hasWaterTemp) {
+            waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching water temp from station ${locationData.water_temp_station_id}:`, error);
+        console.log('Falling back to primary buoy water temp');
+        if (hasWaterTemp) {
+          waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+        }
+      }
+    } else {
+      // Use water temp from primary buoy
+      if (hasWaterTemp) {
+        waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
+        console.log(`Using water temperature from primary buoy ${locationData.buoy_id}: ${waterTempF}°F`);
+      }
+    }
 
     const today = getESTDate();
 
