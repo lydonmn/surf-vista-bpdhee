@@ -11,8 +11,53 @@ import { Database } from '@/app/integrations/supabase/types';
 import { ReportTextDisplay } from '@/components/ReportTextDisplay';
 import { useLocation } from '@/contexts/LocationContext';
 import { getESTDate, formatDateString } from '@/utils/surfDataFormatter';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type SurfReport = Database['public']['Tables']['surf_reports']['Row'];
+
+const WATER_TEMP_STORAGE_KEY = 'dailyWaterTemp';
+
+interface DailyWaterTempData {
+  temp: string;
+  date: string;
+}
+
+const getTodayDateString = (): string => {
+  return new Date().toISOString().split('T')[0];
+};
+
+const saveWaterTempForToday = async (temp: string): Promise<void> => {
+  try {
+    const data: DailyWaterTempData = {
+      temp,
+      date: getTodayDateString(),
+    };
+    await AsyncStorage.setItem(WATER_TEMP_STORAGE_KEY, JSON.stringify(data));
+    console.log('[EditReportScreen] Water temp saved for today:', temp);
+  } catch (error) {
+    console.error('[EditReportScreen] Error saving water temp to AsyncStorage:', error);
+  }
+};
+
+const getWaterTempForToday = async (): Promise<string | null> => {
+  try {
+    const storedDataString = await AsyncStorage.getItem(WATER_TEMP_STORAGE_KEY);
+    if (storedDataString) {
+      const storedData: DailyWaterTempData = JSON.parse(storedDataString);
+      if (storedData.date === getTodayDateString()) {
+        console.log('[EditReportScreen] Retrieved water temp for today:', storedData.temp);
+        return storedData.temp;
+      } else {
+        await AsyncStorage.removeItem(WATER_TEMP_STORAGE_KEY);
+        console.log('[EditReportScreen] Cleared expired water temp from AsyncStorage.');
+      }
+    }
+  } catch (error) {
+    console.error('[EditReportScreen] Error retrieving water temp from AsyncStorage:', error);
+    await AsyncStorage.removeItem(WATER_TEMP_STORAGE_KEY);
+  }
+  return null;
+};
 
 export default function EditReportScreen() {
   const theme = useTheme();
@@ -26,6 +71,7 @@ export default function EditReportScreen() {
   const [report, setReport] = useState<SurfReport | null>(null);
   const [reportText, setReportText] = useState('');
   const [rating, setRating] = useState('5');
+  const [waterTemp, setWaterTemp] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -148,6 +194,15 @@ export default function EditReportScreen() {
       });
       setReportText(textToEdit);
       setRating(String(reportToEdit.rating || 5));
+      
+      const storedWaterTemp = await getWaterTempForToday();
+      const initialWaterTemp = storedWaterTemp || reportToEdit.water_temp || '';
+      console.log('[EditReportScreen] Water temp initialized:', {
+        stored: storedWaterTemp,
+        fromReport: reportToEdit.water_temp,
+        using: initialWaterTemp
+      });
+      setWaterTemp(initialWaterTemp);
     } catch (error) {
       console.error('[EditReportScreen] Exception loading report:', error);
       showErrorModal('Error', 'Failed to load report');
@@ -170,6 +225,11 @@ export default function EditReportScreen() {
     setErrorModalMessage(message);
     setErrorModalVisible(true);
   };
+
+  const handleWaterTempChange = useCallback((text: string) => {
+    setWaterTemp(text);
+    saveWaterTempForToday(text);
+  }, []);
 
   const handleSave = async () => {
     if (!report || !user) return;
@@ -194,20 +254,27 @@ export default function EditReportScreen() {
     console.log('[EditReportScreen] Report location:', report.location, locationData.displayName);
     console.log('[EditReportScreen] Text length:', trimmedText.length);
     console.log('[EditReportScreen] Rating:', ratingValue);
+    console.log('[EditReportScreen] Water temp:', waterTemp);
     console.log('[EditReportScreen] Text preview:', trimmedText.substring(0, 100) + '...');
 
     try {
       setSaving(true);
 
-      // 🚨 FIX: Save both report_text AND rating to the database
+      const updateData: any = {
+        report_text: trimmedText,
+        rating: ratingValue,
+        edited_by: user.id,
+        edited_at: new Date().toISOString(),
+      };
+
+      if (waterTemp.trim()) {
+        updateData.water_temp = waterTemp.trim();
+        console.log('[EditReportScreen] Including water temp in update:', waterTemp.trim());
+      }
+
       const { data, error } = await supabase
         .from('surf_reports')
-        .update({
-          report_text: trimmedText,
-          rating: ratingValue,
-          edited_by: user.id,
-          edited_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', report.id)
         .select()
         .single();
@@ -222,7 +289,13 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Saved report ID:', data.id);
       console.log('[EditReportScreen] Saved report_text length:', data.report_text?.length || 0);
       console.log('[EditReportScreen] Saved rating:', data.rating);
+      console.log('[EditReportScreen] Saved water temp:', data.water_temp);
       console.log('[EditReportScreen] Saved text preview:', data.report_text ? data.report_text.substring(0, 100) + '...' : 'none');
+
+      if (waterTemp.trim()) {
+        await saveWaterTempForToday(waterTemp.trim());
+        console.log('[EditReportScreen] Water temp persisted for today:', waterTemp.trim());
+      }
 
       // 🎓 LEARNING FEATURE: Store the edit as a training example
       // This will help the AI learn from your edits over time
@@ -261,7 +334,7 @@ export default function EditReportScreen() {
 
       const { data: verifyData, error: verifyError } = await supabase
         .from('surf_reports')
-        .select('report_text, rating, conditions')
+        .select('report_text, rating, conditions, water_temp')
         .eq('id', report.id)
         .single();
 
@@ -272,6 +345,7 @@ export default function EditReportScreen() {
         console.log('[EditReportScreen] report_text length:', verifyData.report_text?.length || 0);
         console.log('[EditReportScreen] conditions length:', verifyData.conditions?.length || 0);
         console.log('[EditReportScreen] rating:', verifyData.rating);
+        console.log('[EditReportScreen] water_temp:', verifyData.water_temp);
         console.log('[EditReportScreen] Verify text preview:', verifyData.report_text ? verifyData.report_text.substring(0, 100) + '...' : 'none');
       }
 
@@ -638,6 +712,45 @@ export default function EditReportScreen() {
                   {ratingScaleEpic}
                 </Text>
               </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+            Water Temperature
+          </Text>
+          
+          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+            Edit the water temperature. This value will be saved for the rest of today and used if you generate a manual report later.
+          </Text>
+
+          <View style={styles.waterTempInputContainer}>
+            <TextInput
+              style={[
+                styles.waterTempInput,
+                {
+                  backgroundColor: theme.colors.background,
+                  color: theme.colors.text,
+                  borderColor: colors.primary,
+                }
+              ]}
+              value={waterTemp}
+              onChangeText={handleWaterTempChange}
+              keyboardType="decimal-pad"
+              placeholder="e.g., 68°F"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <View style={styles.waterTempNote}>
+              <IconSymbol
+                ios_icon_name="info.circle"
+                android_material_icon_name="info"
+                size={14}
+                color={colors.primary}
+              />
+              <Text style={[styles.waterTempNoteText, { color: colors.textSecondary }]}>
+                Saved for today only - resets at midnight
+              </Text>
             </View>
           </View>
         </View>
@@ -1027,6 +1140,26 @@ const styles = StyleSheet.create({
   },
   ratingScaleLabel: {
     fontSize: 11,
+  },
+  waterTempInputContainer: {
+    gap: 12,
+  },
+  waterTempInput: {
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  waterTempNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  waterTempNoteText: {
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   editorHeader: {
     flexDirection: 'row',
