@@ -115,6 +115,19 @@ export function useSurfData() {
       console.log('[useSurfData] Timestamp:', new Date().toISOString());
       console.log('[useSurfData] ═══════════════════════════════════════');
       
+      // 🚨 CRITICAL FIX: Helper to check if wave data is valid (not N/A)
+      const hasValidWaveData = (data: any): boolean => {
+        if (!data) return false;
+        const waveHeight = data.wave_height;
+        const surfHeight = data.surf_height;
+        
+        // Check if we have at least one valid wave measurement
+        const hasWave = waveHeight && waveHeight !== 'N/A' && waveHeight !== null && waveHeight !== '';
+        const hasSurf = surfHeight && surfHeight !== 'N/A' && surfHeight !== null && surfHeight !== '';
+        
+        return hasWave || hasSurf;
+      };
+
       // Fetch all data in parallel with location filter
       const [surfReportsResult, surfConditionsResult, weatherResult, forecastResult, tideResult] = await Promise.all([
         supabase
@@ -155,6 +168,68 @@ export function useSurfData() {
           .order('time', { ascending: true }),
       ]);
 
+      // 🚨 CRITICAL FIX: If today's surf_conditions has N/A wave data, fetch the most recent valid data
+      let finalSurfConditions = surfConditionsResult.data;
+      
+      if (finalSurfConditions && !hasValidWaveData(finalSurfConditions)) {
+        console.log('[useSurfData] ⚠️ Today\'s surf_conditions has N/A wave data, fetching most recent valid data...');
+        console.log('[useSurfData] Current data:', {
+          wave_height: finalSurfConditions.wave_height,
+          surf_height: finalSurfConditions.surf_height,
+          updated_at: finalSurfConditions.updated_at
+        });
+        
+        // Query for the most recent surf_conditions with valid wave data (within last 7 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+        
+        const { data: recentValidData, error: recentError } = await supabase
+          .from('surf_conditions')
+          .select('*')
+          .eq('location', location)
+          .gte('date', sevenDaysAgoStr)
+          .order('updated_at', { ascending: false })
+          .limit(50); // Get last 50 records to find a valid one
+        
+        if (recentError) {
+          console.error('[useSurfData] Error fetching recent valid surf_conditions:', recentError);
+        } else if (recentValidData && recentValidData.length > 0) {
+          // Find the first record with valid wave data
+          const validRecord = recentValidData.find(record => hasValidWaveData(record));
+          
+          if (validRecord) {
+            console.log('[useSurfData] ✅ Found most recent valid wave data from:', validRecord.updated_at);
+            console.log('[useSurfData] Valid data:', {
+              wave_height: validRecord.wave_height,
+              surf_height: validRecord.surf_height,
+              wave_period: validRecord.wave_period,
+              swell_direction: validRecord.swell_direction,
+              date: validRecord.date
+            });
+            
+            // Merge the valid wave data with today's other conditions (wind, water temp, etc.)
+            finalSurfConditions = {
+              ...finalSurfConditions,
+              wave_height: validRecord.wave_height,
+              surf_height: validRecord.surf_height,
+              wave_period: validRecord.wave_period,
+              swell_direction: validRecord.swell_direction,
+              // Keep today's wind and water temp data
+              wind_speed: finalSurfConditions.wind_speed,
+              wind_direction: finalSurfConditions.wind_direction,
+              water_temp: finalSurfConditions.water_temp,
+            };
+            
+            console.log('[useSurfData] ✅ Merged conditions - using wave data from', validRecord.updated_at, 'with today\'s wind/water temp');
+          } else {
+            console.log('[useSurfData] ⚠️ No valid wave data found in last 50 records');
+          }
+        }
+      } else if (finalSurfConditions) {
+        console.log('[useSurfData] ✅ Today\'s surf_conditions has valid wave data');
+      }
+
       if (!isMountedRef.current) {
         isFetchingRef.current = false;
         return;
@@ -185,7 +260,13 @@ export function useSurfData() {
       console.log('[useSurfData] ✅ DATA FETCHED SUCCESSFULLY');
       console.log('[useSurfData] Location:', location);
       console.log('[useSurfData] Surf reports count:', surfReportsResult.data?.length || 0);
-      console.log('[useSurfData] Has surf conditions:', !!surfConditionsResult.data);
+      console.log('[useSurfData] Has surf conditions:', !!finalSurfConditions);
+      console.log('[useSurfData] Final surf conditions wave data:', {
+        wave_height: finalSurfConditions?.wave_height,
+        surf_height: finalSurfConditions?.surf_height,
+        wave_period: finalSurfConditions?.wave_period,
+        updated_at: finalSurfConditions?.updated_at
+      });
       console.log('[useSurfData] Has weather data:', !!weatherResult.data);
       console.log('[useSurfData] Weather forecast count:', forecastResult.data?.length || 0);
       console.log('[useSurfData] Tide data count:', tideResult.data?.length || 0);
@@ -202,14 +283,14 @@ export function useSurfData() {
         });
       }
       
-      if (surfConditionsResult.data) {
+      if (finalSurfConditions) {
         console.log('[useSurfData] 🌊 SURF CONDITIONS WIND:', {
-          wind_speed: surfConditionsResult.data.wind_speed,
-          wind_speed_type: typeof surfConditionsResult.data.wind_speed,
-          wind_direction: surfConditionsResult.data.wind_direction,
-          wind_direction_type: typeof surfConditionsResult.data.wind_direction,
-          location: surfConditionsResult.data.location,
-          date: surfConditionsResult.data.date,
+          wind_speed: finalSurfConditions.wind_speed,
+          wind_speed_type: typeof finalSurfConditions.wind_speed,
+          wind_direction: finalSurfConditions.wind_direction,
+          wind_direction_type: typeof finalSurfConditions.wind_direction,
+          location: finalSurfConditions.location,
+          date: finalSurfConditions.date,
         });
       }
       
@@ -249,8 +330,8 @@ export function useSurfData() {
         const reportDate = report.date.split('T')[0];
         
         // If this is today's report and we have fresh surf_conditions, merge them
-        if (reportDate === today && surfConditionsResult.data) {
-          const conditions = surfConditionsResult.data;
+        if (reportDate === today && finalSurfConditions) {
+          const conditions = finalSurfConditions;
           console.log(`[useSurfData] Merging today's surf_conditions into report:`, {
             report_wave_height: report.wave_height,
             report_surf_height: report.surf_height,
@@ -330,7 +411,7 @@ export function useSurfData() {
       if (isMountedRef.current) {
         setState({
           surfReports: mergedReports,
-          surfConditions: surfConditionsResult.data,
+          surfConditions: finalSurfConditions, // 🚨 CRITICAL FIX: Use finalSurfConditions with fallback data
           weatherData: weatherResult.data,
           weatherForecast: forecastResult.data || [],
           tideData: tideResult.data || [],
