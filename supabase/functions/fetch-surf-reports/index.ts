@@ -94,16 +94,64 @@ async function fetchWithTimeout(url: string, timeout: number = FETCH_TIMEOUT, re
 function getDirectionFromDegrees(degrees: number): string {
   const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const index = Math.round(degrees / 22.5) % 16;
-  // 🚨 CRITICAL FIX: Return ONLY direction and degrees - NO "feet" anywhere
   const degreesValue = Math.round(degrees);
-  // Build the result string carefully - NEVER include "feet"
   const result = `${directions[index]} (${degreesValue}°)`;
-  // Multiple safeguards to ensure "feet" never appears in any form
   return result
-    .replace(/feet/gi, '') // Remove "feet" (case insensitive)
-    .replace(/ft/gi, '') // Remove "ft" abbreviation
-    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/feet/gi, '')
+    .replace(/ft/gi, '')
+    .replace(/\s+/g, ' ')
     .trim();
+}
+
+// 🚨 CRITICAL FIX: Helper to find most recent VALID data from current day
+async function getMostRecentValidDataFromToday(
+  supabase: any,
+  locationId: string,
+  today: string
+): Promise<any | null> {
+  console.log(`🔍 Searching for most recent valid data from today (${today}) for location ${locationId}`);
+  
+  // Fetch all entries from today, ordered by updated_at descending
+  const { data: todayData, error } = await supabase
+    .from('surf_conditions')
+    .select('*')
+    .eq('location', locationId)
+    .eq('date', today)
+    .order('updated_at', { ascending: false })
+    .limit(20); // Get last 20 entries from today (covers all hourly updates)
+
+  if (error) {
+    console.error('Error fetching today\'s data:', error);
+    return null;
+  }
+
+  if (!todayData || todayData.length === 0) {
+    console.log('❌ No data found for today');
+    return null;
+  }
+
+  console.log(`📊 Found ${todayData.length} entries from today, checking for valid wave data...`);
+
+  // Find the most recent entry with valid wave data
+  for (const entry of todayData) {
+    const waveHeightStr = entry.wave_height;
+    const wavePeriodStr = entry.wave_period;
+    
+    // Check if wave_height AND wave_period are both valid (not N/A, not null, not 99.0 ft)
+    if (waveHeightStr && waveHeightStr !== 'N/A' && wavePeriodStr && wavePeriodStr !== 'N/A') {
+      const waveHeightValue = parseFloat(waveHeightStr);
+      const wavePeriodValue = parseFloat(wavePeriodStr);
+      
+      if (!isNaN(waveHeightValue) && waveHeightValue < 99.0 && !isNaN(wavePeriodValue) && wavePeriodValue > 0) {
+        console.log(`✅ Found valid data from ${entry.updated_at}:`);
+        console.log(`   wave_height=${waveHeightStr}, wave_period=${wavePeriodStr}, surf_height=${entry.surf_height}`);
+        return entry;
+      }
+    }
+  }
+
+  console.log('❌ No valid wave data found in any of today\'s entries');
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -148,7 +196,7 @@ Deno.serve(async (req) => {
       console.log('No location parameter in request body, using default: folly-beach');
     }
 
-    // 🔥 DYNAMIC: Fetch location configuration from database
+    // Fetch location configuration from database
     console.log('Fetching location configuration from database for:', locationId);
     const { data: locationData, error: locationError } = await supabase
       .from('locations')
@@ -175,7 +223,20 @@ Deno.serve(async (req) => {
       id: locationData.id,
       name: locationData.display_name,
       buoyId: locationData.buoy_id,
+      waterTempStationId: locationData.water_temp_station_id,
     });
+
+    const today = getESTDate();
+
+    // 🚨 CRITICAL FIX: Get most recent VALID data from today BEFORE fetching new data
+    const previousValidData = await getMostRecentValidDataFromToday(supabase, locationId, today);
+
+    if (previousValidData) {
+      console.log(`📌 Previous valid data available from ${previousValidData.updated_at}`);
+      console.log(`   Previous: wave_height=${previousValidData.wave_height}, surf_height=${previousValidData.surf_height}`);
+    } else {
+      console.log('📌 No previous valid data from today');
+    }
 
     console.log(`Fetching surf conditions from NOAA Buoy ${locationData.buoy_id} for ${locationData.display_name}...`);
 
@@ -188,6 +249,29 @@ Deno.serve(async (req) => {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown fetch error';
       console.error('Failed to fetch buoy data after all retries:', errorMsg);
+      
+      // 🚨 CRITICAL: If we have previous valid data from today, keep it
+      if (previousValidData) {
+        console.log(`✅ Retaining previous valid data from today due to fetch failure`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Retained previous valid data from today - buoy temporarily unavailable`,
+            location: locationData.display_name,
+            locationId: locationId,
+            buoyId: locationData.buoy_id,
+            dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
+            data: previousValidData,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
@@ -205,6 +289,29 @@ Deno.serve(async (req) => {
     if (!buoyResponse.ok) {
       const errorText = await buoyResponse.text();
       console.error('NOAA Buoy API error:', buoyResponse.status, errorText);
+      
+      // 🚨 CRITICAL: If we have previous valid data from today, keep it
+      if (previousValidData) {
+        console.log(`✅ Retaining previous valid data from today due to HTTP error`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Retained previous valid data from today - buoy returned error`,
+            location: locationData.display_name,
+            locationId: locationId,
+            buoyId: locationData.buoy_id,
+            dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
+            data: previousValidData,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
@@ -223,13 +330,32 @@ Deno.serve(async (req) => {
     const lines = buoyText.trim().split('\n');
 
     console.log(`Received ${lines.length} lines from buoy ${locationData.buoy_id}`);
-    console.log('First 5 lines of buoy data:');
-    for (let i = 0; i < Math.min(5, lines.length); i++) {
-      console.log(`Line ${i}: ${lines[i]}`);
-    }
 
     if (lines.length < 3) {
       console.error('Insufficient buoy data - need at least 3 lines');
+      
+      // 🚨 CRITICAL: If we have previous valid data from today, keep it
+      if (previousValidData) {
+        console.log(`✅ Retaining previous valid data from today due to insufficient data`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Retained previous valid data from today - insufficient new data`,
+            location: locationData.display_name,
+            locationId: locationId,
+            buoyId: locationData.buoy_id,
+            dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
+            data: previousValidData,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
@@ -245,15 +371,33 @@ Deno.serve(async (req) => {
     }
 
     const dataLine = lines[2].trim().split(/\s+/);
-    console.log('Data line split into fields:', dataLine);
-    console.log('Field count:', dataLine.length);
-    console.log('Expected fields: YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD PRES ATMP WTMP DEWP VIS TIDE');
+    console.log('Data line field count:', dataLine.length);
     
-    // IMPROVED: Validate field count before parsing
     if (dataLine.length < 15) {
       console.error(`Insufficient fields in data line. Expected at least 15, got ${dataLine.length}`);
-      console.error('Data line:', lines[2]);
-      console.error('This usually means the buoy is reporting partial data or is in maintenance mode');
+      
+      // 🚨 CRITICAL: If we have previous valid data from today, keep it
+      if (previousValidData) {
+        console.log(`✅ Retaining previous valid data from today due to incomplete fields`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Retained previous valid data from today - incomplete new data`,
+            location: locationData.display_name,
+            locationId: locationId,
+            buoyId: locationData.buoy_id,
+            dataRetained: true,
+            retainedFrom: previousValidData.updated_at,
+            data: previousValidData,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
@@ -285,9 +429,9 @@ Deno.serve(async (req) => {
       waterTemp
     });
     
-    // IMPROVED: Check if we have at least SOME valid data (not all 99.0 or 999.0)
-    const hasWaveData = waveHeight !== 99.0 && !isNaN(waveHeight);
-    const hasPeriodData = dominantPeriod !== 99.0 && !isNaN(dominantPeriod);
+    // Check data validity
+    const hasWaveData = waveHeight !== 99.0 && !isNaN(waveHeight) && waveHeight > 0;
+    const hasPeriodData = dominantPeriod !== 99.0 && !isNaN(dominantPeriod) && dominantPeriod > 0;
     const hasWindData = windSpeed !== 99.0 && !isNaN(windSpeed);
     const hasWaterTemp = waterTemp !== 999.0 && !isNaN(waterTemp);
     
@@ -298,14 +442,31 @@ Deno.serve(async (req) => {
       hasWaterTemp
     });
     
-    const hasAnyValidData = hasWaveData || hasPeriodData || hasWindData || hasWaterTemp;
+    // 🚨 CRITICAL FIX: If new data is incomplete, revert to most recent valid data from TODAY
+    const hasMinimalValidData = hasWaveData && hasPeriodData;
     
-    if (!hasAnyValidData) {
-      console.warn(`⚠️ All sensors on buoy ${locationData.buoy_id} reporting invalid data (99.0/999.0)`);
-      console.warn('This indicates the buoy is offline, in maintenance, or experiencing sensor failures');
-      console.warn('Will store N/A values - the narrative generator will create an appropriate message');
-    } else {
-      console.log(`✅ Buoy ${locationData.buoy_id} has at least some valid sensor data`);
+    if (!hasMinimalValidData && previousValidData) {
+      console.log(`⚠️ New data incomplete for ${locationData.display_name} - reverting to previous valid data from today`);
+      console.log(`📅 Using data from ${previousValidData.updated_at} (earlier today)`);
+      console.log('Previous valid data will continue to be displayed until next valid update');
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `Retained previous valid data from today (${previousValidData.updated_at})`,
+          location: locationData.display_name,
+          locationId: locationId,
+          buoyId: locationData.buoy_id,
+          dataRetained: true,
+          retainedFrom: previousValidData.updated_at,
+          data: previousValidData,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
     }
 
     // Convert to imperial units and format
@@ -318,8 +479,6 @@ Deno.serve(async (req) => {
       const surfHeightCalc = calculateSurfHeight(waveHeight, dominantPeriod);
       surfHeight = surfHeightCalc.display;
       console.log('Calculated surf height:', surfHeight);
-    } else {
-      console.log('Cannot calculate surf height - missing wave height or period data');
     }
     
     const wavePeriodSec = hasPeriodData
@@ -330,12 +489,11 @@ Deno.serve(async (req) => {
       ? getDirectionFromDegrees(meanWaveDirection)
       : 'N/A';
     
-    // 🚨 CRITICAL: Clean wind direction - remove any "feet" that might have been inserted
     const windDir = windDirection !== 999.0 && !isNaN(windDirection)
       ? getDirectionFromDegrees(windDirection)
-          .replace(/feet/gi, '') // Remove "feet" anywhere
-          .replace(/ft/gi, '') // Remove "ft" abbreviation
-          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/feet/gi, '')
+          .replace(/ft/gi, '')
+          .replace(/\s+/g, ' ')
           .trim()
       : 'N/A';
     
@@ -343,17 +501,14 @@ Deno.serve(async (req) => {
       ? (windSpeed * 2.23694).toFixed(0)
       : 'N/A';
     
-    // 🚨 CRITICAL FIX: Fetch water temperature from specific station if configured
+    // Fetch water temperature from specific station if configured
     let waterTempF = 'N/A';
     
     if (locationData.water_temp_station_id && locationData.water_temp_station_id !== locationData.buoy_id) {
-      // Fetch water temp from the specific station (e.g., 41076 for Folly Beach)
-      console.log(`Fetching water temperature from station ${locationData.water_temp_station_id} (separate from primary buoy ${locationData.buoy_id})`);
+      console.log(`Fetching water temperature from station ${locationData.water_temp_station_id}`);
       
       try {
         const waterTempStationUrl = `https://www.ndbc.noaa.gov/data/realtime2/${locationData.water_temp_station_id}.txt`;
-        console.log('Water temp station URL:', waterTempStationUrl);
-        
         const waterTempResponse = await fetchWithTimeout(waterTempStationUrl);
         
         if (waterTempResponse.ok) {
@@ -362,55 +517,34 @@ Deno.serve(async (req) => {
           
           if (waterTempLines.length >= 3) {
             const waterTempDataLine = waterTempLines[2].trim().split(/\s+/);
-            console.log('Water temp station data fields:', waterTempDataLine.length);
             
             if (waterTempDataLine.length >= 15) {
-              const stationWaterTemp = parseFloat(waterTempDataLine[14]); // WTMP field
+              const stationWaterTemp = parseFloat(waterTempDataLine[14]);
               
               if (stationWaterTemp !== 999.0 && !isNaN(stationWaterTemp)) {
                 waterTempF = ((stationWaterTemp * 9/5) + 32).toFixed(0);
                 console.log(`✅ Water temperature from station ${locationData.water_temp_station_id}: ${waterTempF}°F`);
               } else {
-                console.log(`⚠️ Water temp station ${locationData.water_temp_station_id} reporting invalid data, falling back to primary buoy`);
-                // Fall back to primary buoy water temp
+                console.log(`⚠️ Water temp station reporting invalid data, falling back to primary buoy`);
                 if (hasWaterTemp) {
                   waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
                 }
               }
-            } else {
-              console.log(`⚠️ Insufficient fields from water temp station ${locationData.water_temp_station_id}, falling back to primary buoy`);
-              if (hasWaterTemp) {
-                waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
-              }
             }
-          } else {
-            console.log(`⚠️ Insufficient data from water temp station ${locationData.water_temp_station_id}, falling back to primary buoy`);
-            if (hasWaterTemp) {
-              waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
-            }
-          }
-        } else {
-          console.log(`⚠️ Failed to fetch from water temp station ${locationData.water_temp_station_id} (status ${waterTempResponse.status}), falling back to primary buoy`);
-          if (hasWaterTemp) {
-            waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
           }
         }
       } catch (error) {
-        console.error(`Error fetching water temp from station ${locationData.water_temp_station_id}:`, error);
-        console.log('Falling back to primary buoy water temp');
+        console.error(`Error fetching water temp from station:`, error);
         if (hasWaterTemp) {
           waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
         }
       }
     } else {
-      // Use water temp from primary buoy
       if (hasWaterTemp) {
         waterTempF = ((waterTemp * 9/5) + 32).toFixed(0);
-        console.log(`Using water temperature from primary buoy ${locationData.buoy_id}: ${waterTempF}°F`);
+        console.log(`Using water temperature from primary buoy: ${waterTempF}°F`);
       }
     }
-
-    const today = getESTDate();
 
     const surfData = {
       date: today,
@@ -426,7 +560,7 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Storing surf data:', surfData);
+    console.log('Storing NEW VALID surf data:', surfData);
 
     const { data: insertData, error: surfError } = await supabase
       .from('surf_conditions')
@@ -449,23 +583,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('Surf data stored successfully');
+    console.log('✅ NEW VALID surf data stored successfully');
     console.log('=== FETCH SURF REPORTS COMPLETED ===');
-
-    // Provide helpful feedback about data quality
-    let dataQualityMessage = '';
-    if (!hasWaveData && !hasPeriodData) {
-      dataQualityMessage = ` Note: Wave sensors on buoy ${locationData.buoy_id} are currently offline or reporting invalid data. Wind and water temperature data is still available.`;
-    } else if (!hasWaveData) {
-      dataQualityMessage = ` Note: Wave height sensor on buoy ${locationData.buoy_id} is offline.`;
-    } else if (!hasPeriodData) {
-      dataQualityMessage = ` Note: Wave period sensor on buoy ${locationData.buoy_id} is offline.`;
-    }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Surf conditions updated successfully for ${locationData.display_name}.${dataQualityMessage}`,
+        message: `Surf conditions updated successfully for ${locationData.display_name}`,
         location: locationData.display_name,
         locationId: locationId,
         buoyId: locationData.buoy_id,
