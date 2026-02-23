@@ -323,8 +323,78 @@ serve(async (req) => {
           continue;
         }
 
-        const dataLine = lines[2].trim().split(/\s+/);
-        console.log('Data fields count:', dataLine.length);
+        // Parse header to find WVHT column index
+        const headerLine = lines[0].trim();
+        const headerFields = headerLine.split(/\s+/);
+        const wvhtIndex = headerFields.indexOf('WVHT');
+        
+        console.log(`Header fields: ${headerFields.join(', ')}`);
+        console.log(`WVHT column index: ${wvhtIndex}`);
+
+        // Scan lines 2-10 to find first line where WVHT is not "MM"
+        let dataLine: string[] | null = null;
+        let selectedLineIndex = -1;
+
+        if (wvhtIndex === -1) {
+          console.warn('⚠️ WVHT column not found in header. Using first data line (line 2).');
+          dataLine = lines[2].trim().split(/\s+/);
+          selectedLineIndex = 2;
+        } else {
+          // Scan data lines 2 through 10 (0-indexed: lines[2] to lines[10])
+          const maxLineToCheck = Math.min(lines.length, 11); // lines[2] through lines[10]
+          
+          for (let i = 2; i < maxLineToCheck; i++) {
+            const currentLineFields = lines[i].trim().split(/\s+/);
+            
+            if (currentLineFields.length > wvhtIndex) {
+              const wvhtValue = currentLineFields[wvhtIndex];
+              
+              if (wvhtValue !== 'MM') {
+                dataLine = currentLineFields;
+                selectedLineIndex = i;
+                console.log(`✅ Selected line ${i} (0-indexed) with valid WVHT: ${wvhtValue}`);
+                break;
+              } else {
+                console.log(`⏭️ Skipping line ${i} - WVHT is "MM"`);
+              }
+            }
+          }
+
+          // If no valid WVHT found in lines 2-10, default to line 2
+          if (!dataLine) {
+            console.warn('⚠️ No valid WVHT found in lines 2-10. Defaulting to line 2.');
+            dataLine = lines[2].trim().split(/\s+/);
+            selectedLineIndex = 2;
+          }
+        }
+
+        if (!dataLine) {
+          console.error('❌ No valid data line found for parsing buoy data');
+          
+          // Retain previous valid data from today if available
+          if (previousValidData) {
+            console.log(`✅ Retaining previous valid data from today for ${location.display_name} due to no valid data line`);
+            results.push({
+              success: true,
+              location: location.display_name,
+              locationId: location.id,
+              message: 'Retained previous valid data from today - no valid data line',
+              dataRetained: true,
+              retainedFrom: previousValidData.updated_at,
+            });
+            continue;
+          }
+          
+          results.push({
+            success: false,
+            location: location.display_name,
+            locationId: location.id,
+            error: 'No valid data line found',
+          });
+          continue;
+        }
+
+        console.log(`Using data from line ${selectedLineIndex} with ${dataLine.length} fields`);
         
         if (dataLine.length < 15) {
           console.error(`Incomplete data - expected 15+ fields, got ${dataLine.length}`);
