@@ -666,12 +666,34 @@ export default function ReportScreen() {
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
+    // 🚨 CRITICAL FIX: Filter tide data by BOTH date AND location
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
-      return tideDate === todayDate && tide.location === currentLocation;
+      const matchesDate = tideDate === todayDate;
+      const matchesLocation = tide.location === currentLocation;
+      
+      console.log('[ReportScreen] 🌊 Tide filter check:', {
+        tide_date: tideDate,
+        tide_location: tide.location,
+        today_date: todayDate,
+        current_location: currentLocation,
+        matches_date: matchesDate,
+        matches_location: matchesLocation,
+        included: matchesDate && matchesLocation
+      });
+      
+      return matchesDate && matchesLocation;
     });
     
-    console.log('[ReportScreen] Tides for', locationData.displayName, ':', reportTides.length);
+    console.log('[ReportScreen] 🌊 TIDE DATA DEBUG:', {
+      location: locationData.displayName,
+      currentLocation: currentLocation,
+      todayDate: todayDate,
+      totalTideData: tideData.length,
+      filteredTides: reportTides.length,
+      allTideLocations: [...new Set(tideData.map(t => t.location))],
+      allTideDates: [...new Set(tideData.map(t => t.date.split('T')[0]))],
+    });
     
     const todayDisplayDate = formatDateString(todayDate);
     
