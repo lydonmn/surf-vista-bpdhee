@@ -53,7 +53,8 @@ export async function checkNotificationPermissions(): Promise<{
 }
 
 /**
- * Request notification permissions with user-friendly prompts
+ * ✅ V10.1 CRITICAL FIX: Request notification permissions with clear user guidance
+ * Shows step-by-step instructions for enabling notifications
  */
 export async function requestNotificationPermissions(): Promise<boolean> {
   try {
@@ -89,14 +90,57 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       return true;
     }
 
-    // If we can't ask again (user denied previously), show settings prompt
-    if (!canAskAgain || existingStatus === 'denied') {
-      console.log('[Push Notifications] ⚠️ Cannot ask again - user must enable in settings');
+    // ✅ V10.1 CRITICAL FIX: If we can ask, show a clear explanation first
+    if (canAskAgain && existingStatus === 'undetermined') {
+      console.log('[Push Notifications] 📱 First time asking - showing explanation...');
       
       return new Promise((resolve) => {
         Alert.alert(
-          'Notification Permission Required',
-          'To receive daily surf reports at 6 AM EST, you need to enable notifications in your device settings.\n\nWould you like to open settings now?',
+          '🔔 Enable Daily Surf Reports',
+          'Get your surf report delivered every morning at 6 AM EST!\n\n' +
+          'Tap "Allow" on the next screen to enable notifications.',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+              onPress: () => {
+                console.log('[Push Notifications] User declined to enable notifications');
+                resolve(false);
+              }
+            },
+            {
+              text: 'Continue',
+              onPress: async () => {
+                console.log('[Push Notifications] User wants to enable - requesting permissions...');
+                const { status: newStatus } = await Notifications.requestPermissionsAsync();
+                console.log('[Push Notifications] Permission request result:', newStatus);
+                
+                if (newStatus === 'granted') {
+                  console.log('[Push Notifications] ✅ Permissions granted!');
+                  resolve(true);
+                } else {
+                  console.log('[Push Notifications] ❌ Permissions denied');
+                  resolve(false);
+                }
+              }
+            }
+          ]
+        );
+      });
+    }
+
+    // ✅ V10.1 CRITICAL FIX: If user previously denied, show clear instructions to enable in Settings
+    if (!canAskAgain || existingStatus === 'denied') {
+      console.log('[Push Notifications] ⚠️ Permissions denied - must enable in Settings');
+      
+      return new Promise((resolve) => {
+        Alert.alert(
+          '🔔 Enable Notifications in Settings',
+          'To receive daily surf reports at 6 AM EST, you need to enable notifications:\n\n' +
+          '1. Tap "Open Settings" below\n' +
+          '2. Find "Notifications"\n' +
+          '3. Turn ON "Allow Notifications"\n' +
+          '4. Come back and toggle notifications again',
           [
             {
               text: 'Cancel',
@@ -112,6 +156,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
                 console.log('[Push Notifications] Opening device settings...');
                 try {
                   await Linking.openSettings();
+                  // Don't resolve true - user needs to come back and try again
                   resolve(false);
                 } catch (settingsError) {
                   console.error('[Push Notifications] Error opening settings:', settingsError);
@@ -124,24 +169,13 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       });
     }
 
-    // Request permissions
+    // Fallback: try to request permissions
     console.log('[Push Notifications] Requesting permissions from user...');
     const { status: newStatus } = await Notifications.requestPermissionsAsync();
     console.log('[Push Notifications] Permission request result:', newStatus);
 
     if (newStatus !== 'granted') {
       console.warn('[Push Notifications] ❌ Permission denied by user');
-      Alert.alert(
-        'Permission Denied',
-        'You have denied notification permissions. To receive daily surf reports at 6 AM EST, please enable notifications in your device settings.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Open Settings',
-            onPress: () => Linking.openSettings()
-          }
-        ]
-      );
       return false;
     }
 
@@ -423,13 +457,14 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 }
 
 /**
- * ✅ V9.2 PRODUCTION FIX: Enable or disable daily report notifications
+ * ✅ V10.1 PRODUCTION FIX: Enable or disable daily report notifications
  * Registers push token with Expo and saves to profiles table
+ * Now with clearer permission guidance for users
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
     console.log('[Push Notifications] ═══════════════════════════════════════');
-    console.log('[Push Notifications] V9.2 PRODUCTION: TOGGLE NOTIFICATIONS');
+    console.log('[Push Notifications] V10.1 PRODUCTION: TOGGLE NOTIFICATIONS');
     console.log('[Push Notifications] ═══════════════════════════════════════');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
@@ -439,22 +474,40 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     // Step 1: If enabling, register for push notifications and get token
     let pushToken = null;
     if (enabled) {
-      console.log('[Push Notifications] 📲 User is ENABLING notifications - registering token...');
+      console.log('[Push Notifications] 📲 User is ENABLING notifications - checking permissions...');
       
-      // Check permissions first
-      const hasPermission = await requestNotificationPermissions();
-      if (!hasPermission) {
-        console.error('[Push Notifications] ❌ No notification permission');
-        return false;
+      // ✅ V10.1 CRITICAL FIX: Check permissions first and guide user if needed
+      const permStatus = await checkNotificationPermissions();
+      console.log('[Push Notifications] Permission status:', permStatus);
+      
+      if (!permStatus.granted && permStatus.status !== 'simulator') {
+        console.log('[Push Notifications] ⚠️ Permissions not granted - requesting...');
+        const hasPermission = await requestNotificationPermissions();
+        
+        if (!hasPermission) {
+          console.error('[Push Notifications] ❌ User did not grant permission');
+          Alert.alert(
+            'Notifications Not Enabled',
+            'To receive daily surf reports, please enable notifications in your device settings and try again.',
+            [{ text: 'OK' }]
+          );
+          return false;
+        }
       }
       
       // Get the Expo push token
+      console.log('[Push Notifications] 📲 Registering push token...');
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Token registration result:', pushToken ? 'SUCCESS ✓' : 'FAILED ✗');
       
       // If on physical device and no token, fail
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
         console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
+        Alert.alert(
+          'Registration Failed',
+          'Failed to register for push notifications. Please check your notification settings and try again.',
+          [{ text: 'OK' }]
+        );
         return false;
       }
     }

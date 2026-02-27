@@ -44,7 +44,6 @@ export default function ProfileScreen() {
     canAskAgain: boolean;
     status: string;
   } | null>(null);
-  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const [selectedNotificationLocations, setSelectedNotificationLocations] = useState<string[]>(['folly-beach']);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
 
@@ -75,28 +74,16 @@ export default function ProfileScreen() {
     const permStatus = await checkNotificationPermissions();
     console.log('[ProfileScreen] 🔐 Permission status:', permStatus);
     setNotificationPermissionStatus(permStatus);
+  }, []);
 
-    // If notifications are enabled in profile but permissions are denied, show prompt
-    if (dailyNotificationsEnabled && !permStatus.granted && permStatus.status !== 'simulator') {
-      console.log('[ProfileScreen] ⚠️ Notifications enabled but permissions denied - showing prompt');
-      setShowPermissionPrompt(true);
-    }
-  }, [dailyNotificationsEnabled]);
-
-  // ✅ V8.0 AUTOMATIC FLOW: When screen loads, automatically check and register push token
-  // This ensures users who opt in will receive notifications when the 6AM report is generated
+  // Load notification status and locations when screen loads
   useEffect(() => {
     if (user?.id) {
-      console.log('[ProfileScreen] 📲 Screen loaded - automatic push token check...');
-      console.log('[ProfileScreen] ℹ️ AUTOMATIC FLOW: No manual retry needed - token registration happens automatically');
-      
-      // Load notification status and locations
+      console.log('[ProfileScreen] 📲 Screen loaded - loading notification data...');
       loadNotificationStatus();
       loadNotificationLocations();
       
-      // ✅ V8.0 AUTOMATIC: Ensure push token is registered (silent, no user interaction needed)
-      // When user opts in, token is registered automatically
-      // When 6AM report is generated, notifications are sent automatically to opted-in users
+      // Check push token registration (silent, automatic)
       ensurePushTokenRegistered(user.id).catch(error => {
         console.error('[ProfileScreen] ⚠️ Push token check error (non-critical):', error);
       });
@@ -174,7 +161,7 @@ export default function ProfileScreen() {
     }
   };
 
-  // ✅ V10.0 CRITICAL FIX: Proper toggle state management - don't revert on failure
+  // ✅ V10.1 CRITICAL FIX: Simplified toggle - permission handling moved to pushNotifications.ts
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
       console.error('[ProfileScreen] ❌ No user ID available');
@@ -187,25 +174,12 @@ export default function ProfileScreen() {
     }
 
     console.log('[ProfileScreen] ═══════════════════════════════════════');
-    console.log('[ProfileScreen] 🔔 V10.0 CRITICAL FIX: TOGGLE PRESSED');
+    console.log('[ProfileScreen] 🔔 V10.1 CRITICAL FIX: TOGGLE PRESSED');
     console.log('[ProfileScreen] ═══════════════════════════════════════');
     console.log('[ProfileScreen] User toggled notifications to:', value);
     console.log('[ProfileScreen] Current state:', dailyNotificationsEnabled);
 
-    // If enabling, check permissions first
-    if (value) {
-      console.log('[ProfileScreen] 🔐 User is ENABLING - checking permissions...');
-      const permStatus = await checkNotificationPermissions();
-      console.log('[ProfileScreen] 🔐 Permission check result:', permStatus);
-
-      if (!permStatus.granted && permStatus.status !== 'simulator') {
-        console.log('[ProfileScreen] ⚠️ Permissions not granted - showing prompt');
-        setShowPermissionPrompt(true);
-        return;
-      }
-    }
-
-    // ✅ V10.0 CRITICAL FIX: Set loading state IMMEDIATELY
+    // ✅ V10.1 CRITICAL FIX: Set loading state IMMEDIATELY
     console.log('[ProfileScreen] ⏳ Setting loading state...');
     setIsTogglingNotifications(true);
 
@@ -215,17 +189,21 @@ export default function ProfileScreen() {
       await refreshSession();
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // ✅ V10.0 CRITICAL FIX: Call the main function that handles everything
+      // ✅ V10.1 CRITICAL FIX: Call the main function that handles everything
+      // This now includes improved permission guidance
       console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications...');
-      console.log('[ProfileScreen] 📝 This will register token and update database...');
+      console.log('[ProfileScreen] 📝 This will handle permissions and register token...');
       const success = await setDailyReportNotifications(user.id, value);
       console.log('[ProfileScreen] 📝 Result:', success ? 'SUCCESS ✓' : 'FAILED ✗');
       
       if (success) {
         console.log('[ProfileScreen] ✅ Notifications updated successfully');
         
-        // ✅ V10.0 CRITICAL FIX: Update local state ONLY on success
+        // ✅ V10.1 CRITICAL FIX: Update local state ONLY on success
         setDailyNotificationsEnabled(value);
+        
+        // Reload permissions to update UI
+        await checkPermissions();
         
         const statusText = value ? 'Enabled' : 'Disabled';
         const messageText = value 
@@ -246,15 +224,14 @@ export default function ProfileScreen() {
       } else {
         console.error('[ProfileScreen] ❌ Failed to update notifications');
         
-        // ✅ V10.0 CRITICAL FIX: DO NOT update state on failure
+        // ✅ V10.1 CRITICAL FIX: DO NOT update state on failure
         // The toggle will stay in its original position
-        // The setDailyReportNotifications function already showed an error alert
         console.log('[ProfileScreen] ℹ️ Keeping toggle in original position (operation failed)');
       }
     } catch (error) {
       console.error('[ProfileScreen] ❌ Exception toggling notifications:', error);
       
-      // ✅ V10.0 CRITICAL FIX: DO NOT update state on exception
+      // ✅ V10.1 CRITICAL FIX: DO NOT update state on exception
       console.log('[ProfileScreen] ℹ️ Keeping toggle in original position (exception occurred)');
       
       Alert.alert(
@@ -263,7 +240,7 @@ export default function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } finally {
-      // ✅ V10.0 CRITICAL FIX: ALWAYS clear loading state
+      // ✅ V10.1 CRITICAL FIX: ALWAYS clear loading state
       console.log('[ProfileScreen] ✅ Clearing loading state');
       setIsTogglingNotifications(false);
     }
@@ -332,7 +309,7 @@ export default function ProfileScreen() {
     await loadNotificationLocations();
     await checkPermissions();
     
-    // ✅ V8.0 AUTOMATIC: Also check push token registration (silent, automatic)
+    // Also check push token registration (silent, automatic)
     if (user?.id) {
       await ensurePushTokenRegistered(user.id);
     }
@@ -1023,7 +1000,7 @@ export default function ProfileScreen() {
             Notification Locations: {selectedNotificationLocations.join(', ')}
           </Text>
           <Text style={[styles.debugText, { color: colors.primary, fontWeight: 'bold' }]}>
-            ℹ️ V10.0: Fixed toggle state management
+            ℹ️ V10.1: Improved permission guidance
           </Text>
         </View>
       )}
@@ -1033,59 +1010,9 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 10.0
+          Version 10.1
         </Text>
       </View>
-
-      {/* Permission Prompt Modal */}
-      <Modal
-        visible={showPermissionPrompt}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowPermissionPrompt(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalIconContainer}>
-              <IconSymbol
-                ios_icon_name="bell.badge.fill"
-                android_material_icon_name="notifications_active"
-                size={48}
-                color={colors.primary}
-              />
-            </View>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              Enable Notifications
-            </Text>
-            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
-              To receive daily surf reports at 6 AM EST, you need to enable notifications for SurfVista.
-              {'\n\n'}
-              Please tap "Open Settings" below and enable notifications.
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancelButton]}
-                onPress={() => setShowPermissionPrompt(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>
-                  Not Now
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalConfirmButton, { backgroundColor: colors.primary }]}
-                onPress={async () => {
-                  setShowPermissionPrompt(false);
-                  await openNotificationSettings();
-                }}
-              >
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
-                  Open Settings
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal
@@ -1514,10 +1441,6 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.2)',
     elevation: 5,
-  },
-  modalIconContainer: {
-    alignItems: 'center',
-    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
