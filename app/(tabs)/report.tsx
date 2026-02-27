@@ -593,7 +593,13 @@ export default function ReportScreen() {
         : isValidValue(displayData.wind_speed)
           ? displayData.wind_speed
           : todaysWeatherForecast?.wind_speed;
-    const windSpeedDisplay = isValidValue(windSpeedValue) ? windSpeedValue : 'N/A';
+    
+    // 🚨 CRITICAL FIX: Always add "mph" unit to wind speed if it doesn't already have it
+    const windSpeedDisplay = isValidValue(windSpeedValue) 
+      ? (typeof windSpeedValue === 'string' && windSpeedValue.includes('mph') 
+          ? windSpeedValue 
+          : `${Math.round(Number(windSpeedValue))} mph`)
+      : 'N/A';
     
     const windDirectionValue = isValidValue(weatherData?.wind_direction)
       ? weatherData.wind_direction

@@ -481,8 +481,15 @@ export default function HomeScreen() {
         ? todaysReport.wind_direction
         : null;
   
-  const windDisplay = windSpeedValue && windDirValue 
-    ? `${typeof windSpeedValue === 'string' && windSpeedValue.includes('mph') ? windSpeedValue : `${Math.round(Number(windSpeedValue))} mph`} ${String(windDirValue).trim()}`
+  // 🚨 CRITICAL FIX: Always format wind speed with "mph" unit
+  const windSpeedFormatted = windSpeedValue 
+    ? (typeof windSpeedValue === 'string' && windSpeedValue.includes('mph') 
+        ? windSpeedValue 
+        : `${Math.round(Number(windSpeedValue))} mph`)
+    : null;
+  
+  const windDisplay = windSpeedFormatted && windDirValue 
+    ? `${windSpeedFormatted} ${String(windDirValue).trim()}`
     : 'N/A';
   
   console.log('[HomeScreen] 🌬️ WIND DATA DEBUG:', {
