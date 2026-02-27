@@ -237,8 +237,9 @@ export default function EditReportScreen() {
     const ratingNum = parseInt(rating);
     const ratingValue = ratingNum;
     
-    if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 10) {
-      showErrorModal('Invalid Rating', 'Please enter a rating between 0 and 10');
+    // 🚨 ADMIN OVERRIDE: Allow ratings up to 11 for "nuclear stoke" moments
+    if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 11) {
+      showErrorModal('Invalid Rating', 'Please enter a rating between 0 and 11 (11 = Nuclear Stoke!)');
       return;
     }
 
@@ -408,6 +409,8 @@ export default function EditReportScreen() {
   };
 
   const getRatingColor = (ratingValue: number): string => {
+    // 🚨 NUCLEAR STOKE: Special color for 11/10
+    if (ratingValue >= 11) return '#FF0000'; // Bright red for nuclear
     if (ratingValue >= 8) return '#22C55E';
     if (ratingValue >= 6) return '#FFC107';
     if (ratingValue >= 4) return '#FF9800';
@@ -509,13 +512,14 @@ export default function EditReportScreen() {
   const waterTempLabelText = 'Water Temp:';
   const stokeRatingTitle = 'Stoke Rating';
   const ratingBadgeText = `${rating}/10`;
-  const ratingHelperText = 'Rate the surf conditions from 0 (flat) to 10 (epic). This helps surfers quickly assess if it&apos;s worth paddling out.';
+  const ratingHelperText = 'Rate the surf conditions from 0 (flat) to 11 (nuclear!). 11 is reserved for once-in-a-lifetime epic sessions.';
   const ratingPlaceholder = '5';
   const ratingScaleFlat = 'Flat';
   const ratingScaleSmall = 'Small';
   const ratingScaleFair = 'Fair';
   const ratingScaleGood = 'Good';
   const ratingScaleEpic = 'Epic';
+  const ratingScaleNuclear = 'Nuclear!';
   const reportTextTitle = 'Report Text';
   const editedBadgeText = 'Edited';
   const previewButtonText = showPreview ? 'Edit' : 'Preview';
@@ -710,6 +714,14 @@ export default function EditReportScreen() {
                 </Text>
                 <Text style={[styles.ratingScaleLabel, { color: colors.textSecondary }]}>
                   {ratingScaleEpic}
+                </Text>
+              </View>
+              <View style={styles.ratingScaleItem}>
+                <Text style={[styles.ratingScaleValue, { color: '#FF0000' }]}>
+                  11
+                </Text>
+                <Text style={[styles.ratingScaleLabel, { color: '#FF0000', fontWeight: 'bold' }]}>
+                  {ratingScaleNuclear}
                 </Text>
               </View>
             </View>

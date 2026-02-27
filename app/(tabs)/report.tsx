@@ -1,6 +1,6 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Animated } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router, useFocusEffect } from "expo-router";
@@ -140,6 +140,11 @@ export default function ReportScreen() {
   // ✅ FIX: Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
   const hasLoadedVideoRef = useRef(false);
+  
+  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for explosion effect
+  const explosionScale = useRef(new Animated.Value(0)).current;
+  const explosionOpacity = useRef(new Animated.Value(0)).current;
+  const explosionRotation = useRef(new Animated.Value(0)).current;
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -308,6 +313,64 @@ export default function ReportScreen() {
     console.log('[ReportScreen] No data available, using default rating: 5');
     return 5;
   }, [surfConditions, todaysReport]);
+  
+  // 🚨 NUCLEAR STOKE: Trigger explosion animation when rating is 11
+  useEffect(() => {
+    if (currentRating >= 11) {
+      console.log('[ReportScreen] 💥 NUCLEAR STOKE DETECTED! Rating:', currentRating);
+      console.log('[ReportScreen] 💥 Triggering nuclear explosion animation');
+      
+      // Reset animation values
+      explosionScale.setValue(0);
+      explosionOpacity.setValue(0);
+      explosionRotation.setValue(0);
+      
+      // Trigger explosion animation sequence
+      Animated.sequence([
+        // Initial flash
+        Animated.parallel([
+          Animated.timing(explosionOpacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(explosionScale, {
+            toValue: 0.5,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]),
+        // Expand explosion
+        Animated.parallel([
+          Animated.timing(explosionScale, {
+            toValue: 1.5,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(explosionRotation, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]),
+        // Fade out
+        Animated.timing(explosionOpacity, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Loop the animation
+        setTimeout(() => {
+          if (currentRating >= 11) {
+            explosionScale.setValue(0);
+            explosionOpacity.setValue(0);
+            explosionRotation.setValue(0);
+          }
+        }, 2000);
+      });
+    }
+  }, [currentRating, explosionScale, explosionOpacity, explosionRotation]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -758,6 +821,11 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Is custom (edited):', isCustomReport);
     console.log('[ReportScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
     
+    const rotateInterpolate = explosionRotation.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg'],
+    });
+    
     return (
       <View 
         key={reportKey}
@@ -786,9 +854,45 @@ export default function ReportScreen() {
             )}
           </View>
           <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(displayRating) }]}>
-            <Text style={styles.ratingText}>{displayRating}/10</Text>
+            <Text style={styles.ratingText}>{displayRating}/{displayRating >= 11 ? '11' : '10'}</Text>
           </View>
         </View>
+        
+        {/* 🚨 NUCLEAR STOKE ANIMATION: Display when rating is 11 */}
+        {displayRating >= 11 && (
+          <View style={styles.nuclearStokeContainer}>
+            <Animated.View
+              style={[
+                styles.explosionAnimation,
+                {
+                  opacity: explosionOpacity,
+                  transform: [
+                    { scale: explosionScale },
+                    { rotate: rotateInterpolate },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.explosionCore}>
+                <IconSymbol
+                  ios_icon_name="flame.fill"
+                  android_material_icon_name="local-fire-department"
+                  size={80}
+                  color="#FF4500"
+                />
+              </View>
+              <View style={styles.explosionRing1} />
+              <View style={styles.explosionRing2} />
+              <View style={styles.explosionRing3} />
+            </Animated.View>
+            <View style={styles.nuclearStokeTextContainer}>
+              <Text style={styles.nuclearStokeTitle}>💥 NUCLEAR STOKE! 💥</Text>
+              <Text style={styles.nuclearStokeSubtitle}>
+                Once-in-a-lifetime epic session!
+              </Text>
+            </View>
+          </View>
+        )}
 
         {hasValidWaveData ? (
           <View style={styles.liveIndicator}>
@@ -1342,6 +1446,8 @@ export default function ReportScreen() {
 }
 
 function getRatingColor(rating: number): string {
+  // 🚨 NUCLEAR STOKE: Special color for 11/10
+  if (rating >= 11) return '#FF0000'; // Bright red for nuclear
   if (rating >= 8) return '#22C55E';
   if (rating >= 6) return '#FFC107';
   if (rating >= 4) return '#FF9800';
@@ -1757,5 +1863,76 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontStyle: 'italic',
+  },
+  // 🚨 NUCLEAR STOKE ANIMATION STYLES
+  nuclearStokeContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    marginVertical: 16,
+    backgroundColor: 'rgba(255, 69, 0, 0.1)',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FF4500',
+    overflow: 'hidden',
+  },
+  explosionAnimation: {
+    width: 200,
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  explosionCore: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  explosionRing1: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 69, 0, 0.3)',
+    borderWidth: 3,
+    borderColor: '#FF4500',
+  },
+  explosionRing2: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255, 140, 0, 0.2)',
+    borderWidth: 2,
+    borderColor: '#FF8C00',
+  },
+  explosionRing3: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  nuclearStokeTextContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  nuclearStokeTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF0000',
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  nuclearStokeSubtitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF4500',
+    textAlign: 'center',
   },
 });
