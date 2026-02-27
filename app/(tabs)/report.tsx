@@ -666,13 +666,13 @@ export default function ReportScreen() {
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
-    // 🚨 CRITICAL FIX: Filter tide data by BOTH date AND location
-    // 🌊 JUPITER TIDE FIX: Enhanced logging to debug tide data display
-    console.log('[ReportScreen] 🌊 ===== TIDE DATA FILTERING DEBUG =====');
+    // 🌊 JUPITER TIDE FIX: More flexible date filtering to handle timezone issues
+    // Instead of strict date matching, show tide data for today OR the next available date
+    console.log('[ReportScreen] 🌊 ===== TIDE DATA FILTERING (FLEXIBLE) =====');
     console.log('[ReportScreen] 🌊 Current location ID:', currentLocation);
     console.log('[ReportScreen] 🌊 Location display name:', locationData.displayName);
     console.log('[ReportScreen] 🌊 Location tide station ID:', locationData.tideStationId);
-    console.log('[ReportScreen] 🌊 Today\'s date:', todayDate);
+    console.log('[ReportScreen] 🌊 Today\'s date (EST):', todayDate);
     console.log('[ReportScreen] 🌊 Total tide data entries:', tideData.length);
     
     // Log all unique locations in tide data
@@ -683,10 +683,20 @@ export default function ReportScreen() {
     const uniqueTideDates = [...new Set(tideData.map(t => t.date.split('T')[0]))];
     console.log('[ReportScreen] 🌊 Unique dates in tide data:', uniqueTideDates);
     
+    // 🚨 CRITICAL FIX: More flexible tide filtering
+    // First try exact date match, then try next day (to handle timezone issues)
+    const tomorrowDate = new Date(todayDate);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowDateStr = tomorrowDate.toISOString().split('T')[0];
+    
+    console.log('[ReportScreen] 🌊 Tomorrow\'s date:', tomorrowDateStr);
+    
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
-      const matchesDate = tideDate === todayDate;
       const matchesLocation = tide.location === currentLocation;
+      
+      // Accept tide data for today OR tomorrow (to handle timezone issues)
+      const matchesDate = tideDate === todayDate || tideDate === tomorrowDateStr;
       
       console.log('[ReportScreen] 🌊 Tide filter check:', {
         tide_date: tideDate,
@@ -695,6 +705,7 @@ export default function ReportScreen() {
         tide_type: tide.type,
         tide_height: tide.height,
         today_date: todayDate,
+        tomorrow_date: tomorrowDateStr,
         current_location: currentLocation,
         matches_date: matchesDate,
         matches_location: matchesLocation,
@@ -709,6 +720,7 @@ export default function ReportScreen() {
       locationId: currentLocation,
       tideStationId: locationData.tideStationId,
       todayDate: todayDate,
+      tomorrowDate: tomorrowDateStr,
       totalTideData: tideData.length,
       filteredTides: reportTides.length,
       allTideLocations: uniqueTideLocations,
@@ -719,7 +731,7 @@ export default function ReportScreen() {
       console.log('[ReportScreen] 🌊 ⚠️ NO TIDE DATA FOUND FOR', locationData.displayName);
       console.log('[ReportScreen] 🌊 Possible reasons:');
       console.log('[ReportScreen] 🌊 1. Location ID mismatch:', currentLocation, 'vs tide data locations:', uniqueTideLocations);
-      console.log('[ReportScreen] 🌊 2. Date mismatch:', todayDate, 'vs tide data dates:', uniqueTideDates);
+      console.log('[ReportScreen] 🌊 2. Date mismatch: today:', todayDate, 'tomorrow:', tomorrowDateStr, 'vs tide data dates:', uniqueTideDates);
       console.log('[ReportScreen] 🌊 3. No tide data fetched for this location yet');
     } else {
       console.log('[ReportScreen] 🌊 ✅ Found', reportTides.length, 'tide entries for', locationData.displayName);
