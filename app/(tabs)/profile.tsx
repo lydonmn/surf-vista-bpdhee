@@ -22,7 +22,8 @@ import {
   openNotificationSettings,
   getNotificationLocations,
   setNotificationLocations,
-  ensurePushTokenRegistered
+  ensurePushTokenRegistered,
+  requestNotificationPermissions
 } from '@/utils/pushNotifications';
 
 export default function ProfileScreen() {
