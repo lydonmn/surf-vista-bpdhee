@@ -667,6 +667,22 @@ export default function ReportScreen() {
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
     // 🚨 CRITICAL FIX: Filter tide data by BOTH date AND location
+    // 🌊 JUPITER TIDE FIX: Enhanced logging to debug tide data display
+    console.log('[ReportScreen] 🌊 ===== TIDE DATA FILTERING DEBUG =====');
+    console.log('[ReportScreen] 🌊 Current location ID:', currentLocation);
+    console.log('[ReportScreen] 🌊 Location display name:', locationData.displayName);
+    console.log('[ReportScreen] 🌊 Location tide station ID:', locationData.tideStationId);
+    console.log('[ReportScreen] 🌊 Today\'s date:', todayDate);
+    console.log('[ReportScreen] 🌊 Total tide data entries:', tideData.length);
+    
+    // Log all unique locations in tide data
+    const uniqueTideLocations = [...new Set(tideData.map(t => t.location))];
+    console.log('[ReportScreen] 🌊 Unique locations in tide data:', uniqueTideLocations);
+    
+    // Log all unique dates in tide data
+    const uniqueTideDates = [...new Set(tideData.map(t => t.date.split('T')[0]))];
+    console.log('[ReportScreen] 🌊 Unique dates in tide data:', uniqueTideDates);
+    
     const reportTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
       const matchesDate = tideDate === todayDate;
@@ -675,6 +691,9 @@ export default function ReportScreen() {
       console.log('[ReportScreen] 🌊 Tide filter check:', {
         tide_date: tideDate,
         tide_location: tide.location,
+        tide_time: tide.time,
+        tide_type: tide.type,
+        tide_height: tide.height,
         today_date: todayDate,
         current_location: currentLocation,
         matches_date: matchesDate,
@@ -685,15 +704,35 @@ export default function ReportScreen() {
       return matchesDate && matchesLocation;
     });
     
-    console.log('[ReportScreen] 🌊 TIDE DATA DEBUG:', {
+    console.log('[ReportScreen] 🌊 TIDE DATA SUMMARY:', {
       location: locationData.displayName,
-      currentLocation: currentLocation,
+      locationId: currentLocation,
+      tideStationId: locationData.tideStationId,
       todayDate: todayDate,
       totalTideData: tideData.length,
       filteredTides: reportTides.length,
-      allTideLocations: [...new Set(tideData.map(t => t.location))],
-      allTideDates: [...new Set(tideData.map(t => t.date.split('T')[0]))],
+      allTideLocations: uniqueTideLocations,
+      allTideDates: uniqueTideDates,
     });
+    
+    if (reportTides.length === 0) {
+      console.log('[ReportScreen] 🌊 ⚠️ NO TIDE DATA FOUND FOR', locationData.displayName);
+      console.log('[ReportScreen] 🌊 Possible reasons:');
+      console.log('[ReportScreen] 🌊 1. Location ID mismatch:', currentLocation, 'vs tide data locations:', uniqueTideLocations);
+      console.log('[ReportScreen] 🌊 2. Date mismatch:', todayDate, 'vs tide data dates:', uniqueTideDates);
+      console.log('[ReportScreen] 🌊 3. No tide data fetched for this location yet');
+    } else {
+      console.log('[ReportScreen] 🌊 ✅ Found', reportTides.length, 'tide entries for', locationData.displayName);
+      reportTides.forEach((tide, idx) => {
+        console.log(`[ReportScreen] 🌊 Tide ${idx + 1}:`, {
+          time: tide.time,
+          type: tide.type,
+          height: tide.height,
+          date: tide.date
+        });
+      });
+    }
+    console.log('[ReportScreen] 🌊 =====================================');
     
     const todayDisplayDate = formatDateString(todayDate);
     
