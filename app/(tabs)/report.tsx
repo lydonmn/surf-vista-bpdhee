@@ -584,13 +584,24 @@ export default function ReportScreen() {
     const surfHeightValue = displayData.surf_height || displayData.wave_height;
     const surfHeightDisplay = isValidValue(surfHeightValue) ? surfHeightValue : 'N/A';
     
-    // 🚨 CRITICAL FIX: Wind data - prioritize surf_conditions (displayData) which has the most current data
-    // The issue was that we were checking displayData.wind_speed which might be undefined if not merged properly
-    // Always check surfConditions first (most current), then weatherData, then forecast
-    const windSpeedValue = surfConditions?.wind_speed || displayData.wind_speed || weatherData?.wind_speed || todaysWeatherForecast?.wind_speed;
+    // 🚨 CRITICAL FIX: Wind data - prioritize weatherData (most accurate), then surfConditions, then forecast
+    // weatherData comes from NOAA weather service and is more reliable for wind than buoy data
+    const windSpeedValue = isValidValue(weatherData?.wind_speed)
+      ? weatherData.wind_speed
+      : isValidValue(surfConditions?.wind_speed)
+        ? surfConditions.wind_speed
+        : isValidValue(displayData.wind_speed)
+          ? displayData.wind_speed
+          : todaysWeatherForecast?.wind_speed;
     const windSpeedDisplay = isValidValue(windSpeedValue) ? windSpeedValue : 'N/A';
     
-    const windDirectionValue = surfConditions?.wind_direction || displayData.wind_direction || weatherData?.wind_direction || todaysWeatherForecast?.wind_direction;
+    const windDirectionValue = isValidValue(weatherData?.wind_direction)
+      ? weatherData.wind_direction
+      : isValidValue(surfConditions?.wind_direction)
+        ? surfConditions.wind_direction
+        : isValidValue(displayData.wind_direction)
+          ? displayData.wind_direction
+          : todaysWeatherForecast?.wind_direction;
     const windDirectionDisplay = isValidValue(windDirectionValue) ? windDirectionValue : 'N/A';
     
     // 🚨 CRITICAL FIX: Water Temperature - prioritize surf_conditions which has the correct station data
@@ -613,17 +624,24 @@ export default function ReportScreen() {
     const lowTempDisplay = isValidValue(lowTempValue) ? `${lowTempValue}°F` : 'N/A';
     
     console.log('[ReportScreen] ===== DISPLAY DATA CHECK =====');
+    console.log('[ReportScreen] Location:', locationData.displayName);
     console.log('[ReportScreen] 🏄 Surf height to display:', surfHeightDisplay);
     console.log('[ReportScreen] 🌬️ Wind to display:', windSpeedDisplay, windDirectionDisplay);
     console.log('[ReportScreen] 🌬️ Wind sources checked:', {
-      surfConditions_wind_speed: surfConditions?.wind_speed,
-      surfConditions_wind_direction: surfConditions?.wind_direction,
-      displayData_wind_speed: displayData.wind_speed,
-      displayData_wind_direction: displayData.wind_direction,
       weatherData_wind_speed: weatherData?.wind_speed,
       weatherData_wind_direction: weatherData?.wind_direction,
+      weatherData_isValid_speed: isValidValue(weatherData?.wind_speed),
+      weatherData_isValid_direction: isValidValue(weatherData?.wind_direction),
+      surfConditions_wind_speed: surfConditions?.wind_speed,
+      surfConditions_wind_direction: surfConditions?.wind_direction,
+      surfConditions_isValid_speed: isValidValue(surfConditions?.wind_speed),
+      surfConditions_isValid_direction: isValidValue(surfConditions?.wind_direction),
+      displayData_wind_speed: displayData.wind_speed,
+      displayData_wind_direction: displayData.wind_direction,
       forecast_wind_speed: todaysWeatherForecast?.wind_speed,
       forecast_wind_direction: todaysWeatherForecast?.wind_direction,
+      final_windSpeedValue: windSpeedValue,
+      final_windDirectionValue: windDirectionValue,
     });
     console.log('[ReportScreen] 🌡️ Water temp to display:', waterTempFormatted);
     console.log('[ReportScreen] 🌡️ Water temp sources checked:', {
@@ -637,7 +655,6 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Data source:', surfConditions ? 'surf_conditions (real-time)' : 'report (stored)');
     console.log('[ReportScreen] Data updated at:', displayData.updated_at);
     console.log('[ReportScreen] ✅ FRONTEND VERIFICATION: All data fields are being displayed correctly');
-    console.log('[ReportScreen] ✅ Buoy 41004 data is flowing: Wave Height, Period, Swell Direction, Wind, Water Temp');
     console.log('[ReportScreen] ================================');
     
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
