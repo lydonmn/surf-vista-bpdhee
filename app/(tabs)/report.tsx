@@ -1,6 +1,6 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Animated } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Animated, Image } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router, useFocusEffect } from "expo-router";
@@ -141,12 +141,9 @@ export default function ReportScreen() {
   const hasLoadedDataRef = useRef(false);
   const hasLoadedVideoRef = useRef(false);
   
-  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for mushroom cloud effect
-  const cloudScale = useRef(new Animated.Value(0)).current;
-  const cloudOpacity = useRef(new Animated.Value(0)).current;
-  const stemScale = useRef(new Animated.Value(0)).current;
-  const stemOpacity = useRef(new Animated.Value(0)).current;
-  const flashOpacity = useRef(new Animated.Value(0)).current;
+  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for mushroom cloud GIF
+  const explosionScale = useRef(new Animated.Value(0)).current;
+  const explosionOpacity = useRef(new Animated.Value(0)).current;
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -316,100 +313,56 @@ export default function ReportScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
   
-  // 🚨 NUCLEAR STOKE: Trigger mushroom cloud animation when rating is 11
+  // 🚨 NUCLEAR STOKE: Trigger mushroom cloud GIF animation when rating is 11
   useEffect(() => {
     if (currentRating >= 11) {
       console.log('[ReportScreen] 💥 NUCLEAR STOKE DETECTED! Rating:', currentRating);
-      console.log('[ReportScreen] 💥 Triggering mushroom cloud animation');
+      console.log('[ReportScreen] 💥 Triggering mushroom cloud GIF animation');
       
       // Reset animation values
-      cloudScale.setValue(0);
-      cloudOpacity.setValue(0);
-      stemScale.setValue(0);
-      stemOpacity.setValue(0);
-      flashOpacity.setValue(0);
+      explosionScale.setValue(0);
+      explosionOpacity.setValue(0);
       
       // Trigger mushroom cloud animation sequence
       Animated.loop(
         Animated.sequence([
-          // Initial flash
-          Animated.timing(flashOpacity, {
-            toValue: 1,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(flashOpacity, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          // Stem rises
+          // Fade in and scale up
           Animated.parallel([
-            Animated.timing(stemScale, {
-              toValue: 1,
-              duration: 600,
-              useNativeDriver: true,
-            }),
-            Animated.timing(stemOpacity, {
-              toValue: 1,
-              duration: 400,
-              useNativeDriver: true,
-            }),
-          ]),
-          // Cloud forms and expands
-          Animated.parallel([
-            Animated.timing(cloudScale, {
+            Animated.timing(explosionScale, {
               toValue: 1,
               duration: 800,
               useNativeDriver: true,
             }),
-            Animated.timing(cloudOpacity, {
+            Animated.timing(explosionOpacity, {
               toValue: 1,
               duration: 600,
               useNativeDriver: true,
             }),
           ]),
           // Hold
-          Animated.delay(1000),
+          Animated.delay(2000),
           // Fade out
-          Animated.parallel([
-            Animated.timing(cloudOpacity, {
-              toValue: 0,
-              duration: 800,
-              useNativeDriver: true,
-            }),
-            Animated.timing(stemOpacity, {
-              toValue: 0,
-              duration: 800,
-              useNativeDriver: true,
-            }),
-          ]),
+          Animated.timing(explosionOpacity, {
+            toValue: 0,
+            duration: 800,
+            useNativeDriver: true,
+          }),
           // Reset for loop
-          Animated.parallel([
-            Animated.timing(cloudScale, {
-              toValue: 0,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-            Animated.timing(stemScale, {
-              toValue: 0,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-          ]),
+          Animated.timing(explosionScale, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
           // Pause before next loop
-          Animated.delay(1500),
+          Animated.delay(1000),
         ])
       ).start();
     } else {
       // Stop animation if rating drops below 11
-      cloudScale.stopAnimation();
-      cloudOpacity.stopAnimation();
-      stemScale.stopAnimation();
-      stemOpacity.stopAnimation();
-      flashOpacity.stopAnimation();
+      explosionScale.stopAnimation();
+      explosionOpacity.stopAnimation();
     }
-  }, [currentRating, cloudScale, cloudOpacity, stemScale, stemOpacity, flashOpacity]);
+  }, [currentRating, explosionScale, explosionOpacity]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -896,44 +849,20 @@ export default function ReportScreen() {
           </View>
         </View>
         
-        {/* 🚨 NUCLEAR STOKE ANIMATION: Mushroom cloud when rating is 11 */}
+        {/* 🚨 NUCLEAR STOKE ANIMATION: Mushroom cloud GIF when rating is 11 */}
         {displayRating >= 11 && (
           <View style={styles.nuclearStokeContainer}>
-            <View style={styles.mushroomCloudContainer}>
-              {/* Flash effect */}
-              <Animated.View
-                style={[
-                  styles.flashEffect,
-                  {
-                    opacity: flashOpacity,
-                  },
-                ]}
-              />
-              
-              {/* Mushroom cloud stem */}
-              <Animated.View
-                style={[
-                  styles.cloudStem,
-                  {
-                    opacity: stemOpacity,
-                    transform: [{ scaleY: stemScale }],
-                  },
-                ]}
-              />
-              
-              {/* Mushroom cloud top */}
-              <Animated.View
-                style={[
-                  styles.cloudTop,
-                  {
-                    opacity: cloudOpacity,
-                    transform: [{ scale: cloudScale }],
-                  },
-                ]}
-              >
-                <View style={styles.cloudTopInner} />
-              </Animated.View>
-            </View>
+            <Animated.Image
+              source={require('@/assets/images/ace6cbd5-1c17-407c-9d1e-90a30de27c70.gif')}
+              style={[
+                styles.mushroomCloudGif,
+                {
+                  opacity: explosionOpacity,
+                  transform: [{ scale: explosionScale }],
+                },
+              ]}
+              resizeMode="contain"
+            />
             
             <View style={styles.nuclearStokeTextContainer}>
               <Text style={styles.nuclearStokeTitle}>💥 {nukingText} 💥</Text>
@@ -1914,7 +1843,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontStyle: 'italic',
   },
-  // 🚨 NUCLEAR STOKE ANIMATION STYLES - Compact mushroom cloud
+  // 🚨 NUCLEAR STOKE ANIMATION STYLES - Using actual mushroom cloud GIF
   nuclearStokeContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1926,61 +1855,10 @@ const styles = StyleSheet.create({
     borderColor: '#FF4500',
     overflow: 'hidden',
   },
-  mushroomCloudContainer: {
-    width: 100,
-    height: 100,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+  mushroomCloudGif: {
+    width: 200,
+    height: 200,
     marginBottom: 12,
-    position: 'relative',
-  },
-  flashEffect: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 50,
-  },
-  cloudStem: {
-    position: 'absolute',
-    bottom: 0,
-    width: 20,
-    height: 50,
-    backgroundColor: '#FF6347',
-    borderRadius: 10,
-    shadowColor: '#FF4500',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  cloudTop: {
-    position: 'absolute',
-    top: 10,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FF8C00',
-    shadowColor: '#FF4500',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 15,
-    elevation: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cloudTopInner: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFD700',
-    shadowColor: '#FFA500',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 8,
-    elevation: 8,
   },
   nuclearStokeTextContainer: {
     alignItems: 'center',
