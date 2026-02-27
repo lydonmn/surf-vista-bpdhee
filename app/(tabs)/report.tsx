@@ -141,10 +141,12 @@ export default function ReportScreen() {
   const hasLoadedDataRef = useRef(false);
   const hasLoadedVideoRef = useRef(false);
   
-  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for explosion effect
-  const explosionScale = useRef(new Animated.Value(0)).current;
-  const explosionOpacity = useRef(new Animated.Value(0)).current;
-  const explosionRotation = useRef(new Animated.Value(0)).current;
+  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for mushroom cloud effect
+  const cloudScale = useRef(new Animated.Value(0)).current;
+  const cloudOpacity = useRef(new Animated.Value(0)).current;
+  const stemScale = useRef(new Animated.Value(0)).current;
+  const stemOpacity = useRef(new Animated.Value(0)).current;
+  const flashOpacity = useRef(new Animated.Value(0)).current;
 
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     if (latestVideo?.video_url) {
@@ -314,63 +316,100 @@ export default function ReportScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
   
-  // 🚨 NUCLEAR STOKE: Trigger explosion animation when rating is 11
+  // 🚨 NUCLEAR STOKE: Trigger mushroom cloud animation when rating is 11
   useEffect(() => {
     if (currentRating >= 11) {
       console.log('[ReportScreen] 💥 NUCLEAR STOKE DETECTED! Rating:', currentRating);
-      console.log('[ReportScreen] 💥 Triggering nuclear explosion animation');
+      console.log('[ReportScreen] 💥 Triggering mushroom cloud animation');
       
       // Reset animation values
-      explosionScale.setValue(0);
-      explosionOpacity.setValue(0);
-      explosionRotation.setValue(0);
+      cloudScale.setValue(0);
+      cloudOpacity.setValue(0);
+      stemScale.setValue(0);
+      stemOpacity.setValue(0);
+      flashOpacity.setValue(0);
       
-      // Trigger explosion animation sequence
-      Animated.sequence([
-        // Initial flash
-        Animated.parallel([
-          Animated.timing(explosionOpacity, {
+      // Trigger mushroom cloud animation sequence
+      Animated.loop(
+        Animated.sequence([
+          // Initial flash
+          Animated.timing(flashOpacity, {
             toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(flashOpacity, {
+            toValue: 0,
             duration: 200,
             useNativeDriver: true,
           }),
-          Animated.timing(explosionScale, {
-            toValue: 0.5,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-        ]),
-        // Expand explosion
-        Animated.parallel([
-          Animated.timing(explosionScale, {
-            toValue: 1.5,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(explosionRotation, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ]),
-        // Fade out
-        Animated.timing(explosionOpacity, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Loop the animation
-        setTimeout(() => {
-          if (currentRating >= 11) {
-            explosionScale.setValue(0);
-            explosionOpacity.setValue(0);
-            explosionRotation.setValue(0);
-          }
-        }, 2000);
-      });
+          // Stem rises
+          Animated.parallel([
+            Animated.timing(stemScale, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(stemOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+          // Cloud forms and expands
+          Animated.parallel([
+            Animated.timing(cloudScale, {
+              toValue: 1,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+            Animated.timing(cloudOpacity, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ]),
+          // Hold
+          Animated.delay(1000),
+          // Fade out
+          Animated.parallel([
+            Animated.timing(cloudOpacity, {
+              toValue: 0,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+            Animated.timing(stemOpacity, {
+              toValue: 0,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+          ]),
+          // Reset for loop
+          Animated.parallel([
+            Animated.timing(cloudScale, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: true,
+            }),
+            Animated.timing(stemScale, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: true,
+            }),
+          ]),
+          // Pause before next loop
+          Animated.delay(1500),
+        ])
+      ).start();
+    } else {
+      // Stop animation if rating drops below 11
+      cloudScale.stopAnimation();
+      cloudOpacity.stopAnimation();
+      stemScale.stopAnimation();
+      stemOpacity.stopAnimation();
+      flashOpacity.stopAnimation();
     }
-  }, [currentRating, explosionScale, explosionOpacity, explosionRotation]);
+  }, [currentRating, cloudScale, cloudOpacity, stemScale, stemOpacity, flashOpacity]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
@@ -821,11 +860,6 @@ export default function ReportScreen() {
     console.log('[ReportScreen] Is custom (edited):', isCustomReport);
     console.log('[ReportScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
     
-    const rotateInterpolate = explosionRotation.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['0deg', '360deg'],
-    });
-    
     // 🚨 NUCLEAR STOKE: Special verbiage for 11/10 rating
     const nukingText = "IT'S NUKING";
     const nukingSubtext = "Once-in-a-lifetime epic session!";
@@ -862,33 +896,45 @@ export default function ReportScreen() {
           </View>
         </View>
         
-        {/* 🚨 NUCLEAR STOKE ANIMATION: Display when rating is 11 */}
+        {/* 🚨 NUCLEAR STOKE ANIMATION: Mushroom cloud when rating is 11 */}
         {displayRating >= 11 && (
           <View style={styles.nuclearStokeContainer}>
-            <Animated.View
-              style={[
-                styles.explosionAnimation,
-                {
-                  opacity: explosionOpacity,
-                  transform: [
-                    { scale: explosionScale },
-                    { rotate: rotateInterpolate },
-                  ],
-                },
-              ]}
-            >
-              <View style={styles.explosionCore}>
-                <IconSymbol
-                  ios_icon_name="flame.fill"
-                  android_material_icon_name="local-fire-department"
-                  size={80}
-                  color="#FF4500"
-                />
-              </View>
-              <View style={styles.explosionRing1} />
-              <View style={styles.explosionRing2} />
-              <View style={styles.explosionRing3} />
-            </Animated.View>
+            <View style={styles.mushroomCloudContainer}>
+              {/* Flash effect */}
+              <Animated.View
+                style={[
+                  styles.flashEffect,
+                  {
+                    opacity: flashOpacity,
+                  },
+                ]}
+              />
+              
+              {/* Mushroom cloud stem */}
+              <Animated.View
+                style={[
+                  styles.cloudStem,
+                  {
+                    opacity: stemOpacity,
+                    transform: [{ scaleY: stemScale }],
+                  },
+                ]}
+              />
+              
+              {/* Mushroom cloud top */}
+              <Animated.View
+                style={[
+                  styles.cloudTop,
+                  {
+                    opacity: cloudOpacity,
+                    transform: [{ scale: cloudScale }],
+                  },
+                ]}
+              >
+                <View style={styles.cloudTopInner} />
+              </Animated.View>
+            </View>
+            
             <View style={styles.nuclearStokeTextContainer}>
               <Text style={styles.nuclearStokeTitle}>💥 {nukingText} 💥</Text>
               <Text style={styles.nuclearStokeSubtitle}>
@@ -1868,64 +1914,80 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontStyle: 'italic',
   },
-  // 🚨 NUCLEAR STOKE ANIMATION STYLES
+  // 🚨 NUCLEAR STOKE ANIMATION STYLES - Compact mushroom cloud
   nuclearStokeContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 24,
-    marginVertical: 16,
+    paddingVertical: 20,
+    marginVertical: 12,
     backgroundColor: 'rgba(255, 69, 0, 0.1)',
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#FF4500',
     overflow: 'hidden',
   },
-  explosionAnimation: {
-    width: 200,
-    height: 200,
+  mushroomCloudContainer: {
+    width: 100,
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: 12,
+    position: 'relative',
+  },
+  flashEffect: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 50,
+  },
+  cloudStem: {
+    position: 'absolute',
+    bottom: 0,
+    width: 20,
+    height: 50,
+    backgroundColor: '#FF6347',
+    borderRadius: 10,
+    shadowColor: '#FF4500',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  cloudTop: {
+    position: 'absolute',
+    top: 10,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF8C00',
+    shadowColor: '#FF4500',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 15,
+    elevation: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
-  explosionCore: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  explosionRing1: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 69, 0, 0.3)',
-    borderWidth: 3,
-    borderColor: '#FF4500',
-  },
-  explosionRing2: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(255, 140, 0, 0.2)',
-    borderWidth: 2,
-    borderColor: '#FF8C00',
-  },
-  explosionRing3: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    borderWidth: 1,
-    borderColor: '#FFD700',
+  cloudTopInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFD700',
+    shadowColor: '#FFA500',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 8,
+    elevation: 8,
   },
   nuclearStokeTextContainer: {
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   nuclearStokeTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#FF0000',
     textAlign: 'center',
@@ -1934,7 +1996,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   nuclearStokeSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FF4500',
     textAlign: 'center',
