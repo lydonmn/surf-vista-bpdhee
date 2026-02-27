@@ -1843,7 +1843,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontStyle: 'italic',
   },
-  // 🚨 NUCLEAR STOKE ANIMATION STYLES - Using actual mushroom cloud GIF
+  // 🚨 NUCLEAR STOKE ANIMATION STYLES - Using actual mushroom cloud GIF with rounded edges
   nuclearStokeContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1859,6 +1859,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     marginBottom: 12,
+    borderRadius: 16,
   },
   nuclearStokeTextContainer: {
     alignItems: 'center',
