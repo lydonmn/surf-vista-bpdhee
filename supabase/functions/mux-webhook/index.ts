@@ -108,6 +108,7 @@ Deno.serve(async (req: Request) => {
       console.log('[mux-webhook] 🎬 Asset ready event');
       console.log('[mux-webhook] Asset ID:', assetId);
       console.log('[mux-webhook] Playback ID:', playbackId);
+      console.log('[mux-webhook] Full payload:', JSON.stringify(payload, null, 2));
 
       if (!assetId || !playbackId) {
         console.error('[mux-webhook] ❌ Missing asset ID or playback ID');
@@ -144,6 +145,14 @@ Deno.serve(async (req: Request) => {
 
       if (!updateData || updateData.length === 0) {
         console.warn('[mux-webhook] ⚠️ No video found with mux_asset_id:', assetId);
+        // Log all videos to help debug
+        const { data: allVideos } = await supabase
+          .from('videos')
+          .select('id, mux_upload_id, mux_asset_id, status, video_url')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        console.log('[mux-webhook] Recent videos:', JSON.stringify(allVideos, null, 2));
+        
         return new Response(
           JSON.stringify({ message: 'No matching video found' }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -228,6 +237,7 @@ Deno.serve(async (req: Request) => {
       console.log('[mux-webhook] 📤 Upload asset created event');
       console.log('[mux-webhook] Upload ID:', uploadId);
       console.log('[mux-webhook] Asset ID:', assetId);
+      console.log('[mux-webhook] Full payload:', JSON.stringify(payload, null, 2));
 
       if (!uploadId || !assetId) {
         console.error('[mux-webhook] ❌ Missing upload ID or asset ID');
@@ -258,6 +268,14 @@ Deno.serve(async (req: Request) => {
 
       if (!updateData || updateData.length === 0) {
         console.warn('[mux-webhook] ⚠️ No video found with mux_upload_id:', uploadId);
+        // Log all videos to help debug
+        const { data: allVideos } = await supabase
+          .from('videos')
+          .select('id, mux_upload_id, mux_asset_id, status')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        console.log('[mux-webhook] Recent videos:', JSON.stringify(allVideos, null, 2));
+        
         return new Response(
           JSON.stringify({ message: 'No matching video found' }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }

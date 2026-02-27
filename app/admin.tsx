@@ -611,6 +611,69 @@ export default function AdminScreen() {
           <View style={[styles.section, styles.adminActionsSection, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Super Admin Actions</Text>
             
+            {/* Sync Videos Button */}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#9C27B0' }]}
+              onPress={async () => {
+                console.log('[AdminScreen] Syncing videos with Mux...');
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (!session) {
+                    Alert.alert('Error', 'Not authenticated');
+                    return;
+                  }
+
+                  Alert.alert(
+                    'Syncing Videos',
+                    'Checking all processing/errored videos with Mux...',
+                    [{ text: 'OK' }]
+                  );
+
+                  const response = await fetch(
+                    `${supabase.supabaseUrl}/functions/v1/mux-sync-videos`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json',
+                      },
+                    }
+                  );
+
+                  const result = await response.json();
+                  console.log('[AdminScreen] Sync result:', result);
+
+                  if (result.success) {
+                    const updatedCount = result.results.filter((r: any) => r.status === 'updated').length;
+                    Alert.alert(
+                      'Sync Complete',
+                      `Checked ${result.totalVideos} videos. ${updatedCount} videos were updated to active status.`,
+                      [{ text: 'OK', onPress: () => refreshVideos() }]
+                    );
+                  } else {
+                    Alert.alert('Sync Failed', result.error || 'Unknown error');
+                  }
+                } catch (error: any) {
+                  console.error('[AdminScreen] Sync error:', error);
+                  Alert.alert('Sync Failed', error.message || 'Unknown error');
+                }
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.clockwise.circle.fill"
+                android_material_icon_name="sync"
+                size={22}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Sync Videos with Mux</Text>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+
             {/* Manage All Users - Only for lydonmn@gmail.com */}
             {user?.email === 'lydonmn@gmail.com' && (
               <TouchableOpacity
