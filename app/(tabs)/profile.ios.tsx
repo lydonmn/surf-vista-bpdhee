@@ -168,7 +168,7 @@ export default function ProfileScreen() {
     }
   };
 
-  // ✅ V9.0 CRITICAL FIX: Enhanced toggle handler with better state management
+  // ✅ V10.0 CRITICAL FIX: Proper toggle state management - don't revert on failure
   const handleToggleDailyNotifications = async (value: boolean) => {
     if (!user?.id) {
       console.error('[ProfileScreen] ❌ No user ID available');
@@ -181,7 +181,7 @@ export default function ProfileScreen() {
     }
 
     console.log('[ProfileScreen] ═══════════════════════════════════════');
-    console.log('[ProfileScreen] 🔔 V9.0 CRITICAL FIX: TOGGLE PRESSED');
+    console.log('[ProfileScreen] 🔔 V10.0 CRITICAL FIX: TOGGLE PRESSED');
     console.log('[ProfileScreen] ═══════════════════════════════════════');
     console.log('[ProfileScreen] User toggled notifications to:', value);
     console.log('[ProfileScreen] Current state:', dailyNotificationsEnabled);
@@ -199,7 +199,7 @@ export default function ProfileScreen() {
       }
     }
 
-    // ✅ V9.0 CRITICAL FIX: Set loading state IMMEDIATELY
+    // ✅ V10.0 CRITICAL FIX: Set loading state IMMEDIATELY
     console.log('[ProfileScreen] ⏳ Setting loading state...');
     setIsTogglingNotifications(true);
 
@@ -209,7 +209,7 @@ export default function ProfileScreen() {
       await refreshSession();
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // ✅ V9.0 CRITICAL FIX: Call the main function that handles everything
+      // ✅ V10.0 CRITICAL FIX: Call the main function that handles everything
       console.log('[ProfileScreen] 📝 Calling setDailyReportNotifications...');
       console.log('[ProfileScreen] 📝 This will register token and update database...');
       const success = await setDailyReportNotifications(user.id, value);
@@ -218,7 +218,7 @@ export default function ProfileScreen() {
       if (success) {
         console.log('[ProfileScreen] ✅ Notifications updated successfully');
         
-        // ✅ V9.0 CRITICAL FIX: Update local state IMMEDIATELY
+        // ✅ V10.0 CRITICAL FIX: Update local state ONLY on success
         setDailyNotificationsEnabled(value);
         
         const statusText = value ? 'Enabled' : 'Disabled';
@@ -240,12 +240,16 @@ export default function ProfileScreen() {
       } else {
         console.error('[ProfileScreen] ❌ Failed to update notifications');
         
-        // ✅ V9.0 CRITICAL FIX: DO NOT revert toggle - keep it in sync with what user clicked
+        // ✅ V10.0 CRITICAL FIX: DO NOT update state on failure
+        // The toggle will stay in its original position
         // The setDailyReportNotifications function already showed an error alert
-        console.log('[ProfileScreen] ℹ️ Keeping toggle state as-is (error already shown to user)');
+        console.log('[ProfileScreen] ℹ️ Keeping toggle in original position (operation failed)');
       }
     } catch (error) {
       console.error('[ProfileScreen] ❌ Exception toggling notifications:', error);
+      
+      // ✅ V10.0 CRITICAL FIX: DO NOT update state on exception
+      console.log('[ProfileScreen] ℹ️ Keeping toggle in original position (exception occurred)');
       
       Alert.alert(
         'Error',
@@ -253,7 +257,7 @@ export default function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } finally {
-      // ✅ V9.0 CRITICAL FIX: ALWAYS clear loading state
+      // ✅ V10.0 CRITICAL FIX: ALWAYS clear loading state
       console.log('[ProfileScreen] ✅ Clearing loading state');
       setIsTogglingNotifications(false);
     }
@@ -1013,7 +1017,7 @@ export default function ProfileScreen() {
             Notification Locations: {selectedNotificationLocations.join(', ')}
           </Text>
           <Text style={[styles.debugText, { color: colors.primary, fontWeight: 'bold' }]}>
-            ℹ️ V9.0: Enhanced error handling
+            ℹ️ V10.0: Fixed toggle state management
           </Text>
         </View>
       )}
@@ -1023,7 +1027,7 @@ export default function ProfileScreen() {
           SurfVista - Folly Beach, SC
         </Text>
         <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          Version 9.0
+          Version 10.0
         </Text>
       </View>
 
