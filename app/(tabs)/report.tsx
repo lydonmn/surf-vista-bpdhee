@@ -826,6 +826,10 @@ export default function ReportScreen() {
       outputRange: ['0deg', '360deg'],
     });
     
+    // 🚨 NUCLEAR STOKE: Special verbiage for 11/10 rating
+    const nukingText = "IT'S NUKING";
+    const nukingSubtext = "Once-in-a-lifetime epic session!";
+    
     return (
       <View 
         key={reportKey}
@@ -886,9 +890,9 @@ export default function ReportScreen() {
               <View style={styles.explosionRing3} />
             </Animated.View>
             <View style={styles.nuclearStokeTextContainer}>
-              <Text style={styles.nuclearStokeTitle}>💥 NUCLEAR STOKE! 💥</Text>
+              <Text style={styles.nuclearStokeTitle}>💥 {nukingText} 💥</Text>
               <Text style={styles.nuclearStokeSubtitle}>
-                Once-in-a-lifetime epic session!
+                {nukingSubtext}
               </Text>
             </View>
           </View>
