@@ -1,3 +1,4 @@
+
 {
   "cli": {
     "version": ">= 5.0.0"
@@ -22,8 +23,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": true,
-        "bundleIdentifier": "Therealfollysurfreport.SurfVista"
+        "autoIncrement": true
       },
       "android": {
         "buildType": "apk"
@@ -35,7 +35,6 @@
         "simulator": false,
         "buildConfiguration": "Release",
         "autoIncrement": true,
-        "bundleIdentifier": "Therealfollysurfreport.SurfVista",
         "image": "latest"
       }
     }
@@ -48,5 +47,5 @@
         "appleTeamId": "your-team-id"
       }
     }
-  }
+  },
 }
