@@ -23,7 +23,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": true
+        "autoIncrement": false
       },
       "android": {
         "buildType": "apk"
@@ -34,7 +34,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": true,
+        "autoIncrement": false,
         "image": "latest"
       }
     }
@@ -47,5 +47,5 @@
         "appleTeamId": "your-team-id"
       }
     }
-  },
+  }
 }
