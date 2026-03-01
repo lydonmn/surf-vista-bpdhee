@@ -14,7 +14,17 @@ import { router } from 'expo-router';
 import { initializeVideoDownloads, configureBackgroundDownloads } from '@/utils/videoDownloadInit';
 import { configureAudioSession } from '@/utils/audioSession';
 
+// Prevent auto-hide of splash screen
 SplashScreen.preventAutoHideAsync();
+
+// Configure notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -31,58 +41,74 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // 🚨 CRITICAL FIX: Configure iOS audio session on app startup
-  // This prevents audio cutout at ~10 seconds into video playback
+  // 🚨 CRITICAL FIX: Wrap ALL initialization in try-catch to prevent crashes
   useEffect(() => {
-    const initializeAudioAndVideo = async () => {
+    const initializeApp = async () => {
       try {
-        console.log('[RootLayout] 🎵 Configuring iOS audio session for continuous video playback...');
+        console.log('[RootLayout] 🚀 Starting app initialization...');
         
-        // 🚨 CRITICAL: Configure audio session FIRST before any video playback
-        await configureAudioSession({
-          category: 'playback',
-          mode: 'moviePlayback',
-          mixWithOthers: false, // Exclusive audio control prevents cutouts
-        });
+        // 🚨 CRITICAL: Configure audio session with error handling
+        try {
+          console.log('[RootLayout] 🎵 Configuring iOS audio session...');
+          await configureAudioSession();
+          console.log('[RootLayout] ✅ Audio session configured');
+        } catch (audioError) {
+          console.error('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
+          // Continue - app can work without audio session config
+        }
         
-        console.log('[RootLayout] ✅ iOS audio session configured - audio cutout fix applied');
+        // 🚨 CRITICAL: Initialize video system with error handling
+        try {
+          console.log('[RootLayout] 🎬 Initializing video system...');
+          configureBackgroundDownloads();
+          await initializeVideoDownloads();
+          console.log('[RootLayout] ✅ Video system initialized');
+        } catch (videoError) {
+          console.error('[RootLayout] ⚠️ Video system init failed (non-critical):', videoError);
+          // Continue - videos will stream instead of downloading
+        }
         
-        // Then initialize video download system
-        console.log('[RootLayout] 🚀 Initializing video download system...');
-        configureBackgroundDownloads();
-        await initializeVideoDownloads();
-        console.log('[RootLayout] ✅ Video system initialized');
+        console.log('[RootLayout] ✅ App initialization complete');
       } catch (error) {
-        console.error('[RootLayout] ⚠️ Initialization failed, app will continue:', error);
-        // App continues normally - videos will stream instead of downloading
+        console.error('[RootLayout] ❌ Initialization error:', error);
+        // Don't throw - allow app to continue
       }
     };
 
-    initializeAudioAndVideo();
+    initializeApp();
   }, []);
 
+  // Setup notification listeners
   useEffect(() => {
-    // Listen for notifications when app is in foreground
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('[Notifications] Notification received:', notification);
-    });
+    try {
+      // Listen for notifications when app is in foreground
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('[Notifications] Notification received:', notification);
+      });
 
-    // Listen for notification taps
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[Notifications] Notification tapped:', response);
-      
-      const data = response.notification.request.content.data;
-      
-      // Navigate to report screen when daily report notification is tapped
-      if (data?.type === 'daily_report') {
-        console.log('[Notifications] Navigating to report screen');
-        router.push('/(tabs)/report');
-      }
-    });
+      // Listen for notification taps
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('[Notifications] Notification tapped:', response);
+        
+        const data = response.notification.request.content.data;
+        
+        // Navigate to report screen when daily report notification is tapped
+        if (data?.type === 'daily_report') {
+          console.log('[Notifications] Navigating to report screen');
+          router.push('/(tabs)/report');
+        }
+      });
+    } catch (error) {
+      console.error('[RootLayout] ⚠️ Notification listener setup failed:', error);
+    }
 
     return () => {
-      notificationListener.current?.remove();
-      responseListener.current?.remove();
+      try {
+        notificationListener.current?.remove();
+        responseListener.current?.remove();
+      } catch (error) {
+        console.error('[RootLayout] ⚠️ Notification cleanup error:', error);
+      }
     };
   }, []);
 

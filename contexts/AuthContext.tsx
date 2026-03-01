@@ -45,12 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
-      console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
-      console.log('[AuthContext] 📲 User ID:', userId);
-      
+      console.log('[AuthContext] 📲 Checking push token registration...');
       await ensurePushTokenRegistered(userId);
-      
-      console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
+      console.log('[AuthContext] 📲 Push token check complete');
     } catch (error) {
       console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
     }
@@ -125,9 +122,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
-      logoutUser().catch(error => {
+      // 🚨 CRITICAL FIX: Wrap RevenueCat logout in try-catch
+      try {
+        await logoutUser();
+      } catch (error) {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
-      });
+      }
       
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
@@ -157,16 +157,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('[AuthContext] ❌ Session refresh error:', error);
         
-        // Handle invalid/expired refresh tokens by clearing the session
         if (error.message.includes('Invalid Refresh Token') || 
             error.message.includes('Refresh Token Not Found') ||
             error.message.includes('refresh_token_not_found')) {
           console.log('[AuthContext] Invalid refresh token detected - clearing session');
           
-          // Clear the session from storage to prevent repeated errors
           await AsyncStorage.removeItem('supabase.auth.token');
-          
-          // Sign out to clear all state
           await signOut();
         }
         return;
@@ -183,7 +179,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('[AuthContext] Exception refreshing session:', error);
       
-      // If there's an exception, also try to clear the session
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
         await signOut();
@@ -212,13 +207,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (sessionError) {
           console.error('[AuthContext] Session error:', sessionError);
           
-          // Handle invalid/expired refresh tokens
           if (sessionError.message.includes('Invalid Refresh Token') || 
               sessionError.message.includes('Refresh Token Not Found') ||
               sessionError.message.includes('refresh_token_not_found')) {
             console.log('[AuthContext] Invalid refresh token on init - clearing storage');
             
-            // Clear the invalid token from storage
             try {
               await AsyncStorage.removeItem('supabase.auth.token');
             } catch (clearError) {
@@ -247,11 +240,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (mounted) {
-          console.log('[AuthContext] ✅ Initialization complete - setting isLoading=false, isInitialized=true');
+          console.log('[AuthContext] ✅ Initialization complete');
           setIsLoading(false);
           setIsInitialized(true);
         }
 
+        // 🚨 CRITICAL FIX: Wrap RevenueCat initialization in try-catch
         if (mounted && Platform.OS !== 'web') {
           console.log('[AuthContext] 💳 Starting RevenueCat...');
           
@@ -265,6 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             } catch (revenueCatError) {
               console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
+              // Don't throw - allow app to continue
             }
           })();
         }
@@ -354,16 +349,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AuthContext] Sign up:', email);
       
-      // Determine the redirect URL based on platform
       const getRedirectUrl = () => {
         if (Platform.OS === 'web') {
-          // For web, use the current origin
           if (typeof window !== 'undefined') {
             return `${window.location.origin}/verification-success`;
           }
           return undefined;
         } else {
-          // For mobile, use deep link
           return 'surfvista://verification-success';
         }
       };
@@ -539,12 +531,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const canManageLocation = useCallback((locationId: string): boolean => {
-    // Super admins can manage all locations
     if (profile?.is_admin) {
       return true;
     }
     
-    // Regional admins can only manage their assigned locations
     if (profile?.is_regional_admin && profile.managed_locations) {
       return profile.managed_locations.includes(locationId);
     }
