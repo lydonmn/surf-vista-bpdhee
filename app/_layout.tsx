@@ -61,36 +61,21 @@ export default function RootLayout() {
     initializeAudioAndVideo();
   }, []);
 
-  // ✅ CRITICAL FIX: Enhanced notification handling with data refresh trigger
   useEffect(() => {
     // Listen for notifications when app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('[Notifications] ═══════════════════════════════════════');
-      console.log('[Notifications] 🔔 NOTIFICATION RECEIVED (Foreground)');
-      console.log('[Notifications] Title:', notification.request.content.title);
-      console.log('[Notifications] Body:', notification.request.content.body);
-      console.log('[Notifications] Data:', notification.request.content.data);
-      console.log('[Notifications] ═══════════════════════════════════════');
-      
-      // ✅ CRITICAL FIX: When daily report notification arrives, trigger data refresh
-      const data = notification.request.content.data;
-      if (data?.type === 'daily_report') {
-        console.log('[Notifications] 📊 Daily report notification - data should auto-refresh via real-time subscription');
-      }
+      console.log('[Notifications] Notification received:', notification);
     });
 
     // Listen for notification taps
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[Notifications] ═══════════════════════════════════════');
-      console.log('[Notifications] 👆 NOTIFICATION TAPPED');
-      console.log('[Notifications] Data:', response.notification.request.content.data);
-      console.log('[Notifications] ═══════════════════════════════════════');
+      console.log('[Notifications] Notification tapped:', response);
       
       const data = response.notification.request.content.data;
       
       // Navigate to report screen when daily report notification is tapped
       if (data?.type === 'daily_report') {
-        console.log('[Notifications] 📱 Navigating to report screen...');
+        console.log('[Notifications] Navigating to report screen');
         router.push('/(tabs)/report');
       }
     });
