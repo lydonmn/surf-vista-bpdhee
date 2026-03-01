@@ -658,27 +658,43 @@ export function useSurfData() {
     };
   }, [fetchData]);
 
-  // Stable app state change handler with date change detection
+  // ✅ CRITICAL FIX: Enhanced app state change handler with aggressive refresh
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
+      console.log('[useSurfData] ═══════════════════════════════════════');
+      console.log('[useSurfData] 📱 APP STATE CHANGE');
+      console.log('[useSurfData] Previous state:', appStateRef.current);
+      console.log('[useSurfData] New state:', nextAppState);
+      console.log('[useSurfData] ═══════════════════════════════════════');
       
+      // ✅ CRITICAL FIX: When app comes to foreground, ALWAYS refresh
       if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
         const currentDate = getESTDate();
         const dateChanged = currentDate !== lastFetchDateRef.current;
+        
+        console.log('[useSurfData] 🔄 APP CAME TO FOREGROUND');
+        console.log('[useSurfData] Current date:', currentDate);
+        console.log('[useSurfData] Last fetch date:', lastFetchDateRef.current);
+        console.log('[useSurfData] Date changed:', dateChanged);
         
         if (dateChanged) {
           console.log('[useSurfData] 📅 DATE CHANGED while app was in background!');
           console.log('[useSurfData] Last fetch:', lastFetchDateRef.current, '→ Current:', currentDate);
           console.log('[useSurfData] Forcing immediate refresh for new day...');
           lastFetchDateRef.current = currentDate;
-          lastFetchTimeRef.current = 0; // Reset debounce
         } else {
-          console.log('[useSurfData] App came to foreground (same day), refreshing data...');
+          console.log('[useSurfData] Same day - but still refreshing to get latest data');
         }
         
+        // ✅ CRITICAL FIX: ALWAYS reset debounce when coming to foreground
+        // This ensures we fetch fresh data every time the user opens the app
+        lastFetchTimeRef.current = 0;
+        
         if (!isFetchingRef.current) {
+          console.log('[useSurfData] ✅ Triggering data refresh...');
           fetchData();
+        } else {
+          console.log('[useSurfData] ⚠️ Fetch already in progress, skipping...');
         }
       }
       
@@ -818,10 +834,24 @@ export function useSurfData() {
     };
   }, [currentLocation]);
 
-  // Cleanup on unmount
+  // ✅ CRITICAL FIX: Initial mount with date verification
   useEffect(() => {
-    console.log('[useSurfData] Hook mounted');
+    console.log('[useSurfData] ═══════════════════════════════════════');
+    console.log('[useSurfData] 🚀 HOOK MOUNTED');
+    console.log('[useSurfData] Current date:', getESTDate());
+    console.log('[useSurfData] ═══════════════════════════════════════');
+    
     isMountedRef.current = true;
+    
+    // ✅ CRITICAL FIX: On initial mount, verify we have today's data
+    const currentDate = getESTDate();
+    lastFetchDateRef.current = currentDate;
+    
+    // Trigger initial fetch
+    if (!isFetchingRef.current) {
+      console.log('[useSurfData] 🔄 Triggering initial data fetch...');
+      fetchData();
+    }
 
     return () => {
       console.log('[useSurfData] Hook unmounting, cleaning up...');
@@ -838,7 +868,7 @@ export function useSurfData() {
         retryTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [fetchData]);
 
   return {
     ...state,
