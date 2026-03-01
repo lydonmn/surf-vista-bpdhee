@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "SurfVista",
@@ -17,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "17",
+      "buildNumber": "18",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
@@ -99,9 +100,18 @@
           "icon": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
           "color": "#1E90FF"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
+          }
+        }
       ]
     ],
-    "scheme": "SurfVista",
+    "scheme": "surfvista",
     "experiments": {
       "typedRoutes": true
     },

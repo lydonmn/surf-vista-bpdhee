@@ -1,3 +1,4 @@
+
 {
   "name": "Natively",
   "version": "1.0.0",
@@ -31,8 +32,8 @@
     "eas": "^0.1.0",
     "expo": "~54.0.1",
     "expo-audio": "^1.1.1",
-    "expo-av": "^16.0.8",
     "expo-blur": "^15.0.6",
+    "expo-build-properties": "^55.0.9",
     "expo-constants": "~18.0.8",
     "expo-device": "^8.0.10",
     "expo-file-system": "^19.0.21",
