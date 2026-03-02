@@ -5,8 +5,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
-import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
-import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -42,12 +40,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   
   const isInitializingRef = useRef(false);
+  const revenueCatInitializedRef = useRef(false);
+
+  // 🚨 CRITICAL FIX G19: Lazy load RevenueCat utilities to prevent crashes
+  const getRevenueCatUtils = async () => {
+    try {
+      const { initializeRevenueCat, identifyUser, logoutUser } = await import('@/utils/superwallConfig');
+      return { initializeRevenueCat, identifyUser, logoutUser };
+    } catch (error) {
+      console.error('[AuthContext] Failed to load RevenueCat utils:', error);
+      return null;
+    }
+  };
+
+  // 🚨 CRITICAL FIX G19: Lazy load push notification utilities
+  const getPushNotificationUtils = async () => {
+    try {
+      const { ensurePushTokenRegistered } = await import('@/utils/pushNotifications');
+      return { ensurePushTokenRegistered };
+    } catch (error) {
+      console.error('[AuthContext] Failed to load push notification utils:', error);
+      return null;
+    }
+  };
 
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
       console.log('[AuthContext] 📲 Checking push token registration...');
-      await ensurePushTokenRegistered(userId);
-      console.log('[AuthContext] 📲 Push token check complete');
+      const utils = await getPushNotificationUtils();
+      if (utils) {
+        await utils.ensurePushTokenRegistered(userId);
+        console.log('[AuthContext] 📲 Push token check complete');
+      }
     } catch (error) {
       console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
     }
@@ -77,7 +101,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        registerPushTokenIfNeeded(authUser.id);
+        // Defer push token registration
+        setTimeout(() => {
+          registerPushTokenIfNeeded(authUser.id);
+        }, 2000);
         return;
       }
 
@@ -122,9 +149,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
-      // 🚨 CRITICAL FIX: Wrap RevenueCat logout in try-catch
+      // 🚨 CRITICAL FIX G19: Lazy load RevenueCat logout
       try {
-        await logoutUser();
+        const utils = await getRevenueCatUtils();
+        if (utils) {
+          await utils.logoutUser();
+        }
       } catch (error) {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
       }
@@ -245,23 +275,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsInitialized(true);
         }
 
-        // 🚨 CRITICAL FIX: Wrap RevenueCat initialization in try-catch
-        if (mounted && Platform.OS !== 'web') {
-          console.log('[AuthContext] 💳 Starting RevenueCat...');
+        // 🚨 CRITICAL FIX G19: Defer RevenueCat initialization by 3 seconds
+        // This prevents background thread crashes during app launch
+        if (mounted && Platform.OS !== 'web' && !revenueCatInitializedRef.current) {
+          console.log('[AuthContext] 💳 Scheduling RevenueCat initialization (deferred 3s)...');
           
-          (async () => {
+          setTimeout(async () => {
+            if (!mounted || revenueCatInitializedRef.current) return;
+            
             try {
-              const revenueCatInitialized = await initializeRevenueCat();
+              console.log('[AuthContext] 💳 Starting deferred RevenueCat initialization...');
+              const utils = await getRevenueCatUtils();
               
-              if (revenueCatInitialized && initialSession?.user) {
-                await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                console.log('[AuthContext] ✅ RevenueCat ready');
+              if (utils) {
+                const revenueCatInitialized = await utils.initializeRevenueCat();
+                revenueCatInitializedRef.current = true;
+                
+                if (revenueCatInitialized && initialSession?.user) {
+                  await utils.identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+                  console.log('[AuthContext] ✅ RevenueCat ready');
+                }
               }
             } catch (revenueCatError) {
               console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
               // Don't throw - allow app to continue
             }
-          })();
+          }, 3000); // 🚨 CRITICAL: 3 second delay
         }
         
       } catch (error) {
@@ -289,7 +328,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] SIGNED_OUT event');
         
         try {
-          await logoutUser();
+          const utils = await getRevenueCatUtils();
+          if (utils) {
+            await utils.logoutUser();
+          }
         } catch (error) {
           console.error('[AuthContext] RevenueCat logout error:', error);
         }
@@ -305,13 +347,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
         
         if (Platform.OS !== 'web') {
-          (async () => {
+          setTimeout(async () => {
             try {
-              await identifyUser(newSession.user.id, newSession.user.email || undefined);
+              const utils = await getRevenueCatUtils();
+              if (utils) {
+                await utils.identifyUser(newSession.user.id, newSession.user.email || undefined);
+              }
             } catch (error) {
               console.warn('[AuthContext] RevenueCat identify error (non-critical):', error);
             }
-          })();
+          }, 2000);
         }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event');
@@ -487,7 +532,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
 
       try {
-        await logoutUser();
+        const utils = await getRevenueCatUtils();
+        if (utils) {
+          await utils.logoutUser();
+        }
       } catch (error) {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
       }

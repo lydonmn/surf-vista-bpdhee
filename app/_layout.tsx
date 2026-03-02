@@ -5,14 +5,16 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, AppState, AppStateStatus } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { initializeVideoDownloads, configureBackgroundDownloads } from '@/utils/videoDownloadInit';
-import { configureAudioSession } from '@/utils/audioSession';
+
+// 🚨 CRITICAL FIX G19: Prevent SIGABRT crash on TestFlight launch
+// The crash is happening on a background thread during native module initialization
+// Solution: Defer ALL non-critical initialization until AFTER the app is fully mounted
 
 // Prevent auto-hide of splash screen
 SplashScreen.preventAutoHideAsync();
@@ -30,6 +32,8 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
+  const appState = useRef(AppState.currentState);
+  const hasInitialized = useRef(false);
 
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -41,44 +45,68 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // 🚨 CRITICAL FIX: Wrap ALL initialization in try-catch to prevent crashes
+  // 🚨 CRITICAL FIX G19: Defer ALL initialization until app is fully mounted and active
+  // This prevents background thread crashes during native module initialization
   useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        console.log('[RootLayout] 🚀 Starting app initialization...');
-        
-        // 🚨 CRITICAL: Configure audio session with error handling
-        try {
-          console.log('[RootLayout] 🎵 Configuring iOS audio session...');
-          await configureAudioSession();
-          console.log('[RootLayout] ✅ Audio session configured');
-        } catch (audioError) {
-          console.error('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
-          // Continue - app can work without audio session config
-        }
-        
-        // 🚨 CRITICAL: Initialize video system with error handling
-        try {
-          console.log('[RootLayout] 🎬 Initializing video system...');
-          configureBackgroundDownloads();
-          await initializeVideoDownloads();
-          console.log('[RootLayout] ✅ Video system initialized');
-        } catch (videoError) {
-          console.error('[RootLayout] ⚠️ Video system init failed (non-critical):', videoError);
-          // Continue - videos will stream instead of downloading
-        }
-        
-        console.log('[RootLayout] ✅ App initialization complete');
-      } catch (error) {
-        console.error('[RootLayout] ❌ Initialization error:', error);
-        // Don't throw - allow app to continue
-      }
-    };
+    // Only initialize once
+    if (hasInitialized.current) {
+      console.log('[RootLayout] Already initialized, skipping...');
+      return;
+    }
 
-    initializeApp();
+    console.log('[RootLayout] 🚀 App mounted - scheduling deferred initialization...');
+    
+    // 🚨 CRITICAL: Use setTimeout to defer initialization to AFTER the current render cycle
+    // This ensures the app UI is fully mounted before any native modules initialize
+    const initTimer = setTimeout(() => {
+      console.log('[RootLayout] ⏰ Starting deferred initialization...');
+      hasInitialized.current = true;
+      
+      // Wrap in async IIFE to handle promises
+      (async () => {
+        try {
+          // 🚨 CRITICAL: Import and initialize modules ONLY after app is mounted
+          // This prevents background thread crashes during app launch
+          
+          console.log('[RootLayout] 📦 Dynamically importing initialization modules...');
+          
+          // Dynamic imports to defer loading until needed
+          const { configureAudioSession } = await import('@/utils/audioSession');
+          const { initializeVideoDownloads, configureBackgroundDownloads } = await import('@/utils/videoDownloadInit');
+          
+          // Audio session configuration (iOS only, non-critical)
+          try {
+            console.log('[RootLayout] 🎵 Configuring audio session...');
+            await configureAudioSession();
+            console.log('[RootLayout] ✅ Audio session configured');
+          } catch (audioError) {
+            console.error('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
+          }
+          
+          // Video system initialization (non-critical)
+          try {
+            console.log('[RootLayout] 🎬 Initializing video system...');
+            configureBackgroundDownloads();
+            await initializeVideoDownloads();
+            console.log('[RootLayout] ✅ Video system initialized');
+          } catch (videoError) {
+            console.error('[RootLayout] ⚠️ Video system init failed (non-critical):', videoError);
+          }
+          
+          console.log('[RootLayout] ✅ Deferred initialization complete');
+        } catch (error) {
+          console.error('[RootLayout] ❌ Deferred initialization error:', error);
+          // Don't throw - allow app to continue
+        }
+      })();
+    }, 1000); // 🚨 CRITICAL: 1 second delay to ensure app is fully mounted
+
+    return () => {
+      clearTimeout(initTimer);
+    };
   }, []);
 
-  // Setup notification listeners
+  // Setup notification listeners (safe - no native initialization)
   useEffect(() => {
     try {
       // Listen for notifications when app is in foreground
@@ -109,6 +137,25 @@ export default function RootLayout() {
       } catch (error) {
         console.error('[RootLayout] ⚠️ Notification cleanup error:', error);
       }
+    };
+  }, []);
+
+  // Monitor app state changes
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('[RootLayout] App has come to the foreground');
+      }
+
+      appState.current = nextAppState;
+      console.log('[RootLayout] AppState:', appState.current);
+    });
+
+    return () => {
+      subscription.remove();
     };
   }, []);
 
