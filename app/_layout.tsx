@@ -71,47 +71,45 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeAudio = async () => {
       try {
-        console.log('[RootLayout] 🎵 Configuring iOS audio session for continuous video playback...');
+        console.log('[RootLayout] 🎵 Configuring iOS audio session...');
         
-        // 🚨 CRITICAL: Configure audio session FIRST before any video playback
-        // Wrap in try-catch to prevent crashes on startup
+        // Configure audio session with error handling
         try {
           await configureAudioSession({
             category: 'playback',
             mode: 'moviePlayback',
-            mixWithOthers: false, // Exclusive audio control prevents cutouts
+            mixWithOthers: false,
           });
-          console.log('[RootLayout] ✅ iOS audio session configured - audio cutout fix applied');
+          console.log('[RootLayout] ✅ Audio session configured');
         } catch (audioError) {
-          console.warn('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
-          // Continue - audio will use default settings
+          console.warn('[RootLayout] ⚠️ Audio config failed (non-critical):', audioError);
         }
       } catch (error) {
-        console.error('[RootLayout] ⚠️ Initialization failed, app will continue:', error);
+        console.error('[RootLayout] ⚠️ Initialization error (non-critical):', error);
       }
     };
 
     // Run initialization but don't block app startup
     initializeAudio().catch(err => {
-      console.error('[RootLayout] ⚠️ Async initialization error (non-critical):', err);
+      console.error('[RootLayout] ⚠️ Async init error (non-critical):', err);
     });
   }, []);
 
   useEffect(() => {
     // Listen for notifications when app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('[Notifications] Notification received:', notification);
+      console.log('[Notifications] Received:', notification);
     });
 
     // Listen for notification taps
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[Notifications] Notification tapped:', response);
+      console.log('[Notifications] Tapped:', response);
       
       const data = response.notification.request.content.data;
       
       // Navigate to report screen when daily report notification is tapped
       if (data?.type === 'daily_report') {
-        console.log('[Notifications] Navigating to report screen');
+        console.log('[Notifications] Navigating to report');
         router.push('/(tabs)/report');
       }
     });
@@ -138,6 +136,7 @@ export default function RootLayout() {
             <Stack.Screen name="video-player" options={{ headerShown: false }} />
             <Stack.Screen name="video-player-v2" options={{ headerShown: false }} />
             <Stack.Screen name="video-player-simple" options={{ headerShown: false }} />
+            <Stack.Screen name="video-player-enhanced" options={{ headerShown: false }} />
             <Stack.Screen name="edit-report" options={{ headerShown: false }} />
             <Stack.Screen name="admin" options={{ headerShown: false }} />
             <Stack.Screen name="admin-data" options={{ headerShown: false }} />
@@ -147,6 +146,8 @@ export default function RootLayout() {
             <Stack.Screen name="admin-debug" options={{ headerShown: false }} />
             <Stack.Screen name="admin-predictions" options={{ headerShown: false }} />
             <Stack.Screen name="admin-cron-logs" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-cron-setup" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-regional" options={{ headerShown: false }} />
             <Stack.Screen name="admin-video-cache" options={{ headerShown: false }} />
             <Stack.Screen name="setup-admin" options={{ headerShown: false }} />
             <Stack.Screen name="demo-paywall" options={{ headerShown: false }} />
