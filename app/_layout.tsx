@@ -11,7 +11,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { initializeVideoDownloads, configureBackgroundDownloads } from '@/utils/videoDownloadInit';
 import { configureAudioSession } from '@/utils/audioSession';
 
 SplashScreen.preventAutoHideAsync();
@@ -70,7 +69,7 @@ export default function RootLayout() {
   // 🚨 CRITICAL FIX: Configure iOS audio session on app startup
   // This prevents audio cutout at ~10 seconds into video playback
   useEffect(() => {
-    const initializeAudioAndVideo = async () => {
+    const initializeAudio = async () => {
       try {
         console.log('[RootLayout] 🎵 Configuring iOS audio session for continuous video playback...');
         
@@ -87,25 +86,13 @@ export default function RootLayout() {
           console.warn('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
           // Continue - audio will use default settings
         }
-        
-        // Then initialize video download system
-        console.log('[RootLayout] 🚀 Initializing video download system...');
-        try {
-          configureBackgroundDownloads();
-          await initializeVideoDownloads();
-          console.log('[RootLayout] ✅ Video system initialized');
-        } catch (videoError) {
-          console.warn('[RootLayout] ⚠️ Video system init failed (non-critical):', videoError);
-          // Continue - videos will stream instead of downloading
-        }
       } catch (error) {
         console.error('[RootLayout] ⚠️ Initialization failed, app will continue:', error);
-        // App continues normally - videos will stream instead of downloading
       }
     };
 
     // Run initialization but don't block app startup
-    initializeAudioAndVideo().catch(err => {
+    initializeAudio().catch(err => {
       console.error('[RootLayout] ⚠️ Async initialization error (non-critical):', err);
     });
   }, []);
