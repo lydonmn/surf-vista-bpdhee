@@ -46,7 +46,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
     return true;
   }
 
-  // 🚨 CRITICAL FIX: Wrap entire initialization in try-catch to prevent crashes
+  // Create initialization promise
   initializationPromise = (async () => {
     try {
       console.log('[RevenueCat] 🚀 Initializing SDK...');
@@ -70,7 +70,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         return false;
       }
       
-      // 🚨 CRITICAL FIX: Wrap SDK configuration in try-catch
       try {
         Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
         console.log('[RevenueCat] 🔑 Configuring with API key...');
@@ -87,7 +86,6 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         return false;
       }
       
-      // 🚨 CRITICAL FIX: Wrap offerings fetch in try-catch
       try {
         console.log('[RevenueCat] 📦 Fetching offerings...');
         const offerings = await Purchases.getOfferings();
@@ -95,6 +93,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         console.log('[RevenueCat] 🔍 Offerings Response:');
         console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
         console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
+        console.log('[RevenueCat]    - All offering IDs:', Object.keys(offerings.all).join(', '));
         
         if (offerings.all[PAYMENT_CONFIG.OFFERING_ID]) {
           currentOffering = offerings.all[PAYMENT_CONFIG.OFFERING_ID];
@@ -102,27 +101,34 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         } else if (offerings.current) {
           currentOffering = offerings.current;
           console.log('[RevenueCat] ⚠️ Using current offering:', offerings.current.identifier);
+          console.log('[RevenueCat] ⚠️ Configured offering not found:', PAYMENT_CONFIG.OFFERING_ID);
         } else {
           initializationError = 'No offerings configured in RevenueCat dashboard.';
           console.warn('[RevenueCat] ⚠️ NO OFFERINGS FOUND');
+          console.warn('[RevenueCat] ⚠️ This is expected if you haven\'t set up products yet');
           return true;
         }
         
         if (currentOffering && currentOffering.availablePackages.length > 0) {
           console.log('[RevenueCat] ✅ Packages available:', currentOffering.availablePackages.length);
+          currentOffering.availablePackages.forEach((pkg, index) => {
+            console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
+          });
           initializationError = null;
         } else {
           console.warn('[RevenueCat] ⚠️ Offering has NO packages');
-          initializationError = 'Products not linked to offering.';
+          console.warn('[RevenueCat] ⚠️ This means products are not linked to the offering in RevenueCat dashboard');
+          initializationError = 'Products not linked to offering. Please configure in RevenueCat dashboard.';
         }
         
       } catch (offeringError: any) {
         initializationError = `Error fetching offerings: ${offeringError.message}`;
         console.warn('[RevenueCat] ⚠️ Error fetching offerings:', offeringError.message);
-        // Don't fail - allow app to continue
+        console.warn('[RevenueCat] ⚠️ This is expected if products aren\'t set up in App Store Connect yet');
+        console.warn('[RevenueCat] ⚠️ The app will continue to work, but subscriptions won\'t be available');
       }
       
-      console.log('[RevenueCat] ✅ Initialization complete');
+      console.log('[RevenueCat] ✅ Initialization complete (SDK ready, offerings may be pending)');
       return true;
       
     } catch (error: any) {
@@ -171,9 +177,68 @@ export const checkPaymentConfiguration = (): boolean => {
   
   if (currentOffering && currentOffering.availablePackages.length > 0) {
     console.log('[RevenueCat] ✅ Configuration looks good!');
+    console.log('[RevenueCat] ');
+    console.log('[RevenueCat] 📦 Available Products:');
+    currentOffering.availablePackages.forEach((pkg, index) => {
+      console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier}`);
+      console.log(`[RevenueCat]       Product ID: ${pkg.product.identifier}`);
+      console.log(`[RevenueCat]       Price: ${pkg.product.priceString}`);
+      console.log(`[RevenueCat]       Title: ${pkg.product.title}`);
+    });
+    console.log('[RevenueCat] ');
     return true;
   } else {
-    console.log('[RevenueCat] ⚠️ Configuration incomplete');
+    console.log('[RevenueCat] ⚠️ ===== CONFIGURATION INCOMPLETE =====');
+    console.log('[RevenueCat] ');
+    console.log('[RevenueCat] 🚨 SUBSCRIPTIONS NOT AVAILABLE BECAUSE:');
+    console.log('[RevenueCat] ');
+    
+    if (!currentOffering) {
+      console.log('[RevenueCat] ❌ No offering found');
+      console.log('[RevenueCat]    → Expected offering ID:', PAYMENT_CONFIG.OFFERING_ID);
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 📋 TO FIX:');
+      console.log('[RevenueCat]    1. Go to app.revenuecat.com');
+      console.log('[RevenueCat]    2. Select SurfVista project');
+      console.log('[RevenueCat]    3. Go to Offerings tab');
+      console.log('[RevenueCat]    4. Create offering with ID:', PAYMENT_CONFIG.OFFERING_ID);
+    } else if (currentOffering.availablePackages.length === 0) {
+      console.log('[RevenueCat] ❌ Offering exists but has NO PACKAGES (products)');
+      console.log('[RevenueCat]    → Offering ID:', currentOffering.identifier);
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 📋 STEP-BY-STEP FIX:');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 1️⃣ CREATE PRODUCTS IN APP STORE CONNECT:');
+      console.log('[RevenueCat]    → Go to appstoreconnect.apple.com');
+      console.log('[RevenueCat]    → Select SurfVista app');
+      console.log('[RevenueCat]    → Monetization > Subscriptions');
+      console.log('[RevenueCat]    → Create these products (EXACT names):');
+      console.log('[RevenueCat]       • surfvista_Monthly');
+      console.log('[RevenueCat]       • surfvista_Annual');
+      console.log('[RevenueCat]    → Set status to "Ready to Submit"');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 2️⃣ ADD PRODUCTS TO REVENUECAT:');
+      console.log('[RevenueCat]    → Go to app.revenuecat.com');
+      console.log('[RevenueCat]    → Select SurfVista project');
+      console.log('[RevenueCat]    → Products tab → "Add Product"');
+      console.log('[RevenueCat]    → Enter: surfvista_Monthly');
+      console.log('[RevenueCat]    → Repeat for: surfvista_Annual');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 3️⃣ LINK PRODUCTS TO OFFERING:');
+      console.log('[RevenueCat]    → Offerings tab');
+      console.log('[RevenueCat]    → Edit offering:', PAYMENT_CONFIG.OFFERING_ID);
+      console.log('[RevenueCat]    → Add both products');
+      console.log('[RevenueCat]    → Save changes');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 4️⃣ WAIT AND TEST:');
+      console.log('[RevenueCat]    → Wait 5-10 minutes for sync');
+      console.log('[RevenueCat]    → Restart the app');
+      console.log('[RevenueCat]    → Tap "Refresh Products" in profile');
+      console.log('[RevenueCat] ');
+      console.log('[RevenueCat] 📚 More info: https://rev.cat/why-are-offerings-empty');
+    }
+    
+    console.log('[RevenueCat] ===== END CONFIGURATION CHECK =====');
     return false;
   }
 };
@@ -203,14 +268,20 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
     
     const offerings = await Purchases.getOfferings();
     
+    console.log('[RevenueCat] 📊 Refreshed offerings:');
+    console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
+    console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
+    console.log('[RevenueCat]    - All offering IDs:', Object.keys(offerings.all).join(', '));
+    
     const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current || null;
     
     if (!offeringToUse) {
       currentOffering = null;
+      console.warn('[RevenueCat] ⚠️ No offerings found after refresh');
       initializationError = 'No offerings configured in RevenueCat dashboard.';
       return {
         success: false,
-        message: 'No offerings found.\n\nPlease set up products in App Store Connect and RevenueCat dashboard.'
+        message: 'No offerings found.\n\nPlease set up products in:\n1. App Store Connect\n2. RevenueCat dashboard\n\nSee console logs for details.'
       };
     }
     
@@ -218,6 +289,10 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
     
     if (offeringToUse.availablePackages.length > 0) {
       console.log('[RevenueCat] ✅ Packages found:', offeringToUse.availablePackages.length);
+      offeringToUse.availablePackages.forEach((pkg, index) => {
+        console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
+      });
+      
       initializationError = null;
       
       return {
@@ -225,20 +300,31 @@ export const forceRefreshOfferings = async (): Promise<{ success: boolean; messa
         message: `✅ Found ${offeringToUse.availablePackages.length} product(s)!\n\nYou can now subscribe.`
       };
     } else {
+      console.warn('[RevenueCat] ⚠️ Offering has NO packages after refresh');
       initializationError = 'Products not linked to offering.';
       
       return {
         success: false,
-        message: 'Offering found but no products linked.\n\nPlease link products in RevenueCat dashboard.'
+        message: 'Offering found but no products linked.\n\nTo fix:\n1. Go to app.revenuecat.com\n2. Products tab → Add products\n3. Offerings tab → Link products\n4. Wait 5-10 minutes\n5. Try "Refresh Products" again'
       };
     }
     
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Error refreshing offerings:', error);
     
+    let userMessage = 'Failed to refresh products.';
+    
+    if (error.message?.includes('configuration')) {
+      userMessage = 'Configuration error.\n\nPlease check:\n• Products exist in App Store Connect\n• Products are "Ready to Submit"\n• Product IDs match exactly';
+    } else if (error.message?.includes('network') || error.message?.includes('connection')) {
+      userMessage = 'Network error.\n\nPlease check your internet connection and try again.';
+    } else if (error.message?.includes('fetch')) {
+      userMessage = 'Cannot fetch products from App Store Connect.\n\nThis usually means:\n• Products not approved yet\n• Products not linked in RevenueCat\n• App Store Connect sync delay';
+    }
+    
     return {
       success: false,
-      message: 'Failed to refresh products. Please try again.'
+      message: userMessage + '\n\nError: ' + error.message
     };
   }
 };
@@ -257,6 +343,7 @@ export const presentPaywall = async (
       };
     }
     
+    // Ensure RevenueCat is initialized before presenting paywall
     if (!isPaymentSystemInitialized) {
       console.log('[RevenueCat] ⚠️ SDK not initialized, attempting to initialize now...');
       const initialized = await initializeRevenueCat();
@@ -296,32 +383,70 @@ export const presentPaywall = async (
     } catch (fetchError: any) {
       console.error('[RevenueCat] ❌ Error fetching offerings:', fetchError);
       
+      let errorMessage = 'Unable to load subscription options.';
+      
+      if (fetchError.message?.includes('configuration')) {
+        errorMessage = '⚠️ Configuration Error\n\nProducts are not properly configured.\n\nPlease ensure:\n• Products exist in App Store Connect\n• Products are "Ready to Submit"\n• Products are linked in RevenueCat';
+      } else if (fetchError.message?.includes('network')) {
+        errorMessage = '⚠️ Network Error\n\nPlease check your internet connection and try again.';
+      } else {
+        errorMessage = '⚠️ Setup Required\n\n' + fetchError.message + '\n\nPlease complete the setup in:\n1. App Store Connect\n2. RevenueCat dashboard';
+      }
+      
+      checkPaymentConfiguration();
+      
       return {
         state: 'not_configured',
-        message: 'Unable to load subscription options.\n\nPlease ensure products are configured in App Store Connect and RevenueCat.'
+        message: errorMessage
       };
     }
     
+    console.log('[RevenueCat] 📊 Latest offerings fetched:');
+    console.log('[RevenueCat]    - Current offering:', offerings.current?.identifier || 'NONE');
+    console.log('[RevenueCat]    - All offerings:', Object.keys(offerings.all).length);
+
     const offeringToUse = offerings.all[PAYMENT_CONFIG.OFFERING_ID] || offerings.current;
     
     if (!offeringToUse) {
       console.error('[RevenueCat] ❌ No offering found');
+      checkPaymentConfiguration();
       return {
         state: 'not_configured',
-        message: 'No offerings found.\n\nPlease create an offering in RevenueCat dashboard.'
+        message: '⚠️ No Offerings Found\n\nPlease create an offering in RevenueCat dashboard:\n\n1. Go to app.revenuecat.com\n2. Offerings tab\n3. Create offering: ' + PAYMENT_CONFIG.OFFERING_ID
       };
     }
+    
+    console.log('[RevenueCat] 📋 Using offering:', offeringToUse.identifier);
+    console.log('[RevenueCat] 📋 Available packages:', offeringToUse.availablePackages.length);
 
     if (offeringToUse.availablePackages.length === 0) {
       console.error('[RevenueCat] ❌ Offering has NO packages');
+      checkPaymentConfiguration();
       
       return {
         state: 'not_configured',
-        message: 'Products not linked to offering.\n\nPlease link products in RevenueCat dashboard.'
+        message: '⚠️ Products Not Linked\n\n' +
+          'The offering exists but has no products.\n\n' +
+          'To fix:\n\n' +
+          '1. Create products in App Store Connect:\n' +
+          '   • surfvista_Monthly\n' +
+          '   • surfvista_Annual\n\n' +
+          '2. Add products to RevenueCat:\n' +
+          '   • app.revenuecat.com\n' +
+          '   • Products tab\n\n' +
+          '3. Link to offering:\n' +
+          '   • Offerings tab\n' +
+          '   • Edit: ' + offeringToUse.identifier + '\n\n' +
+          '4. Wait 5-10 minutes\n\n' +
+          '5. Tap "Refresh Products"'
       };
     }
 
     console.log('[RevenueCat] 🎨 Presenting paywall UI...');
+    console.log('[RevenueCat] 📦 Products in paywall:');
+    offeringToUse.availablePackages.forEach((pkg, index) => {
+      console.log(`[RevenueCat]    ${index + 1}. ${pkg.identifier} - ${pkg.product.identifier} - ${pkg.product.priceString}`);
+    });
     
     const paywallResult = await RevenueCatUI.presentPaywall({
       offering: offeringToUse
@@ -352,6 +477,18 @@ export const presentPaywall = async (
     } else if (paywallResult === PAYWALL_RESULT.CANCELLED) {
       console.log('[RevenueCat] ℹ️ User cancelled paywall');
       return { state: 'declined' };
+    } else if (paywallResult === PAYWALL_RESULT.ERROR) {
+      console.error('[RevenueCat] ❌ Paywall error');
+      return { 
+        state: 'error',
+        message: 'An error occurred. Please try again.'
+      };
+    } else if (paywallResult === PAYWALL_RESULT.NOT_PRESENTED) {
+      console.log('[RevenueCat] ⚠️ Paywall was not presented');
+      return { 
+        state: 'not_configured',
+        message: 'Paywall not configured.\n\nPlease create a paywall in RevenueCat dashboard.'
+      };
     } else {
       console.log('[RevenueCat] ℹ️ Paywall closed without action');
       return { state: 'declined' };
@@ -359,10 +496,21 @@ export const presentPaywall = async (
 
   } catch (error: any) {
     console.error('[RevenueCat] ❌ Paywall error:', error);
+    console.error('[RevenueCat] ❌ Error details:', JSON.stringify(error, null, 2));
+    
+    let errorMessage = 'Unable to load subscription options.';
+    
+    if (error.message?.includes('configuration')) {
+      errorMessage = '⚠️ Configuration Error\n\n' + error.message;
+    } else if (error.message?.includes('network')) {
+      errorMessage = '⚠️ Network Error\n\nPlease check your internet connection.';
+    } else {
+      errorMessage = error.message || 'An unexpected error occurred.';
+    }
     
     return { 
       state: 'error',
-      message: 'An error occurred. Please try again.'
+      message: errorMessage
     };
   }
 };
@@ -451,7 +599,7 @@ export const restorePurchases = async (): Promise<{
       return {
         success: false,
         state: 'none',
-        message: 'No previous purchases found.'
+        message: 'No previous purchases found.\n\nIf you believe this is an error, please contact support.'
       };
     }
 
@@ -459,7 +607,7 @@ export const restorePurchases = async (): Promise<{
     console.error('[RevenueCat] ❌ Restore error:', error);
     return {
       success: false,
-      message: 'Failed to restore purchases. Please try again.'
+      message: error.message || 'Failed to restore purchases. Please try again.'
     };
   }
 };
@@ -627,10 +775,12 @@ export const logoutUser = async (): Promise<void> => {
   }
 };
 
+// Export helper function to check if payment system is available
 export function isPaymentSystemAvailableInternal(): boolean {
   return isPaymentSystemAvailable();
 }
 
+// Export helper function to get initialization error
 export function getInitializationErrorInternal(): string | null {
   return getInitializationError();
 }

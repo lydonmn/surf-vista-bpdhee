@@ -1,3 +1,4 @@
+
 {
   "cli": {
     "version": ">= 5.0.0"
@@ -22,7 +23,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": false
+        "autoIncrement": true
       },
       "android": {
         "buildType": "apk"
@@ -33,7 +34,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": false,
+        "autoIncrement": true,
         "image": "latest"
       }
     }
@@ -46,5 +47,5 @@
         "appleTeamId": "your-team-id"
       }
     }
-  }
+  },
 }

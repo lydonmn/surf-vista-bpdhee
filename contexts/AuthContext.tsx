@@ -5,6 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
+import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
+import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -40,38 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   
   const isInitializingRef = useRef(false);
-  const revenueCatInitializedRef = useRef(false);
-
-  // 🚨 CRITICAL FIX G19: Lazy load RevenueCat utilities to prevent crashes
-  const getRevenueCatUtils = async () => {
-    try {
-      const { initializeRevenueCat, identifyUser, logoutUser } = await import('@/utils/superwallConfig');
-      return { initializeRevenueCat, identifyUser, logoutUser };
-    } catch (error) {
-      console.error('[AuthContext] Failed to load RevenueCat utils:', error);
-      return null;
-    }
-  };
-
-  // 🚨 CRITICAL FIX G19: Lazy load push notification utilities
-  const getPushNotificationUtils = async () => {
-    try {
-      const { ensurePushTokenRegistered } = await import('@/utils/pushNotifications');
-      return { ensurePushTokenRegistered };
-    } catch (error) {
-      console.error('[AuthContext] Failed to load push notification utils:', error);
-      return null;
-    }
-  };
 
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
-      console.log('[AuthContext] 📲 Checking push token registration...');
-      const utils = await getPushNotificationUtils();
-      if (utils) {
-        await utils.ensurePushTokenRegistered(userId);
-        console.log('[AuthContext] 📲 Push token check complete');
-      }
+      console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
+      console.log('[AuthContext] 📲 User ID:', userId);
+      
+      await ensurePushTokenRegistered(userId);
+      
+      console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
     } catch (error) {
       console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
     }
@@ -101,10 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        // Defer push token registration
-        setTimeout(() => {
-          registerPushTokenIfNeeded(authUser.id);
-        }, 2000);
+        registerPushTokenIfNeeded(authUser.id);
         return;
       }
 
@@ -149,15 +125,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
-      // 🚨 CRITICAL FIX G19: Lazy load RevenueCat logout
-      try {
-        const utils = await getRevenueCatUtils();
-        if (utils) {
-          await utils.logoutUser();
-        }
-      } catch (error) {
+      logoutUser().catch(error => {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
-      }
+      });
       
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
@@ -187,12 +157,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('[AuthContext] ❌ Session refresh error:', error);
         
+        // Handle invalid/expired refresh tokens by clearing the session
         if (error.message.includes('Invalid Refresh Token') || 
             error.message.includes('Refresh Token Not Found') ||
             error.message.includes('refresh_token_not_found')) {
           console.log('[AuthContext] Invalid refresh token detected - clearing session');
           
+          // Clear the session from storage to prevent repeated errors
           await AsyncStorage.removeItem('supabase.auth.token');
+          
+          // Sign out to clear all state
           await signOut();
         }
         return;
@@ -209,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('[AuthContext] Exception refreshing session:', error);
       
+      // If there's an exception, also try to clear the session
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
         await signOut();
@@ -237,11 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (sessionError) {
           console.error('[AuthContext] Session error:', sessionError);
           
+          // Handle invalid/expired refresh tokens
           if (sessionError.message.includes('Invalid Refresh Token') || 
               sessionError.message.includes('Refresh Token Not Found') ||
               sessionError.message.includes('refresh_token_not_found')) {
             console.log('[AuthContext] Invalid refresh token on init - clearing storage');
             
+            // Clear the invalid token from storage
             try {
               await AsyncStorage.removeItem('supabase.auth.token');
             } catch (clearError) {
@@ -270,37 +247,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (mounted) {
-          console.log('[AuthContext] ✅ Initialization complete');
+          console.log('[AuthContext] ✅ Initialization complete - setting isLoading=false, isInitialized=true');
           setIsLoading(false);
           setIsInitialized(true);
         }
 
-        // 🚨 CRITICAL FIX G19: Defer RevenueCat initialization by 3 seconds
-        // This prevents background thread crashes during app launch
-        if (mounted && Platform.OS !== 'web' && !revenueCatInitializedRef.current) {
-          console.log('[AuthContext] 💳 Scheduling RevenueCat initialization (deferred 3s)...');
+        if (mounted && Platform.OS !== 'web') {
+          console.log('[AuthContext] 💳 Starting RevenueCat...');
           
-          setTimeout(async () => {
-            if (!mounted || revenueCatInitializedRef.current) return;
-            
+          (async () => {
             try {
-              console.log('[AuthContext] 💳 Starting deferred RevenueCat initialization...');
-              const utils = await getRevenueCatUtils();
+              const revenueCatInitialized = await initializeRevenueCat();
               
-              if (utils) {
-                const revenueCatInitialized = await utils.initializeRevenueCat();
-                revenueCatInitializedRef.current = true;
-                
-                if (revenueCatInitialized && initialSession?.user) {
-                  await utils.identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                  console.log('[AuthContext] ✅ RevenueCat ready');
-                }
+              if (revenueCatInitialized && initialSession?.user) {
+                await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+                console.log('[AuthContext] ✅ RevenueCat ready');
               }
             } catch (revenueCatError) {
               console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
-              // Don't throw - allow app to continue
             }
-          }, 3000); // 🚨 CRITICAL: 3 second delay
+          })();
         }
         
       } catch (error) {
@@ -328,10 +294,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] SIGNED_OUT event');
         
         try {
-          const utils = await getRevenueCatUtils();
-          if (utils) {
-            await utils.logoutUser();
-          }
+          await logoutUser();
         } catch (error) {
           console.error('[AuthContext] RevenueCat logout error:', error);
         }
@@ -347,16 +310,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
         
         if (Platform.OS !== 'web') {
-          setTimeout(async () => {
+          (async () => {
             try {
-              const utils = await getRevenueCatUtils();
-              if (utils) {
-                await utils.identifyUser(newSession.user.id, newSession.user.email || undefined);
-              }
+              await identifyUser(newSession.user.id, newSession.user.email || undefined);
             } catch (error) {
               console.warn('[AuthContext] RevenueCat identify error (non-critical):', error);
             }
-          }, 2000);
+          })();
         }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event');
@@ -394,13 +354,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AuthContext] Sign up:', email);
       
+      // Determine the redirect URL based on platform
       const getRedirectUrl = () => {
         if (Platform.OS === 'web') {
+          // For web, use the current origin
           if (typeof window !== 'undefined') {
             return `${window.location.origin}/verification-success`;
           }
           return undefined;
         } else {
+          // For mobile, use deep link
           return 'surfvista://verification-success';
         }
       };
@@ -532,10 +495,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
 
       try {
-        const utils = await getRevenueCatUtils();
-        if (utils) {
-          await utils.logoutUser();
-        }
+        await logoutUser();
       } catch (error) {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
       }
@@ -579,10 +539,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const canManageLocation = useCallback((locationId: string): boolean => {
+    // Super admins can manage all locations
     if (profile?.is_admin) {
       return true;
     }
     
+    // Regional admins can only manage their assigned locations
     if (profile?.is_regional_admin && profile.managed_locations) {
       return profile.managed_locations.includes(locationId);
     }
