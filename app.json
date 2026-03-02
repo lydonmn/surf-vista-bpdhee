@@ -3,113 +3,91 @@
   "expo": {
     "name": "SurfVista",
     "slug": "SurfVista",
-    "version": "13.0.5",
+    "version": "13.0.6",
     "orientation": "portrait",
-    "primaryColor": "#1E90FF",
-    "description": "Premium surf reports and forecasts for Folly Beach, South Carolina. Get exclusive 6K drone footage, real-time conditions, and AI-powered surf predictions.",
     "icon": "./assets/images/SurfVista Logo.png",
+    "scheme": "surfvista",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/SurfVista Logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1E90FF"
-    },
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "34",
+      "bundleIdentifier": "com.therealfollysurfreport.SurfVista",
+      "buildNumber": "35",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
-        "NSCameraUsageDescription": "SurfVista needs access to your camera to capture surf condition videos.",
-        "NSMicrophoneUsageDescription": "SurfVista needs access to your microphone to record audio with surf report videos.",
-        "NSPhotoLibraryAddUsageDescription": "SurfVista needs permission to save videos to your photo library.",
+        "NSCameraUsageDescription": "This app uses the camera to capture and upload surf condition videos.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select videos for upload.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs permission to save videos to your photo library.",
         "UIBackgroundModes": [
-          "remote-notification",
           "fetch",
-          "processing"
+          "processing",
+          "remote-notification"
         ],
         "BGTaskSchedulerPermittedIdentifiers": [
-          "Therealfollysurfreport.SurfVista.refresh",
-          "Therealfollysurfreport.SurfVista.processing",
-          "Therealfollysurfreport.SurfVista.video-download"
-        ],
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": false
-        }
+          "com.therealfollysurfreport.SurfVista.video-download"
+        ]
       },
-      "associatedDomains": [
-        "applinks:ucbilksfpnmltrkwvzft.supabase.co"
-      ]
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/SurfVista Logo.png",
-        "backgroundColor": "#1E90FF"
+        "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.therealfollysurfreport.SurfVista",
-      "versionCode": 34,
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_VIDEO",
-        "CAMERA",
-        "RECORD_AUDIO",
-        "POST_NOTIFICATIONS",
-        "WAKE_LOCK",
-        "FOREGROUND_SERVICE"
-      ],
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "ucbilksfpnmltrkwvzft.supabase.co",
-              "pathPrefix": "/auth/v1/verify"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE"
       ]
     },
     "web": {
-      "favicon": "./assets/images/SurfVista Logo.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/SurfVista Logo.png"
     },
     "plugins": [
-      "expo-font",
       "expo-router",
-      "expo-web-browser",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/SpaceMono-Regular.ttf"
+          ]
+        }
+      ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow SurfVista to access your photos to upload 6K drone videos.",
-          "savePhotosPermission": "Allow SurfVista to save videos.",
+          "photosPermission": "Allow SurfVista to access your photos to save videos.",
+          "savePhotosPermission": "Allow SurfVista to save videos to your photo library.",
           "isAccessMediaLocationEnabled": true
         }
       ],
+      "expo-web-browser",
       [
         "expo-notifications",
         {
           "icon": "./assets/images/SurfVista Logo.png",
-          "color": "#1E90FF"
+          "color": "#ffffff",
+          "sounds": [],
+          "mode": "production"
         }
       ]
     ],
-    "scheme": "surfvista",
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
-        "projectId": "e1ee166c-212b-4eca-a1d7-44183b7be073"
+        "projectId": "c1e0e8f7-4d5e-4b3a-9c2d-1a2b3c4d5e6f"
       }
     }
   }

@@ -41,8 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   const isInitializingRef = useRef(false);
   const revenueCatInitializedRef = useRef(false);
+  const pushTokenInitializedRef = useRef(false);
 
-  // 🚨 CRITICAL FIX G19: Lazy load RevenueCat utilities to prevent crashes
+  // 🚨 CRITICAL FIX G20: Lazy load RevenueCat utilities to prevent crashes
   const getRevenueCatUtils = async () => {
     try {
       const { initializeRevenueCat, identifyUser, logoutUser } = await import('@/utils/superwallConfig');
@@ -53,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 🚨 CRITICAL FIX G19: Lazy load push notification utilities
+  // 🚨 CRITICAL FIX G20: Lazy load push notification utilities
   const getPushNotificationUtils = async () => {
     try {
       const { ensurePushTokenRegistered } = await import('@/utils/pushNotifications');
@@ -65,11 +66,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
+    // Prevent duplicate initialization
+    if (pushTokenInitializedRef.current) {
+      console.log('[AuthContext] Push token already registered, skipping...');
+      return;
+    }
+
     try {
       console.log('[AuthContext] 📲 Checking push token registration...');
       const utils = await getPushNotificationUtils();
       if (utils) {
         await utils.ensurePushTokenRegistered(userId);
+        pushTokenInitializedRef.current = true;
         console.log('[AuthContext] 📲 Push token check complete');
       }
     } catch (error) {
@@ -101,10 +109,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        // Defer push token registration
+        // 🚨 CRITICAL FIX G20: Defer push token registration by 5 seconds
+        // This prevents crashes during app launch
         setTimeout(() => {
           registerPushTokenIfNeeded(authUser.id);
-        }, 2000);
+        }, 5000); // Increased from 2 seconds to 5 seconds
         return;
       }
 
@@ -149,7 +158,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
-      // 🚨 CRITICAL FIX G19: Lazy load RevenueCat logout
+      // Reset initialization flags
+      revenueCatInitializedRef.current = false;
+      pushTokenInitializedRef.current = false;
+      
+      // 🚨 CRITICAL FIX G20: Lazy load RevenueCat logout
       try {
         const utils = await getRevenueCatUtils();
         if (utils) {
@@ -175,6 +188,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
+      revenueCatInitializedRef.current = false;
+      pushTokenInitializedRef.current = false;
       console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   }, []);
@@ -275,10 +290,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsInitialized(true);
         }
 
-        // 🚨 CRITICAL FIX G19: Defer RevenueCat initialization by 3 seconds
+        // 🚨 CRITICAL FIX G20: Defer RevenueCat initialization by 8 seconds
         // This prevents background thread crashes during app launch
+        // Increased from 3 seconds to 8 seconds for maximum stability
         if (mounted && Platform.OS !== 'web' && !revenueCatInitializedRef.current) {
-          console.log('[AuthContext] 💳 Scheduling RevenueCat initialization (deferred 3s)...');
+          console.log('[AuthContext] 💳 Scheduling RevenueCat initialization (deferred 8s)...');
           
           setTimeout(async () => {
             if (!mounted || revenueCatInitializedRef.current) return;
@@ -300,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
               // Don't throw - allow app to continue
             }
-          }, 3000); // 🚨 CRITICAL: 3 second delay
+          }, 8000); // 🚨 CRITICAL: 8 second delay (increased from 3 seconds)
         }
         
       } catch (error) {
@@ -340,12 +356,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setSession(null);
         setIsLoading(false);
+        revenueCatInitializedRef.current = false;
+        pushTokenInitializedRef.current = false;
       } else if (event === 'SIGNED_IN' && newSession?.user) {
         console.log('[AuthContext] SIGNED_IN event');
         setSession(newSession);
         await loadUserProfile(newSession.user);
         setIsLoading(false);
         
+        // 🚨 CRITICAL FIX G20: Defer RevenueCat identify by 5 seconds
         if (Platform.OS !== 'web') {
           setTimeout(async () => {
             try {
@@ -356,7 +375,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (error) {
               console.warn('[AuthContext] RevenueCat identify error (non-critical):', error);
             }
-          }, 2000);
+          }, 5000); // Increased from 2 seconds to 5 seconds
         }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event');
@@ -386,7 +405,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
       
-      await registerPushTokenIfNeeded(session.user.id);
+      // Defer push token registration
+      setTimeout(() => {
+        registerPushTokenIfNeeded(session.user.id);
+      }, 2000);
     }
   }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
 
@@ -530,6 +552,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
+      revenueCatInitializedRef.current = false;
+      pushTokenInitializedRef.current = false;
 
       try {
         const utils = await getRevenueCatUtils();
