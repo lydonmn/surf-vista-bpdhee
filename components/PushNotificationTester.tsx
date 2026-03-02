@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import * as Device from 'expo-device';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
@@ -9,6 +10,9 @@ import { supabase } from '@/app/integrations/supabase/client';
 export function PushNotificationTester() {
   const { user, profile } = useAuth();
   const [isTesting, setIsTesting] = useState(false);
+  
+  // Check if running on web or simulator
+  const isWebOrSimulator = Platform.OS === 'web' || !Device.isDevice;
 
   const handleTestNotification = async () => {
     if (!user?.id) {
@@ -47,10 +51,16 @@ export function PushNotificationTester() {
         return;
       }
 
-      if (userProfile.push_token === 'web-dummy-token' || userProfile.push_token === 'simulator-dummy-token') {
+      // Check for dummy tokens (web/simulator)
+      const isDummyToken = userProfile.push_token === 'web-dummy-token' || 
+                          userProfile.push_token === 'simulator-dummy-token' ||
+                          userProfile.push_token.includes('dummy');
+      
+      if (isDummyToken) {
+        const tokenType = userProfile.push_token === 'web-dummy-token' ? 'web' : 'simulator';
         Alert.alert(
           'Invalid Token',
-          `Your push token is a ${userProfile.push_token === 'web-dummy-token' ? 'web' : 'simulator'} dummy token.\n\nPush notifications only work on physical devices with EAS builds (TestFlight or App Store).`,
+          `Your push token is a ${tokenType} dummy token.\n\nPush notifications only work on physical devices with EAS builds (TestFlight or App Store).`,
           [{ text: 'OK' }]
         );
         setIsTesting(false);
@@ -116,6 +126,41 @@ export function PushNotificationTester() {
 
   if (!profile?.is_admin) {
     return null;
+  }
+
+  // Show different UI for web/simulator
+  if (isWebOrSimulator) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle.fill"
+            android_material_icon_name="warning"
+            size={24}
+            color="#F59E0B"
+          />
+          <Text style={styles.title}>Push Notification Tester</Text>
+        </View>
+        
+        <View style={styles.warningBox}>
+          <Text style={styles.warningTitle}>Physical Device Required</Text>
+          <Text style={styles.warningText}>
+            Push notifications only work on physical devices with EAS builds (TestFlight or App Store).
+          </Text>
+          <Text style={styles.warningText}>
+            You are currently running on {Platform.OS === 'web' ? 'web' : 'a simulator'}, where push notifications are not available.
+          </Text>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>To test push notifications:</Text>
+          <Text style={styles.infoText}>1. Build the app with EAS Build</Text>
+          <Text style={styles.infoText}>2. Install on a physical iOS or Android device</Text>
+          <Text style={styles.infoText}>3. Enable notifications in Profile tab</Text>
+          <Text style={styles.infoText}>4. Return to this screen to send a test</Text>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -206,5 +251,42 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontStyle: 'italic',
     lineHeight: 16,
+  },
+  warningBox: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 8,
+  },
+  warningText: {
+    fontSize: 14,
+    color: colors.text,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  infoBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 8,
+    padding: 12,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    lineHeight: 18,
   },
 });

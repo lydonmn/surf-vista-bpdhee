@@ -209,15 +209,17 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     console.log('[Push Notifications] Is Device:', Device.isDevice);
     console.log('[Push Notifications] App Ownership:', Constants.appOwnership);
 
-    // For web, return a dummy token
+    // For web, return a dummy token (silent - no alert)
     if (Platform.OS === 'web') {
       console.log('[Push Notifications] Web platform - using dummy token');
+      console.log('[Push Notifications] ℹ️ Push notifications are not available on web');
       return 'web-dummy-token';
     }
 
     // Check if running on a physical device
     if (!Device.isDevice) {
       console.warn('[Push Notifications] Simulator detected - using dummy token');
+      console.log('[Push Notifications] ℹ️ Push notifications require a physical device');
       return 'simulator-dummy-token';
     }
 
