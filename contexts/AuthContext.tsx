@@ -40,50 +40,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   
   const isInitializingRef = useRef(false);
-  const revenueCatInitializedRef = useRef(false);
-  const pushTokenInitializedRef = useRef(false);
-
-  // 🚨 CRITICAL FIX G20: Lazy load RevenueCat utilities to prevent crashes
-  const getRevenueCatUtils = async () => {
-    try {
-      const { initializeRevenueCat, identifyUser, logoutUser } = await import('@/utils/superwallConfig');
-      return { initializeRevenueCat, identifyUser, logoutUser };
-    } catch (error) {
-      console.error('[AuthContext] Failed to load RevenueCat utils:', error);
-      return null;
-    }
-  };
-
-  // 🚨 CRITICAL FIX G20: Lazy load push notification utilities
-  const getPushNotificationUtils = async () => {
-    try {
-      const { ensurePushTokenRegistered } = await import('@/utils/pushNotifications');
-      return { ensurePushTokenRegistered };
-    } catch (error) {
-      console.error('[AuthContext] Failed to load push notification utils:', error);
-      return null;
-    }
-  };
-
-  const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
-    // Prevent duplicate initialization
-    if (pushTokenInitializedRef.current) {
-      console.log('[AuthContext] Push token already registered, skipping...');
-      return;
-    }
-
-    try {
-      console.log('[AuthContext] 📲 Checking push token registration...');
-      const utils = await getPushNotificationUtils();
-      if (utils) {
-        await utils.ensurePushTokenRegistered(userId);
-        pushTokenInitializedRef.current = true;
-        console.log('[AuthContext] 📲 Push token check complete');
-      }
-    } catch (error) {
-      console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
-    }
-  }, []);
 
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
@@ -108,12 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] ✅ Profile loaded:', profileData.email);
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
-        
-        // 🚨 CRITICAL FIX G20: Defer push token registration by 5 seconds
-        // This prevents crashes during app launch
-        setTimeout(() => {
-          registerPushTokenIfNeeded(authUser.id);
-        }, 5000); // Increased from 2 seconds to 5 seconds
         return;
       }
 
@@ -146,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setUser({ ...authUser });
     }
-  }, [registerPushTokenIfNeeded]);
+  }, []);
 
   const signOut = useCallback(async () => {
     console.log('[AuthContext] ===== SIGN OUT STARTED =====');
@@ -157,20 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
-      
-      // Reset initialization flags
-      revenueCatInitializedRef.current = false;
-      pushTokenInitializedRef.current = false;
-      
-      // 🚨 CRITICAL FIX G20: Lazy load RevenueCat logout
-      try {
-        const utils = await getRevenueCatUtils();
-        if (utils) {
-          await utils.logoutUser();
-        }
-      } catch (error) {
-        console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
-      }
       
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
@@ -188,8 +124,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
-      revenueCatInitializedRef.current = false;
-      pushTokenInitializedRef.current = false;
       console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   }, []);
@@ -289,35 +223,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false);
           setIsInitialized(true);
         }
-
-        // 🚨 CRITICAL FIX G20: Defer RevenueCat initialization by 8 seconds
-        // This prevents background thread crashes during app launch
-        // Increased from 3 seconds to 8 seconds for maximum stability
-        if (mounted && Platform.OS !== 'web' && !revenueCatInitializedRef.current) {
-          console.log('[AuthContext] 💳 Scheduling RevenueCat initialization (deferred 8s)...');
-          
-          setTimeout(async () => {
-            if (!mounted || revenueCatInitializedRef.current) return;
-            
-            try {
-              console.log('[AuthContext] 💳 Starting deferred RevenueCat initialization...');
-              const utils = await getRevenueCatUtils();
-              
-              if (utils) {
-                const revenueCatInitialized = await utils.initializeRevenueCat();
-                revenueCatInitializedRef.current = true;
-                
-                if (revenueCatInitialized && initialSession?.user) {
-                  await utils.identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                  console.log('[AuthContext] ✅ RevenueCat ready');
-                }
-              }
-            } catch (revenueCatError) {
-              console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
-              // Don't throw - allow app to continue
-            }
-          }, 8000); // 🚨 CRITICAL: 8 second delay (increased from 3 seconds)
-        }
         
       } catch (error) {
         console.error('[AuthContext] ❌ Initialization error:', error);
@@ -342,41 +247,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (event === 'SIGNED_OUT') {
         console.log('[AuthContext] SIGNED_OUT event');
-        
-        try {
-          const utils = await getRevenueCatUtils();
-          if (utils) {
-            await utils.logoutUser();
-          }
-        } catch (error) {
-          console.error('[AuthContext] RevenueCat logout error:', error);
-        }
-        
         setUser(null);
         setProfile(null);
         setSession(null);
         setIsLoading(false);
-        revenueCatInitializedRef.current = false;
-        pushTokenInitializedRef.current = false;
       } else if (event === 'SIGNED_IN' && newSession?.user) {
         console.log('[AuthContext] SIGNED_IN event');
         setSession(newSession);
         await loadUserProfile(newSession.user);
         setIsLoading(false);
-        
-        // 🚨 CRITICAL FIX G20: Defer RevenueCat identify by 5 seconds
-        if (Platform.OS !== 'web') {
-          setTimeout(async () => {
-            try {
-              const utils = await getRevenueCatUtils();
-              if (utils) {
-                await utils.identifyUser(newSession.user.id, newSession.user.email || undefined);
-              }
-            } catch (error) {
-              console.warn('[AuthContext] RevenueCat identify error (non-critical):', error);
-            }
-          }, 5000); // Increased from 2 seconds to 5 seconds
-        }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         console.log('[AuthContext] TOKEN_REFRESHED event');
         setSession(newSession);
@@ -398,19 +277,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile, registerPushTokenIfNeeded]);
+  }, [loadUserProfile]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
-      
-      // Defer push token registration
-      setTimeout(() => {
-        registerPushTokenIfNeeded(session.user.id);
-      }, 2000);
     }
-  }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
+  }, [session?.user, loadUserProfile]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
@@ -552,17 +426,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setSession(null);
       setIsLoading(false);
-      revenueCatInitializedRef.current = false;
-      pushTokenInitializedRef.current = false;
-
-      try {
-        const utils = await getRevenueCatUtils();
-        if (utils) {
-          await utils.logoutUser();
-        }
-      } catch (error) {
-        console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
-      }
 
       console.log('[AuthContext] ===== DELETE ACCOUNT COMPLETE =====');
       return { success: true, message: 'Your account has been permanently deleted' };

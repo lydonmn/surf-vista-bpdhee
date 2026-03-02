@@ -3,7 +3,7 @@
   "expo": {
     "name": "SurfVista",
     "slug": "SurfVista",
-    "version": "13.0.6",
+    "version": "13.0.7",
     "orientation": "portrait",
     "icon": "./assets/images/SurfVista Logo.png",
     "scheme": "surfvista",
@@ -12,7 +12,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.therealfollysurfreport.SurfVista",
-      "buildNumber": "35",
+      "buildNumber": "36",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture and upload surf condition videos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select videos for upload.",
