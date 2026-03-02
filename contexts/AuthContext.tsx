@@ -1,10 +1,13 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, InteractionManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
+import { initializeRevenueCat } from '@/utils/superwallConfig';
+import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
+import { errorLogger } from '@/utils/errorLogger';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -40,6 +43,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   
   const isInitializingRef = useRef(false);
+  const hasInitializedNativeModulesRef = useRef(false);
+
+  // 🚨 CRITICAL FIX: Defer native module initialization until after auth is stable
+  useEffect(() => {
+    if (!isInitialized || hasInitializedNativeModulesRef.current) {
+      return;
+    }
+
+    console.log('[AuthContext] 🚀 Auth initialized, scheduling native module initialization...');
+    hasInitializedNativeModulesRef.current = true;
+
+    // Use InteractionManager to defer until UI is stable
+    InteractionManager.runAfterInteractions(async () => {
+      console.log('[AuthContext] 🎬 Starting native module initialization (after interactions)...');
+      
+      // Initialize RevenueCat
+      try {
+        console.log('[AuthContext] 💳 Initializing RevenueCat...');
+        await initializeRevenueCat();
+        console.log('[AuthContext] ✅ RevenueCat initialized');
+      } catch (rcError) {
+        console.error('[AuthContext] ⚠️ RevenueCat initialization failed (non-critical):', rcError);
+        errorLogger.logError(rcError, 'AuthContext: Failed to initialize RevenueCat');
+      }
+      
+      // Register push token if user is logged in
+      if (user?.id) {
+        try {
+          console.log('[AuthContext] 📲 Checking push token registration...');
+          await ensurePushTokenRegistered(user.id);
+          console.log('[AuthContext] ✅ Push token check complete');
+        } catch (pushError) {
+          console.error('[AuthContext] ⚠️ Push token registration failed (non-critical):', pushError);
+          errorLogger.logError(pushError, 'AuthContext: Failed to register push token');
+        }
+      }
+      
+      console.log('[AuthContext] ✅ Native module initialization complete');
+    });
+  }, [isInitialized, user?.id]);
 
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
@@ -93,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser({ ...authUser });
     } catch (error) {
       console.error('[AuthContext] Exception loading profile:', error);
+      errorLogger.logError(error, 'AuthContext: Exception loading profile');
       setProfile(null);
       setUser({ ...authUser });
     }
@@ -120,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
     } catch (error) {
       console.error('[AuthContext] ❌ Sign out exception:', error);
+      errorLogger.logError(error, 'AuthContext: Sign out exception');
       setUser(null);
       setProfile(null);
       setSession(null);
@@ -157,6 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('[AuthContext] Exception refreshing session:', error);
+      errorLogger.logError(error, 'AuthContext: Exception refreshing session');
       
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
@@ -226,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
       } catch (error) {
         console.error('[AuthContext] ❌ Initialization error:', error);
+        errorLogger.logError(error, 'AuthContext: Initialization error');
         if (mounted) {
           console.log('[AuthContext] ✅ Completing initialization despite error');
           setIsLoading(false);
@@ -341,6 +388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: true, message: 'Account created successfully!' };
     } catch (error: any) {
       console.error('[AuthContext] Sign up exception:', error);
+      errorLogger.logError(error, 'AuthContext: Sign up exception');
       return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
@@ -384,6 +432,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: 'Sign in failed' };
     } catch (error: any) {
       console.error('[AuthContext] Sign in exception:', error);
+      errorLogger.logError(error, 'AuthContext: Sign in exception');
       setIsLoading(false);
       return { success: false, message: error.message || 'An unexpected error occurred' };
     }
@@ -431,6 +480,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: true, message: 'Your account has been permanently deleted' };
     } catch (error: any) {
       console.error('[AuthContext] ❌ Delete account exception:', error);
+      errorLogger.logError(error, 'AuthContext: Delete account exception');
       await signOut();
       return { success: false, message: error.message || 'An unexpected error occurred while deleting your account' };
     }

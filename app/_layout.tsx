@@ -5,10 +5,12 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, InteractionManager } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
+import { initializeVideoDownloads } from '@/utils/videoDownloadInit';
+import { errorLogger } from '@/utils/errorLogger';
 
 // Prevent auto-hide of splash screen
 SplashScreen.preventAutoHideAsync();
@@ -16,13 +18,44 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
-  const [loaded] = useFonts({
+  const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
+  // Handle font loading errors
+  useEffect(() => {
+    if (error) {
+      console.error('[RootLayout] Font loading error:', error);
+      errorLogger.logError(error, 'RootLayout: Font loading error');
+      throw error;
+    }
+  }, [error]);
+
+  // Hide splash screen and defer critical native module initializations
   useEffect(() => {
     if (loaded) {
+      console.log('[RootLayout] ✅ Fonts loaded, hiding splash screen');
       SplashScreen.hideAsync();
+      
+      // 🚨 CRITICAL FIX: Defer native module initialization until after UI is stable
+      // This prevents crashes from native calls on background threads during startup
+      console.log('[RootLayout] ⏰ Scheduling deferred initialization...');
+      
+      InteractionManager.runAfterInteractions(async () => {
+        console.log('[RootLayout] 🎬 Starting deferred initialization (after interactions)...');
+        
+        // Initialize video download system
+        try {
+          console.log('[RootLayout] 🎬 Initializing video system...');
+          await initializeVideoDownloads();
+          console.log('[RootLayout] ✅ Video system initialized');
+        } catch (videoError) {
+          console.error('[RootLayout] ⚠️ Video system initialization failed (non-critical):', videoError);
+          errorLogger.logError(videoError, 'RootLayout: Failed to initialize video downloads');
+        }
+        
+        console.log('[RootLayout] ✅ Deferred initialization complete');
+      });
     }
   }, [loaded]);
 
