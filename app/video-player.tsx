@@ -1,7 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, Dimensions } from "react-native";
-
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
@@ -27,7 +26,6 @@ interface Video {
 }
 
 const CONTROLS_HIDE_DELAY = 3000;
-// 🎬 Mux HLS URL prefix for detection
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export default function VideoPlayerScreen() {
@@ -41,7 +39,6 @@ export default function VideoPlayerScreen() {
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  // 🚨 CRITICAL FIX: Initialize duration to 0 and ONLY set it from video metadata
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -60,8 +57,8 @@ export default function VideoPlayerScreen() {
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
 
-  // 🚨 CRITICAL FIX: Determine video orientation from resolution
   const videoOrientation = useMemo(() => {
     if (!video?.resolution_width || !video?.resolution_height) {
       console.log('[VideoPlayer] No resolution data, assuming portrait (drone default)');
@@ -79,7 +76,7 @@ export default function VideoPlayerScreen() {
     return orientation;
   }, [video]);
 
-  // ✅ CRITICAL FIX: Configure audio session for continuous playback (no 8-second cutoffs)
+  // ✅ CRITICAL FIX: Configure audio session for continuous playback
   useEffect(() => {
     console.log('[VideoPlayer] ⚡ Configuring audio session for CONTINUOUS playback...');
     
@@ -97,8 +94,6 @@ export default function VideoPlayerScreen() {
           await activateAudioSession();
           console.log('[VideoPlayer] ✅ Audio session activated for continuous playback');
 
-          // ✅ CRITICAL FIX: Reactivate audio every 5 seconds to prevent iOS from cutting audio
-          // iOS can deactivate audio sessions after ~8-10 seconds of "inactivity"
           audioReactivationIntervalRef.current = setInterval(async () => {
             if (isActive) {
               console.log('[VideoPlayer] 🔄 Reactivating audio session (preventing 8-second cutoff)');
@@ -108,7 +103,7 @@ export default function VideoPlayerScreen() {
                 console.error('[VideoPlayer] Failed to reactivate audio:', err);
               }
             }
-          }, 5000); // Every 5 seconds (well before the 8-second cutoff)
+          }, 5000);
 
           const cleanup = setupAudioInterruptionHandling(
             () => {
@@ -206,7 +201,6 @@ export default function VideoPlayerScreen() {
     }
   }, [videoUrl]);
 
-  // ✅ CRITICAL FIX: Initialize player with optimized settings
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl) {
       console.log('[VideoPlayer] ⚡ Initializing player with INSTANT PLAYBACK settings');
@@ -225,16 +219,71 @@ export default function VideoPlayerScreen() {
     }
   });
 
+  // 🚨 CRITICAL FIX: Safe play/pause with promise handling
+  const safePlay = useCallback(async () => {
+    if (!player) return;
+    
+    try {
+      // Wait for any pending play promise to resolve
+      if (playPromiseRef.current) {
+        try {
+          await playPromiseRef.current;
+        } catch (e) {
+          // Ignore errors from previous play promise
+          console.log('[VideoPlayer] Previous play promise rejected (expected)');
+        }
+      }
+      
+      // Start new play promise
+      playPromiseRef.current = (async () => {
+        try {
+          await activateAudioSession();
+          player.play();
+        } catch (err) {
+          console.error('[VideoPlayer] Play error:', err);
+          throw err;
+        }
+      })();
+      
+      await playPromiseRef.current;
+      playPromiseRef.current = null;
+    } catch (err) {
+      console.error('[VideoPlayer] Safe play error:', err);
+      playPromiseRef.current = null;
+    }
+  }, [player]);
+
+  const safePause = useCallback(async () => {
+    if (!player) return;
+    
+    try {
+      // Wait for any pending play promise to resolve before pausing
+      if (playPromiseRef.current) {
+        try {
+          await playPromiseRef.current;
+        } catch (e) {
+          // Ignore errors from play promise
+          console.log('[VideoPlayer] Play promise rejected before pause (expected)');
+        }
+        playPromiseRef.current = null;
+      }
+      
+      player.pause();
+    } catch (err) {
+      console.error('[VideoPlayer] Safe pause error:', err);
+    }
+  }, [player]);
+
   const handleExitPlayer = useCallback(async () => {
     console.log('[VideoPlayer] User exiting video player');
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
     
     if (player) {
       try {
-        player.pause();
+        await safePause();
         console.log('[VideoPlayer] Stopped playback');
       } catch (e) {
         console.log('[VideoPlayer] Error stopping playback:', e);
@@ -251,7 +300,7 @@ export default function VideoPlayerScreen() {
     }
     
     router.back();
-  }, [player, isFullscreen]);
+  }, [player, isFullscreen, safePause]);
 
   useEffect(() => {
     console.log('[VideoPlayer] Setting up connection keep-alive');
@@ -305,11 +354,9 @@ export default function VideoPlayerScreen() {
         console.log('[VideoPlayer] Video loaded:', data.title);
         console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
         console.log('[VideoPlayer] 🎬 Video URL:', data.video_url);
-        // 🚨 CRITICAL FIX: Do NOT set duration from database - wait for video metadata
         console.log('[VideoPlayer] ⚠️ NOT using database duration - will wait for video onLoad callback');
         setVideo(data);
 
-        // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
           console.log('[VideoPlayer] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
           setVideoUrl(data.video_url);
@@ -319,12 +366,10 @@ export default function VideoPlayerScreen() {
           return;
         }
 
-        // ✅ INSTANT PLAYBACK: Use preloaded URL if available (for Supabase videos)
         if (preloadedUrl && typeof preloadedUrl === 'string') {
           console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           setVideoUrl(preloadedUrl);
           hasLoadedRef.current = true;
-          // 🚨 CRITICAL FIX: Do NOT set duration here - let the player's onLoad set it
           setIsLoading(false);
           setIsBuffering(false);
           return;
@@ -370,7 +415,6 @@ export default function VideoPlayerScreen() {
         
         setVideoUrl(generatedUrl);
         hasLoadedRef.current = true;
-        // 🚨 CRITICAL FIX: Do NOT set duration here - let the player's onLoad set it
       } catch (loadError: unknown) {
         console.error('[VideoPlayer] Exception loading video:', loadError);
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
@@ -415,7 +459,7 @@ export default function VideoPlayerScreen() {
                   player.replace(videoUrl);
                   setTimeout(() => {
                     if (player) {
-                      player.play();
+                      safePlay().catch(err => console.error('[VideoPlayer] Recovery play error:', err));
                     }
                   }, 100);
                 })
@@ -424,7 +468,7 @@ export default function VideoPlayerScreen() {
                   player.replace(videoUrl);
                   setTimeout(() => {
                     if (player) {
-                      player.play();
+                      safePlay().catch(err => console.error('[VideoPlayer] Recovery play error:', err));
                     }
                   }, 100);
                 });
@@ -440,7 +484,6 @@ export default function VideoPlayerScreen() {
       }
       
       if (status.status === 'readyToPlay') {
-        // 🚨 CRITICAL FIX: Set duration from video metadata, not from database
         const videoDuration = status.duration || 0;
         console.log('[VideoPlayer] ✅ Video ready to play, duration from metadata:', videoDuration.toFixed(2));
         
@@ -463,7 +506,6 @@ export default function VideoPlayerScreen() {
           setRetryCount(0);
         }
         
-        // ✅ CRITICAL FIX: Ensure audio is active before playback
         activateAudioSession()
           .then(() => {
             console.log('[VideoPlayer] ✅ Audio session active - starting playback');
@@ -472,7 +514,7 @@ export default function VideoPlayerScreen() {
               console.log('[VideoPlayer] ⚡ Starting INSTANT playback with continuous audio...');
               setTimeout(() => {
                 if (player) {
-                  player.play();
+                  safePlay().catch(err => console.error('[VideoPlayer] Auto-play error:', err));
                 }
               }, 50);
             }
@@ -480,7 +522,7 @@ export default function VideoPlayerScreen() {
           .catch(err => {
             console.error('[VideoPlayer] Failed to activate audio before playback:', err);
             if (!isPlaying && player) {
-              player.play();
+              safePlay().catch(err => console.error('[VideoPlayer] Auto-play error:', err));
             }
           });
       }
@@ -521,7 +563,6 @@ export default function VideoPlayerScreen() {
           bufferingTimeoutRef.current = null;
         }
         
-        // ✅ CRITICAL FIX: Reactivate audio when playback starts
         activateAudioSession().catch(err => 
           console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
         );
@@ -541,7 +582,6 @@ export default function VideoPlayerScreen() {
         setCurrentTime(newTime);
       }
       
-      // 🚨 CRITICAL FIX: Also update duration from player if we don't have it yet
       if (player.duration && player.duration > 0) {
         setDuration(prevDuration => {
           if (prevDuration === 0 || Math.abs(prevDuration - player.duration) > 1) {
@@ -570,9 +610,8 @@ export default function VideoPlayerScreen() {
         bufferingTimeoutRef.current = null;
       }
     };
-  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl]);
+  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl, safePlay]);
 
-  // ✅ CRITICAL FIX: Load video source immediately
   useEffect(() => {
     if (videoUrl && player) {
       console.log('[VideoPlayer] ⚡ Loading video source for INSTANT playback...');
@@ -600,7 +639,6 @@ export default function VideoPlayerScreen() {
         setCurrentTime(player.currentTime);
       }
       
-      // 🚨 CRITICAL FIX: Continuously check for duration from player
       if (player.duration && player.duration > 0 && duration === 0) {
         console.log('[VideoPlayer] 🎯 Got duration from player during playback:', player.duration);
         setDuration(player.duration);
@@ -627,7 +665,7 @@ export default function VideoPlayerScreen() {
     if (!player) return;
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
     
     lastPlaybackActivityRef.current = Date.now();
@@ -636,29 +674,24 @@ export default function VideoPlayerScreen() {
     console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
-      player.pause();
-      setIsPlaying(false);
-      setControlsVisible(true);
-      clearControlsTimeout();
+      safePause().then(() => {
+        setIsPlaying(false);
+        setControlsVisible(true);
+        clearControlsTimeout();
+      }).catch(err => {
+        console.error('[VideoPlayer] Pause error:', err);
+      });
     } else {
       refreshConnectionIfNeeded();
       
-      // ✅ CRITICAL FIX: Reactivate audio before playing
-      activateAudioSession()
-        .then(() => {
-          console.log('[VideoPlayer] ✅ Audio reactivated - playing');
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        })
-        .catch(err => {
-          console.error('[VideoPlayer] Failed to reactivate audio:', err);
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        });
+      safePlay().then(() => {
+        setIsPlaying(true);
+        resetControlsTimeout();
+      }).catch(err => {
+        console.error('[VideoPlayer] Play error:', err);
+      });
     }
-  }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded]);
+  }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded, safePlay, safePause]);
 
   const handleSeekStart = useCallback(() => {
     console.log('[VideoPlayer] Seek started');
@@ -667,7 +700,7 @@ export default function VideoPlayerScreen() {
     clearControlsTimeout();
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
   }, [clearControlsTimeout]);
 
@@ -682,7 +715,6 @@ export default function VideoPlayerScreen() {
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
       
-      // ✅ CRITICAL FIX: Reactivate audio after seeking
       activateAudioSession().catch(err => 
         console.error('[VideoPlayer] Failed to reactivate audio after seek:', err)
       );
@@ -691,76 +723,61 @@ export default function VideoPlayerScreen() {
     resetControlsTimeout();
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
   }, [player, duration, resetControlsTimeout]);
 
-  // 🚨🚨🚨 ULTIMATE FIX: Force portrait lock for ALL videos in fullscreen
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] 🚨🚨🚨 Toggle fullscreen:', newFullscreenState);
+    console.log('[VideoPlayer] 🚨 Toggle fullscreen:', newFullscreenState);
     console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
     console.log('[VideoPlayer] 📐 Video dimensions:', video?.resolution_width, 'x', video?.resolution_height);
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
     
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          // 🚨 ENTERING FULLSCREEN - ALWAYS FORCE PORTRAIT FOR DRONE VIDEOS
-          console.log('[VideoPlayer] 🚨🚨🚨 ENTERING FULLSCREEN MODE');
+          console.log('[VideoPlayer] 🚨 ENTERING FULLSCREEN MODE');
           
-          // Step 1: Unlock ALL existing orientation locks
           console.log('[VideoPlayer] Step 1: Unlocking all existing orientation locks...');
           await ScreenOrientation.unlockAsync();
           console.log('[VideoPlayer] ✅ All orientation locks removed');
           
-          // Step 2: Wait for unlock to fully take effect
           await new Promise(resolve => setTimeout(resolve, 200));
           
-          // Step 3: 🚨 CRITICAL FIX - ALWAYS lock to PORTRAIT_UP for drone videos
-          // The issue is that even "landscape" drone videos are actually shot in portrait orientation
-          // and should stay portrait in fullscreen
-          console.log('[VideoPlayer] 🚨🚨🚨 FORCING PORTRAIT_UP LOCK (all drone videos stay portrait)');
+          console.log('[VideoPlayer] 🚨 FORCING PORTRAIT_UP LOCK (all drone videos stay portrait)');
           await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          console.log('[VideoPlayer] ✅✅✅ PORTRAIT_UP lock applied - video will NOT flip sideways');
+          console.log('[VideoPlayer] ✅ PORTRAIT_UP lock applied - video will NOT flip sideways');
           
-          // Step 4: Verify the lock was successfully applied
           const currentLock = await ScreenOrientation.getOrientationLockAsync();
           const currentOrientation = await ScreenOrientation.getOrientationAsync();
           console.log('[VideoPlayer] 📐 Verification - Lock type:', currentLock);
           console.log('[VideoPlayer] 📐 Verification - Current orientation:', currentOrientation);
           
-          // Step 5: Wait for orientation to stabilize before showing fullscreen
           await new Promise(resolve => setTimeout(resolve, 250));
           
-          // Step 6: NOW set fullscreen state (after orientation is locked)
           console.log('[VideoPlayer] ✅ Orientation locked to PORTRAIT - now entering fullscreen UI');
           setIsFullscreen(true);
           setControlsVisible(true);
           
         } else {
-          // 🚨 EXITING FULLSCREEN - UNLOCK ORIENTATION
           console.log('[VideoPlayer] 🚨 EXITING FULLSCREEN MODE');
           
-          // First set state
           setIsFullscreen(false);
           
-          // Then unlock orientation
           console.log('[VideoPlayer] Unlocking orientation...');
           await ScreenOrientation.unlockAsync();
           console.log('[VideoPlayer] ✅ Orientation unlocked - back to normal mode');
         }
       } catch (e) {
-        console.error('[VideoPlayer] ❌❌❌ CRITICAL ERROR during orientation change:', e);
-        // Even if orientation lock fails, still toggle fullscreen UI
+        console.error('[VideoPlayer] ❌ CRITICAL ERROR during orientation change:', e);
         setIsFullscreen(newFullscreenState);
         setControlsVisible(true);
       }
     } else {
-      // Web doesn't need orientation locking
       setIsFullscreen(newFullscreenState);
       setControlsVisible(true);
     }
