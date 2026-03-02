@@ -1,5 +1,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
 import CryptoJS from 'crypto-js';
 import { Platform } from 'react-native';
 
@@ -11,6 +13,76 @@ try {
 } catch (error) {
   console.warn('[VideoDownloadManager] ⚠️ react-native-background-downloader not available, falling back to streaming-only mode:', error);
 }
+
+// Task name constants
+const BACKGROUND_DOWNLOAD_TASK_NAME = 'background-video-download';
+const BACKGROUND_FETCH_TASK_NAME = 'background-video-fetch';
+
+// ============================================================================
+// CRITICAL: TaskManager.defineTask calls MUST be at module load time
+// These are defined at the top level, outside of any class or function
+// This prevents TurboModule crashes related to late task registration
+// ============================================================================
+
+// Define background task for actual video downloads
+TaskManager.defineTask(BACKGROUND_DOWNLOAD_TASK_NAME, async ({ data, error, executionInfo }) => {
+  if (error) {
+    console.error('[BackgroundDownloadTask] Error:', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+  
+  if (data && typeof data === 'object' && 'videoId' in data && 'videoUrl' in data) {
+    console.log(`[BackgroundDownloadTask] Starting download for videoId: ${data.videoId}`);
+    try {
+      // Placeholder for actual download logic
+      // In production, this would use FileSystem.downloadAsync or similar
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate work
+      console.log(`[BackgroundDownloadTask] Downloaded videoId: ${data.videoId}`);
+      return BackgroundFetch.BackgroundFetchResult.NewData;
+    } catch (downloadError) {
+      console.error(`[BackgroundDownloadTask] Download failed for ${data.videoId}:`, downloadError);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+  }
+  
+  return BackgroundFetch.BackgroundFetchResult.NoData;
+});
+
+console.log('[VideoDownloadManager] ✅ Defined background video download task at module load time');
+
+// Define background fetch task (iOS only)
+if (Platform.OS === 'ios') {
+  TaskManager.defineTask(BACKGROUND_FETCH_TASK_NAME, async ({ data, error, executionInfo }) => {
+    if (error) {
+      console.error('[BackgroundFetchTask] Error:', error);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+    
+    console.log('[BackgroundFetchTask] Performing background fetch...');
+    try {
+      // Placeholder for logic to check for new videos (e.g., API call)
+      const newVideosAvailable = Math.random() > 0.5; // Simulate new data check
+      
+      if (newVideosAvailable) {
+        console.log('[BackgroundFetchTask] New videos available, scheduling downloads...');
+        // Logic to add new videos to queue and potentially trigger BACKGROUND_DOWNLOAD_TASK_NAME
+        return BackgroundFetch.BackgroundFetchResult.NewData;
+      } else {
+        console.log('[BackgroundFetchTask] No new videos available');
+        return BackgroundFetch.BackgroundFetchResult.NoData;
+      }
+    } catch (fetchError) {
+      console.error('[BackgroundFetchTask] Fetch failed:', fetchError);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
+  });
+  
+  console.log('[VideoDownloadManager] ✅ Defined background video fetch task at module load time (iOS only)');
+}
+
+// ============================================================================
+// End of top-level task definitions
+// ============================================================================
 
 interface DownloadTask {
   id: string;
@@ -46,9 +118,13 @@ class VideoDownloadManagerClass {
 
   /**
    * Initialize the download manager and cache directory
+   * Now includes BackgroundFetch registration after tasks are defined
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {
+      console.log('[VideoDownloadManager] Already initialized');
+      return;
+    }
 
     console.log('[VideoDownloadManager] 🚀 Initializing...');
 
@@ -70,6 +146,29 @@ class VideoDownloadManagerClass {
 
       // Load existing cache entries
       await this.loadCacheIndex();
+
+      // Register BackgroundFetch task (iOS only)
+      // This is called AFTER the task is defined at the top level
+      if (Platform.OS === 'ios') {
+        try {
+          const status = await BackgroundFetch.getStatusAsync();
+          
+          if (status === BackgroundFetch.BackgroundFetchStatus.Restricted || 
+              status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+            console.warn('[VideoDownloadManager] Background fetch is restricted or denied');
+          } else {
+            await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK_NAME, {
+              minimumInterval: 60 * 15, // 15 minutes
+              stopOnTerminate: false,
+              startOnBoot: true,
+            });
+            console.log('[VideoDownloadManager] ✅ Background fetch task registered');
+          }
+        } catch (bgError) {
+          console.error('[VideoDownloadManager] Failed to register background fetch:', bgError);
+          // Don't throw - allow app to continue without background fetch
+        }
+      }
 
       this.initialized = true;
       console.log('[VideoDownloadManager] ✅ Initialized successfully');
