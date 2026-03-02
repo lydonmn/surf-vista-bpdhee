@@ -48,11 +48,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
       console.log('[AuthContext] 📲 User ID:', userId);
       
-      await ensurePushTokenRegistered(userId);
+      // 🚨 CRITICAL FIX: Wrap in timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Push token check timeout')), 3000)
+      );
       
-      console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
+      try {
+        await Promise.race([
+          ensurePushTokenRegistered(userId),
+          timeoutPromise
+        ]);
+        console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
+      } catch (timeoutError) {
+        console.warn('[AuthContext] ⚠️ Push token check timeout (non-critical)');
+      }
     } catch (error) {
       console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
+      // Don't throw - this is non-critical
     }
   }, []);
 
@@ -60,8 +72,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
       
+      // 🚨 CRITICAL FIX: Shorter timeout and better error handling
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile load timeout')), 10000)
+        setTimeout(() => reject(new Error('Profile load timeout')), 5000)
       );
       
       const profilePromise = supabase
@@ -70,38 +83,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', authUser.id)
         .single();
 
-      const { data: profileData, error } = await Promise.race([
-        profilePromise,
-        timeoutPromise
-      ]) as any;
+      let profileData, error;
+      
+      try {
+        const result = await Promise.race([
+          profilePromise,
+          timeoutPromise
+        ]) as any;
+        profileData = result.data;
+        error = result.error;
+      } catch (timeoutError) {
+        console.warn('[AuthContext] ⚠️ Profile load timeout - continuing without profile');
+        setProfile(null);
+        setUser({ ...authUser });
+        return;
+      }
 
       if (profileData) {
         console.log('[AuthContext] ✅ Profile loaded:', profileData.email);
         setProfile(profileData);
         setUser({ ...authUser, profile: profileData });
         
-        registerPushTokenIfNeeded(authUser.id);
+        // Register push token in background - don't block
+        registerPushTokenIfNeeded(authUser.id).catch(err => {
+          console.warn('[AuthContext] ⚠️ Push token registration failed (non-critical):', err);
+        });
         return;
       }
 
       if (error?.code === 'PGRST116') {
         console.log('[AuthContext] Profile not found, creating...');
-        const { data: newProfile } = await supabase
-          .from('profiles')
-          .insert({
-            id: authUser.id,
-            email: authUser.email,
-            is_admin: false,
-            is_subscribed: false,
-          })
-          .select()
-          .single();
-        
-        if (newProfile) {
-          console.log('[AuthContext] ✅ Profile created');
-          setProfile(newProfile);
-          setUser({ ...authUser, profile: newProfile });
-          return;
+        try {
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: authUser.id,
+              email: authUser.email,
+              is_admin: false,
+              is_subscribed: false,
+            })
+            .select()
+            .single();
+          
+          if (newProfile && !createError) {
+            console.log('[AuthContext] ✅ Profile created');
+            setProfile(newProfile);
+            setUser({ ...authUser, profile: newProfile });
+            return;
+          } else {
+            console.warn('[AuthContext] ⚠️ Profile creation failed:', createError);
+          }
+        } catch (createError) {
+          console.warn('[AuthContext] ⚠️ Profile creation exception:', createError);
         }
       }
 
@@ -110,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser({ ...authUser });
     } catch (error) {
       console.error('[AuthContext] Exception loading profile:', error);
+      // 🚨 CRITICAL: Always set user even if profile fails
       setProfile(null);
       setUser({ ...authUser });
     }

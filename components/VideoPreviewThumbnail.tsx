@@ -62,35 +62,63 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
   console.log('[VideoPreviewThumbnail] Using thumbnail URL:', finalThumbnailUrl);
   console.log('[VideoPreviewThumbnail] Is Mux thumbnail:', !!highQualityThumbnail);
 
-  // Create a simple muted looping player
+  // 🚨 CRITICAL FIX: Create a simple muted looping player with error handling
   const player = useVideoPlayer(videoUrl, (playerInstance) => {
-    console.log('[VideoPreviewThumbnail] Initializing preview player');
-    playerInstance.loop = true;
-    playerInstance.muted = true;
-    playerInstance.volume = 0;
-    playerInstance.play();
+    try {
+      console.log('[VideoPreviewThumbnail] Initializing preview player');
+      playerInstance.loop = true;
+      playerInstance.muted = true;
+      playerInstance.volume = 0;
+      
+      // 🚨 CRITICAL: Wrap play() in try-catch to prevent unhandled promise rejections
+      try {
+        playerInstance.play().catch((playError: any) => {
+          console.warn('[VideoPreviewThumbnail] ⚠️ Play error (non-critical):', playError);
+          // Don't throw - this is expected during rapid state changes
+        });
+      } catch (playError) {
+        console.warn('[VideoPreviewThumbnail] ⚠️ Play exception (non-critical):', playError);
+      }
+    } catch (error) {
+      console.error('[VideoPreviewThumbnail] ⚠️ Player initialization error (non-critical):', error);
+    }
   });
 
-  // Listen for when video is ready to play
+  // 🚨 CRITICAL FIX: Listen for when video is ready to play with error handling
   useEffect(() => {
     if (!player) return;
 
-    const subscription = player.addListener('statusChange', (status) => {
-      console.log('[VideoPreviewThumbnail] Status changed:', status.status);
-      
-      if (status.status === 'readyToPlay' && !isReady) {
-        console.log('[VideoPreviewThumbnail] ✅ Video ready to play');
-        setIsReady(true);
-        // Hide poster after a brief delay to ensure smooth transition
-        setTimeout(() => {
-          setShowPoster(false);
-        }, 300);
-      }
-    });
+    try {
+      const subscription = player.addListener('statusChange', (status) => {
+        console.log('[VideoPreviewThumbnail] Status changed:', status.status);
+        
+        if (status.status === 'readyToPlay' && !isReady) {
+          console.log('[VideoPreviewThumbnail] ✅ Video ready to play');
+          setIsReady(true);
+          // Hide poster after a brief delay to ensure smooth transition
+          setTimeout(() => {
+            setShowPoster(false);
+          }, 300);
+        }
+        
+        // 🚨 CRITICAL: Handle error states gracefully
+        if (status.status === 'error') {
+          console.warn('[VideoPreviewThumbnail] ⚠️ Video error - keeping poster visible');
+          setIsReady(false);
+          setShowPoster(true);
+        }
+      });
 
-    return () => {
-      subscription.remove();
-    };
+      return () => {
+        try {
+          subscription.remove();
+        } catch (error) {
+          console.warn('[VideoPreviewThumbnail] ⚠️ Error removing subscription:', error);
+        }
+      };
+    } catch (error) {
+      console.error('[VideoPreviewThumbnail] ⚠️ Error setting up status listener:', error);
+    }
   }, [player, isReady]);
 
   // Reset state when URL changes

@@ -16,6 +16,42 @@ import { configureAudioSession } from '@/utils/audioSession';
 
 SplashScreen.preventAutoHideAsync();
 
+// 🚨 CRITICAL FIX: Global error handlers to prevent app crashes
+if (typeof global !== 'undefined') {
+  // Handle unhandled promise rejections
+  const originalHandler = global.Promise?.prototype?.catch;
+  if (originalHandler) {
+    global.Promise.prototype.catch = function(onRejected) {
+      return originalHandler.call(this, (error: any) => {
+        console.warn('[Global] ⚠️ Caught unhandled promise rejection:', error);
+        if (onRejected) {
+          return onRejected(error);
+        }
+      });
+    };
+  }
+}
+
+// Handle React Native's unhandled promise rejection event
+if (typeof ErrorUtils !== 'undefined') {
+  const originalHandler = ErrorUtils.getGlobalHandler();
+  ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
+    console.error('[Global] ⚠️ Global error handler:', error);
+    console.error('[Global] Is fatal:', isFatal);
+    
+    // Log but don't crash for non-fatal errors
+    if (!isFatal) {
+      console.warn('[Global] Non-fatal error - app will continue');
+      return;
+    }
+    
+    // Call original handler for fatal errors
+    if (originalHandler) {
+      originalHandler(error, isFatal);
+    }
+  });
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const notificationListener = useRef<Notifications.Subscription | undefined>();
@@ -39,26 +75,39 @@ export default function RootLayout() {
         console.log('[RootLayout] 🎵 Configuring iOS audio session for continuous video playback...');
         
         // 🚨 CRITICAL: Configure audio session FIRST before any video playback
-        await configureAudioSession({
-          category: 'playback',
-          mode: 'moviePlayback',
-          mixWithOthers: false, // Exclusive audio control prevents cutouts
-        });
-        
-        console.log('[RootLayout] ✅ iOS audio session configured - audio cutout fix applied');
+        // Wrap in try-catch to prevent crashes on startup
+        try {
+          await configureAudioSession({
+            category: 'playback',
+            mode: 'moviePlayback',
+            mixWithOthers: false, // Exclusive audio control prevents cutouts
+          });
+          console.log('[RootLayout] ✅ iOS audio session configured - audio cutout fix applied');
+        } catch (audioError) {
+          console.warn('[RootLayout] ⚠️ Audio session config failed (non-critical):', audioError);
+          // Continue - audio will use default settings
+        }
         
         // Then initialize video download system
         console.log('[RootLayout] 🚀 Initializing video download system...');
-        configureBackgroundDownloads();
-        await initializeVideoDownloads();
-        console.log('[RootLayout] ✅ Video system initialized');
+        try {
+          configureBackgroundDownloads();
+          await initializeVideoDownloads();
+          console.log('[RootLayout] ✅ Video system initialized');
+        } catch (videoError) {
+          console.warn('[RootLayout] ⚠️ Video system init failed (non-critical):', videoError);
+          // Continue - videos will stream instead of downloading
+        }
       } catch (error) {
         console.error('[RootLayout] ⚠️ Initialization failed, app will continue:', error);
         // App continues normally - videos will stream instead of downloading
       }
     };
 
-    initializeAudioAndVideo();
+    // Run initialization but don't block app startup
+    initializeAudioAndVideo().catch(err => {
+      console.error('[RootLayout] ⚠️ Async initialization error (non-critical):', err);
+    });
   }, []);
 
   useEffect(() => {
