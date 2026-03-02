@@ -199,8 +199,9 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * ✅ V9.2 CRITICAL FIX: Register for push notifications - PRODUCTION READY
- * Only shows "unavailable" message in Expo Go, works in production App Store builds
+ * ✅ V10.2 CRITICAL FIX: Register for push notifications - PRODUCTION READY
+ * Returns NULL for web/simulator instead of dummy tokens
+ * Only returns valid Expo Push Tokens for physical devices
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   try {
@@ -209,21 +210,21 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     console.log('[Push Notifications] Is Device:', Device.isDevice);
     console.log('[Push Notifications] App Ownership:', Constants.appOwnership);
 
-    // For web, return a dummy token (silent - no alert)
+    // ✅ V10.2 CRITICAL FIX: Return NULL for web (not dummy token)
     if (Platform.OS === 'web') {
-      console.log('[Push Notifications] Web platform - using dummy token');
-      console.log('[Push Notifications] ℹ️ Push notifications are not available on web');
-      return 'web-dummy-token';
+      console.log('[Push Notifications] Web platform - push notifications not supported');
+      console.log('[Push Notifications] ℹ️ Returning NULL (not dummy token)');
+      return null;
     }
 
-    // Check if running on a physical device
+    // ✅ V10.2 CRITICAL FIX: Return NULL for simulator (not dummy token)
     if (!Device.isDevice) {
-      console.warn('[Push Notifications] Simulator detected - using dummy token');
-      console.log('[Push Notifications] ℹ️ Push notifications require a physical device');
-      return 'simulator-dummy-token';
+      console.warn('[Push Notifications] Simulator detected - push notifications not supported');
+      console.log('[Push Notifications] ℹ️ Returning NULL (not dummy token)');
+      return null;
     }
 
-    // ✅ V9.2 CRITICAL FIX: Only show "unavailable" message in Expo Go
+    // ✅ V10.2 CRITICAL FIX: Only show "unavailable" message in Expo Go
     // In production App Store builds, appOwnership is null or 'standalone'
     const isExpoGo = Constants.appOwnership === 'expo';
     console.log('[Push Notifications] Is Expo Go:', isExpoGo);
@@ -243,7 +244,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     
     console.log('[Push Notifications] Using EAS Project ID:', projectId);
 
-    // ✅ V9.2 FIX: Try to get device push token first (native token)
+    // ✅ V10.2 FIX: Try to get device push token first (native token)
     console.log('[Push Notifications] 🔄 Step 1: Getting device push token...');
     
     try {
@@ -254,7 +255,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.warn('[Push Notifications] ⚠️ Could not get device token:', deviceTokenError?.message);
     }
 
-    // ✅ V9.2 FIX: Attempt to get Expo push token with better error handling
+    // ✅ V10.2 FIX: Attempt to get Expo push token with better error handling
     console.log('[Push Notifications] 🔄 Step 2: Getting Expo push token...');
     
     try {
@@ -265,6 +266,13 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.log('[Push Notifications] ===== TOKEN OBTAINED =====');
       console.log('[Push Notifications] ✅ Token:', tokenData.data);
       console.log('[Push Notifications] ===================================');
+      
+      // ✅ V10.2 CRITICAL FIX: Validate token format
+      // Expo Push Tokens start with "ExponentPushToken[" and end with "]"
+      if (!tokenData.data || !tokenData.data.startsWith('ExponentPushToken[')) {
+        console.error('[Push Notifications] ❌ Invalid token format:', tokenData.data);
+        return null;
+      }
       
       // Configure notification channel for Android
       if (Platform.OS === 'android') {
@@ -287,7 +295,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       console.error('[Push Notifications] Error code:', tokenError?.code);
       console.error('[Push Notifications] ===================================');
       
-      // ✅ V9.2 CRITICAL FIX: Only show "unavailable" alert in Expo Go
+      // ✅ V10.2 CRITICAL FIX: Only show "unavailable" alert in Expo Go
       // In production builds, just log the error and return null
       if (isExpoGo) {
         console.log('[Push Notifications] Running in Expo Go - showing unavailable message');
@@ -459,14 +467,14 @@ export async function setNotificationLocations(userId: string, locationIds: stri
 }
 
 /**
- * ✅ V10.1 PRODUCTION FIX: Enable or disable daily report notifications
+ * ✅ V10.2 PRODUCTION FIX: Enable or disable daily report notifications
  * Registers push token with Expo and saves to profiles table
- * Now with clearer permission guidance for users
+ * Now validates tokens and rejects dummy tokens
  */
 export async function setDailyReportNotifications(userId: string, enabled: boolean): Promise<boolean> {
   try {
     console.log('[Push Notifications] ═══════════════════════════════════════');
-    console.log('[Push Notifications] V10.1 PRODUCTION: TOGGLE NOTIFICATIONS');
+    console.log('[Push Notifications] V10.2 PRODUCTION: TOGGLE NOTIFICATIONS');
     console.log('[Push Notifications] ═══════════════════════════════════════');
     console.log('[Push Notifications] User ID:', userId);
     console.log('[Push Notifications] Enabled:', enabled);
@@ -478,7 +486,7 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     if (enabled) {
       console.log('[Push Notifications] 📲 User is ENABLING notifications - checking permissions...');
       
-      // ✅ V10.1 CRITICAL FIX: Check permissions first and guide user if needed
+      // ✅ V10.2 CRITICAL FIX: Check permissions first and guide user if needed
       const permStatus = await checkNotificationPermissions();
       console.log('[Push Notifications] Permission status:', permStatus);
       
@@ -501,6 +509,17 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
       console.log('[Push Notifications] 📲 Registering push token...');
       pushToken = await registerForPushNotificationsAsync();
       console.log('[Push Notifications] 📲 Token registration result:', pushToken ? 'SUCCESS ✓' : 'FAILED ✗');
+      
+      // ✅ V10.2 CRITICAL FIX: Validate token is not null and is a real Expo token
+      if (pushToken && !pushToken.startsWith('ExponentPushToken[')) {
+        console.error('[Push Notifications] ❌ CRITICAL: Invalid token format:', pushToken);
+        Alert.alert(
+          'Invalid Token',
+          'The push notification token is invalid. Please try again or contact support.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
       
       // If on physical device and no token, fail
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
@@ -664,7 +683,7 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
- * ✅ V9.2 PRODUCTION: Ensure push token is registered for existing users
+ * ✅ V10.2 PRODUCTION: Ensure push token is registered for existing users
  * This function is called AUTOMATICALLY when:
  * - User opens the profile screen
  * - User refreshes profile data
@@ -700,9 +719,13 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
     console.log('[Push Notifications] - Has token:', !!profile.push_token);
     console.log('[Push Notifications] ===================================');
 
+    // ✅ V10.2 CRITICAL FIX: Check if token is valid (not null and starts with ExponentPushToken[)
+    const hasValidToken = profile.push_token && 
+                         profile.push_token.startsWith('ExponentPushToken[');
+
     // If notifications are enabled but no valid token, register one
-    if (profile.daily_report_notifications && !profile.push_token) {
-      console.log('[Push Notifications] 🔧 User has notifications enabled but no token - registering now...');
+    if (profile.daily_report_notifications && !hasValidToken) {
+      console.log('[Push Notifications] 🔧 User has notifications enabled but no valid token - registering now...');
       
       // Check permissions first
       const { granted } = await checkNotificationPermissions();
@@ -714,7 +737,7 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
       // Register token
       const token = await registerForPushNotificationsAsync();
       
-      if (token && token !== 'web-dummy-token' && token !== 'simulator-dummy-token') {
+      if (token && token.startsWith('ExponentPushToken[')) {
         console.log('[Push Notifications] 📲 Got valid token, saving to database...');
         const saved = await savePushToken(userId, token);
         
@@ -777,8 +800,8 @@ export async function ensurePushTokenRegistered(userId: string): Promise<void> {
 }
 
 /**
- * ✅ V9.1 NEW: Send a test notification to verify setup
- * This is for admin testing only
+ * ✅ V10.2 NEW: Send a test notification to verify setup
+ * This is for admin testing only - validates token before sending
  */
 export async function sendTestNotification(token: string, title: string, body: string): Promise<void> {
   try {

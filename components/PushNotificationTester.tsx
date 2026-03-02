@@ -51,16 +51,12 @@ export function PushNotificationTester() {
         return;
       }
 
-      // Check for dummy tokens (web/simulator)
-      const isDummyToken = userProfile.push_token === 'web-dummy-token' || 
-                          userProfile.push_token === 'simulator-dummy-token' ||
-                          userProfile.push_token.includes('dummy');
-      
-      if (isDummyToken) {
-        const tokenType = userProfile.push_token === 'web-dummy-token' ? 'web' : 'simulator';
+      // ✅ V10.2 CRITICAL FIX: Validate token format
+      if (!userProfile.push_token.startsWith('ExponentPushToken[')) {
+        console.error('[PushNotificationTester] ❌ Invalid token format:', userProfile.push_token);
         Alert.alert(
           'Invalid Token',
-          `Your push token is a ${tokenType} dummy token.\n\nPush notifications only work on physical devices with EAS builds (TestFlight or App Store).`,
+          `Your push token has an invalid format.\n\nToken: ${userProfile.push_token}\n\nThis usually means:\n- You're on web or simulator\n- The token wasn't registered correctly\n\nPlease disable and re-enable notifications in the Profile tab on a physical device.`,
           [{ text: 'OK' }]
         );
         setIsTesting(false);
