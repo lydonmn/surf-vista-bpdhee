@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "SurfVista",
@@ -102,7 +101,7 @@
         }
       ]
     ],
-    "scheme": "surfvista",
+    "scheme": "SurfVista",
     "experiments": {
       "typedRoutes": true
     },
