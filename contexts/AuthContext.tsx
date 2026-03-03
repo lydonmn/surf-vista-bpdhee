@@ -45,12 +45,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
-      console.log('[AuthContext] 📲 ===== CHECKING PUSH TOKEN REGISTRATION =====');
-      console.log('[AuthContext] 📲 User ID:', userId);
+      console.log('[AuthContext] 📲 Checking push token registration');
       
-      // 🚨 CRITICAL FIX: Wrap in timeout to prevent hanging
+      // 🚨 CRITICAL FIX: Longer timeout and better error handling
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Push token check timeout')), 3000)
+        setTimeout(() => reject(new Error('Push token timeout')), 8000)
       );
       
       try {
@@ -58,12 +57,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ensurePushTokenRegistered(userId),
           timeoutPromise
         ]);
-        console.log('[AuthContext] 📲 ===== PUSH TOKEN CHECK COMPLETE =====');
+        console.log('[AuthContext] 📲 Push token check complete');
       } catch (timeoutError) {
-        console.warn('[AuthContext] ⚠️ Push token check timeout (non-critical)');
+        console.warn('[AuthContext] ⚠️ Push token timeout (non-critical)');
       }
     } catch (error) {
-      console.error('[AuthContext] ⚠️ Push token registration error (non-critical):', error);
+      console.error('[AuthContext] ⚠️ Push token error (non-critical):', error);
       // Don't throw - this is non-critical
     }
   }, []);
@@ -72,9 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
       
-      // 🚨 CRITICAL FIX: Shorter timeout and better error handling
+      // 🚨 CRITICAL FIX: Longer timeout for slower devices
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile load timeout')), 5000)
+        setTimeout(() => reject(new Error('Profile load timeout')), 10000)
       );
       
       const profilePromise = supabase
@@ -93,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profileData = result.data;
         error = result.error;
       } catch (timeoutError) {
-        console.warn('[AuthContext] ⚠️ Profile load timeout - continuing without profile');
+        console.warn('[AuthContext] ⚠️ Profile load timeout - continuing');
         setProfile(null);
         setUser({ ...authUser });
         return;

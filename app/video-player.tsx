@@ -10,7 +10,7 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { configureAudioSession, setupAudioInterruptionHandling, activateAudioSession, deactivateAudioSession } from '@/utils/audioSession';
+// Audio session is now handled automatically by expo-video
 
 interface Video {
   id: string;
@@ -53,10 +53,8 @@ export default function VideoPlayerScreen() {
   const hasLoadedRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
 
   const videoOrientation = useMemo(() => {
@@ -76,72 +74,12 @@ export default function VideoPlayerScreen() {
     return orientation;
   }, [video]);
 
-  // ✅ CRITICAL FIX: Configure audio session for continuous playback
+  // ✅ Audio session is now handled automatically by expo-video
+  // No manual configuration needed - expo-video manages audio session internally
   useEffect(() => {
-    console.log('[VideoPlayer] ⚡ Configuring audio session for CONTINUOUS playback...');
-    
-    let isActive = true;
-    
-    const setupAudio = async () => {
-      try {
-        await configureAudioSession({
-          category: 'playback',
-          mode: 'moviePlayback',
-          mixWithOthers: false,
-        });
-
-        if (isActive) {
-          await activateAudioSession();
-          console.log('[VideoPlayer] ✅ Audio session activated for continuous playback');
-
-          audioReactivationIntervalRef.current = setInterval(async () => {
-            if (isActive) {
-              console.log('[VideoPlayer] 🔄 Reactivating audio session (preventing 8-second cutoff)');
-              try {
-                await activateAudioSession();
-              } catch (err) {
-                console.error('[VideoPlayer] Failed to reactivate audio:', err);
-              }
-            }
-          }, 5000);
-
-          const cleanup = setupAudioInterruptionHandling(
-            () => {
-              console.log('[VideoPlayer] ⚠️ Audio interruption began');
-            },
-            () => {
-              console.log('[VideoPlayer] ✅ Audio interruption ended - reactivating');
-              if (isActive) {
-                activateAudioSession().catch(err => 
-                  console.error('[VideoPlayer] Failed to reactivate audio after interruption:', err)
-                );
-              }
-            }
-          );
-          audioInterruptionCleanupRef.current = cleanup;
-        }
-      } catch (audioError) {
-        console.error('[VideoPlayer] Failed to setup audio:', audioError);
-      }
-    };
-
-    setupAudio();
-
+    console.log('[VideoPlayer] ⚡ expo-video will handle audio session automatically');
     return () => {
-      console.log('[VideoPlayer] Cleaning up audio session...');
-      isActive = false;
-      
-      if (audioReactivationIntervalRef.current) {
-        clearInterval(audioReactivationIntervalRef.current);
-        audioReactivationIntervalRef.current = null;
-      }
-      
-      if (audioInterruptionCleanupRef.current) {
-        audioInterruptionCleanupRef.current();
-      }
-      deactivateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to deactivate audio:', err)
-      );
+      console.log('[VideoPlayer] Cleanup complete');
     };
   }, []);
 
@@ -203,7 +141,7 @@ export default function VideoPlayerScreen() {
 
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl) {
-      console.log('[VideoPlayer] ⚡ Initializing player with INSTANT PLAYBACK settings');
+      console.log('[VideoPlayer] ⚡ Initializing player');
       player.loop = false;
       player.muted = false;
       player.volume = volume;
@@ -211,11 +149,7 @@ export default function VideoPlayerScreen() {
       
       lastPlaybackActivityRef.current = Date.now();
       
-      console.log('[VideoPlayer] ✅ Player configured for instant, smooth playback');
-      
-      activateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to activate audio for player:', err)
-      );
+      console.log('[VideoPlayer] ✅ Player configured');
     }
   });
 
@@ -237,7 +171,6 @@ export default function VideoPlayerScreen() {
       // Start new play promise
       playPromiseRef.current = (async () => {
         try {
-          await activateAudioSession();
           player.play();
         } catch (err) {
           console.error('[VideoPlayer] Play error:', err);
@@ -506,25 +439,16 @@ export default function VideoPlayerScreen() {
           setRetryCount(0);
         }
         
-        activateAudioSession()
-          .then(() => {
-            console.log('[VideoPlayer] ✅ Audio session active - starting playback');
-            
-            if (!isPlaying) {
-              console.log('[VideoPlayer] ⚡ Starting INSTANT playback with continuous audio...');
-              setTimeout(() => {
-                if (player) {
-                  safePlay().catch(err => console.error('[VideoPlayer] Auto-play error:', err));
-                }
-              }, 50);
-            }
-          })
-          .catch(err => {
-            console.error('[VideoPlayer] Failed to activate audio before playback:', err);
-            if (!isPlaying && player) {
+        console.log('[VideoPlayer] ✅ Video ready - starting playback');
+        
+        if (!isPlaying) {
+          console.log('[VideoPlayer] ⚡ Starting playback...');
+          setTimeout(() => {
+            if (player) {
               safePlay().catch(err => console.error('[VideoPlayer] Auto-play error:', err));
             }
-          });
+          }, 50);
+        }
       }
       
       if (status.status === 'loading') {
@@ -562,10 +486,6 @@ export default function VideoPlayerScreen() {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
-        
-        activateAudioSession().catch(err => 
-          console.error('[VideoPlayer] Failed to reactivate audio during playback:', err)
-        );
       }
     });
 
@@ -714,10 +634,6 @@ export default function VideoPlayerScreen() {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
-      
-      activateAudioSession().catch(err => 
-        console.error('[VideoPlayer] Failed to reactivate audio after seek:', err)
-      );
     }
     isSeekingRef.current = false;
     resetControlsTimeout();

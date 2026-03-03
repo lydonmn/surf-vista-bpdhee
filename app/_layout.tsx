@@ -14,32 +14,16 @@ import { router } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 
-// 🚨 CRITICAL FIX: Global error handlers to prevent app crashes
-if (typeof global !== 'undefined') {
-  // Handle unhandled promise rejections
-  const originalHandler = global.Promise?.prototype?.catch;
-  if (originalHandler) {
-    global.Promise.prototype.catch = function(onRejected) {
-      return originalHandler.call(this, (error: any) => {
-        console.warn('[Global] ⚠️ Caught unhandled promise rejection:', error);
-        if (onRejected) {
-          return onRejected(error);
-        }
-      });
-    };
-  }
-}
-
-// Handle React Native's unhandled promise rejection event
+// 🚨 SIMPLIFIED: Minimal error handling to prevent crashes
+// Only handle truly unhandled errors, don't modify Promise prototype
 if (typeof ErrorUtils !== 'undefined') {
   const originalHandler = ErrorUtils.getGlobalHandler();
   ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
-    console.error('[Global] ⚠️ Global error handler:', error);
-    console.error('[Global] Is fatal:', isFatal);
+    console.error('[Global] Error caught:', error?.message || error);
     
     // Log but don't crash for non-fatal errors
     if (!isFatal) {
-      console.warn('[Global] Non-fatal error - app will continue');
+      console.warn('[Global] Non-fatal error - continuing');
       return;
     }
     
