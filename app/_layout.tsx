@@ -12,6 +12,14 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
+// Global error handler - catches all unhandled JS errors
+if (typeof ErrorUtils !== 'undefined') {
+  ErrorUtils.setGlobalHandler((error, isFatal) => {
+    console.error('FATAL JS ERROR:', error.message);
+    console.error('STACK:', error.stack);
+  });
+}
+
 // Prevent auto-hiding of splash screen
 SplashScreen.preventAutoHideAsync();
 
