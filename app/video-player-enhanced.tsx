@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
-import { configureAudioSession, setupAudioInterruptionHandling, activateAudioSession, deactivateAudioSession } from '@/utils/audioSession';
 
 const CONTROLS_HIDE_DELAY = 3000;
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
@@ -42,8 +41,6 @@ export default function EnhancedVideoPlayerScreen() {
   const hasLoadedRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioInterruptionCleanupRef = useRef<(() => void) | null>(null);
-  const audioReactivationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -67,75 +64,9 @@ export default function EnhancedVideoPlayerScreen() {
     ? videos[currentVideoIndex + 1]
     : null;
 
-  // Configure audio session for continuous playback
-  useEffect(() => {
-    console.log('[EnhancedVideoPlayer] ⚡ Configuring audio session for CONTINUOUS playback...');
-    
-    let isActive = true;
-    
-    const setupAudio = async () => {
-      try {
-        await configureAudioSession({
-          category: 'playback',
-          mode: 'moviePlayback',
-          mixWithOthers: false,
-        });
-
-        if (isActive) {
-          await activateAudioSession();
-          console.log('[EnhancedVideoPlayer] ✅ Audio session activated for continuous playback');
-
-          // Reactivate audio every 5 seconds to prevent iOS from cutting audio
-          audioReactivationIntervalRef.current = setInterval(async () => {
-            if (isActive) {
-              console.log('[EnhancedVideoPlayer] 🔄 Reactivating audio session (preventing 8-second cutoff)');
-              try {
-                await activateAudioSession();
-              } catch (err) {
-                console.error('[EnhancedVideoPlayer] Failed to reactivate audio:', err);
-              }
-            }
-          }, 5000);
-
-          const cleanup = setupAudioInterruptionHandling(
-            () => {
-              console.log('[EnhancedVideoPlayer] ⚠️ Audio interruption began');
-            },
-            () => {
-              console.log('[EnhancedVideoPlayer] ✅ Audio interruption ended - reactivating');
-              if (isActive) {
-                activateAudioSession().catch(err => 
-                  console.error('[EnhancedVideoPlayer] Failed to reactivate audio after interruption:', err)
-                );
-              }
-            }
-          );
-          audioInterruptionCleanupRef.current = cleanup;
-        }
-      } catch (audioError) {
-        console.error('[EnhancedVideoPlayer] Failed to setup audio:', audioError);
-      }
-    };
-
-    setupAudio();
-
-    return () => {
-      console.log('[EnhancedVideoPlayer] Cleaning up audio session...');
-      isActive = false;
-      
-      if (audioReactivationIntervalRef.current) {
-        clearInterval(audioReactivationIntervalRef.current);
-        audioReactivationIntervalRef.current = null;
-      }
-      
-      if (audioInterruptionCleanupRef.current) {
-        audioInterruptionCleanupRef.current();
-      }
-      deactivateAudioSession().catch(err => 
-        console.error('[EnhancedVideoPlayer] Failed to deactivate audio:', err)
-      );
-    };
-  }, []);
+  // 🚨 REMOVED: Audio session configuration (expo-video handles this automatically)
+  // expo-video in Expo SDK 52+ manages audio sessions internally
+  // No manual configuration needed
 
   const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -281,10 +212,6 @@ export default function EnhancedVideoPlayerScreen() {
       }
       
       console.log('[EnhancedVideoPlayer] ✅ Player configured for highest quality playback');
-      
-      activateAudioSession().catch(err => 
-        console.error('[EnhancedVideoPlayer] Failed to activate audio for player:', err)
-      );
     }
   });
 
@@ -319,23 +246,13 @@ export default function EnhancedVideoPlayerScreen() {
         }
         
         // Start playback automatically
-        activateAudioSession()
-          .then(() => {
-            console.log('[EnhancedVideoPlayer] ✅ Audio session active - starting playback');
-            if (!isPlaying) {
-              setTimeout(() => {
-                if (player) {
-                  player.play();
-                }
-              }, 50);
-            }
-          })
-          .catch(err => {
-            console.error('[EnhancedVideoPlayer] Failed to activate audio before playback:', err);
-            if (!isPlaying && player) {
+        if (!isPlaying) {
+          setTimeout(() => {
+            if (player) {
               player.play();
             }
-          });
+          }, 50);
+        }
       }
       
       if (status.status === 'loading') {
@@ -371,10 +288,6 @@ export default function EnhancedVideoPlayerScreen() {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
-        
-        activateAudioSession().catch(err => 
-          console.error('[EnhancedVideoPlayer] Failed to reactivate audio during playback:', err)
-        );
       }
     });
 
@@ -539,19 +452,9 @@ export default function EnhancedVideoPlayerScreen() {
       setControlsVisible(true);
       clearControlsTimeout();
     } else {
-      activateAudioSession()
-        .then(() => {
-          console.log('[EnhancedVideoPlayer] ✅ Audio reactivated - playing');
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        })
-        .catch(err => {
-          console.error('[EnhancedVideoPlayer] Failed to reactivate audio:', err);
-          player.play();
-          setIsPlaying(true);
-          resetControlsTimeout();
-        });
+      player.play();
+      setIsPlaying(true);
+      resetControlsTimeout();
     }
   }, [player, resetControlsTimeout, clearControlsTimeout]);
 
@@ -577,10 +480,6 @@ export default function EnhancedVideoPlayerScreen() {
       const clampedValue = Math.max(0, Math.min(value, duration));
       player.currentTime = clampedValue;
       setCurrentTime(clampedValue);
-      
-      activateAudioSession().catch(err => 
-        console.error('[EnhancedVideoPlayer] Failed to reactivate audio after seek:', err)
-      );
     }
     
     isSeekingRef.current = false;
