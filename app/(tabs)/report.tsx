@@ -10,31 +10,10 @@ import { useSurfData } from "@/hooks/useSurfData";
 import { ReportTextDisplay } from "@/components/ReportTextDisplay";
 import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { openPaywall } from "@/utils/paywallHelper";
-
-// 🚨 CRITICAL FIX: Safe video player operations wrapper
-const safeVideoOperation = async (operation: () => Promise<void>, operationName: string) => {
-  try {
-    const result = await operation();
-    return result;
-  } catch (error: any) {
-    // Silently handle video playback errors - they're non-critical
-    const errorMessage = error?.message || String(error);
-    if (errorMessage.includes('play()') || 
-        errorMessage.includes('pause()') || 
-        errorMessage.includes('AbortError') ||
-        errorMessage.includes('interrupted')) {
-      // Don't even log - these are expected during normal video operations
-      return;
-    }
-    // Only log unexpected errors
-    console.warn(`[VideoPlayer] ${operationName}:`, errorMessage);
-  }
-};
 
 // 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
@@ -154,27 +133,15 @@ export default function ReportScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const [videoReady, setVideoReady] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   
-  // ✅ FIX: Track if we've loaded data to prevent reload on every focus
+  // Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
   const hasLoadedVideoRef = useRef(false);
   
-  // 🚨 NUCLEAR STOKE ANIMATION: Animation values for mushroom cloud GIF
+  // NUCLEAR STOKE ANIMATION: Animation values for mushroom cloud GIF
   const explosionScale = useRef(new Animated.Value(0)).current;
   const explosionOpacity = useRef(new Animated.Value(0)).current;
-
-  // 🚨 CRITICAL FIX: Video player WITHOUT autoplay - only load the video, don't play it
-  const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    // Don't do anything in the callback - just let the player initialize
-    // Any operations will be done when the video URL changes
-    if (latestVideo?.video_url) {
-      player.loop = false;
-      player.muted = true;
-      player.volume = 0;
-    }
-  });
 
   const isDarkMode = theme.dark;
 
@@ -388,7 +355,6 @@ export default function ReportScreen() {
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
-      setVideoReady(false);
       console.log('[ReportScreen] Fetching latest video for location:', currentLocation, locationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
@@ -403,12 +369,6 @@ export default function ReportScreen() {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
         console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
-        
-        // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
-        if (videoData.video_url && videoData.video_url.startsWith('https://stream.mux.com/')) {
-          console.log('[ReportScreen] 🎬 Mux HLS URL detected, using directly (no signing needed):', videoData.video_url);
-        }
-        
         setLatestVideo(videoData);
         hasLoadedVideoRef.current = true;
       } else {
@@ -422,14 +382,10 @@ export default function ReportScreen() {
     }
   }, [currentLocation, locationData.displayName]);
 
-  // ✅ FIX: Only load data once on mount, not on every focus
-  // ✅ FIX: DO NOT autoplay video when screen is focused
+  // Only load data once on mount, not on every focus
   useFocusEffect(
     useCallback(() => {
       console.log('[ReportScreen] Screen focused');
-      
-      // ✅ FIX: DO NOT autoplay video on focus - let user tap to play
-      console.log('[ReportScreen] Video preview ready (paused) - user must tap to play');
       
       // Only load data if we haven't loaded it yet
       if (isInitialized && !authLoading && user && profile && isSubscribed) {
@@ -446,22 +402,10 @@ export default function ReportScreen() {
           loadLatestVideo();
         }
       }
-
-      // Cleanup: Pause video when screen loses focus
-      return () => {
-        console.log('[ReportScreen] Screen blurred');
-        if (videoPlayer && videoReady) {
-          try {
-            videoPlayer.pause();
-          } catch {
-            // Silently handle pause errors
-          }
-        }
-      };
-    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, videoPlayer, videoReady])
+    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
   );
 
-  // ✅ FIX: Only reload data when location changes
+  // Reload data when location changes
   useEffect(() => {
     if (isInitialized && !authLoading && user && profile && isSubscribed) {
       console.log('[ReportScreen] Location changed to:', currentLocation, locationData.displayName);
@@ -526,18 +470,15 @@ export default function ReportScreen() {
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
-      console.log('[ReportScreen] Opening enhanced video player for:', latestVideo.id);
-      console.log('[ReportScreen] ✅ Using video preloader for instant playback');
-      
+      console.log('[ReportScreen] Opening video player for:', latestVideo.id);
       router.push({
-        pathname: '/video-player-v2',
+        pathname: '/video-player',
         params: {
           videoId: latestVideo.id,
-          locationId: currentLocation,
         }
       });
     }
-  }, [latestVideo, currentLocation]);
+  }, [latestVideo]);
 
   const handleEditReport = useCallback(() => {
     console.log('[ReportScreen] Opening edit report screen for today\'s report at', locationData.displayName);
@@ -563,20 +504,7 @@ export default function ReportScreen() {
     setIsSubscribing(false);
   };
 
-  // ✅ FIX: Load video but DO NOT autoplay - let user tap to play
-  useEffect(() => {
-    if (latestVideo?.video_url && videoPlayer) {
-      console.log('[ReportScreen] Loading video preview (NO AUTOPLAY)');
-      try {
-        videoPlayer.replace(latestVideo.video_url);
-        setVideoReady(true);
-        console.log('[ReportScreen] ✅ Video ready (paused) - user must tap to play');
-      } catch (error) {
-        // Silently handle video loading errors
-        console.warn('[ReportScreen] Video loading error (non-critical)');
-      }
-    }
-  }, [latestVideo?.video_url, videoPlayer]);
+
 
   const getSwellDirectionIcon = (direction: string | null) => {
     if (!direction) return { ios: 'arrow.up', android: 'north' };
@@ -1371,32 +1299,26 @@ export default function ReportScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {!videoReady && (
-                <View style={styles.videoLoadingOverlay}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                </View>
+              {latestVideo.thumbnail_url ? (
+                <Image
+                  source={{ uri: latestVideo.thumbnail_url }}
+                  style={styles.videoThumbnail}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={[styles.videoThumbnail, { backgroundColor: '#000000' }]} />
               )}
-              <VideoView
-                style={[styles.videoPreview, !videoReady && styles.videoHidden]}
-                player={videoPlayer}
-                allowsFullscreen={false}
-                allowsPictureInPicture={false}
-                contentFit="cover"
-                nativeControls={false}
-              />
-              {videoReady && (
-                <View style={styles.videoOverlay}>
-                  <View style={styles.playButtonContainer}>
-                    <IconSymbol
-                      ios_icon_name="play.circle.fill"
-                      android_material_icon_name="play-circle"
-                      size={64}
-                      color="rgba(255, 255, 255, 0.9)"
-                    />
-                    <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
-                  </View>
+              <View style={styles.videoOverlay}>
+                <View style={styles.playButtonContainer}>
+                  <IconSymbol
+                    ios_icon_name="play.circle.fill"
+                    android_material_icon_name="play-circle"
+                    size={64}
+                    color="rgba(255, 255, 255, 0.9)"
+                  />
+                  <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
                 </View>
-              )}
+              </View>
             </View>
             <View style={styles.videoInfo}>
               <Text style={[styles.videoTitle, { color: theme.colors.text }]}>
@@ -1796,23 +1718,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#000000',
   },
-  videoPreview: {
+  videoThumbnail: {
     width: '100%',
     height: '100%',
-  },
-  videoHidden: {
-    opacity: 0,
-  },
-  videoLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    zIndex: 10,
   },
   videoOverlay: {
     position: 'absolute',

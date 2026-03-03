@@ -12,137 +12,45 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
-// 🚨 CRITICAL: Ultra-defensive splash screen handling
-try {
-  SplashScreen.preventAutoHideAsync().catch(() => {
-    // Silently fail - splash screen is non-critical
-  });
-} catch {
-  // Silently fail
-}
-
-// 🚨 CRITICAL: Minimal global error handler - only for truly fatal errors
-if (typeof ErrorUtils !== 'undefined') {
-  try {
-    const originalHandler = ErrorUtils.getGlobalHandler();
-    ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
-      // Log all errors but don't crash for non-fatal ones
-      console.error('[Global] Error:', error?.message || error);
-      
-      // Only call original handler for fatal errors
-      if (isFatal && originalHandler) {
-        originalHandler(error, isFatal);
-      }
-    });
-  } catch {
-    // Silently fail - error handler setup is non-critical
-  }
-}
-
-// 🚨 CRITICAL: Global unhandled promise rejection handler
-// This prevents video playback errors from crashing the app
-if (typeof global !== 'undefined') {
-  const originalPromiseRejectionHandler = global.onunhandledrejection;
-  
-  global.onunhandledrejection = (event: any) => {
-    const error = event?.reason || event;
-    const errorMessage = error?.message || String(error);
-    
-    // Silently handle video playback errors - they're expected during normal operation
-    if (errorMessage.includes('play()') || 
-        errorMessage.includes('pause()') || 
-        errorMessage.includes('AbortError') ||
-        errorMessage.includes('interrupted') ||
-        errorMessage.includes('video') ||
-        errorMessage.includes('goo.gl/LdLk22')) {
-      // Prevent default crash behavior
-      if (event?.preventDefault) {
-        event.preventDefault();
-      }
-      // Don't log - these are expected
-      return;
-    }
-    
-    // Log other unhandled rejections (but don't crash)
-    console.warn('[Global] Unhandled promise rejection:', errorMessage);
-    
-    // Prevent crash
-    if (event?.preventDefault) {
-      event.preventDefault();
-    }
-  };
-}
+// Prevent auto-hiding of splash screen
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
 
-  // 🚨 CRITICAL: Defensive font loading with fallback
-  let loaded = false;
-  let error = null;
-  
-  try {
-    [loaded, error] = useFonts({
-      SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    });
-  } catch (fontError) {
-    console.warn('[RootLayout] ⚠️ Font loading failed (non-critical):', fontError);
-    // Continue without custom fonts
-    loaded = true;
-    error = null;
-  }
+  const [loaded, error] = useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  });
 
-  // Hide splash screen when fonts are loaded or failed
   useEffect(() => {
     if (loaded || error) {
-      try {
-        SplashScreen.hideAsync().catch(() => {
-          // Silently fail
-        });
-      } catch {
-        // Silently fail
-      }
+      SplashScreen.hideAsync();
     }
   }, [loaded, error]);
 
-  // 🚨 CRITICAL: Defensive notification setup
   useEffect(() => {
-    try {
-      // Only set up notifications on native platforms
-      if (Platform.OS !== 'web') {
-        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-          console.log('[Notifications] Received:', notification);
-        });
+    if (Platform.OS !== 'web') {
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('[Notifications] Received:', notification);
+      });
 
-        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-          console.log('[Notifications] Tapped:', response);
-          
-          try {
-            const data = response.notification.request.content.data;
-            if (data?.type === 'daily_report') {
-              router.push('/(tabs)/report');
-            }
-          } catch {
-            // Silently fail
-          }
-        });
-      }
-    } catch {
-      // Silently fail - notifications are non-critical
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('[Notifications] Tapped:', response);
+        const data = response.notification.request.content.data;
+        if (data?.type === 'daily_report') {
+          router.push('/(tabs)/report');
+        }
+      });
     }
 
     return () => {
-      try {
-        notificationListener.current?.remove();
-        responseListener.current?.remove();
-      } catch {
-        // Silently fail
-      }
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
     };
   }, []);
 
-  // 🚨 CRITICAL: Show loading state while fonts are loading
   if (!loaded && !error) {
     return null;
   }
