@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "45",
+      "buildNumber": "46",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload high-resolution surf report videos for subscribers.",
@@ -77,7 +77,7 @@
           ]
         }
       ],
-      "versionCode": 45
+      "versionCode": 46
     },
     "web": {
       "favicon": "./assets/images/285138ce-8103-47ca-afca-6bd3439aaec5.png",
