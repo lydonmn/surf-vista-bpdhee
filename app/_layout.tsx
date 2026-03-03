@@ -11,7 +11,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
-import { configureAudioSession } from '@/utils/audioSession';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -62,40 +61,18 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
+      console.log('[RootLayout] ✅ Fonts loaded, hiding splash screen');
       SplashScreen.hideAsync();
     }
   }, [loaded]);
 
-  // 🚨 CRITICAL FIX: Configure iOS audio session on app startup
-  // This prevents audio cutout at ~10 seconds into video playback
-  useEffect(() => {
-    const initializeAudio = async () => {
-      try {
-        console.log('[RootLayout] 🎵 Configuring iOS audio session...');
-        
-        // Configure audio session with error handling
-        try {
-          await configureAudioSession({
-            category: 'playback',
-            mode: 'moviePlayback',
-            mixWithOthers: false,
-          });
-          console.log('[RootLayout] ✅ Audio session configured');
-        } catch (audioError) {
-          console.warn('[RootLayout] ⚠️ Audio config failed (non-critical):', audioError);
-        }
-      } catch (error) {
-        console.error('[RootLayout] ⚠️ Initialization error (non-critical):', error);
-      }
-    };
-
-    // Run initialization but don't block app startup
-    initializeAudio().catch(err => {
-      console.error('[RootLayout] ⚠️ Async init error (non-critical):', err);
-    });
-  }, []);
+  // 🚨 REMOVED: Audio session configuration (expo-av is deprecated in Expo SDK 52+)
+  // expo-video now handles audio session management automatically
+  // No manual configuration needed
 
   useEffect(() => {
+    console.log('[RootLayout] 🚀 App initialized successfully');
+    
     // Listen for notifications when app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('[Notifications] Received:', notification);
