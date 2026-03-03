@@ -157,6 +157,7 @@ export default function ReportScreen() {
       }
     } catch (error) {
       console.error('[ReportScreen] Error initializing video player:', error);
+      // Silently fail - video preview is non-critical
     }
   });
 
@@ -415,9 +416,13 @@ export default function ReportScreen() {
       if (latestVideo?.video_url && videoPlayer && videoReady) {
         console.log('[ReportScreen] Resuming video preview playback');
         try {
-          videoPlayer.play();
+          videoPlayer.play().catch((error: any) => {
+            console.error('[ReportScreen] Error resuming video playback:', error);
+            // Silently fail - video preview is non-critical
+          });
         } catch (error) {
           console.error('[ReportScreen] Error resuming video playback:', error);
+          // Silently fail - video preview is non-critical
         }
       }
       
@@ -445,6 +450,7 @@ export default function ReportScreen() {
             videoPlayer.pause();
           } catch (error) {
             console.error('[ReportScreen] Error pausing video playback:', error);
+            // Silently fail - video preview is non-critical
           }
         }
       };
@@ -561,10 +567,12 @@ export default function ReportScreen() {
         videoPlayer.replace(latestVideo.video_url);
         videoPlayer.play().catch((error: any) => {
           console.error('[ReportScreen] Error playing video:', error);
+          // Silently fail - video preview is non-critical
         });
         setVideoReady(true);
       } catch (error) {
         console.error('[ReportScreen] Error loading video:', error);
+        // Silently fail - video preview is non-critical
       }
     }
   }, [latestVideo?.video_url, videoPlayer]);

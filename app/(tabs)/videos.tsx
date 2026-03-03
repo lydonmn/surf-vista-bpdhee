@@ -414,9 +414,11 @@ function VideoPreview({ videoUrl }: { videoUrl: string }) {
       player.muted = true;
       player.play().catch((error: any) => {
         console.error('[VideoPreview] Error playing video:', error);
+        // Silently fail - video preview is non-critical
       });
     } catch (error) {
       console.error('[VideoPreview] Error initializing video player:', error);
+      // Silently fail - video preview is non-critical
     }
   });
 

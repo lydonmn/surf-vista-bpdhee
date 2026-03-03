@@ -39,6 +39,36 @@ if (typeof ErrorUtils !== 'undefined') {
   }
 }
 
+// 🚨 CRITICAL: Global unhandled promise rejection handler
+// This prevents video playback errors from crashing the app
+if (typeof global !== 'undefined') {
+  const originalPromiseRejectionHandler = global.onunhandledrejection;
+  
+  global.onunhandledrejection = (event: any) => {
+    const error = event?.reason || event;
+    const errorMessage = error?.message || String(error);
+    
+    // Log video playback errors but don't crash
+    if (errorMessage.includes('play()') || 
+        errorMessage.includes('pause()') || 
+        errorMessage.includes('AbortError') ||
+        errorMessage.includes('video')) {
+      console.warn('[Global] Video playback error (non-critical):', errorMessage);
+      // Prevent default crash behavior
+      event?.preventDefault?.();
+      return;
+    }
+    
+    // Log other unhandled rejections
+    console.error('[Global] Unhandled promise rejection:', errorMessage);
+    
+    // Call original handler if it exists
+    if (originalPromiseRejectionHandler) {
+      originalPromiseRejectionHandler(event);
+    }
+  };
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const notificationListener = useRef<Notifications.Subscription | undefined>();
