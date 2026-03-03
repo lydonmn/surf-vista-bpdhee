@@ -54,7 +54,6 @@ export default function VideoPlayerScreen() {
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const playPromiseRef = useRef<Promise<void> | null>(null);
   const isMountedRef = useRef(true);
 
   const videoOrientation = useMemo(() => {
@@ -66,7 +65,7 @@ export default function VideoPlayerScreen() {
     return isPortrait ? 'portrait' : 'landscape';
   }, [video]);
 
-  // 🚨 CRITICAL: Safe cleanup on unmount
+  // 🚨 CRITICAL FIX: Safe cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     
@@ -87,9 +86,6 @@ export default function VideoPlayerScreen() {
         clearInterval(connectionRefreshTimeoutRef.current);
         connectionRefreshTimeoutRef.current = null;
       }
-      
-      // Clear any pending play promises
-      playPromiseRef.current = null;
     };
   }, []);
 
@@ -170,37 +166,14 @@ export default function VideoPlayerScreen() {
     }
   });
 
-  // 🚨 CRITICAL FIX: Safe play/pause with promise handling
+  // 🚨 CRITICAL FIX: Safe play/pause with proper error handling
   const safePlay = useCallback(async () => {
     if (!player || !isMountedRef.current) return;
     
     try {
-      // Wait for any pending play promise to resolve
-      if (playPromiseRef.current) {
-        try {
-          await playPromiseRef.current;
-        } catch (e) {
-          // Ignore errors from previous play promise
-        }
-      }
-      
-      // Start new play promise
-      playPromiseRef.current = (async () => {
-        try {
-          if (isMountedRef.current) {
-            player.play();
-          }
-        } catch (err) {
-          console.error('[VideoPlayer] Play error:', err);
-          throw err;
-        }
-      })();
-      
-      await playPromiseRef.current;
-      playPromiseRef.current = null;
+      player.play();
     } catch (err) {
-      // Silently handle play errors
-      playPromiseRef.current = null;
+      console.error('[VideoPlayer] Play error (caught):', err);
     }
   }, [player]);
 
@@ -208,21 +181,9 @@ export default function VideoPlayerScreen() {
     if (!player || !isMountedRef.current) return;
     
     try {
-      // Wait for any pending play promise to resolve before pausing
-      if (playPromiseRef.current) {
-        try {
-          await playPromiseRef.current;
-        } catch (e) {
-          // Ignore errors from play promise
-        }
-        playPromiseRef.current = null;
-      }
-      
-      if (isMountedRef.current) {
-        player.pause();
-      }
+      player.pause();
     } catch (err) {
-      // Silently handle pause errors
+      console.error('[VideoPlayer] Pause error (caught):', err);
     }
   }, [player]);
 
@@ -358,6 +319,7 @@ export default function VideoPlayerScreen() {
         if (!isMountedRef.current) return;
         
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
+        console.error('[VideoPlayer] Load error:', errorMessage);
         setError(errorMessage);
       } finally {
         if (isMountedRef.current) {
@@ -376,6 +338,7 @@ export default function VideoPlayerScreen() {
       if (!isMountedRef.current) return;
       
       if (status.error) {
+        console.error('[VideoPlayer] Status error:', status.error);
         const errorString = String(status.error).toLowerCase();
         const isRecoverableError = errorString.includes('network') || 
                                    errorString.includes('timeout') || 
@@ -383,6 +346,7 @@ export default function VideoPlayerScreen() {
                                    errorString.includes('buffer');
         
         if (isRecoverableError && retryCount < maxRetries) {
+          console.log('[VideoPlayer] Retrying playback...');
           setRetryCount(prev => prev + 1);
           
           const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
