@@ -12,26 +12,33 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
-SplashScreen.preventAutoHideAsync();
+// 🚨 CRITICAL: Prevent auto-hide to avoid white flash
+SplashScreen.preventAutoHideAsync().catch((error) => {
+  console.warn('[RootLayout] SplashScreen.preventAutoHideAsync failed:', error);
+});
 
 // 🚨 SIMPLIFIED: Minimal error handling to prevent crashes
 // Only handle truly unhandled errors, don't modify Promise prototype
 if (typeof ErrorUtils !== 'undefined') {
-  const originalHandler = ErrorUtils.getGlobalHandler();
-  ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
-    console.error('[Global] Error caught:', error?.message || error);
-    
-    // Log but don't crash for non-fatal errors
-    if (!isFatal) {
-      console.warn('[Global] Non-fatal error - continuing');
-      return;
-    }
-    
-    // Call original handler for fatal errors
-    if (originalHandler) {
-      originalHandler(error, isFatal);
-    }
-  });
+  try {
+    const originalHandler = ErrorUtils.getGlobalHandler();
+    ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
+      console.error('[Global] Error caught:', error?.message || error);
+      
+      // Log but don't crash for non-fatal errors
+      if (!isFatal) {
+        console.warn('[Global] Non-fatal error - continuing');
+        return;
+      }
+      
+      // Call original handler for fatal errors
+      if (originalHandler) {
+        originalHandler(error, isFatal);
+      }
+    });
+  } catch (setupError) {
+    console.warn('[RootLayout] Error handler setup failed:', setupError);
+  }
 }
 
 export default function RootLayout() {
@@ -39,14 +46,26 @@ export default function RootLayout() {
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
 
-  const [loaded] = useFonts({
+  const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
   useEffect(() => {
+    if (error) {
+      console.error('[RootLayout] ❌ Font loading error:', error);
+      // Hide splash screen even if fonts fail to load
+      SplashScreen.hideAsync().catch((hideError) => {
+        console.warn('[RootLayout] SplashScreen.hideAsync failed:', hideError);
+      });
+    }
+  }, [error]);
+
+  useEffect(() => {
     if (loaded) {
       console.log('[RootLayout] ✅ Fonts loaded, hiding splash screen');
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch((hideError) => {
+        console.warn('[RootLayout] SplashScreen.hideAsync failed:', hideError);
+      });
     }
   }, [loaded]);
 
@@ -57,31 +76,44 @@ export default function RootLayout() {
   useEffect(() => {
     console.log('[RootLayout] 🚀 App initialized successfully');
     
-    // Listen for notifications when app is in foreground
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('[Notifications] Received:', notification);
-    });
+    try {
+      // Listen for notifications when app is in foreground
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('[Notifications] Received:', notification);
+      });
 
-    // Listen for notification taps
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[Notifications] Tapped:', response);
-      
-      const data = response.notification.request.content.data;
-      
-      // Navigate to report screen when daily report notification is tapped
-      if (data?.type === 'daily_report') {
-        console.log('[Notifications] Navigating to report');
-        router.push('/(tabs)/report');
-      }
-    });
+      // Listen for notification taps
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('[Notifications] Tapped:', response);
+        
+        try {
+          const data = response.notification.request.content.data;
+          
+          // Navigate to report screen when daily report notification is tapped
+          if (data?.type === 'daily_report') {
+            console.log('[Notifications] Navigating to report');
+            router.push('/(tabs)/report');
+          }
+        } catch (navError) {
+          console.warn('[Notifications] Navigation error:', navError);
+        }
+      });
+    } catch (notifError) {
+      console.warn('[RootLayout] Notification setup error (non-critical):', notifError);
+    }
 
     return () => {
-      notificationListener.current?.remove();
-      responseListener.current?.remove();
+      try {
+        notificationListener.current?.remove();
+        responseListener.current?.remove();
+      } catch (cleanupError) {
+        console.warn('[RootLayout] Cleanup error:', cleanupError);
+      }
     };
   }, []);
 
-  if (!loaded) {
+  // 🚨 CRITICAL: Show loading state while fonts are loading
+  if (!loaded && !error) {
     return null;
   }
 

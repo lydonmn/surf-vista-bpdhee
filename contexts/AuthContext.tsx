@@ -5,8 +5,35 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
-import { initializeRevenueCat, identifyUser, logoutUser } from '@/utils/superwallConfig';
-import { ensurePushTokenRegistered } from '@/utils/pushNotifications';
+
+// 🚨 CRITICAL: Wrap RevenueCat imports in try-catch to prevent crashes
+let initializeRevenueCat: any;
+let identifyUser: any;
+let logoutUser: any;
+
+try {
+  const superwallConfig = require('@/utils/superwallConfig');
+  initializeRevenueCat = superwallConfig.initializeRevenueCat;
+  identifyUser = superwallConfig.identifyUser;
+  logoutUser = superwallConfig.logoutUser;
+} catch (error) {
+  console.warn('[AuthContext] RevenueCat not available (non-critical):', error);
+  // Provide no-op fallbacks
+  initializeRevenueCat = async () => false;
+  identifyUser = async () => {};
+  logoutUser = async () => {};
+}
+
+// 🚨 CRITICAL: Wrap push notifications in try-catch
+let ensurePushTokenRegistered: any;
+
+try {
+  const pushNotifications = require('@/utils/pushNotifications');
+  ensurePushTokenRegistered = pushNotifications.ensurePushTokenRegistered;
+} catch (error) {
+  console.warn('[AuthContext] Push notifications not available (non-critical):', error);
+  ensurePushTokenRegistered = async () => {};
+}
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -158,9 +185,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setIsLoading(false);
       
-      logoutUser().catch(error => {
+      // 🚨 CRITICAL: Wrap in try-catch to prevent crashes
+      try {
+        await logoutUser();
+      } catch (error) {
         console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
-      });
+      }
       
       console.log('[AuthContext] Calling supabase.auth.signOut()...');
       const { error } = await supabase.auth.signOut();
@@ -197,7 +227,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[AuthContext] Invalid refresh token detected - clearing session');
           
           // Clear the session from storage to prevent repeated errors
-          await AsyncStorage.removeItem('supabase.auth.token');
+          try {
+            await AsyncStorage.removeItem('supabase.auth.token');
+          } catch (storageError) {
+            console.warn('[AuthContext] Storage clear error:', storageError);
+          }
           
           // Sign out to clear all state
           await signOut();
@@ -285,6 +319,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsInitialized(true);
         }
 
+        // 🚨 CRITICAL: Wrap RevenueCat initialization in try-catch
         if (mounted && Platform.OS !== 'web') {
           console.log('[AuthContext] 💳 Starting RevenueCat...');
           
@@ -379,7 +414,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
       
-      await registerPushTokenIfNeeded(session.user.id);
+      try {
+        await registerPushTokenIfNeeded(session.user.id);
+      } catch (error) {
+        console.warn('[AuthContext] Push token refresh error (non-critical):', error);
+      }
     }
   }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
 
