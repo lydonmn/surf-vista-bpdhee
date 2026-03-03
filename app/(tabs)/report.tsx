@@ -16,6 +16,24 @@ import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { openPaywall } from "@/utils/paywallHelper";
 
+// 🚨 CRITICAL FIX: Safe video player operations wrapper
+const safeVideoOperation = async (operation: () => Promise<void>, operationName: string) => {
+  try {
+    await operation();
+  } catch (error: any) {
+    // Log but don't crash for video playback errors
+    const errorMessage = error?.message || String(error);
+    if (errorMessage.includes('play()') || 
+        errorMessage.includes('pause()') || 
+        errorMessage.includes('AbortError') ||
+        errorMessage.includes('interrupted')) {
+      console.warn(`[VideoPlayer] ${operationName} interrupted (non-critical):`, errorMessage);
+    } else {
+      console.error(`[VideoPlayer] ${operationName} error:`, error);
+    }
+  }
+};
+
 // 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
@@ -147,7 +165,7 @@ export default function ReportScreen() {
 
   // 🚨 CRITICAL FIX: Video player WITHOUT autoplay - only load the video, don't play it
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    try {
+    safeVideoOperation(async () => {
       if (latestVideo?.video_url) {
         console.log('[ReportScreen] Initializing video preview player (NO AUTOPLAY)');
         player.loop = false;
@@ -156,10 +174,7 @@ export default function ReportScreen() {
         // ✅ DO NOT call player.play() here - let user tap to play
         console.log('[ReportScreen] ✅ Video preview ready (paused)');
       }
-    } catch (error) {
-      console.error('[ReportScreen] Error initializing video player:', error);
-      // Silently fail - video preview is non-critical
-    }
+    }, 'Video initialization');
   });
 
   const isDarkMode = theme.dark;
@@ -437,12 +452,9 @@ export default function ReportScreen() {
       return () => {
         console.log('[ReportScreen] Screen blurred - pausing video playback');
         if (videoPlayer && videoReady) {
-          try {
+          safeVideoOperation(async () => {
             videoPlayer.pause();
-          } catch (error) {
-            console.error('[ReportScreen] Error pausing video playback:', error);
-            // Silently fail - video preview is non-critical
-          }
+          }, 'Pause on blur');
         }
       };
     }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, videoPlayer, videoReady])
@@ -554,15 +566,12 @@ export default function ReportScreen() {
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
       console.log('[ReportScreen] Loading video preview (NO AUTOPLAY)');
-      try {
+      safeVideoOperation(async () => {
         videoPlayer.replace(latestVideo.video_url);
         // ✅ DO NOT call videoPlayer.play() - let user tap to play
         setVideoReady(true);
         console.log('[ReportScreen] ✅ Video ready (paused) - user must tap to play');
-      } catch (error) {
-        console.error('[ReportScreen] Error loading video:', error);
-        // Silently fail - video preview is non-critical
-      }
+      }, 'Video replace');
     }
   }, [latestVideo?.video_url, videoPlayer]);
 
