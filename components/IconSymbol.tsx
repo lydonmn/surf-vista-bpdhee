@@ -1,5 +1,4 @@
 
-import { SymbolWeight } from "expo-symbols";
 import {
   OpaqueColorValue,
   StyleProp,
@@ -20,7 +19,7 @@ export function IconSymbol({
   size?: number;
   color: string | OpaqueColorValue;
   style?: StyleProp<ViewStyle>;
-  weight?: SymbolWeight;
+  weight?: string;
 }) {
   return (
     <MaterialIcons
