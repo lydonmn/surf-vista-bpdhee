@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
@@ -10,7 +10,6 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Audio session is now handled automatically by expo-video
 
 interface Video {
   id: string;
@@ -56,30 +55,41 @@ export default function VideoPlayerScreen() {
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const playPromiseRef = useRef<Promise<void> | null>(null);
+  const isMountedRef = useRef(true);
 
   const videoOrientation = useMemo(() => {
     if (!video?.resolution_width || !video?.resolution_height) {
-      console.log('[VideoPlayer] No resolution data, assuming portrait (drone default)');
       return 'portrait';
     }
     
     const isPortrait = video.resolution_height > video.resolution_width;
-    const orientation = isPortrait ? 'portrait' : 'landscape';
-    
-    console.log('[VideoPlayer] 📐 Video orientation detected:', orientation);
-    console.log('[VideoPlayer] - Width:', video.resolution_width);
-    console.log('[VideoPlayer] - Height:', video.resolution_height);
-    console.log('[VideoPlayer] - Is Portrait:', isPortrait);
-    
-    return orientation;
+    return isPortrait ? 'portrait' : 'landscape';
   }, [video]);
 
-  // ✅ Audio session is now handled automatically by expo-video
-  // No manual configuration needed - expo-video manages audio session internally
+  // 🚨 CRITICAL: Safe cleanup on unmount
   useEffect(() => {
-    console.log('[VideoPlayer] ⚡ expo-video will handle audio session automatically');
+    isMountedRef.current = true;
+    
     return () => {
-      console.log('[VideoPlayer] Cleanup complete');
+      console.log('[VideoPlayer] Component unmounting - cleaning up');
+      isMountedRef.current = false;
+      
+      // Clear all timeouts
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
+      }
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
+      if (connectionRefreshTimeoutRef.current) {
+        clearInterval(connectionRefreshTimeoutRef.current);
+        connectionRefreshTimeoutRef.current = null;
+      }
+      
+      // Clear any pending play promises
+      playPromiseRef.current = null;
     };
   }, []);
 
@@ -93,14 +103,18 @@ export default function VideoPlayerScreen() {
   const startControlsTimeout = useCallback(() => {
     clearControlsTimeout();
     
-    if (isPlaying) {
+    if (isPlaying && isMountedRef.current) {
       controlsTimeoutRef.current = setTimeout(() => {
-        setControlsVisible(false);
+        if (isMountedRef.current) {
+          setControlsVisible(false);
+        }
       }, CONTROLS_HIDE_DELAY);
     }
   }, [isPlaying, clearControlsTimeout]);
 
   const toggleControls = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     const newVisibility = !controlsVisible;
     setControlsVisible(newVisibility);
     
@@ -112,6 +126,8 @@ export default function VideoPlayerScreen() {
   }, [controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
   const resetControlsTimeout = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     setControlsVisible(true);
     startControlsTimeout();
   }, [startControlsTimeout]);
@@ -119,43 +135,44 @@ export default function VideoPlayerScreen() {
   const memoizedVideoUrl = useMemo(() => videoUrl || '', [videoUrl]);
 
   const refreshConnectionIfNeeded = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     const now = Date.now();
     const timeSinceLastActivity = now - lastPlaybackActivityRef.current;
     
     if (timeSinceLastActivity > 45000 && videoUrl) {
-      console.log('[VideoPlayer] ⚡ Refreshing connection for instant playback');
-      
       fetch(videoUrl, {
         method: 'HEAD',
         cache: 'no-cache',
       })
         .then(() => {
-          console.log('[VideoPlayer] ✅ Connection refreshed');
-          lastPlaybackActivityRef.current = now;
+          if (isMountedRef.current) {
+            lastPlaybackActivityRef.current = now;
+          }
         })
-        .catch(err => {
-          console.warn('[VideoPlayer] Connection refresh failed:', err);
+        .catch(() => {
+          // Silently fail
         });
     }
   }, [videoUrl]);
 
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
-    if (memoizedVideoUrl) {
-      console.log('[VideoPlayer] ⚡ Initializing player');
-      player.loop = false;
-      player.muted = false;
-      player.volume = volume;
-      player.allowsExternalPlayback = true;
-      
-      lastPlaybackActivityRef.current = Date.now();
-      
-      console.log('[VideoPlayer] ✅ Player configured');
+    if (memoizedVideoUrl && isMountedRef.current) {
+      try {
+        player.loop = false;
+        player.muted = false;
+        player.volume = volume;
+        player.allowsExternalPlayback = true;
+        lastPlaybackActivityRef.current = Date.now();
+      } catch (e) {
+        console.error('[VideoPlayer] Error configuring player:', e);
+      }
     }
   });
 
   // 🚨 CRITICAL FIX: Safe play/pause with promise handling
   const safePlay = useCallback(async () => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
     
     try {
       // Wait for any pending play promise to resolve
@@ -164,14 +181,15 @@ export default function VideoPlayerScreen() {
           await playPromiseRef.current;
         } catch (e) {
           // Ignore errors from previous play promise
-          console.log('[VideoPlayer] Previous play promise rejected (expected)');
         }
       }
       
       // Start new play promise
       playPromiseRef.current = (async () => {
         try {
-          player.play();
+          if (isMountedRef.current) {
+            player.play();
+          }
         } catch (err) {
           console.error('[VideoPlayer] Play error:', err);
           throw err;
@@ -181,13 +199,13 @@ export default function VideoPlayerScreen() {
       await playPromiseRef.current;
       playPromiseRef.current = null;
     } catch (err) {
-      console.error('[VideoPlayer] Safe play error:', err);
+      // Silently handle play errors
       playPromiseRef.current = null;
     }
   }, [player]);
 
   const safePause = useCallback(async () => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
     
     try {
       // Wait for any pending play promise to resolve before pausing
@@ -196,14 +214,15 @@ export default function VideoPlayerScreen() {
           await playPromiseRef.current;
         } catch (e) {
           // Ignore errors from play promise
-          console.log('[VideoPlayer] Play promise rejected before pause (expected)');
         }
         playPromiseRef.current = null;
       }
       
-      player.pause();
+      if (isMountedRef.current) {
+        player.pause();
+      }
     } catch (err) {
-      console.error('[VideoPlayer] Safe pause error:', err);
+      // Silently handle pause errors
     }
   }, [player]);
 
@@ -211,24 +230,26 @@ export default function VideoPlayerScreen() {
     console.log('[VideoPlayer] User exiting video player');
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (e) {
+        // Silently fail
+      }
     }
     
     if (player) {
       try {
         await safePause();
-        console.log('[VideoPlayer] Stopped playback');
       } catch (e) {
-        console.log('[VideoPlayer] Error stopping playback:', e);
+        // Silently fail
       }
     }
     
     if (isFullscreen && Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
-        console.log('[VideoPlayer] Unlocked screen orientation');
       } catch (e) {
-        console.log('[VideoPlayer] Error unlocking orientation:', e);
+        // Silently fail
       }
     }
     
@@ -236,7 +257,7 @@ export default function VideoPlayerScreen() {
   }, [player, isFullscreen, safePause]);
 
   useEffect(() => {
-    console.log('[VideoPlayer] Setting up connection keep-alive');
+    if (!isMountedRef.current) return;
     
     connectionRefreshTimeoutRef.current = setInterval(() => {
       refreshConnectionIfNeeded();
@@ -251,27 +272,23 @@ export default function VideoPlayerScreen() {
   }, [refreshConnectionIfNeeded]);
 
   useEffect(() => {
-    console.log('[VideoPlayer] Component mounted, loading video:', videoId);
-    console.log('[VideoPlayer] ⚡ Preloaded URL available:', !!preloadedUrl);
-    
-    lastPlaybackActivityRef.current = Date.now();
+    if (!isMountedRef.current) return;
     
     const loadVideo = async () => {
       if (hasLoadedRef.current) {
-        console.log('[VideoPlayer] Already loaded, skipping...');
         return;
       }
       
       try {
         setIsLoading(true);
         setError(null);
-        
-        console.log('[VideoPlayer] ⚡ FAST PATH: Loading video metadata and URL in parallel');
 
         const [sessionResult, videoResult] = await Promise.all([
           supabase.auth.getSession(),
           supabase.from('videos').select('*').eq('id', videoId).single()
         ]);
+
+        if (!isMountedRef.current) return;
 
         const { data: { session } } = sessionResult;
         if (!session) {
@@ -280,18 +297,12 @@ export default function VideoPlayerScreen() {
 
         const { data, error: fetchError } = videoResult;
         if (fetchError) {
-          console.error('[VideoPlayer] Error loading video:', fetchError);
           throw fetchError;
         }
 
-        console.log('[VideoPlayer] Video loaded:', data.title);
-        console.log('[VideoPlayer] 📐 Video resolution:', data.resolution_width, 'x', data.resolution_height);
-        console.log('[VideoPlayer] 🎬 Video URL:', data.video_url);
-        console.log('[VideoPlayer] ⚠️ NOT using database duration - will wait for video onLoad callback');
         setVideo(data);
 
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
-          console.log('[VideoPlayer] 🎬 Mux HLS URL detected, using directly (no signing needed):', data.video_url);
           setVideoUrl(data.video_url);
           hasLoadedRef.current = true;
           setIsLoading(false);
@@ -300,7 +311,6 @@ export default function VideoPlayerScreen() {
         }
 
         if (preloadedUrl && typeof preloadedUrl === 'string') {
-          console.log('[VideoPlayer] ✅ Using preloaded URL - INSTANT PLAYBACK READY');
           setVideoUrl(preloadedUrl);
           hasLoadedRef.current = true;
           setIsLoading(false);
@@ -308,8 +318,6 @@ export default function VideoPlayerScreen() {
           return;
         }
 
-        console.log('[VideoPlayer] ⚠️ No preloaded URL - generating signed URL (slower)');
-        
         let fileName = '';
         try {
           const urlParts = data.video_url.split('/videos/');
@@ -321,7 +329,6 @@ export default function VideoPlayerScreen() {
             fileName = pathParts[pathParts.length - 1];
           }
         } catch (e) {
-          console.error('[VideoPlayer] Error parsing URL:', e);
           throw new Error('Invalid video URL format');
         }
 
@@ -333,27 +340,29 @@ export default function VideoPlayerScreen() {
           .from('videos')
           .createSignedUrl(fileName, 7200);
 
+        if (!isMountedRef.current) return;
+
         if (signedUrlError || !signedUrlData?.signedUrl) {
-          console.error('[VideoPlayer] Signed URL error:', signedUrlError);
           throw new Error('Failed to generate streaming URL');
         }
 
         const generatedUrl = signedUrlData.signedUrl;
-        console.log('[VideoPlayer] ✓ Signed URL created');
         
         if (!generatedUrl.startsWith('https://')) {
-          console.error('[VideoPlayer] ❌ URL is not HTTPS');
           throw new Error('Video URL must use HTTPS');
         }
         
         setVideoUrl(generatedUrl);
         hasLoadedRef.current = true;
       } catch (loadError: unknown) {
-        console.error('[VideoPlayer] Exception loading video:', loadError);
+        if (!isMountedRef.current) return;
+        
         const errorMessage = loadError instanceof Error ? loadError.message : 'Failed to load video';
         setError(errorMessage);
       } finally {
-        setIsLoading(false);
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -361,16 +370,12 @@ export default function VideoPlayerScreen() {
   }, [videoId, preloadedUrl]);
 
   useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    console.log('[VideoPlayer] Setting up player event listeners');
+    if (!player || !videoUrl || !isMountedRef.current) return;
 
     const statusListener = player.addListener('statusChange', (status) => {
-      console.log('[VideoPlayer] Status:', status.status);
+      if (!isMountedRef.current) return;
       
       if (status.error) {
-        console.error('[VideoPlayer] ❌ Player error:', status.error);
-        
         const errorString = String(status.error).toLowerCase();
         const isRecoverableError = errorString.includes('network') || 
                                    errorString.includes('timeout') || 
@@ -378,37 +383,20 @@ export default function VideoPlayerScreen() {
                                    errorString.includes('buffer');
         
         if (isRecoverableError && retryCount < maxRetries) {
-          console.log('[VideoPlayer] ⚡ Recoverable error - auto-recovery attempt', retryCount + 1, 'of', maxRetries);
-          
           setRetryCount(prev => prev + 1);
           
           const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
           setTimeout(() => {
-            if (player && videoUrl) {
-              console.log('[VideoPlayer] ⚡ Reloading video source...');
-              
-              activateAudioSession()
-                .then(() => {
-                  player.replace(videoUrl);
-                  setTimeout(() => {
-                    if (player) {
-                      safePlay().catch(err => console.error('[VideoPlayer] Recovery play error:', err));
-                    }
-                  }, 100);
-                })
-                .catch(err => {
-                  console.error('[VideoPlayer] Failed to reactivate audio for recovery:', err);
-                  player.replace(videoUrl);
-                  setTimeout(() => {
-                    if (player) {
-                      safePlay().catch(err => console.error('[VideoPlayer] Recovery play error:', err));
-                    }
-                  }, 100);
-                });
+            if (player && videoUrl && isMountedRef.current) {
+              player.replace(videoUrl);
+              setTimeout(() => {
+                if (player && isMountedRef.current) {
+                  safePlay().catch(() => {});
+                }
+              }, 100);
             }
           }, backoffDelay);
         } else if (retryCount >= maxRetries) {
-          console.error('[VideoPlayer] ❌ Max retries reached');
           setError(`Playback error: ${status.error}. Please check your internet connection and try again.`);
         } else {
           setError(`Playback error: ${status.error}`);
@@ -418,13 +406,9 @@ export default function VideoPlayerScreen() {
       
       if (status.status === 'readyToPlay') {
         const videoDuration = status.duration || 0;
-        console.log('[VideoPlayer] ✅ Video ready to play, duration from metadata:', videoDuration.toFixed(2));
         
-        if (videoDuration > 0) {
-          console.log('[VideoPlayer] 🎯 Setting duration from onLoad callback:', videoDuration);
+        if (videoDuration > 0 && isMountedRef.current) {
           setDuration(videoDuration);
-        } else {
-          console.warn('[VideoPlayer] ⚠️ Video metadata has no duration, will try to get it from player');
         }
         
         setIsBuffering(false);
@@ -434,25 +418,20 @@ export default function VideoPlayerScreen() {
           bufferingTimeoutRef.current = null;
         }
         
-        if (retryCount > 0) {
-          console.log('[VideoPlayer] ✅ Video recovered after', retryCount, 'retries');
+        if (retryCount > 0 && isMountedRef.current) {
           setRetryCount(0);
         }
         
-        console.log('[VideoPlayer] ✅ Video ready - starting playback');
-        
-        if (!isPlaying) {
-          console.log('[VideoPlayer] ⚡ Starting playback...');
+        if (!isPlaying && isMountedRef.current) {
           setTimeout(() => {
-            if (player) {
-              safePlay().catch(err => console.error('[VideoPlayer] Auto-play error:', err));
+            if (player && isMountedRef.current) {
+              safePlay().catch(() => {});
             }
           }, 50);
         }
       }
       
       if (status.status === 'loading') {
-        console.log('[VideoPlayer] Video buffering...');
         setIsBuffering(true);
         
         const bufferTimeout = 2000;
@@ -461,8 +440,9 @@ export default function VideoPlayerScreen() {
           clearTimeout(bufferingTimeoutRef.current);
         }
         bufferingTimeoutRef.current = setTimeout(() => {
-          console.log('[VideoPlayer] ⚠️ Buffering timeout - forcing clear');
-          setIsBuffering(false);
+          if (isMountedRef.current) {
+            setIsBuffering(false);
+          }
         }, bufferTimeout);
       }
       
@@ -476,11 +456,11 @@ export default function VideoPlayerScreen() {
     });
 
     const playingListener = player.addListener('playingChange', (newIsPlaying) => {
-      console.log('[VideoPlayer] Playing state changed:', newIsPlaying);
+      if (!isMountedRef.current) return;
+      
       setIsPlaying(newIsPlaying);
       
       if (newIsPlaying) {
-        console.log('[VideoPlayer] ✅ Video playing - clearing buffering');
         setIsBuffering(false);
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
@@ -490,6 +470,8 @@ export default function VideoPlayerScreen() {
     });
 
     const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
+      if (!isMountedRef.current) return;
+      
       const newTime = timeUpdate.currentTime || 0;
       
       const now = Date.now();
@@ -505,7 +487,6 @@ export default function VideoPlayerScreen() {
       if (player.duration && player.duration > 0) {
         setDuration(prevDuration => {
           if (prevDuration === 0 || Math.abs(prevDuration - player.duration) > 1) {
-            console.log('[VideoPlayer] 🎯 Updating duration from player:', player.duration);
             return player.duration;
           }
           return prevDuration;
@@ -520,7 +501,6 @@ export default function VideoPlayerScreen() {
     });
 
     return () => {
-      console.log('[VideoPlayer] Cleaning up event listeners');
       statusListener.remove();
       playingListener.remove();
       timeUpdateListener.remove();
@@ -533,34 +513,35 @@ export default function VideoPlayerScreen() {
   }, [player, videoUrl, isPlaying, retryCount, preloadedUrl, safePlay]);
 
   useEffect(() => {
-    if (videoUrl && player) {
-      console.log('[VideoPlayer] ⚡ Loading video source for INSTANT playback...');
+    if (videoUrl && player && isMountedRef.current) {
       try {
         player.replace(videoUrl);
-        console.log('[VideoPlayer] ✅ Video source loaded - ready for instant playback');
       } catch (e) {
         console.error('[VideoPlayer] Error loading source:', e);
-        setError('Failed to load video source');
+        if (isMountedRef.current) {
+          setError('Failed to load video source');
+        }
       }
     }
   }, [videoUrl, player]);
 
   useEffect(() => {
-    if (player) {
+    if (player && isMountedRef.current) {
       player.volume = volume;
     }
   }, [volume, player]);
 
   useEffect(() => {
-    if (!player || !isPlaying) return;
+    if (!player || !isPlaying || !isMountedRef.current) return;
 
     const interval = setInterval(() => {
+      if (!isMountedRef.current) return;
+      
       if (!isSeekingRef.current && player.currentTime !== undefined) {
         setCurrentTime(player.currentTime);
       }
       
       if (player.duration && player.duration > 0 && duration === 0) {
-        console.log('[VideoPlayer] 🎯 Got duration from player during playback:', player.duration);
         setDuration(player.duration);
       }
     }, 100);
@@ -569,6 +550,8 @@ export default function VideoPlayerScreen() {
   }, [player, isPlaying, duration]);
 
   useEffect(() => {
+    if (!isMountedRef.current) return;
+    
     if (isPlaying && controlsVisible) {
       startControlsTimeout();
     } else if (!isPlaying) {
@@ -582,116 +565,115 @@ export default function VideoPlayerScreen() {
   }, [isPlaying, controlsVisible, startControlsTimeout, clearControlsTimeout]);
 
   const togglePlayPause = useCallback(() => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      } catch (e) {
+        // Silently fail
+      }
     }
     
     lastPlaybackActivityRef.current = Date.now();
     
     const currentlyPlaying = player.playing;
-    console.log('[VideoPlayer] Toggle play/pause:', currentlyPlaying ? 'pause' : 'play');
     
     if (currentlyPlaying) {
       safePause().then(() => {
-        setIsPlaying(false);
-        setControlsVisible(true);
-        clearControlsTimeout();
-      }).catch(err => {
-        console.error('[VideoPlayer] Pause error:', err);
-      });
+        if (isMountedRef.current) {
+          setIsPlaying(false);
+          setControlsVisible(true);
+          clearControlsTimeout();
+        }
+      }).catch(() => {});
     } else {
       refreshConnectionIfNeeded();
       
       safePlay().then(() => {
-        setIsPlaying(true);
-        resetControlsTimeout();
-      }).catch(err => {
-        console.error('[VideoPlayer] Play error:', err);
-      });
+        if (isMountedRef.current) {
+          setIsPlaying(true);
+          resetControlsTimeout();
+        }
+      }).catch(() => {});
     }
   }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded, safePlay, safePause]);
 
   const handleSeekStart = useCallback(() => {
-    console.log('[VideoPlayer] Seek started');
+    if (!isMountedRef.current) return;
+    
     isSeekingRef.current = true;
     setControlsVisible(true);
     clearControlsTimeout();
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      } catch (e) {
+        // Silently fail
+      }
     }
   }, [clearControlsTimeout]);
 
   const handleSeekChange = useCallback((value: number) => {
+    if (!isMountedRef.current) return;
     setCurrentTime(value);
   }, []);
 
   const handleSeekComplete = useCallback((value: number) => {
-    console.log('[VideoPlayer] Seek to:', value.toFixed(2));
-    if (player) {
-      const clampedValue = Math.max(0, Math.min(value, duration));
-      player.currentTime = clampedValue;
-      setCurrentTime(clampedValue);
-    }
+    if (!player || !isMountedRef.current) return;
+    
+    const clampedValue = Math.max(0, Math.min(value, duration));
+    player.currentTime = clampedValue;
+    setCurrentTime(clampedValue);
     isSeekingRef.current = false;
     resetControlsTimeout();
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      } catch (e) {
+        // Silently fail
+      }
     }
   }, [player, duration, resetControlsTimeout]);
 
   const toggleFullscreen = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    
     const newFullscreenState = !isFullscreen;
-    console.log('[VideoPlayer] 🚨 Toggle fullscreen:', newFullscreenState);
-    console.log('[VideoPlayer] 📐 Video orientation:', videoOrientation);
-    console.log('[VideoPlayer] 📐 Video dimensions:', video?.resolution_width, 'x', video?.resolution_height);
     
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (e) {
+        // Silently fail
+      }
     }
     
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          console.log('[VideoPlayer] 🚨 ENTERING FULLSCREEN MODE');
-          
-          console.log('[VideoPlayer] Step 1: Unlocking all existing orientation locks...');
           await ScreenOrientation.unlockAsync();
-          console.log('[VideoPlayer] ✅ All orientation locks removed');
-          
           await new Promise(resolve => setTimeout(resolve, 200));
-          
-          console.log('[VideoPlayer] 🚨 FORCING PORTRAIT_UP LOCK (all drone videos stay portrait)');
           await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          console.log('[VideoPlayer] ✅ PORTRAIT_UP lock applied - video will NOT flip sideways');
-          
-          const currentLock = await ScreenOrientation.getOrientationLockAsync();
-          const currentOrientation = await ScreenOrientation.getOrientationAsync();
-          console.log('[VideoPlayer] 📐 Verification - Lock type:', currentLock);
-          console.log('[VideoPlayer] 📐 Verification - Current orientation:', currentOrientation);
-          
           await new Promise(resolve => setTimeout(resolve, 250));
           
-          console.log('[VideoPlayer] ✅ Orientation locked to PORTRAIT - now entering fullscreen UI');
-          setIsFullscreen(true);
-          setControlsVisible(true);
-          
+          if (isMountedRef.current) {
+            setIsFullscreen(true);
+            setControlsVisible(true);
+          }
         } else {
-          console.log('[VideoPlayer] 🚨 EXITING FULLSCREEN MODE');
-          
-          setIsFullscreen(false);
-          
-          console.log('[VideoPlayer] Unlocking orientation...');
+          if (isMountedRef.current) {
+            setIsFullscreen(false);
+          }
           await ScreenOrientation.unlockAsync();
-          console.log('[VideoPlayer] ✅ Orientation unlocked - back to normal mode');
         }
       } catch (e) {
-        console.error('[VideoPlayer] ❌ CRITICAL ERROR during orientation change:', e);
-        setIsFullscreen(newFullscreenState);
-        setControlsVisible(true);
+        if (isMountedRef.current) {
+          setIsFullscreen(newFullscreenState);
+          setControlsVisible(true);
+        }
       }
     } else {
       setIsFullscreen(newFullscreenState);
