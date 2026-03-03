@@ -145,13 +145,18 @@ export default function ReportScreen() {
   const explosionScale = useRef(new Animated.Value(0)).current;
   const explosionOpacity = useRef(new Animated.Value(0)).current;
 
+  // 🚨 CRITICAL FIX: Defensive video player initialization with error handling
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    if (latestVideo?.video_url) {
-      console.log('[ReportScreen] Initializing video preview player with caching');
-      player.loop = true;
-      player.muted = true;
-      player.volume = 0;
-      console.log('[ReportScreen] ✅ Video preview caching: ENABLED');
+    try {
+      if (latestVideo?.video_url) {
+        console.log('[ReportScreen] Initializing video preview player with caching');
+        player.loop = true;
+        player.muted = true;
+        player.volume = 0;
+        console.log('[ReportScreen] ✅ Video preview caching: ENABLED');
+      }
+    } catch (error) {
+      console.error('[ReportScreen] Error initializing video player:', error);
     }
   });
 
@@ -406,10 +411,14 @@ export default function ReportScreen() {
     useCallback(() => {
       console.log('[ReportScreen] Screen focused');
       
-      // Resume video playback if we have a video loaded
+      // 🚨 CRITICAL FIX: Defensive video playback with error handling
       if (latestVideo?.video_url && videoPlayer && videoReady) {
         console.log('[ReportScreen] Resuming video preview playback');
-        videoPlayer.play();
+        try {
+          videoPlayer.play();
+        } catch (error) {
+          console.error('[ReportScreen] Error resuming video playback:', error);
+        }
       }
       
       // Only load data if we haven't loaded it yet
@@ -432,7 +441,11 @@ export default function ReportScreen() {
       return () => {
         console.log('[ReportScreen] Screen blurred - pausing video playback');
         if (videoPlayer && videoReady) {
-          videoPlayer.pause();
+          try {
+            videoPlayer.pause();
+          } catch (error) {
+            console.error('[ReportScreen] Error pausing video playback:', error);
+          }
         }
       };
     }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
@@ -540,12 +553,19 @@ export default function ReportScreen() {
     setIsSubscribing(false);
   };
 
+  // 🚨 CRITICAL FIX: Defensive video player update with error handling
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
       console.log('[ReportScreen] Loading video preview with caching enabled');
-      videoPlayer.replace(latestVideo.video_url);
-      videoPlayer.play();
-      setVideoReady(true);
+      try {
+        videoPlayer.replace(latestVideo.video_url);
+        videoPlayer.play().catch((error: any) => {
+          console.error('[ReportScreen] Error playing video:', error);
+        });
+        setVideoReady(true);
+      } catch (error) {
+        console.error('[ReportScreen] Error loading video:', error);
+      }
     }
   }, [latestVideo?.video_url, videoPlayer]);
 

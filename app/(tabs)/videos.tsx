@@ -406,12 +406,18 @@ export default function VideosScreen() {
   );
 }
 
-// Simple video preview component using expo-video
+// 🚨 CRITICAL FIX: Defensive video preview component with error handling
 function VideoPreview({ videoUrl }: { videoUrl: string }) {
   const player = useVideoPlayer(videoUrl, (player) => {
-    player.loop = false;
-    player.muted = true;
-    player.play();
+    try {
+      player.loop = false;
+      player.muted = true;
+      player.play().catch((error: any) => {
+        console.error('[VideoPreview] Error playing video:', error);
+      });
+    } catch (error) {
+      console.error('[VideoPreview] Error initializing video player:', error);
+    }
   });
 
   return (
