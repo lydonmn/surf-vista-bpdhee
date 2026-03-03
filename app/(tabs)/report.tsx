@@ -19,18 +19,20 @@ import { openPaywall } from "@/utils/paywallHelper";
 // 🚨 CRITICAL FIX: Safe video player operations wrapper
 const safeVideoOperation = async (operation: () => Promise<void>, operationName: string) => {
   try {
-    await operation();
+    const result = await operation();
+    return result;
   } catch (error: any) {
-    // Log but don't crash for video playback errors
+    // Silently handle video playback errors - they're non-critical
     const errorMessage = error?.message || String(error);
     if (errorMessage.includes('play()') || 
         errorMessage.includes('pause()') || 
         errorMessage.includes('AbortError') ||
         errorMessage.includes('interrupted')) {
-      console.warn(`[VideoPlayer] ${operationName} interrupted (non-critical):`, errorMessage);
-    } else {
-      console.error(`[VideoPlayer] ${operationName} error:`, error);
+      // Don't even log - these are expected during normal video operations
+      return;
     }
+    // Only log unexpected errors
+    console.warn(`[VideoPlayer] ${operationName}:`, errorMessage);
   }
 };
 
@@ -165,16 +167,13 @@ export default function ReportScreen() {
 
   // 🚨 CRITICAL FIX: Video player WITHOUT autoplay - only load the video, don't play it
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
-    safeVideoOperation(async () => {
-      if (latestVideo?.video_url) {
-        console.log('[ReportScreen] Initializing video preview player (NO AUTOPLAY)');
-        player.loop = false;
-        player.muted = true;
-        player.volume = 0;
-        // ✅ DO NOT call player.play() here - let user tap to play
-        console.log('[ReportScreen] ✅ Video preview ready (paused)');
-      }
-    }, 'Video initialization');
+    // Don't do anything in the callback - just let the player initialize
+    // Any operations will be done when the video URL changes
+    if (latestVideo?.video_url) {
+      player.loop = false;
+      player.muted = true;
+      player.volume = 0;
+    }
   });
 
   const isDarkMode = theme.dark;
@@ -450,11 +449,13 @@ export default function ReportScreen() {
 
       // Cleanup: Pause video when screen loses focus
       return () => {
-        console.log('[ReportScreen] Screen blurred - pausing video playback');
+        console.log('[ReportScreen] Screen blurred');
         if (videoPlayer && videoReady) {
-          safeVideoOperation(async () => {
+          try {
             videoPlayer.pause();
-          }, 'Pause on blur');
+          } catch {
+            // Silently handle pause errors
+          }
         }
       };
     }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, videoPlayer, videoReady])
@@ -566,12 +567,14 @@ export default function ReportScreen() {
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
       console.log('[ReportScreen] Loading video preview (NO AUTOPLAY)');
-      safeVideoOperation(async () => {
+      try {
         videoPlayer.replace(latestVideo.video_url);
-        // ✅ DO NOT call videoPlayer.play() - let user tap to play
         setVideoReady(true);
         console.log('[ReportScreen] ✅ Video ready (paused) - user must tap to play');
-      }, 'Video replace');
+      } catch (error) {
+        // Silently handle video loading errors
+        console.warn('[ReportScreen] Video loading error (non-critical)');
+      }
     }
   }, [latestVideo?.video_url, videoPlayer]);
 

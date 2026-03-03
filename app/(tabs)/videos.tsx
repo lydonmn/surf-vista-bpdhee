@@ -409,17 +409,10 @@ export default function VideosScreen() {
 // 🚨 CRITICAL FIX: Defensive video preview component with error handling
 function VideoPreview({ videoUrl }: { videoUrl: string }) {
   const player = useVideoPlayer(videoUrl, (player) => {
-    try {
-      player.loop = false;
-      player.muted = true;
-      player.play().catch((error: any) => {
-        console.error('[VideoPreview] Error playing video:', error);
-        // Silently fail - video preview is non-critical
-      });
-    } catch (error) {
-      console.error('[VideoPreview] Error initializing video player:', error);
-      // Silently fail - video preview is non-critical
-    }
+    // Don't autoplay - just set up the player
+    player.loop = false;
+    player.muted = true;
+    // Don't call play() - it causes AbortError crashes
   });
 
   return (

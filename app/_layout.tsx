@@ -48,23 +48,27 @@ if (typeof global !== 'undefined') {
     const error = event?.reason || event;
     const errorMessage = error?.message || String(error);
     
-    // Log video playback errors but don't crash
+    // Silently handle video playback errors - they're expected during normal operation
     if (errorMessage.includes('play()') || 
         errorMessage.includes('pause()') || 
         errorMessage.includes('AbortError') ||
-        errorMessage.includes('video')) {
-      console.warn('[Global] Video playback error (non-critical):', errorMessage);
+        errorMessage.includes('interrupted') ||
+        errorMessage.includes('video') ||
+        errorMessage.includes('goo.gl/LdLk22')) {
       // Prevent default crash behavior
-      event?.preventDefault?.();
+      if (event?.preventDefault) {
+        event.preventDefault();
+      }
+      // Don't log - these are expected
       return;
     }
     
-    // Log other unhandled rejections
-    console.error('[Global] Unhandled promise rejection:', errorMessage);
+    // Log other unhandled rejections (but don't crash)
+    console.warn('[Global] Unhandled promise rejection:', errorMessage);
     
-    // Call original handler if it exists
-    if (originalPromiseRejectionHandler) {
-      originalPromiseRejectionHandler(event);
+    // Prevent crash
+    if (event?.preventDefault) {
+      event.preventDefault();
     }
   };
 }
