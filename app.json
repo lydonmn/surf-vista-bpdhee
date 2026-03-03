@@ -1,12 +1,11 @@
-
 {
   "expo": {
     "name": "SurfVista",
-    "slug": "surf-vista",
+    "slug": "SurfVista",
     "version": "13.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/SurfVista Logo.png",
-    "scheme": "surfvista",
+    "scheme": "SurfVista",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/SurfVista Logo.png",
