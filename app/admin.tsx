@@ -1,9 +1,8 @@
 
 import { useLocation } from '@/contexts/LocationContext';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { useState, useEffect, useRef } from 'react';
 import 'react-native-url-polyfill/auto';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Image } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -25,13 +24,20 @@ interface VideoMetadata {
 const MAX_DURATION_SECONDS = 600;
 const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024;
 
+// Helper function to get Mux thumbnail URL
+const getMuxThumbnailUrl = (videoUrl: string) => {
+  if (!videoUrl || !videoUrl.includes('stream.mux.com/')) {
+    return null;
+  }
+  const playbackId = videoUrl.split('stream.mux.com/')[1]?.split('.m3u8')[0];
+  return playbackId
+    ? `https://image.mux.com/${playbackId}/thumbnail.jpg?width=800&fit_mode=preserve&time=1`
+    : null;
+};
+
 export default function AdminScreen() {
   const theme = useTheme();
   const [videoUri, setVideoUri] = useState<string | null>(null);
-  const player = useVideoPlayer(videoUri || '', (player) => {
-    player.loop = false;
-    player.muted = false;
-  });
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<string>('folly-beach');
@@ -45,26 +51,23 @@ export default function AdminScreen() {
   const [availableLocations, setAvailableLocations] = useState<typeof locations>([]);
   const uploadStartTimeRef = useRef<number>(0);
   const cancellationFlagRef = useRef<boolean>(false);
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
 
   // Determine which locations this user can upload to
   useEffect(() => {
     if (profile) {
       if (profile.is_admin) {
-        // Super admin can upload to all locations
         console.log('[AdminScreen] Super admin - all locations available');
         setAvailableLocations(locations);
       } else if (profile.is_regional_admin && profile.managed_locations) {
-        // Regional admin can only upload to their managed locations
         console.log('[AdminScreen] Regional admin - filtering to managed locations:', profile.managed_locations);
         const managedLocs = locations.filter(loc => profile.managed_locations?.includes(loc.id));
         setAvailableLocations(managedLocs);
         
-        // Set default to first managed location
         if (managedLocs.length > 0 && !profile.managed_locations.includes(selectedLocation)) {
           setSelectedLocation(managedLocs[0].id);
         }
       } else {
-        // Not an admin
         console.log('[AdminScreen] User is not admin, redirecting...');
         Alert.alert('Access Denied', 'You do not have admin privileges');
         router.back();
@@ -163,7 +166,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] Raw video duration from picker:', videoAsset.duration);
       console.log('[AdminScreen] Video dimensions:', videoAsset.width, 'x', videoAsset.height);
       
-      // 🚨 CRITICAL: Detect video orientation from dimensions
       const isPortrait = videoAsset.height && videoAsset.width && videoAsset.height > videoAsset.width;
       const isLandscape = videoAsset.width && videoAsset.height && videoAsset.width > videoAsset.height;
       const orientationType = isPortrait ? 'portrait' : (isLandscape ? 'landscape' : 'square');
@@ -180,7 +182,6 @@ export default function AdminScreen() {
         return;
       }
 
-      // CRITICAL FIX: ImagePicker returns duration in MILLISECONDS, convert to seconds
       const durationInSeconds = videoAsset.duration ? Math.floor(videoAsset.duration / 1000) : 0;
       console.log('[AdminScreen] Converted duration to seconds:', durationInSeconds);
 
@@ -204,6 +205,18 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] Video info:', { resolution, fileSize, duration });
 
+      // Generate thumbnail for preview
+      try {
+        const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(videoAsset.uri, {
+          time: 1000,
+          quality: 0.9,
+        });
+        setThumbnailUri(thumbUri);
+        console.log('[AdminScreen] Thumbnail generated for preview');
+      } catch (thumbError) {
+        console.error('[AdminScreen] Error generating thumbnail:', thumbError);
+      }
+
       setVideoUri(videoAsset.uri);
       setVideoTitle(`Surf Report - ${new Date().toLocaleDateString()}`);
     } catch (error: any) {
@@ -223,7 +236,6 @@ export default function AdminScreen() {
       return;
     }
 
-    // Check if regional admin is trying to upload to a location they don't manage
     if (profile?.is_regional_admin && !profile.is_admin) {
       if (!profile.managed_locations?.includes(selectedLocation)) {
         Alert.alert('Access Denied', 'You can only upload videos to your assigned locations');
@@ -241,9 +253,6 @@ export default function AdminScreen() {
       
       console.log('[AdminScreen] 🚀 Starting MUX video upload for location:', selectedLocation);
 
-      // ========================================
-      // FIX #3: Check if video URI is local, copy if needed
-      // ========================================
       let uploadUri = videoUri;
       console.log('[AdminScreen] 🔍 Checking video URI type:', videoUri);
       
@@ -284,15 +293,11 @@ export default function AdminScreen() {
       const fileName = `video_${timestamp}.mp4`;
       console.log('[AdminScreen] 📝 Uploading as:', fileName);
 
-      // Get auth session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('Not authenticated');
       }
 
-      // ========================================
-      // STEP 1: Create Mux Direct Upload URL
-      // ========================================
       console.log('[AdminScreen] 🎬 Creating Mux upload URL...');
       setUploadProgress(5);
       setUploadStatus('Creating upload URL...');
@@ -329,11 +334,6 @@ export default function AdminScreen() {
       console.log('[AdminScreen] ✅ Mux upload ID:', uploadId);
       console.log('[AdminScreen] ✅ Mux upload URL:', muxUploadUrl);
 
-      // ========================================
-      // STEP 2: Upload video directly to Mux using FileSystem.uploadAsync
-      // FIX #1: Add 60-second timeout with Promise.race
-      // FIX #2: Log uploadResult immediately when it resolves
-      // ========================================
       console.log('[AdminScreen] ⚡ Uploading video directly to Mux using FileSystem.uploadAsync...');
       console.log('[AdminScreen] 📊 File size:', formatFileSize(fileInfo.size));
       console.log('[AdminScreen] 🎯 Mux upload URL:', muxUploadUrl);
@@ -341,23 +341,20 @@ export default function AdminScreen() {
       setUploadProgress(10);
       setUploadStatus('Uploading to Mux...');
 
-      // Start a progress simulation since FileSystem.uploadAsync doesn't provide progress callbacks
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
-          // Slowly increment from 10% to 95% over time
           if (prev < 95) {
             return prev + 2;
           }
           return prev;
         });
-      }, 2000); // Update every 2 seconds
+      }, 2000);
 
       try {
         console.log('[AdminScreen] 🚀 Starting FileSystem.uploadAsync with 60-second timeout...');
         const uploadStartTime = Date.now();
         
-        // FIX #1: Create a 60-second timeout promise
-        const timeoutMs = 60 * 1000; // 60 seconds
+        const timeoutMs = 60 * 1000;
         const timeoutPromise = new Promise<FileSystem.FileSystemUploadResult>((_, reject) => {
           setTimeout(() => {
             console.log('[AdminScreen] ⏰ Upload timeout reached after 60 seconds');
@@ -365,7 +362,6 @@ export default function AdminScreen() {
           }, timeoutMs);
         });
 
-        // Race between upload and timeout
         const uploadPromise = FileSystem.uploadAsync(muxUploadUrl, uploadUri, {
           httpMethod: 'PUT',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
@@ -396,7 +392,6 @@ export default function AdminScreen() {
         clearInterval(progressInterval);
         const uploadDuration = (Date.now() - uploadStartTime) / 1000;
         
-        // FIX #2: Log uploadResult immediately when it resolves (if not timeout)
         if (!didTimeout && uploadResult) {
           console.log('[AdminScreen] ========================================');
           console.log('[AdminScreen] 📤 UPLOAD RESULT - FULL OBJECT:');
@@ -425,16 +420,13 @@ export default function AdminScreen() {
           console.log('[AdminScreen] ⏰ Timeout occurred - proceeding to save with status=processing');
         }
         
-        // ========================================
-        // STEP 3: Immediately set progress to 100% and show success state
-        // ========================================
         setUploadProgress(100);
         setUploadStatus(didTimeout 
           ? 'Upload timed out - saving as processing...' 
           : 'Upload complete! Processing in background…'
         );
-        setIsUploading(false); // Remove spinning loader
-        setUploadComplete(true); // Show success state (checkmark)
+        setIsUploading(false);
+        setUploadComplete(true);
         console.log('[AdminScreen] ✅ Upload complete! Mux is now processing the video...');
 
       } catch (uploadError: any) {
@@ -443,9 +435,6 @@ export default function AdminScreen() {
         throw uploadError;
       }
 
-      // ========================================
-      // STEP 4: Generate thumbnail
-      // ========================================
       console.log('[AdminScreen] 🖼️ Generating thumbnail...');
       let thumbnailUrl: string | null = null;
       try {
@@ -484,9 +473,6 @@ export default function AdminScreen() {
         console.error('[AdminScreen] ⚠️ Error generating thumbnail (non-critical):', thumbnailError);
       }
 
-      // ========================================
-      // STEP 5: Save to database immediately with status='processing'
-      // ========================================
       const metadata = await validateVideoMetadata(uploadUri);
       const duration = metadata ? formatDuration(metadata.duration) : null;
       const durationSeconds = metadata?.duration || null;
@@ -505,7 +491,7 @@ export default function AdminScreen() {
         .insert({
           title: videoTitle.trim(),
           description: videoDescription.trim() || null,
-          video_url: '', // Will be updated by background polling when ready
+          video_url: '',
           thumbnail_url: thumbnailUrl,
           uploaded_by: user.id,
           duration,
@@ -514,8 +500,8 @@ export default function AdminScreen() {
           resolution_height: resolutionHeight,
           file_size_bytes: fileSizeBytes,
           location: selectedLocation,
-          mux_upload_id: uploadId, // Store Mux upload ID for polling
-          status: 'processing', // 🚨 NEW: Set status to processing
+          mux_upload_id: uploadId,
+          status: 'processing',
         });
 
       if (dbError) {
@@ -525,12 +511,8 @@ export default function AdminScreen() {
 
       console.log('[AdminScreen] ✅ Video saved to database with status=processing');
       
-      // Refresh videos list to show the processing video
       await refreshVideos();
       
-      // ========================================
-      // STEP 6: Wait 1.5 seconds then navigate back automatically
-      // ========================================
       console.log('[AdminScreen] ⏳ Waiting 1.5 seconds before navigating back...');
       setTimeout(() => {
         console.log('[AdminScreen] 🔙 Navigating back to previous screen');
@@ -546,7 +528,6 @@ export default function AdminScreen() {
       
       let errorMessage = error.message || 'Failed to upload video';
       
-      // Provide more specific error messages
       if (errorMessage.includes('network') || errorMessage.includes('Network')) {
         errorMessage = 'Network connection lost during upload. Please check your internet connection and try again.';
       } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout') || errorMessage.includes('TIMEOUT')) {
@@ -558,12 +539,11 @@ export default function AdminScreen() {
       } else if (errorMessage.includes('Mux upload failed with status')) {
         errorMessage = `Upload to Mux failed. ${errorMessage}`;
       } else if (errorMessage.includes('Failed to prepare video file')) {
-        errorMessage = error.message; // Use the specific error message
+        errorMessage = error.message;
       }
       
       Alert.alert('Upload Failed', errorMessage);
     } finally {
-      // Only reset if there was an error (uploadComplete will be false)
       if (!uploadComplete) {
         setIsUploading(false);
         setUploadStatus('');
@@ -572,7 +552,6 @@ export default function AdminScreen() {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (isUploading) {
@@ -606,12 +585,10 @@ export default function AdminScreen() {
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.colors.text }]}>{titleText}</Text>
 
-        {/* Only show admin actions for super admins - MOVED TO TOP */}
         {profile?.is_admin && (
           <View style={[styles.section, styles.adminActionsSection, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Super Admin Actions</Text>
             
-            {/* Sync Videos Button */}
             <TouchableOpacity
               style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#9C27B0' }]}
               onPress={async () => {
@@ -674,7 +651,6 @@ export default function AdminScreen() {
               />
             </TouchableOpacity>
 
-            {/* Manage All Users - Only for lydonmn@gmail.com */}
             {user?.email === 'lydonmn@gmail.com' && (
               <TouchableOpacity
                 style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#EF4444' }]}
@@ -830,14 +806,22 @@ export default function AdminScreen() {
             </Text>
           </View>
 
-          {videoUri && (
+          {videoUri && thumbnailUri && (
             <View style={styles.videoPreview}>
-              <VideoView
-                player={player}
+              <Image
+                source={{ uri: thumbnailUri }}
                 style={styles.video}
-                nativeControls
-                contentFit="contain"
+                resizeMode="cover"
               />
+              <View style={styles.previewOverlay}>
+                <IconSymbol
+                  ios_icon_name="play.circle.fill"
+                  android_material_icon_name="play_circle"
+                  size={48}
+                  color="rgba(255, 255, 255, 0.9)"
+                />
+                <Text style={styles.previewText}>Preview</Text>
+              </View>
             </View>
           )}
 
@@ -979,7 +963,6 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Regional admin actions */}
         {profile?.is_regional_admin && !profile.is_admin && (
           <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Regional Admin Actions</Text>
@@ -1075,10 +1058,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     marginBottom: 16,
+    position: 'relative',
   },
   video: {
     width: '100%',
     height: '100%',
+  },
+  previewOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  previewText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontWeight: '600',
   },
   button: {
     flexDirection: 'row',
