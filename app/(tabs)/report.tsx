@@ -1275,6 +1275,7 @@ export default function ReportScreen() {
         renderReportCard(displayReport, 0)
       )}
 
+      {/* 🚨 CRITICAL FIX: Video section now shows ONLY static thumbnail - NO video player */}
       <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         <View style={styles.sectionHeader}>
           <IconSymbol
