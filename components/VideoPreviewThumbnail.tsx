@@ -1,7 +1,6 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, Image } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
 
 interface VideoPreviewThumbnailProps {
@@ -32,129 +31,66 @@ function extractMuxPlaybackId(videoUrl: string): string | null {
 
 /**
  * Generate high-quality Mux thumbnail URL
- * 🎯 QUALITY FIX: Append quality parameters for max resolution
  */
 function getMuxThumbnailUrl(videoUrl: string): string | null {
   const playbackId = extractMuxPlaybackId(videoUrl);
   if (!playbackId) return null;
   
-  // 🎯 CRITICAL: Add quality parameters for max resolution
-  // width=1920: Request 1080p resolution
-  // fit_mode=preserve: Maintain aspect ratio
-  // time=1: Use frame at 1 second (better than default 0)
+  // Add quality parameters for max resolution
   const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.jpg?width=1920&fit_mode=preserve&time=1`;
-  console.log('[VideoPreviewThumbnail] 🎯 Generated high-quality Mux thumbnail URL:', thumbnailUrl);
+  console.log('[VideoPreviewThumbnail] Generated high-quality Mux thumbnail URL:', thumbnailUrl);
   return thumbnailUrl;
 }
 
 /**
- * Simple video preview component for thumbnails/cards
- * Autoplays muted and looping - separate from full player logic
+ * 🚨 CRITICAL FIX: Simple thumbnail-only component
+ * NO video player - just shows static thumbnail image
+ * This prevents all video player errors that were causing crashes
  */
 export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPreviewThumbnailProps) {
-  const [isReady, setIsReady] = useState(false);
-  const [showPoster, setShowPoster] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
-  // 🎯 QUALITY FIX: Try to get high-quality Mux thumbnail first
+  // Try to get high-quality Mux thumbnail first
   const highQualityThumbnail = getMuxThumbnailUrl(videoUrl);
   const finalThumbnailUrl = highQualityThumbnail || thumbnailUrl;
 
   console.log('[VideoPreviewThumbnail] Using thumbnail URL:', finalThumbnailUrl);
-  console.log('[VideoPreviewThumbnail] Is Mux thumbnail:', !!highQualityThumbnail);
-
-  // 🚨 CRITICAL FIX: Create a simple muted looping player with error handling
-  const player = useVideoPlayer(videoUrl, (playerInstance) => {
-    try {
-      console.log('[VideoPreviewThumbnail] Initializing preview player');
-      playerInstance.loop = true;
-      playerInstance.muted = true;
-      playerInstance.volume = 0;
-      
-      // 🚨 CRITICAL: Wrap play() in try-catch to prevent unhandled promise rejections
-      try {
-        playerInstance.play().catch((playError: any) => {
-          console.warn('[VideoPreviewThumbnail] ⚠️ Play error (non-critical):', playError);
-          // Don't throw - this is expected during rapid state changes
-        });
-      } catch (playError) {
-        console.warn('[VideoPreviewThumbnail] ⚠️ Play exception (non-critical):', playError);
-      }
-    } catch (error) {
-      console.error('[VideoPreviewThumbnail] ⚠️ Player initialization error (non-critical):', error);
-    }
-  });
-
-  // 🚨 CRITICAL FIX: Listen for when video is ready to play with error handling
-  useEffect(() => {
-    if (!player) return;
-
-    try {
-      const subscription = player.addListener('statusChange', (status) => {
-        console.log('[VideoPreviewThumbnail] Status changed:', status.status);
-        
-        if (status.status === 'readyToPlay' && !isReady) {
-          console.log('[VideoPreviewThumbnail] ✅ Video ready to play');
-          setIsReady(true);
-          // Hide poster after a brief delay to ensure smooth transition
-          setTimeout(() => {
-            setShowPoster(false);
-          }, 300);
-        }
-        
-        // 🚨 CRITICAL: Handle error states gracefully
-        if (status.status === 'error') {
-          console.warn('[VideoPreviewThumbnail] ⚠️ Video error - keeping poster visible');
-          setIsReady(false);
-          setShowPoster(true);
-        }
-      });
-
-      return () => {
-        try {
-          subscription.remove();
-        } catch (error) {
-          console.warn('[VideoPreviewThumbnail] ⚠️ Error removing subscription:', error);
-        }
-      };
-    } catch (error) {
-      console.error('[VideoPreviewThumbnail] ⚠️ Error setting up status listener:', error);
-    }
-  }, [player, isReady]);
-
-  // Reset state when URL changes
-  useEffect(() => {
-    console.log('[VideoPreviewThumbnail] Video URL changed, resetting state');
-    setIsReady(false);
-    setShowPoster(true);
-  }, [videoUrl]);
 
   return (
     <View style={[styles.container, style]}>
-      {/* Poster/thumbnail image - shows while loading */}
-      {showPoster && finalThumbnailUrl && (
-        <Image
-          source={{ uri: finalThumbnailUrl }}
-          style={styles.poster}
-          resizeMode="cover"
-        />
-      )}
-
-      {/* Loading spinner - shows while video loads */}
-      {!isReady && (
+      {/* Show loading spinner while image loads */}
+      {imageLoading && !imageError && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
 
-      {/* Video player - hidden until ready */}
-      <VideoView
-        style={[styles.video, !isReady && styles.hidden]}
-        player={player}
-        allowsFullscreen={false}
-        allowsPictureInPicture={false}
-        contentFit="cover"
-        nativeControls={false}
-      />
+      {/* Show thumbnail image */}
+      {finalThumbnailUrl && !imageError ? (
+        <Image
+          source={{ uri: finalThumbnailUrl }}
+          style={styles.thumbnail}
+          resizeMode="cover"
+          onLoadStart={() => {
+            console.log('[VideoPreviewThumbnail] Image loading started');
+            setImageLoading(true);
+          }}
+          onLoad={() => {
+            console.log('[VideoPreviewThumbnail] Image loaded successfully');
+            setImageLoading(false);
+          }}
+          onError={(error) => {
+            console.error('[VideoPreviewThumbnail] Image load error:', error);
+            setImageLoading(false);
+            setImageError(true);
+          }}
+        />
+      ) : (
+        <View style={styles.fallback}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      )}
     </View>
   );
 }
@@ -166,15 +102,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     position: 'relative',
   },
-  poster: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  thumbnail: {
     width: '100%',
     height: '100%',
-    zIndex: 1,
   },
   loadingOverlay: {
     position: 'absolute',
@@ -187,11 +117,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     zIndex: 2,
   },
-  video: {
+  fallback: {
     width: '100%',
     height: '100%',
-  },
-  hidden: {
-    opacity: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
   },
 });
