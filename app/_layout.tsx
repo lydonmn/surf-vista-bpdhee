@@ -5,39 +5,37 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
-// 🚨 CRITICAL: Prevent auto-hide to avoid white flash
-SplashScreen.preventAutoHideAsync().catch((error) => {
-  console.warn('[RootLayout] SplashScreen.preventAutoHideAsync failed:', error);
-});
+// 🚨 CRITICAL: Ultra-defensive splash screen handling
+try {
+  SplashScreen.preventAutoHideAsync().catch(() => {
+    // Silently fail - splash screen is non-critical
+  });
+} catch {
+  // Silently fail
+}
 
-// 🚨 SIMPLIFIED: Minimal error handling to prevent crashes
-// Only handle truly unhandled errors, don't modify Promise prototype
+// 🚨 CRITICAL: Minimal global error handler - only for truly fatal errors
 if (typeof ErrorUtils !== 'undefined') {
   try {
     const originalHandler = ErrorUtils.getGlobalHandler();
     ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
-      console.error('[Global] Error caught:', error?.message || error);
+      // Log all errors but don't crash for non-fatal ones
+      console.error('[Global] Error:', error?.message || error);
       
-      // Log but don't crash for non-fatal errors
-      if (!isFatal) {
-        console.warn('[Global] Non-fatal error - continuing');
-        return;
-      }
-      
-      // Call original handler for fatal errors
-      if (originalHandler) {
+      // Only call original handler for fatal errors
+      if (isFatal && originalHandler) {
         originalHandler(error, isFatal);
       }
     });
-  } catch (setupError) {
-    console.warn('[RootLayout] Error handler setup failed:', setupError);
+  } catch {
+    // Silently fail - error handler setup is non-critical
   }
 }
 
@@ -46,68 +44,66 @@ export default function RootLayout() {
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
 
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+  // 🚨 CRITICAL: Defensive font loading with fallback
+  let loaded = false;
+  let error = null;
+  
+  try {
+    [loaded, error] = useFonts({
+      SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    });
+  } catch (fontError) {
+    console.warn('[RootLayout] ⚠️ Font loading failed (non-critical):', fontError);
+    // Continue without custom fonts
+    loaded = true;
+    error = null;
+  }
 
+  // Hide splash screen when fonts are loaded or failed
   useEffect(() => {
-    if (error) {
-      console.error('[RootLayout] ❌ Font loading error:', error);
-      // Hide splash screen even if fonts fail to load
-      SplashScreen.hideAsync().catch((hideError) => {
-        console.warn('[RootLayout] SplashScreen.hideAsync failed:', hideError);
-      });
+    if (loaded || error) {
+      try {
+        SplashScreen.hideAsync().catch(() => {
+          // Silently fail
+        });
+      } catch {
+        // Silently fail
+      }
     }
-  }, [error]);
+  }, [loaded, error]);
 
+  // 🚨 CRITICAL: Defensive notification setup
   useEffect(() => {
-    if (loaded) {
-      console.log('[RootLayout] ✅ Fonts loaded, hiding splash screen');
-      SplashScreen.hideAsync().catch((hideError) => {
-        console.warn('[RootLayout] SplashScreen.hideAsync failed:', hideError);
-      });
-    }
-  }, [loaded]);
-
-  // 🚨 REMOVED: Audio session configuration (expo-av is deprecated in Expo SDK 52+)
-  // expo-video now handles audio session management automatically
-  // No manual configuration needed
-
-  useEffect(() => {
-    console.log('[RootLayout] 🚀 App initialized successfully');
-    
     try {
-      // Listen for notifications when app is in foreground
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        console.log('[Notifications] Received:', notification);
-      });
+      // Only set up notifications on native platforms
+      if (Platform.OS !== 'web') {
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+          console.log('[Notifications] Received:', notification);
+        });
 
-      // Listen for notification taps
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        console.log('[Notifications] Tapped:', response);
-        
-        try {
-          const data = response.notification.request.content.data;
+        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+          console.log('[Notifications] Tapped:', response);
           
-          // Navigate to report screen when daily report notification is tapped
-          if (data?.type === 'daily_report') {
-            console.log('[Notifications] Navigating to report');
-            router.push('/(tabs)/report');
+          try {
+            const data = response.notification.request.content.data;
+            if (data?.type === 'daily_report') {
+              router.push('/(tabs)/report');
+            }
+          } catch {
+            // Silently fail
           }
-        } catch (navError) {
-          console.warn('[Notifications] Navigation error:', navError);
-        }
-      });
-    } catch (notifError) {
-      console.warn('[RootLayout] Notification setup error (non-critical):', notifError);
+        });
+      }
+    } catch {
+      // Silently fail - notifications are non-critical
     }
 
     return () => {
       try {
         notificationListener.current?.remove();
         responseListener.current?.remove();
-      } catch (cleanupError) {
-        console.warn('[RootLayout] Cleanup error:', cleanupError);
+      } catch {
+        // Silently fail
       }
     };
   }, []);

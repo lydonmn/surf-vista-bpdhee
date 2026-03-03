@@ -6,33 +6,30 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
 
-// 🚨 CRITICAL: Wrap RevenueCat imports in try-catch to prevent crashes
-let initializeRevenueCat: any;
-let identifyUser: any;
-let logoutUser: any;
+// 🚨 CRITICAL: Ultra-defensive module imports with fallbacks
+let initializeRevenueCat: any = async () => false;
+let identifyUser: any = async () => {};
+let logoutUser: any = async () => {};
+let ensurePushTokenRegistered: any = async () => {};
 
+// Try to load RevenueCat - fail silently if not available
 try {
   const superwallConfig = require('@/utils/superwallConfig');
-  initializeRevenueCat = superwallConfig.initializeRevenueCat;
-  identifyUser = superwallConfig.identifyUser;
-  logoutUser = superwallConfig.logoutUser;
-} catch (error) {
-  console.warn('[AuthContext] RevenueCat not available (non-critical):', error);
-  // Provide no-op fallbacks
-  initializeRevenueCat = async () => false;
-  identifyUser = async () => {};
-  logoutUser = async () => {};
+  if (superwallConfig.initializeRevenueCat) initializeRevenueCat = superwallConfig.initializeRevenueCat;
+  if (superwallConfig.identifyUser) identifyUser = superwallConfig.identifyUser;
+  if (superwallConfig.logoutUser) logoutUser = superwallConfig.logoutUser;
+} catch {
+  // Silently fail - RevenueCat is optional
 }
 
-// 🚨 CRITICAL: Wrap push notifications in try-catch
-let ensurePushTokenRegistered: any;
-
+// Try to load push notifications - fail silently if not available
 try {
   const pushNotifications = require('@/utils/pushNotifications');
-  ensurePushTokenRegistered = pushNotifications.ensurePushTokenRegistered;
-} catch (error) {
-  console.warn('[AuthContext] Push notifications not available (non-critical):', error);
-  ensurePushTokenRegistered = async () => {};
+  if (pushNotifications.ensurePushTokenRegistered) {
+    ensurePushTokenRegistered = pushNotifications.ensurePushTokenRegistered;
+  }
+} catch {
+  // Silently fail - push notifications are optional
 }
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -70,37 +67,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   const isInitializingRef = useRef(false);
 
+  // 🚨 CRITICAL: Ultra-defensive push token registration
   const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
     try {
-      console.log('[AuthContext] 📲 Checking push token registration');
-      
-      // 🚨 CRITICAL FIX: Longer timeout and better error handling
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Push token timeout')), 8000)
+        setTimeout(() => reject(new Error('timeout')), 5000)
       );
       
-      try {
-        await Promise.race([
-          ensurePushTokenRegistered(userId),
-          timeoutPromise
-        ]);
-        console.log('[AuthContext] 📲 Push token check complete');
-      } catch (timeoutError) {
-        console.warn('[AuthContext] ⚠️ Push token timeout (non-critical)');
-      }
-    } catch (error) {
-      console.error('[AuthContext] ⚠️ Push token error (non-critical):', error);
-      // Don't throw - this is non-critical
+      await Promise.race([
+        ensurePushTokenRegistered(userId),
+        timeoutPromise
+      ]);
+    } catch {
+      // Silently fail - push tokens are non-critical
     }
   }, []);
 
+  // 🚨 CRITICAL: Ultra-defensive profile loading
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
-      console.log('[AuthContext] Loading profile for user:', authUser.id);
-      
-      // 🚨 CRITICAL FIX: Longer timeout for slower devices
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile load timeout')), 10000)
+        setTimeout(() => reject(new Error('timeout')), 8000)
       );
       
       const profilePromise = supabase
@@ -109,38 +96,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', authUser.id)
         .single();
 
-      let profileData, error;
-      
+      let result: any;
       try {
-        const result = await Promise.race([
-          profilePromise,
-          timeoutPromise
-        ]) as any;
-        profileData = result.data;
-        error = result.error;
-      } catch (timeoutError) {
-        console.warn('[AuthContext] ⚠️ Profile load timeout - continuing');
+        result = await Promise.race([profilePromise, timeoutPromise]);
+      } catch {
+        // Timeout or error - continue without profile
         setProfile(null);
         setUser({ ...authUser });
         return;
       }
 
-      if (profileData) {
-        console.log('[AuthContext] ✅ Profile loaded:', profileData.email);
-        setProfile(profileData);
-        setUser({ ...authUser, profile: profileData });
+      if (result?.data) {
+        setProfile(result.data);
+        setUser({ ...authUser, profile: result.data });
         
         // Register push token in background - don't block
-        registerPushTokenIfNeeded(authUser.id).catch(err => {
-          console.warn('[AuthContext] ⚠️ Push token registration failed (non-critical):', err);
-        });
+        registerPushTokenIfNeeded(authUser.id).catch(() => {});
         return;
       }
 
-      if (error?.code === 'PGRST116') {
-        console.log('[AuthContext] Profile not found, creating...');
+      // Profile not found - try to create it
+      if (result?.error?.code === 'PGRST116') {
         try {
-          const { data: newProfile, error: createError } = await supabase
+          const { data: newProfile } = await supabase
             .from('profiles')
             .insert({
               id: authUser.id,
@@ -151,145 +129,114 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .select()
             .single();
           
-          if (newProfile && !createError) {
-            console.log('[AuthContext] ✅ Profile created');
+          if (newProfile) {
             setProfile(newProfile);
             setUser({ ...authUser, profile: newProfile });
             return;
-          } else {
-            console.warn('[AuthContext] ⚠️ Profile creation failed:', createError);
           }
-        } catch (createError) {
-          console.warn('[AuthContext] ⚠️ Profile creation exception:', createError);
+        } catch {
+          // Silently fail
         }
       }
 
-      console.log('[AuthContext] ⚠️ Profile load failed, setting user without profile');
+      // Fallback - set user without profile
       setProfile(null);
       setUser({ ...authUser });
-    } catch (error) {
-      console.error('[AuthContext] Exception loading profile:', error);
-      // 🚨 CRITICAL: Always set user even if profile fails
+    } catch {
+      // Ultimate fallback
       setProfile(null);
       setUser({ ...authUser });
     }
   }, [registerPushTokenIfNeeded]);
 
   const signOut = useCallback(async () => {
-    console.log('[AuthContext] ===== SIGN OUT STARTED =====');
-    
     try {
-      console.log('[AuthContext] Clearing local state...');
+      // Clear local state first
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
       
-      // 🚨 CRITICAL: Wrap in try-catch to prevent crashes
+      // Try to logout from RevenueCat
       try {
         await logoutUser();
-      } catch (error) {
-        console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
+      } catch {
+        // Silently fail
       }
       
-      console.log('[AuthContext] Calling supabase.auth.signOut()...');
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('[AuthContext] ❌ Supabase signOut error:', error);
-      } else {
-        console.log('[AuthContext] ✅ Supabase signOut successful');
+      // Try to sign out from Supabase
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Silently fail
       }
-      
-      console.log('[AuthContext] ===== SIGN OUT COMPLETE =====');
-    } catch (error) {
-      console.error('[AuthContext] ❌ Sign out exception:', error);
+    } catch {
+      // Ultimate fallback - ensure state is cleared
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
-      console.log('[AuthContext] ===== SIGN OUT COMPLETE (with errors) =====');
     }
   }, []);
 
   const refreshSession = useCallback(async () => {
     try {
-      console.log('[AuthContext] 🔄 Refreshing session...');
       const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
       
       if (error) {
-        console.error('[AuthContext] ❌ Session refresh error:', error);
-        
-        // Handle invalid/expired refresh tokens by clearing the session
+        // Handle invalid refresh tokens
         if (error.message.includes('Invalid Refresh Token') || 
             error.message.includes('Refresh Token Not Found') ||
             error.message.includes('refresh_token_not_found')) {
-          console.log('[AuthContext] Invalid refresh token detected - clearing session');
-          
-          // Clear the session from storage to prevent repeated errors
           try {
             await AsyncStorage.removeItem('supabase.auth.token');
-          } catch (storageError) {
-            console.warn('[AuthContext] Storage clear error:', storageError);
+          } catch {
+            // Silently fail
           }
-          
-          // Sign out to clear all state
           await signOut();
         }
         return;
       }
       
       if (newSession) {
-        console.log('[AuthContext] ✅ Session refreshed');
         setSession(newSession);
-        
         if (newSession.user) {
           await loadUserProfile(newSession.user);
         }
       }
-    } catch (error) {
-      console.error('[AuthContext] Exception refreshing session:', error);
-      
-      // If there's an exception, also try to clear the session
+    } catch {
+      // Try to clear session on error
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
         await signOut();
-      } catch (clearError) {
-        console.error('[AuthContext] Error clearing session:', clearError);
+      } catch {
+        // Silently fail
       }
     }
   }, [loadUserProfile, signOut]);
 
+  // 🚨 CRITICAL: Ultra-defensive initialization
   useEffect(() => {
     if (isInitializingRef.current) {
-      console.log('[AuthContext] Already initializing, skipping...');
       return;
     }
 
-    console.log('[AuthContext] 🚀 Starting initialization...');
     isInitializingRef.current = true;
-    
     let mounted = true;
 
     const initializeAuth = async () => {
       try {
-        console.log('[AuthContext] Getting initial session...');
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          console.error('[AuthContext] Session error:', sessionError);
-          
-          // Handle invalid/expired refresh tokens
+          // Handle invalid refresh tokens
           if (sessionError.message.includes('Invalid Refresh Token') || 
               sessionError.message.includes('Refresh Token Not Found') ||
               sessionError.message.includes('refresh_token_not_found')) {
-            console.log('[AuthContext] Invalid refresh token on init - clearing storage');
-            
-            // Clear the invalid token from storage
             try {
               await AsyncStorage.removeItem('supabase.auth.token');
-            } catch (clearError) {
-              console.error('[AuthContext] Error clearing token:', clearError);
+            } catch {
+              // Silently fail
             }
             
             if (mounted) {
@@ -305,42 +252,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         if (!mounted) return;
 
-        console.log('[AuthContext] Session check:', initialSession?.user?.email || 'No session');
-        
         if (initialSession?.user) {
           setSession(initialSession);
-          console.log('[AuthContext] Loading profile...');
           await loadUserProfile(initialSession.user);
         }
         
         if (mounted) {
-          console.log('[AuthContext] ✅ Initialization complete - setting isLoading=false, isInitialized=true');
           setIsLoading(false);
           setIsInitialized(true);
         }
 
-        // 🚨 CRITICAL: Wrap RevenueCat initialization in try-catch
+        // Initialize RevenueCat in background on native platforms
         if (mounted && Platform.OS !== 'web') {
-          console.log('[AuthContext] 💳 Starting RevenueCat...');
-          
           (async () => {
             try {
-              const revenueCatInitialized = await initializeRevenueCat();
-              
-              if (revenueCatInitialized && initialSession?.user) {
+              const initialized = await initializeRevenueCat();
+              if (initialized && initialSession?.user) {
                 await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                console.log('[AuthContext] ✅ RevenueCat ready');
               }
-            } catch (revenueCatError) {
-              console.warn('[AuthContext] ⚠️ RevenueCat error (non-critical):', revenueCatError);
+            } catch {
+              // Silently fail
             }
           })();
         }
         
-      } catch (error) {
-        console.error('[AuthContext] ❌ Initialization error:', error);
+      } catch {
         if (mounted) {
-          console.log('[AuthContext] ✅ Completing initialization despite error');
           setIsLoading(false);
           setIsInitialized(true);
         }
@@ -356,15 +293,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
 
-      console.log('[AuthContext] Auth event:', event);
-      
       if (event === 'SIGNED_OUT') {
-        console.log('[AuthContext] SIGNED_OUT event');
-        
         try {
           await logoutUser();
-        } catch (error) {
-          console.error('[AuthContext] RevenueCat logout error:', error);
+        } catch {
+          // Silently fail
         }
         
         setUser(null);
@@ -372,7 +305,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(null);
         setIsLoading(false);
       } else if (event === 'SIGNED_IN' && newSession?.user) {
-        console.log('[AuthContext] SIGNED_IN event');
         setSession(newSession);
         await loadUserProfile(newSession.user);
         setIsLoading(false);
@@ -381,21 +313,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           (async () => {
             try {
               await identifyUser(newSession.user.id, newSession.user.email || undefined);
-            } catch (error) {
-              console.warn('[AuthContext] RevenueCat identify error (non-critical):', error);
+            } catch {
+              // Silently fail
             }
           })();
         }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-        console.log('[AuthContext] TOKEN_REFRESHED event');
         setSession(newSession);
       } else if (event === 'USER_UPDATED' && newSession?.user) {
-        console.log('[AuthContext] USER_UPDATED event');
         setSession(newSession);
         await loadUserProfile(newSession.user);
         setIsLoading(false);
       } else if (!newSession) {
-        console.log('[AuthContext] No session, clearing');
         setUser(null);
         setProfile(null);
         setSession(null);
@@ -411,37 +340,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
-      console.log('[AuthContext] Refreshing profile...');
       await loadUserProfile(session.user);
       
       try {
         await registerPushTokenIfNeeded(session.user.id);
-      } catch (error) {
-        console.warn('[AuthContext] Push token refresh error (non-critical):', error);
+      } catch {
+        // Silently fail
       }
     }
   }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
-      console.log('[AuthContext] Sign up:', email);
-      
-      // Determine the redirect URL based on platform
       const getRedirectUrl = () => {
         if (Platform.OS === 'web') {
-          // For web, use the current origin
           if (typeof window !== 'undefined') {
             return `${window.location.origin}/verification-success`;
           }
           return undefined;
         } else {
-          // For mobile, use deep link
           return 'surfvista://verification-success';
         }
       };
 
       const redirectTo = getRedirectUrl();
-      console.log('[AuthContext] Redirect URL:', redirectTo);
 
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -452,8 +374,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.log('[AuthContext] Sign up error:', error);
-        
         if (error.message.includes('already registered')) {
           return { 
             success: false, 
@@ -465,28 +385,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.user && !data.session) {
-        console.log('[AuthContext] Email confirmation required');
         return { 
           success: true, 
           message: 'Account created! Please check your email to verify your account.' 
         };
       }
 
-      if (data.user && data.session) {
-        console.log('[AuthContext] Sign up successful with auto sign-in');
-        return { success: true, message: 'Account created successfully!' };
-      }
-
       return { success: true, message: 'Account created successfully!' };
     } catch (error: any) {
-      console.error('[AuthContext] Sign up exception:', error);
       return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
 
   const signIn = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
-      console.log('[AuthContext] Sign in:', email);
       setIsLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -495,7 +407,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.log('[AuthContext] Sign in error:', error);
         setIsLoading(false);
         
         if (error.message.includes('Email not confirmed')) {
@@ -514,7 +425,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.user && data.session) {
-        console.log('[AuthContext] Sign in successful');
         await new Promise(resolve => setTimeout(resolve, 100));
         return { success: true, message: 'Signed in successfully!' };
       }
@@ -522,22 +432,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       return { success: false, message: 'Sign in failed' };
     } catch (error: any) {
-      console.error('[AuthContext] Sign in exception:', error);
       setIsLoading(false);
       return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
 
   const deleteAccount = async (): Promise<{ success: boolean; message: string }> => {
-    console.log('[AuthContext] ===== DELETE ACCOUNT STARTED =====');
-    
     if (!user) {
       return { success: false, message: 'No user is currently signed in' };
     }
 
     try {
       const userId = user.id;
-      console.log('[AuthContext] Deleting user:', userId);
 
       const { error: profileError } = await supabase
         .from('profiles')
@@ -545,21 +451,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId);
 
       if (profileError) {
-        console.error('[AuthContext] Error deleting profile:', profileError);
         return { success: false, message: 'Failed to delete profile data: ' + profileError.message };
       }
-
-      console.log('[AuthContext] ✅ Profile deleted');
 
       const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
       if (authError) {
-        console.error('[AuthContext] Error deleting auth:', authError);
         await signOut();
         return { success: false, message: 'Account data deleted but auth deletion failed. Please contact support.' };
       }
-
-      console.log('[AuthContext] ✅ Auth deleted');
 
       setUser(null);
       setProfile(null);
@@ -568,14 +468,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await logoutUser();
-      } catch (error) {
-        console.error('[AuthContext] RevenueCat logout error (non-critical):', error);
+      } catch {
+        // Silently fail
       }
 
-      console.log('[AuthContext] ===== DELETE ACCOUNT COMPLETE =====');
       return { success: true, message: 'Your account has been permanently deleted' };
     } catch (error: any) {
-      console.error('[AuthContext] ❌ Delete account exception:', error);
       await signOut();
       return { success: false, message: error.message || 'An unexpected error occurred while deleting your account' };
     }
@@ -611,12 +509,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const canManageLocation = useCallback((locationId: string): boolean => {
-    // Super admins can manage all locations
     if (profile?.is_admin) {
       return true;
     }
     
-    // Regional admins can only manage their assigned locations
     if (profile?.is_regional_admin && profile.managed_locations) {
       return profile.managed_locations.includes(locationId);
     }

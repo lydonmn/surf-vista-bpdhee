@@ -1,14 +1,24 @@
 
-// 🚨 CRITICAL: Wrap errorLogger import in try-catch to prevent native crashes
+// 🚨 CRITICAL: Ultra-defensive entry point to prevent ANY startup crashes
+// This file MUST NOT throw errors under any circumstances
+
+// Wrap EVERYTHING in try-catch to ensure app never crashes on startup
 try {
-  // Initialize Natively console log capture before anything else
-  // Only in development mode
+  // Only initialize error logger in development mode
   if (__DEV__) {
-    require('./utils/errorLogger');
+    try {
+      require('./utils/errorLogger');
+      console.log('[index.ts] ✅ Error logger initialized');
+    } catch (loggerError) {
+      // Silently fail - logging is non-critical
+      console.warn('[index.ts] ⚠️ Error logger failed (non-critical)');
+    }
   }
-} catch (error) {
-  // Silently fail - don't crash the app if logging setup fails
-  console.warn('[index.ts] Error logger initialization failed (non-critical):', error);
+} catch (outerError) {
+  // Ultimate fallback - should never reach here
+  console.warn('[index.ts] ⚠️ Initialization warning (non-critical)');
 }
 
+// Import expo-router entry point
+// This MUST be the last line and MUST NOT be wrapped in try-catch
 import 'expo-router/entry';
