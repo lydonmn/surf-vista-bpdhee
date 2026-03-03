@@ -145,15 +145,16 @@ export default function ReportScreen() {
   const explosionScale = useRef(new Animated.Value(0)).current;
   const explosionOpacity = useRef(new Animated.Value(0)).current;
 
-  // 🚨 CRITICAL FIX: Defensive video player initialization with error handling
+  // 🚨 CRITICAL FIX: Video player WITHOUT autoplay - only load the video, don't play it
   const videoPlayer = useVideoPlayer(latestVideo?.video_url || '', (player) => {
     try {
       if (latestVideo?.video_url) {
-        console.log('[ReportScreen] Initializing video preview player with caching');
-        player.loop = true;
+        console.log('[ReportScreen] Initializing video preview player (NO AUTOPLAY)');
+        player.loop = false;
         player.muted = true;
         player.volume = 0;
-        console.log('[ReportScreen] ✅ Video preview caching: ENABLED');
+        // ✅ DO NOT call player.play() here - let user tap to play
+        console.log('[ReportScreen] ✅ Video preview ready (paused)');
       }
     } catch (error) {
       console.error('[ReportScreen] Error initializing video player:', error);
@@ -408,23 +409,13 @@ export default function ReportScreen() {
   }, [currentLocation, locationData.displayName]);
 
   // ✅ FIX: Only load data once on mount, not on every focus
+  // ✅ FIX: DO NOT autoplay video when screen is focused
   useFocusEffect(
     useCallback(() => {
       console.log('[ReportScreen] Screen focused');
       
-      // 🚨 CRITICAL FIX: Defensive video playback with error handling
-      if (latestVideo?.video_url && videoPlayer && videoReady) {
-        console.log('[ReportScreen] Resuming video preview playback');
-        try {
-          videoPlayer.play().catch((error: any) => {
-            console.error('[ReportScreen] Error resuming video playback:', error);
-            // Silently fail - video preview is non-critical
-          });
-        } catch (error) {
-          console.error('[ReportScreen] Error resuming video playback:', error);
-          // Silently fail - video preview is non-critical
-        }
-      }
+      // ✅ FIX: DO NOT autoplay video on focus - let user tap to play
+      console.log('[ReportScreen] Video preview ready (paused) - user must tap to play');
       
       // Only load data if we haven't loaded it yet
       if (isInitialized && !authLoading && user && profile && isSubscribed) {
@@ -454,7 +445,7 @@ export default function ReportScreen() {
           }
         }
       };
-    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, latestVideo, videoPlayer, videoReady])
+    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName, videoPlayer, videoReady])
   );
 
   // ✅ FIX: Only reload data when location changes
@@ -559,17 +550,15 @@ export default function ReportScreen() {
     setIsSubscribing(false);
   };
 
-  // 🚨 CRITICAL FIX: Defensive video player update with error handling
+  // ✅ FIX: Load video but DO NOT autoplay - let user tap to play
   useEffect(() => {
     if (latestVideo?.video_url && videoPlayer) {
-      console.log('[ReportScreen] Loading video preview with caching enabled');
+      console.log('[ReportScreen] Loading video preview (NO AUTOPLAY)');
       try {
         videoPlayer.replace(latestVideo.video_url);
-        videoPlayer.play().catch((error: any) => {
-          console.error('[ReportScreen] Error playing video:', error);
-          // Silently fail - video preview is non-critical
-        });
+        // ✅ DO NOT call videoPlayer.play() - let user tap to play
         setVideoReady(true);
+        console.log('[ReportScreen] ✅ Video ready (paused) - user must tap to play');
       } catch (error) {
         console.error('[ReportScreen] Error loading video:', error);
         // Silently fail - video preview is non-critical
