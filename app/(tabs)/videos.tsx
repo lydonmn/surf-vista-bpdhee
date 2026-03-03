@@ -8,7 +8,7 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
-import { Video as ExpoVideo, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
 
@@ -23,7 +23,6 @@ export default function VideosScreen() {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
   const isSubscribed = checkSubscription();
-  const videoRefs = React.useRef<{ [key: string]: ExpoVideo | null }>({});
 
   useEffect(() => {
     console.log('VideosScreen - Auth state:', {
@@ -112,18 +111,6 @@ export default function VideosScreen() {
     );
   };
 
-  const handleVideoPlaybackStatusUpdate = React.useCallback((videoId: string) => (status: any) => {
-    // Stop video after it finishes playing once
-    if (status.didJustFinish) {
-      console.log('[VideosScreen] Video finished playing:', videoId);
-      const videoRef = videoRefs.current[videoId];
-      if (videoRef) {
-        videoRef.setPositionAsync(0);
-        videoRef.pauseAsync();
-      }
-    }
-  }, []);
-
   const handleVideoPress = React.useCallback((videoId: string, preloadedUrl?: string, videoStatus?: string) => {
     // Don't allow playing processing videos
     if (videoStatus === 'processing') {
@@ -153,17 +140,17 @@ export default function VideosScreen() {
     // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly
     if (video.video_url.startsWith(MUX_HLS_PREFIX)) {
       console.log('[VideosScreen] 🎬 Using Mux HLS URL for preview:', video.id);
-      return { uri: video.video_url };
+      return video.video_url;
     }
     
     // For Supabase videos, use signed URL if available, otherwise use video_url
     if (video.signed_url) {
       console.log('[VideosScreen] Using signed URL for preview:', video.id);
-      return { uri: video.signed_url };
+      return video.signed_url;
     }
     
     console.log('[VideosScreen] Using video_url for preview:', video.id);
-    return { uri: video.video_url };
+    return video.video_url;
   }, []);
 
   // ✅ ATOMIC JSX: Extract location-specific subtitle text
@@ -307,16 +294,7 @@ export default function VideosScreen() {
                     <View style={styles.videoPreviewContainer}>
                       {videoSource ? (
                         <>
-                          <ExpoVideo
-                            ref={(ref) => { videoRefs.current[video.id] = ref; }}
-                            source={videoSource}
-                            style={styles.videoPreview}
-                            resizeMode={ResizeMode.COVER}
-                            shouldPlay={true}
-                            isLooping={false}
-                            isMuted={true}
-                            onPlaybackStatusUpdate={handleVideoPlaybackStatusUpdate(video.id)}
-                          />
+                          <VideoPreview videoUrl={videoSource} />
                           <View style={styles.videoOverlay}>
                             <View style={styles.playButtonContainer}>
                               <IconSymbol
@@ -425,6 +403,24 @@ export default function VideosScreen() {
         </TouchableOpacity>
       )}
     </ScrollView>
+  );
+}
+
+// Simple video preview component using expo-video
+function VideoPreview({ videoUrl }: { videoUrl: string }) {
+  const player = useVideoPlayer(videoUrl, (player) => {
+    player.loop = false;
+    player.muted = true;
+    player.play();
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.videoPreview}
+      nativeControls={false}
+      contentFit="cover"
+    />
   );
 }
 
