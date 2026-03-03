@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
@@ -54,8 +54,6 @@ function getMuxThumbnailUrl(videoUrl: string): string | null {
 export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPreviewThumbnailProps) {
   const [isReady, setIsReady] = useState(false);
   const [showPoster, setShowPoster] = useState(true);
-  const isMountedRef = useRef(true);
-  const playPromiseRef = useRef<Promise<void> | null>(null);
 
   // 🎯 QUALITY FIX: Try to get high-quality Mux thumbnail first
   const highQualityThumbnail = getMuxThumbnailUrl(videoUrl);
@@ -64,85 +62,34 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
   console.log('[VideoPreviewThumbnail] Using thumbnail URL:', finalThumbnailUrl);
   console.log('[VideoPreviewThumbnail] Is Mux thumbnail:', !!highQualityThumbnail);
 
-  // 🚨 CRITICAL FIX: Safe play function that handles promise rejections
-  const safePlay = async (playerInstance: any) => {
-    if (!playerInstance || !isMountedRef.current) return;
-    
-    try {
-      // Wait for any pending play promise to resolve
-      if (playPromiseRef.current) {
-        try {
-          await playPromiseRef.current;
-        } catch (e) {
-          // Ignore errors from previous play promise
-        }
-      }
-      
-      // Start new play promise
-      playPromiseRef.current = (async () => {
-        try {
-          if (isMountedRef.current) {
-            await playerInstance.play();
-          }
-        } catch (err) {
-          console.warn('[VideoPreviewThumbnail] Play error (non-critical):', err);
-          throw err;
-        }
-      })();
-      
-      await playPromiseRef.current;
-      playPromiseRef.current = null;
-    } catch (err) {
-      // Silently handle play errors - they're expected during rapid state changes
-      playPromiseRef.current = null;
-    }
-  };
-
   // 🚨 CRITICAL FIX: Create a simple muted looping player with error handling
   const player = useVideoPlayer(videoUrl, (playerInstance) => {
-    if (!isMountedRef.current) return;
-    
     try {
       console.log('[VideoPreviewThumbnail] Initializing preview player');
       playerInstance.loop = true;
       playerInstance.muted = true;
       playerInstance.volume = 0;
       
-      // 🚨 CRITICAL: Use safe play function to prevent unhandled promise rejections
-      safePlay(playerInstance);
+      // 🚨 CRITICAL: Wrap play() in try-catch to prevent unhandled promise rejections
+      try {
+        playerInstance.play().catch((playError: any) => {
+          console.warn('[VideoPreviewThumbnail] ⚠️ Play error (non-critical):', playError);
+          // Don't throw - this is expected during rapid state changes
+        });
+      } catch (playError) {
+        console.warn('[VideoPreviewThumbnail] ⚠️ Play exception (non-critical):', playError);
+      }
     } catch (error) {
       console.error('[VideoPreviewThumbnail] ⚠️ Player initialization error (non-critical):', error);
     }
   });
 
-  // 🚨 CRITICAL: Cleanup on unmount
-  useEffect(() => {
-    isMountedRef.current = true;
-    
-    return () => {
-      console.log('[VideoPreviewThumbnail] Component unmounting - cleaning up');
-      isMountedRef.current = false;
-      playPromiseRef.current = null;
-      
-      // Pause player on unmount
-      if (player) {
-        try {
-          player.pause();
-        } catch (e) {
-          // Silently fail
-        }
-      }
-    };
-  }, [player]);
-
   // 🚨 CRITICAL FIX: Listen for when video is ready to play with error handling
   useEffect(() => {
-    if (!player || !isMountedRef.current) return;
+    if (!player) return;
 
     try {
       const subscription = player.addListener('statusChange', (status) => {
-        if (!isMountedRef.current) return;
-        
         console.log('[VideoPreviewThumbnail] Status changed:', status.status);
         
         if (status.status === 'readyToPlay' && !isReady) {
@@ -150,19 +97,15 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
           setIsReady(true);
           // Hide poster after a brief delay to ensure smooth transition
           setTimeout(() => {
-            if (isMountedRef.current) {
-              setShowPoster(false);
-            }
+            setShowPoster(false);
           }, 300);
         }
         
         // 🚨 CRITICAL: Handle error states gracefully
         if (status.status === 'error') {
           console.warn('[VideoPreviewThumbnail] ⚠️ Video error - keeping poster visible');
-          if (isMountedRef.current) {
-            setIsReady(false);
-            setShowPoster(true);
-          }
+          setIsReady(false);
+          setShowPoster(true);
         }
       });
 
@@ -180,8 +123,6 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
 
   // Reset state when URL changes
   useEffect(() => {
-    if (!isMountedRef.current) return;
-    
     console.log('[VideoPreviewThumbnail] Video URL changed, resetting state');
     setIsReady(false);
     setShowPoster(true);
