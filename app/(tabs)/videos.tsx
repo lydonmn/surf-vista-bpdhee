@@ -1,6 +1,6 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Image } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -8,7 +8,6 @@ import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
 
@@ -406,21 +405,29 @@ export default function VideosScreen() {
   );
 }
 
-// 🚨 CRITICAL FIX: Defensive video preview component with error handling
+// 🚨 CRITICAL FIX: Thumbnail-only preview component (no video player)
 function VideoPreview({ videoUrl }: { videoUrl: string }) {
-  const player = useVideoPlayer(videoUrl, (player) => {
-    // Don't autoplay - just set up the player
-    player.loop = false;
-    player.muted = true;
-    // Don't call play() - it causes AbortError crashes
-  });
+  const playbackId = videoUrl.includes('stream.mux.com/')
+    ? videoUrl.split('stream.mux.com/')[1]?.split('.m3u8')[0]
+    : null;
+  
+  const thumbnailUrl = playbackId
+    ? `https://image.mux.com/${playbackId}/thumbnail.jpg?width=800&fit_mode=preserve&time=1`
+    : null;
+
+  if (!thumbnailUrl) {
+    return (
+      <View style={[styles.videoPreview, { backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   return (
-    <VideoView
-      player={player}
+    <Image
+      source={{ uri: thumbnailUrl }}
       style={styles.videoPreview}
-      nativeControls={false}
-      contentFit="cover"
+      resizeMode="cover"
     />
   );
 }
