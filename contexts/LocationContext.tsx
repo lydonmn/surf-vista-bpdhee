@@ -172,7 +172,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, [fetchLocations]);
 
   // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
-  const locationData = locations.find(loc => loc.id === currentLocation) || locations[0];
+  const locationData = locations.find(loc => loc.id === currentLocation) || locations[0] || DEFAULT_LOCATIONS[0];
+  
+  if (!locationData) {
+    console.error('[LocationContext] CRITICAL: No location data available!');
+  }
 
   const value: LocationContextType = {
     currentLocation,

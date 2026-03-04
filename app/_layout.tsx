@@ -1,10 +1,10 @@
 
+import React, { useEffect, useRef, useState } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
 import { useColorScheme, Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -17,53 +17,72 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // Silently fail if splash screen is already hidden
 });
 
-// 🚨 CRITICAL: Global error boundary component
+// 🚨 CRITICAL: Global error boundary component with React Error Boundary
+class ErrorBoundaryClass extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    console.error('[ErrorBoundary] getDerivedStateFromError:', error);
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary] componentDidCatch:', error);
+    console.error('[ErrorBoundary] Error info:', errorInfo);
+    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      console.log('[ErrorBoundary] Rendering error screen');
+      return (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.message}>
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </Text>
+          <Text style={errorStyles.stack}>
+            {this.state.error?.stack?.substring(0, 200)}
+          </Text>
+          <TouchableOpacity
+            style={errorStyles.button}
+            onPress={() => {
+              console.log('[ErrorBoundary] User pressed Try Again');
+              this.setState({ hasError: false, error: null });
+            }}
+          >
+            <Text style={errorStyles.buttonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Wrapper component for hooks
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
-  const [hasError, setHasError] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
   useEffect(() => {
-    const errorHandler = (error: Error, isFatal?: boolean) => {
-      console.error('[ErrorBoundary] Caught error:', error);
-      console.error('[ErrorBoundary] Error stack:', error.stack);
-      console.error('[ErrorBoundary] Is fatal:', isFatal);
-      setHasError(true);
-      setError(error);
-    };
-
-    // Set up global error handler
+    // Set up global error handler for non-React errors
     if (typeof ErrorUtils !== 'undefined') {
       const originalHandler = ErrorUtils.getGlobalHandler();
       ErrorUtils.setGlobalHandler((error, isFatal) => {
-        errorHandler(error, isFatal);
+        console.error('[GlobalErrorHandler] Caught error:', error);
+        console.error('[GlobalErrorHandler] Error stack:', error.stack);
+        console.error('[GlobalErrorHandler] Is fatal:', isFatal);
         originalHandler?.(error, isFatal);
       });
     }
   }, []);
 
-  if (hasError) {
-    console.log('[ErrorBoundary] Rendering error screen');
-    return (
-      <View style={errorStyles.container}>
-        <Text style={errorStyles.title}>Something went wrong</Text>
-        <Text style={errorStyles.message}>
-          {error?.message || 'An unexpected error occurred'}
-        </Text>
-        <TouchableOpacity
-          style={errorStyles.button}
-          onPress={() => {
-            console.log('[ErrorBoundary] User pressed Try Again');
-            setHasError(false);
-            setError(null);
-          }}
-        >
-          <Text style={errorStyles.buttonText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return <>{children}</>;
+  return <ErrorBoundaryClass>{children}</ErrorBoundaryClass>;
 }
 
 const errorStyles = StyleSheet.create({
@@ -84,7 +103,14 @@ const errorStyles = StyleSheet.create({
     fontSize: 16,
     color: '#CCCCCC',
     textAlign: 'center',
+    marginBottom: 12,
+  },
+  stack: {
+    fontSize: 12,
+    color: '#999999',
+    textAlign: 'center',
     marginBottom: 24,
+    fontFamily: 'monospace',
   },
   button: {
     backgroundColor: '#007AFF',
@@ -163,6 +189,17 @@ export default function RootLayout() {
 
   // 🚨 CRITICAL FIX: Don't block rendering - show content immediately
   console.log('[RootLayout] Rendering layout (loaded:', loaded, ', error:', !!error, ')');
+
+  // 🚨 CRITICAL FIX: Add a minimal loading fallback while fonts load
+  // This prevents white screen if fonts take a moment to load
+  if (!loaded && !error) {
+    console.log('[RootLayout] Fonts still loading, showing minimal fallback');
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 18 }}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <ErrorBoundary>

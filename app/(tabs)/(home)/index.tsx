@@ -127,11 +127,23 @@ function calculateSurfRating(surfData: any): number {
 }
 
 export default function HomeScreen() {
+  console.log('[HomeScreen] ===== COMPONENT RENDERING =====');
+  
   const theme = useTheme();
+  console.log('[HomeScreen] Theme loaded:', !!theme);
+  
   const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
+  console.log('[HomeScreen] Auth state - user:', !!user, 'profile:', !!profile, 'isLoading:', isLoading);
+  
   const isSubscribed = checkSubscription();
+  console.log('[HomeScreen] Subscription status:', isSubscribed);
+  
   const { currentLocation, locationData } = useLocation();
+  console.log('[HomeScreen] Location - current:', currentLocation, 'data:', !!locationData);
+  
   const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
+  console.log('[HomeScreen] Surf data - reports:', surfReports?.length, 'conditions:', !!surfConditions, 'loading:', surfLoading);
+  
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -139,7 +151,11 @@ export default function HomeScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   // ✅ FIX: ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  const todayDate = useMemo(() => getESTDate(), []);
+  const todayDate = useMemo(() => {
+    const date = getESTDate();
+    console.log('[HomeScreen] Today\'s date:', date);
+    return date;
+  }, []);
 
   const locationSurfReports = useMemo(() => {
     const filtered = surfReports.filter(report => report.location === currentLocation);
@@ -348,8 +364,19 @@ export default function HomeScreen() {
   // 🚨 CRITICAL FIX: Don't show loading screen - render content immediately
   // The contexts are now non-blocking and will update when ready
 
+  // 🚨 SAFETY CHECK: Ensure we always have valid theme and locationData
+  if (!theme || !locationData) {
+    console.log('[HomeScreen] Missing critical data - theme:', !!theme, 'locationData:', !!locationData);
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ color: '#FFFFFF', marginTop: 16 }}>Loading...</Text>
+      </View>
+    );
+  }
+
   if (!user || !isSubscribed) {
-    console.log('[HomeScreen] Showing locked content');
+    console.log('[HomeScreen] Showing locked content - user:', !!user, 'subscribed:', isSubscribed);
     const titleText = 'Subscriber Only Content';
     const descriptionText = 'Subscribe to access exclusive 6K drone footage and detailed surf reports';
     const debugText = 'You are signed in but not subscribed';
