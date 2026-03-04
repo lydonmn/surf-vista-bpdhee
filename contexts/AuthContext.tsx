@@ -252,6 +252,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             message: 'This email is already registered. Please sign in instead.' 
           };
         }
+        if (error.message.includes('rate limit') || error.message.includes('email rate limit exceeded')) {
+          return { 
+            success: false, 
+            message: 'Too many signup attempts. Please wait a few minutes and try again, or contact support for assistance.' 
+          };
+        }
         return { success: false, message: error.message };
       }
 

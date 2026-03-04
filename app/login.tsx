@@ -185,6 +185,17 @@ export default function LoginScreen() {
                 }
               ]
             );
+          } else if (result.message.includes('rate limit') || result.message.includes('Too many signup attempts')) {
+            Alert.alert(
+              'Too Many Attempts',
+              'Too many signup attempts detected. Please wait a few minutes and try again.\n\nIf you need immediate assistance, please contact support.',
+              [
+                {
+                  text: 'OK',
+                  style: 'cancel'
+                }
+              ]
+            );
           } else {
             Alert.alert('Sign Up Failed', result.message);
           }
