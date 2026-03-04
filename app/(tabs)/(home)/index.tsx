@@ -345,7 +345,9 @@ export default function HomeScreen() {
     setIsSubscribing(false);
   };
 
-  if (!isInitialized || isLoading) {
+  // 🚨 CRITICAL FIX: Only show loading if we're actually loading AND initialized
+  // Don't block on isInitialized alone - it might be stuck
+  if (isLoading && !user) {
     const loadingTextContent = 'Loading your profile...';
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

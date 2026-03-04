@@ -215,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL: Ultra-defensive initialization with timeout
+  // 🚨 CRITICAL: Ultra-defensive initialization with aggressive timeout
   useEffect(() => {
     if (isInitializingRef.current) {
       return;
@@ -224,11 +224,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isInitializingRef.current = true;
     let mounted = true;
 
+    // 🚨 CRITICAL FIX: Set initialized immediately to prevent white screen
+    // The app should render even if auth is still loading
+    setIsInitialized(true);
+
     const initializeAuth = async () => {
       try {
-        // Set a timeout to ensure we don't hang on startup
+        // Set a shorter timeout to ensure we don't hang on startup
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Auth initialization timeout')), 10000)
+          setTimeout(() => reject(new Error('Auth initialization timeout')), 3000)
         );
 
         const authPromise = (async () => {
@@ -250,7 +254,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setProfile(null);
                 setSession(null);
                 setIsLoading(false);
-                setIsInitialized(true);
               }
               return;
             }
@@ -265,7 +268,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           if (mounted) {
             setIsLoading(false);
-            setIsInitialized(true);
           }
 
           // Initialize RevenueCat in background on native platforms
@@ -289,7 +291,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('[AuthContext] Initialization error (non-critical):', error);
         if (mounted) {
           setIsLoading(false);
-          setIsInitialized(true);
         }
       } finally {
         isInitializingRef.current = false;

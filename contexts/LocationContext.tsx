@@ -117,12 +117,15 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       try {
         console.log('[LocationContext] Initializing...');
         
-        // Set a timeout to ensure we don't hang on startup
+        // 🚨 CRITICAL FIX: Set loading to false immediately to prevent blocking
+        setIsLoading(false);
+        
+        // Set a shorter timeout to ensure we don't hang on startup
         const timeoutPromise = new Promise((resolve) => 
           setTimeout(() => {
             console.warn('[LocationContext] Initialization timeout - using defaults');
             resolve(null);
-          }, 5000)
+          }, 2000)
         );
 
         const initPromise = (async () => {
@@ -143,8 +146,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         
       } catch (error) {
         console.error('[LocationContext] Error initializing (non-critical):', error);
-      } finally {
-        setIsLoading(false);
       }
     };
 
