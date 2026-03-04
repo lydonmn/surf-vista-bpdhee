@@ -1,44 +1,18 @@
 
-import { useEffect } from 'react';
 import { Redirect } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { useAuth } from '@/contexts/AuthContext';
+import { StyleSheet } from 'react-native';
 
 /**
- * Root index screen - handles initial routing logic
- * Redirects to tabs or login based on authentication state
+ * 🚨 CRITICAL FIX: Root index screen - ALWAYS redirects immediately
+ * No blocking, no waiting - just redirect to tabs
+ * The tabs layout will handle any auth checks if needed
  */
 export default function Index() {
   console.log('[Index] ===== ROOT INDEX SCREEN RENDERING =====');
+  console.log('[Index] Redirecting immediately to /(tabs)');
   
-  const { user, isLoading, isInitialized } = useAuth();
-  
-  console.log('[Index] Auth state:', { 
-    user: user?.id, 
-    isLoading, 
-    isInitialized 
-  });
-
-  useEffect(() => {
-    console.log('[Index] Component mounted');
-    return () => {
-      console.log('[Index] Component unmounted');
-    };
-  }, []);
-
-  // Show loading indicator while auth is initializing
-  // But don't block for too long - failsafe timeout in AuthContext
-  if (isLoading || !isInitialized) {
-    console.log('[Index] Showing loading indicator');
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    );
-  }
-
-  // Redirect to tabs (home) - AuthContext will handle login redirect if needed
-  console.log('[Index] Redirecting to /(tabs)');
+  // 🚨 CRITICAL FIX: ALWAYS redirect immediately - no blocking
+  // Don't check auth state here - let the tabs handle it
   return <Redirect href="/(tabs)" />;
 }
 

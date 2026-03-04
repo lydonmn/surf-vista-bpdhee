@@ -40,7 +40,7 @@ export default function RegionalAdminScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { locations } = useLocation();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
   const [loadingLocationId, setLoadingLocationId] = useState<string | null>(null);
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [locationReports, setLocationReports] = useState<LocationReport[]>([]);
