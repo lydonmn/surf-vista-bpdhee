@@ -25,6 +25,8 @@ function ErrorBoundary({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const errorHandler = (error: Error, isFatal?: boolean) => {
       console.error('[ErrorBoundary] Caught error:', error);
+      console.error('[ErrorBoundary] Error stack:', error.stack);
+      console.error('[ErrorBoundary] Is fatal:', isFatal);
       setHasError(true);
       setError(error);
     };
@@ -40,6 +42,7 @@ function ErrorBoundary({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (hasError) {
+    console.log('[ErrorBoundary] Rendering error screen');
     return (
       <View style={errorStyles.container}>
         <Text style={errorStyles.title}>Something went wrong</Text>
@@ -49,6 +52,7 @@ function ErrorBoundary({ children }: { children: React.ReactNode }) {
         <TouchableOpacity
           style={errorStyles.button}
           onPress={() => {
+            console.log('[ErrorBoundary] User pressed Try Again');
             setHasError(false);
             setError(null);
           }}
@@ -96,32 +100,37 @@ const errorStyles = StyleSheet.create({
 });
 
 export default function RootLayout() {
+  console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
+  
   const colorScheme = useColorScheme();
+  console.log('[RootLayout] Color scheme:', colorScheme);
+  
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
 
+  console.log('[RootLayout] Loading fonts...');
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  console.log('[RootLayout] Fonts loaded:', loaded, ', error:', !!error);
 
+  // 🚨 CRITICAL FIX: Hide splash screen immediately on mount
+  useEffect(() => {
+    console.log('[RootLayout] Mounting - hiding splash screen immediately');
+    SplashScreen.hideAsync().catch((err) => {
+      console.log('[RootLayout] Splash screen already hidden or error:', err);
+    });
+  }, []);
+
+  // 🚨 CRITICAL FIX: Also hide when fonts load
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync().catch(() => {
-        // Silently fail if splash screen is already hidden
+      console.log('[RootLayout] Fonts loaded or error - hiding splash screen');
+      SplashScreen.hideAsync().catch((err) => {
+        console.log('[RootLayout] Splash screen already hidden or error:', err);
       });
     }
   }, [loaded, error]);
-
-  // 🚨 CRITICAL FIX: Add timeout to force hide splash screen after 3 seconds
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      SplashScreen.hideAsync().catch(() => {
-        // Silently fail if splash screen is already hidden
-      });
-    }, 3000);
-
-    return () => clearTimeout(timeout);
-  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -152,9 +161,8 @@ export default function RootLayout() {
     };
   }, []);
 
-  if (!loaded && !error) {
-    return null;
-  }
+  // 🚨 CRITICAL FIX: Don't block rendering - show content immediately
+  console.log('[RootLayout] Rendering layout (loaded:', loaded, ', error:', !!error, ')');
 
   return (
     <ErrorBoundary>

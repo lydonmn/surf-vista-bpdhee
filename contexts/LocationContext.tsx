@@ -68,10 +68,14 @@ const DEFAULT_LOCATIONS: LocationData[] = [
 ];
 
 export function LocationProvider({ children }: { children: ReactNode }) {
+  console.log('[LocationProvider] ===== COMPONENT MOUNTING =====');
+  
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   // 🚨 CRITICAL FIX: Start with isLoading=false to prevent white screen
   const [isLoading, setIsLoading] = useState(false);
+  
+  console.log('[LocationProvider] Initial state - currentLocation:', 'folly-beach', ', locations count:', DEFAULT_LOCATIONS.length, ', isLoading:', false);
 
   const fetchLocations = useCallback(async () => {
     try {

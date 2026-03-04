@@ -59,12 +59,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  console.log('[AuthProvider] ===== COMPONENT MOUNTING =====');
+  
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   // 🚨 CRITICAL FIX: Start with isLoading=false and isInitialized=true to prevent white screen
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true);
+  
+  console.log('[AuthProvider] Initial state - isLoading:', false, ', isInitialized:', true);
   
   const isInitializingRef = useRef(false);
 
