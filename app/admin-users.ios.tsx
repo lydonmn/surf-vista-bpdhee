@@ -77,13 +77,15 @@ export default function AdminUsersScreen() {
       console.log('[AdminUsersScreen] User is not admin, redirecting...');
       showErrorModal('Access Denied', 'You do not have admin privileges');
       setTimeout(() => {
-        router.back();
+        if (router.canGoBack()) {
+          router.back();
+        }
       }, 100);
       return;
     }
 
     loadRegionalAdmins();
-  }, [profile, loadRegionalAdmins]);
+  }, [profile, loadRegionalAdmins, router]);
 
   const showErrorModal = (title: string, message: string) => {
     setErrorModalTitle(title);

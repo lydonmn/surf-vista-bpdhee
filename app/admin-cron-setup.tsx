@@ -36,8 +36,8 @@ export default function AdminCronSetupScreen() {
       } else {
         setCronJobs(data || []);
       }
-    } catch (e) {
-      console.error('Error:', e);
+    } catch (error) {
+      console.error('Error:', error);
       Alert.alert('Error', 'Failed to load cron jobs');
     } finally {
       setLoading(false);

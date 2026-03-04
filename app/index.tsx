@@ -1,18 +1,36 @@
 
 import { Redirect } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
 
 /**
- * 🚨 CRITICAL FIX: Root index screen - ALWAYS redirects immediately
- * No blocking, no waiting - just redirect to tabs
- * The tabs layout will handle any auth checks if needed
+ * 🚨 CRITICAL FIX: Root index screen with minimal initialization delay
+ * Shows a brief loading indicator to ensure contexts are ready
  */
 export default function Index() {
   console.log('[Index] ===== ROOT INDEX SCREEN RENDERING =====');
-  console.log('[Index] Redirecting immediately to /(tabs)');
+  const [isReady, setIsReady] = useState(false);
   
-  // 🚨 CRITICAL FIX: ALWAYS redirect immediately - no blocking
-  // Don't check auth state here - let the tabs handle it
+  useEffect(() => {
+    // Give contexts a moment to initialize
+    const timer = setTimeout(() => {
+      console.log('[Index] Initialization complete, redirecting to tabs');
+      setIsReady(true);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  if (!isReady) {
+    console.log('[Index] Showing loading indicator...');
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+  
+  console.log('[Index] Redirecting to /(tabs)');
   return <Redirect href="/(tabs)" />;
 }
 

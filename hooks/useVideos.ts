@@ -417,7 +417,7 @@ export function useVideos() {
   useEffect(() => {
     console.log('[useVideos] Location changed to:', currentLocation);
     fetchVideos();
-  }, [currentLocation, fetchVideos]);
+  }, [currentLocation]);
 
   // 🚨 FIXED: Set up background polling for processing videos
   useEffect(() => {

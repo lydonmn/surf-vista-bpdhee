@@ -133,7 +133,6 @@ export default function RootLayout() {
   
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
-  const [appReady, setAppReady] = React.useState(false);
 
   console.log('[RootLayout] Loading fonts...');
   const [loaded] = useFonts({
@@ -141,40 +140,17 @@ export default function RootLayout() {
   });
   console.log('[RootLayout] Fonts loaded:', loaded);
 
-  // 🚨 CRITICAL FIX: Hide splash screen immediately on mount
-  useEffect(() => {
-    console.log('[RootLayout] Mounting - hiding splash screen immediately');
-    
-    // Force hide splash screen after a very short delay
-    const timer = setTimeout(() => {
-      console.log('[RootLayout] Force hiding splash screen');
-      SplashScreen.hideAsync().catch((err) => {
-        console.log('[RootLayout] Splash screen already hidden or error:', err);
-      });
-      setAppReady(true);
-    }, 100);
-
-    // Failsafe: Force app ready after 2 seconds no matter what
-    const failsafeTimer = setTimeout(() => {
-      console.log('[RootLayout] FAILSAFE: Force setting appReady=true after 2s');
-      setAppReady(true);
-      SplashScreen.hideAsync().catch(() => {});
-    }, 2000);
-
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(failsafeTimer);
-    };
-  }, []);
-
-  // 🚨 CRITICAL FIX: Also hide when fonts load
+  // 🚨 CRITICAL FIX: Hide splash screen when fonts are loaded
   useEffect(() => {
     if (loaded) {
       console.log('[RootLayout] Fonts loaded - hiding splash screen');
-      SplashScreen.hideAsync().catch((err) => {
-        console.log('[RootLayout] Splash screen already hidden or error:', err);
-      });
-      setAppReady(true);
+      const timer = setTimeout(() => {
+        SplashScreen.hideAsync().catch((err) => {
+          console.log('[RootLayout] Splash screen already hidden or error:', err);
+        });
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
   }, [loaded]);
 
@@ -207,12 +183,11 @@ export default function RootLayout() {
     };
   }, []);
 
-  // 🚨 CRITICAL FIX: Don't block rendering - show content immediately
-  console.log('[RootLayout] Rendering layout (loaded:', loaded, ', appReady:', appReady, ')');
-
-  // 🚨 CRITICAL FIX: Always render the app immediately
-  // Don't block on fonts or initialization - show content right away
-  // This prevents white screen issues
+  // 🚨 CRITICAL FIX: Show loading screen until fonts are loaded
+  if (!loaded) {
+    console.log('[RootLayout] Waiting for fonts to load...');
+    return null;
+  }
 
   console.log('[RootLayout] ===== RENDERING APP =====');
   console.log('[RootLayout] ColorScheme:', colorScheme);

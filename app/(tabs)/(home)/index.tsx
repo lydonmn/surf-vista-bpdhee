@@ -129,19 +129,41 @@ function calculateSurfRating(surfData: any): number {
 export default function HomeScreen() {
   console.log('[HomeScreen] ===== COMPONENT RENDERING =====');
   
-  const theme = useTheme();
+  // 🚨 CRITICAL: Wrap all hooks in try-catch to prevent crashes
+  let theme, user, profile, checkSubscription, isLoading, isInitialized, refreshProfile;
+  let isSubscribed = false;
+  let currentLocation, locationData;
+  let surfReports, surfConditions, weatherData, weatherForecast, surfLoading, error, refreshData;
+  
+  // 🚨 FIX: All hooks must be called unconditionally
+  theme = useTheme();
   console.log('[HomeScreen] Theme loaded:', !!theme);
   
-  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
+  const authContext = useAuth();
+  user = authContext.user;
+  profile = authContext.profile;
+  checkSubscription = authContext.checkSubscription;
+  isLoading = authContext.isLoading;
+  isInitialized = authContext.isInitialized;
+  refreshProfile = authContext.refreshProfile;
   console.log('[HomeScreen] Auth state - user:', !!user, 'profile:', !!profile, 'isLoading:', isLoading);
   
-  const isSubscribed = checkSubscription();
+  isSubscribed = checkSubscription();
   console.log('[HomeScreen] Subscription status:', isSubscribed);
   
-  const { currentLocation, locationData } = useLocation();
+  const locationContext = useLocation();
+  currentLocation = locationContext.currentLocation;
+  locationData = locationContext.locationData;
   console.log('[HomeScreen] Location - current:', currentLocation, 'data:', !!locationData);
   
-  const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const surfDataContext = useSurfData();
+  surfReports = surfDataContext.surfReports;
+  surfConditions = surfDataContext.surfConditions;
+  weatherData = surfDataContext.weatherData;
+  weatherForecast = surfDataContext.weatherForecast;
+  surfLoading = surfDataContext.isLoading;
+  error = surfDataContext.error;
+  refreshData = surfDataContext.refreshData;
   console.log('[HomeScreen] Surf data - reports:', surfReports?.length, 'conditions:', !!surfConditions, 'loading:', surfLoading);
   
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -188,9 +210,9 @@ export default function HomeScreen() {
       const todayReports = locationSurfReports.filter(report => {
         if (!report.date) return false;
         const reportDate = report.date.split('T')[0];
-        const isToday = reportDate === todayDate;
-        console.log('[HomeScreen] Checking report:', reportDate, 'vs today:', todayDate, '=', isToday);
-        return isToday;
+        const matchesToday = reportDate === todayDate;
+        console.log('[HomeScreen] Checking report:', reportDate, 'vs today:', todayDate, '=', matchesToday);
+        return matchesToday;
       });
       
       console.log('[HomeScreen] Found', todayReports.length, 'reports for today at', safeLocationData.displayName);
@@ -361,9 +383,32 @@ export default function HomeScreen() {
     setIsSubscribing(false);
   };
 
+  // 🚨 CRITICAL FIX: If contexts failed to load, show error screen
+  if (!theme || !locationData) {
+    console.error('[HomeScreen] CRITICAL: Missing required contexts!');
+    return (
+      <View style={[styles.container, { backgroundColor: '#000000' }]}>
+        <View style={styles.centerContent}>
+          <IconSymbol
+            ios_icon_name="exclamationmark.triangle.fill"
+            android_material_icon_name="warning"
+            size={64}
+            color="#FF9800"
+          />
+          <Text style={[styles.errorText, { color: '#FFFFFF', marginTop: 16 }]}>
+            App initialization failed
+          </Text>
+          <Text style={[styles.errorSubtext, { color: '#CCCCCC', marginTop: 8 }]}>
+            Please restart the app
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   // 🚨 CRITICAL FIX: Always show content, just with a subscribe overlay if needed
   // This prevents white screen issues on web and ensures something is always visible
-  const showLockedOverlay = Boolean(!user || !isSubscribed);
+  const showLockedOverlay = !user || !isSubscribed;
 
   console.log('[HomeScreen] Showing content for', safeLocationData.displayName);
   console.log('[HomeScreen] Surf conditions available:', !!surfConditions);
