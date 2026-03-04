@@ -193,6 +193,10 @@ export default function RootLayout() {
   // 🚨 CRITICAL FIX: Always render the app, even if fonts aren't loaded yet
   // This prevents white screen issues - fonts will load in the background
 
+  console.log('[RootLayout] ===== RENDERING APP =====');
+  console.log('[RootLayout] ColorScheme:', colorScheme);
+  console.log('[RootLayout] Fonts loaded:', loaded);
+
   return (
     <ErrorBoundary>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

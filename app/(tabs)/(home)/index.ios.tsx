@@ -364,13 +364,20 @@ export default function HomeScreen() {
   // 🚨 CRITICAL FIX: Don't show loading screen - render content immediately
   // The contexts are now non-blocking and will update when ready
 
+  // 🚨 CRITICAL FIX: Always render something - never return null or undefined
+  console.log('[HomeScreen iOS] ===== RENDERING HOME SCREEN =====');
+  console.log('[HomeScreen iOS] Theme available:', !!theme);
+  console.log('[HomeScreen iOS] LocationData available:', !!locationData);
+  console.log('[HomeScreen iOS] User:', !!user);
+  console.log('[HomeScreen iOS] Subscribed:', isSubscribed);
+  
   // 🚨 SAFETY CHECK: Ensure we always have valid theme and locationData
   if (!theme || !locationData) {
-    console.log('[HomeScreen iOS] Missing critical data - theme:', !!theme, 'locationData:', !!locationData);
+    console.log('[HomeScreen iOS] Missing critical data - showing loading screen');
     return (
       <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ color: '#FFFFFF', marginTop: 16 }}>Loading...</Text>
+        <Text style={{ color: '#FFFFFF', marginTop: 16, fontSize: 16 }}>Loading SurfVista...</Text>
       </View>
     );
   }

@@ -2,9 +2,11 @@
 import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 
 export default function TabLayout() {
+  console.log('[TabLayout iOS] ===== RENDERING NATIVE TABS =====');
+  
   return (
     <NativeTabs>
-      <NativeTabs.Trigger key="home" name="(home)">
+      <NativeTabs.Trigger key="home" name="(home)/index">
         <Icon sf="house.fill" />
         <Label>Home</Label>
       </NativeTabs.Trigger>
