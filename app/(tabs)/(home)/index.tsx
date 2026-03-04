@@ -368,9 +368,9 @@ export default function HomeScreen() {
   if (!theme) {
     console.error('[HomeScreen] CRITICAL: Theme is undefined!');
     return (
-      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>Loading theme...</Text>
+      <View style={{ flex: 1, backgroundColor: '#1C1C1E', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
         <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ color: '#FFFFFF', fontSize: 18, marginTop: 16, textAlign: 'center' }}>Loading...</Text>
       </View>
     );
   }
@@ -378,59 +378,17 @@ export default function HomeScreen() {
   if (!locationData) {
     console.error('[HomeScreen] CRITICAL: LocationData is undefined!');
     console.log('[HomeScreen] Current location:', currentLocation);
-    console.log('[HomeScreen] Available locations:', locations?.length);
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <Text style={{ color: theme.colors.text, fontSize: 18, marginBottom: 16, textAlign: 'center' }}>Loading location data...</Text>
         <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ color: theme.colors.text, fontSize: 18, marginTop: 16, textAlign: 'center' }}>Loading location...</Text>
       </View>
     );
   }
 
-  if (!user || !isSubscribed) {
-    console.log('[HomeScreen] Showing locked content - user:', !!user, 'subscribed:', isSubscribed);
-    const titleText = 'Subscriber Only Content';
-    const descriptionText = 'Subscribe to access exclusive 6K drone footage and detailed surf reports';
-    const debugText = 'You are signed in but not subscribed';
-    const buttonText = user ? 'Subscribe Now' : 'Sign In / Subscribe';
-    
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={64}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            {titleText}
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            {descriptionText}
-          </Text>
-          {user && (
-            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              {debugText}
-            </Text>
-          )}
-          <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={handleSubscribeNow}
-            disabled={isSubscribing}
-          >
-            {isSubscribing ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.subscribeButtonText}>
-                {buttonText}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  // 🚨 CRITICAL FIX: Always show content, just with a subscribe overlay if needed
+  // This prevents white screen issues on web and ensures something is always visible
+  const showLockedOverlay = !user || !isSubscribed;
 
   console.log('[HomeScreen] Showing content for', locationData.displayName);
   console.log('[HomeScreen] Surf conditions available:', !!surfConditions);
@@ -600,17 +558,18 @@ export default function HomeScreen() {
   const noForecastText = 'No forecast data available yet. Pull down to refresh or check back later.';
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.primary}
-        />
-      }
-    >
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
       {error && (
         <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
           <IconSymbol
@@ -1057,6 +1016,45 @@ export default function HomeScreen() {
         </View>
       )}
     </ScrollView>
+
+      {/* 🚨 CRITICAL FIX: Locked overlay that appears on top of content */}
+      {showLockedOverlay && (
+        <View style={[styles.lockedOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.95)' }]}>
+          <View style={styles.lockedContent}>
+            <IconSymbol
+              ios_icon_name="lock.fill"
+              android_material_icon_name="lock"
+              size={64}
+              color={colors.textSecondary}
+            />
+            <Text style={[styles.lockedTitle, { color: '#FFFFFF' }]}>
+              Subscriber Only Content
+            </Text>
+            <Text style={[styles.lockedText, { color: colors.textSecondary }]}>
+              Subscribe to access exclusive 6K drone footage and detailed surf reports
+            </Text>
+            {user && (
+              <Text style={[styles.lockedDebugText, { color: colors.textSecondary }]}>
+                You are signed in but not subscribed
+              </Text>
+            )}
+            <TouchableOpacity
+              style={[styles.lockedButton, { backgroundColor: colors.accent }]}
+              onPress={handleSubscribeNow}
+              disabled={isSubscribing}
+            >
+              {isSubscribing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.lockedButtonText}>
+                  {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -1405,5 +1403,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  lockedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  lockedContent: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    maxWidth: 400,
+  },
+  lockedTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  lockedText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  lockedDebugText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  lockedButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  lockedButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });

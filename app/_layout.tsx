@@ -190,16 +190,8 @@ export default function RootLayout() {
   // 🚨 CRITICAL FIX: Don't block rendering - show content immediately
   console.log('[RootLayout] Rendering layout (loaded:', loaded, ', error:', !!error, ')');
 
-  // 🚨 CRITICAL FIX: Add a minimal loading fallback while fonts load
-  // This prevents white screen if fonts take a moment to load
-  if (!loaded && !error) {
-    console.log('[RootLayout] Fonts still loading, showing minimal fallback');
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 18 }}>Loading...</Text>
-      </View>
-    );
-  }
+  // 🚨 CRITICAL FIX: Always render the app, even if fonts aren't loaded yet
+  // This prevents white screen issues - fonts will load in the background
 
   return (
     <ErrorBoundary>
