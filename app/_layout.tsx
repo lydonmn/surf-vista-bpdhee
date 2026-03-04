@@ -1,23 +1,21 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, Platform, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useColorScheme, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
-import * as Notifications from 'expo-notifications';
-import { router } from 'expo-router';
 
 // Prevent auto-hiding of splash screen
 SplashScreen.preventAutoHideAsync().catch(() => {
-  // Silently fail if splash screen is already hidden
+  console.log('[RootLayout] Splash screen already hidden');
 });
 
-// 🚨 CRITICAL: Global error boundary component with React Error Boundary
+// 🚨 CRITICAL: Global error boundary component
 class ErrorBoundaryClass extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error: Error | null }
@@ -28,34 +26,26 @@ class ErrorBoundaryClass extends React.Component<
   }
 
   static getDerivedStateFromError(error: Error) {
-    console.error('[ErrorBoundary] getDerivedStateFromError:', error);
+    console.error('[ErrorBoundary] Caught error:', error);
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[ErrorBoundary] componentDidCatch:', error);
-    console.error('[ErrorBoundary] Error info:', errorInfo);
-    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+    console.error('[ErrorBoundary] Error:', error);
+    console.error('[ErrorBoundary] Stack:', errorInfo.componentStack);
   }
 
   render() {
     if (this.state.hasError) {
-      console.log('[ErrorBoundary] Rendering error screen');
       return (
         <View style={errorStyles.container}>
           <Text style={errorStyles.title}>Something went wrong</Text>
           <Text style={errorStyles.message}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </Text>
-          <Text style={errorStyles.stack}>
-            {this.state.error?.stack?.substring(0, 200)}
-          </Text>
           <TouchableOpacity
             style={errorStyles.button}
-            onPress={() => {
-              console.log('[ErrorBoundary] User pressed Try Again');
-              this.setState({ hasError: false, error: null });
-            }}
+            onPress={() => this.setState({ hasError: false, error: null })}
           >
             <Text style={errorStyles.buttonText}>Try Again</Text>
           </TouchableOpacity>
@@ -65,24 +55,6 @@ class ErrorBoundaryClass extends React.Component<
 
     return this.props.children;
   }
-}
-
-// Wrapper component for hooks
-function ErrorBoundary({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    // Set up global error handler for non-React errors
-    if (typeof ErrorUtils !== 'undefined') {
-      const originalHandler = ErrorUtils.getGlobalHandler();
-      ErrorUtils.setGlobalHandler((errorObj, isFatal) => {
-        console.error('[GlobalErrorHandler] Caught error:', errorObj);
-        console.error('[GlobalErrorHandler] Error stack:', errorObj.stack);
-        console.error('[GlobalErrorHandler] Is fatal:', isFatal);
-        originalHandler?.(errorObj, isFatal);
-      });
-    }
-  }, []);
-
-  return <ErrorBoundaryClass>{children}</ErrorBoundaryClass>;
 }
 
 const errorStyles = StyleSheet.create({
@@ -103,14 +75,7 @@ const errorStyles = StyleSheet.create({
     fontSize: 16,
     color: '#CCCCCC',
     textAlign: 'center',
-    marginBottom: 12,
-  },
-  stack: {
-    fontSize: 12,
-    color: '#999999',
-    textAlign: 'center',
     marginBottom: 24,
-    fontFamily: 'monospace',
   },
   button: {
     backgroundColor: '#007AFF',
@@ -126,89 +91,51 @@ const errorStyles = StyleSheet.create({
 });
 
 export default function RootLayout() {
-  console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
+  console.log('[RootLayout] Component mounting');
   
   const colorScheme = useColorScheme();
-  console.log('[RootLayout] Color scheme:', colorScheme);
-  
-  const notificationListener = useRef<Notifications.Subscription | undefined>();
-  const responseListener = useRef<Notifications.Subscription | undefined>();
   const [appReady, setAppReady] = useState(false);
 
-  console.log('[RootLayout] Loading fonts...');
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-  console.log('[RootLayout] Fonts loaded:', loaded, ', Font error:', fontError);
 
-  // 🚨 CRITICAL FIX: Hide splash screen when fonts are loaded OR after timeout
+  // Hide splash screen when ready
   useEffect(() => {
     const hideSplash = async () => {
       if (loaded || fontError) {
-        console.log('[RootLayout] Fonts ready - hiding splash screen');
+        console.log('[RootLayout] Fonts ready, hiding splash');
         try {
           await SplashScreen.hideAsync();
           setAppReady(true);
         } catch (err) {
-          console.log('[RootLayout] Splash screen already hidden or error:', err);
+          console.log('[RootLayout] Splash already hidden');
           setAppReady(true);
         }
       }
     };
 
-    // Set a timeout to ensure splash screen is hidden even if fonts fail
+    // Timeout to ensure splash is hidden
     const timeout = setTimeout(() => {
-      console.warn('[RootLayout] Font loading timeout - hiding splash screen anyway');
+      console.log('[RootLayout] Timeout - hiding splash anyway');
       SplashScreen.hideAsync().catch(() => {});
       setAppReady(true);
-    }, 3000);
+    }, 2000);
 
     hideSplash();
 
     return () => clearTimeout(timeout);
   }, [loaded, fontError]);
 
-  useEffect(() => {
-    if (Platform.OS !== 'web') {
-      try {
-        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-          console.log('[Notifications] Received:', notification);
-        });
-
-        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-          console.log('[Notifications] Tapped:', response);
-          const data = response.notification.request.content.data;
-          if (data?.type === 'daily_report') {
-            router.push('/(tabs)/report');
-          }
-        });
-      } catch (notificationError) {
-        console.warn('[Notifications] Setup failed (non-critical):', notificationError);
-      }
-    }
-
-    return () => {
-      try {
-        notificationListener.current?.remove();
-        responseListener.current?.remove();
-      } catch (cleanupError) {
-        console.log('[Notifications] Cleanup error:', cleanupError);
-      }
-    };
-  }, []);
-
-  // 🚨 CRITICAL FIX: Show loading screen until app is ready
+  // Show nothing until app is ready
   if (!appReady) {
-    console.log('[RootLayout] Waiting for app to be ready...');
     return null;
   }
 
-  console.log('[RootLayout] ===== RENDERING APP =====');
-  console.log('[RootLayout] ColorScheme:', colorScheme);
-  console.log('[RootLayout] Fonts loaded:', loaded);
+  console.log('[RootLayout] Rendering app');
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundaryClass>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
           <LocationProvider>
@@ -269,6 +196,6 @@ export default function RootLayout() {
           </LocationProvider>
         </AuthProvider>
       </ThemeProvider>
-    </ErrorBoundary>
+    </ErrorBoundaryClass>
   );
 }

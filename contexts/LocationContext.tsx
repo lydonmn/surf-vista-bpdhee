@@ -30,16 +30,12 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const STORAGE_KEY = '@surfvista_location';
 
-// ✅ CRITICAL: Updated DEFAULT_LOCATIONS to include all existing locations as fallback
 const DEFAULT_LOCATIONS: LocationData[] = [
   {
     id: 'folly-beach',
     name: 'Folly Beach',
     displayName: 'Folly Beach, SC',
-    coordinates: {
-      lat: 32.6552,
-      lon: -79.9403
-    },
+    coordinates: { lat: 32.6552, lon: -79.9403 },
     buoyId: '41004',
     tideStationId: '8665530'
   },
@@ -47,10 +43,7 @@ const DEFAULT_LOCATIONS: LocationData[] = [
     id: 'pawleys-island',
     name: 'Pawleys Island',
     displayName: 'Pawleys Island, SC',
-    coordinates: {
-      lat: 33.4318,
-      lon: -79.1192
-    },
+    coordinates: { lat: 33.4318, lon: -79.1192 },
     buoyId: '41004',
     tideStationId: '8662245'
   },
@@ -58,28 +51,23 @@ const DEFAULT_LOCATIONS: LocationData[] = [
     id: 'holden-beach-nc',
     name: 'Holden Beach',
     displayName: 'Holden Beach, NC',
-    coordinates: {
-      lat: 33.9140,
-      lon: -78.3070
-    },
+    coordinates: { lat: 33.9140, lon: -78.3070 },
     buoyId: '41013',
     tideStationId: '8659414'
   }
 ];
 
 export function LocationProvider({ children }: { children: ReactNode }) {
-  console.log('[LocationProvider] ===== COMPONENT MOUNTING =====');
+  console.log('[LocationProvider] Mounting');
   
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
-  // 🚨 CRITICAL FIX: Start with isLoading=false to prevent white screen
+  // 🚨 CRITICAL: Start ready immediately
   const [isLoading, setIsLoading] = useState(false);
-  
-  console.log('[LocationProvider] Initial state - currentLocation:', 'folly-beach', ', locations count:', DEFAULT_LOCATIONS.length, ', isLoading:', false);
 
   const fetchLocations = useCallback(async () => {
     try {
-      console.log('[LocationContext] Fetching locations from database...');
+      console.log('[LocationContext] Fetching locations');
       
       const { data, error } = await supabase
         .from('locations')
@@ -88,8 +76,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         .order('name');
 
       if (error) {
-        console.error('[LocationContext] Error fetching locations:', error);
-        console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
+        console.error('[LocationContext] Error:', error);
         return;
       }
 
@@ -106,77 +93,54 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           tideStationId: loc.tide_station_id
         }));
 
-        console.log('[LocationContext] ✅ Loaded', formattedLocations.length, 'active locations from database');
+        console.log('[LocationContext] Loaded', formattedLocations.length, 'locations');
         setLocations(formattedLocations);
-      } else {
-        console.log('[LocationContext] No active locations in database, using DEFAULT_LOCATIONS');
       }
-    } catch (error) {
-      console.error('[LocationContext] Exception fetching locations:', error);
-      console.log('[LocationContext] Using DEFAULT_LOCATIONS as fallback');
+    } catch (err) {
+      console.error('[LocationContext] Exception:', err);
     }
   }, []);
 
   useEffect(() => {
     const initialize = async () => {
       try {
-        console.log('[LocationContext] Starting background initialization...');
+        console.log('[LocationContext] Starting init');
         
-        // Set a timeout to ensure we don't hang
-        const timeoutPromise = new Promise((resolve) => 
-          setTimeout(() => {
-            console.warn('[LocationContext] Initialization timeout after 2s - using defaults');
-            resolve(null);
-          }, 2000)
-        );
+        // Fetch locations
+        await fetchLocations();
 
-        const initPromise = (async () => {
-          // Fetch locations from database first
-          await fetchLocations();
-
-          // Load saved location preference
-          const saved = await AsyncStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            console.log('[LocationContext] Loaded saved location preference:', saved);
-            setCurrentLocation(saved);
-          } else {
-            console.log('[LocationContext] No saved location, using default: folly-beach');
-          }
-        })();
-
-        await Promise.race([initPromise, timeoutPromise]);
-        console.log('[LocationContext] Background initialization complete');
+        // Load saved location
+        const saved = await AsyncStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          console.log('[LocationContext] Loaded saved location:', saved);
+          setCurrentLocation(saved);
+        }
         
-      } catch (error) {
-        console.error('[LocationContext] Error initializing (non-critical):', error);
+        console.log('[LocationContext] Init complete');
+      } catch (err) {
+        console.error('[LocationContext] Init error:', err);
       }
     };
 
-    // Run initialization in background
     initialize();
   }, [fetchLocations]);
 
   const setLocation = useCallback(async (location: Location) => {
     try {
-      console.log('[LocationContext] Setting location to:', location);
+      console.log('[LocationContext] Setting location:', location);
       setCurrentLocation(location);
       await AsyncStorage.setItem(STORAGE_KEY, location);
-    } catch (error) {
-      console.error('[LocationContext] Error saving location:', error);
+    } catch (err) {
+      console.error('[LocationContext] Save error:', err);
     }
   }, []);
 
   const refreshLocations = useCallback(async () => {
-    console.log('[LocationContext] ⚡ Refreshing locations from database...');
+    console.log('[LocationContext] Refreshing locations');
     await fetchLocations();
   }, [fetchLocations]);
 
-  // ✅ CRITICAL: Ensure locationData always has a valid location, even if currentLocation is not in the list
   const locationData = locations.find(loc => loc.id === currentLocation) || locations[0] || DEFAULT_LOCATIONS[0];
-  
-  if (!locationData) {
-    console.error('[LocationContext] CRITICAL: No location data available!');
-  }
 
   const value: LocationContextType = {
     currentLocation,
@@ -202,7 +166,6 @@ export function useLocation() {
   return context;
 }
 
-// ✅ Export LOCATIONS for backward compatibility
 export const LOCATIONS: Record<string, LocationData> = DEFAULT_LOCATIONS.reduce((acc, loc) => {
   acc[loc.id] = loc;
   return acc;

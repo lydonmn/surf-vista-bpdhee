@@ -6,32 +6,6 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { Database } from '@/app/integrations/supabase/types';
 
-// 🚨 CRITICAL: Ultra-defensive module imports with fallbacks
-let initializeRevenueCat: any = async () => false;
-let identifyUser: any = async () => {};
-let logoutUser: any = async () => {};
-let ensurePushTokenRegistered: any = async () => {};
-
-// Try to load RevenueCat - fail silently if not available
-try {
-  const superwallConfig = require('@/utils/superwallConfig');
-  if (superwallConfig.initializeRevenueCat) initializeRevenueCat = superwallConfig.initializeRevenueCat;
-  if (superwallConfig.identifyUser) identifyUser = superwallConfig.identifyUser;
-  if (superwallConfig.logoutUser) logoutUser = superwallConfig.logoutUser;
-} catch {
-  // Silently fail - RevenueCat is optional
-}
-
-// Try to load push notifications - fail silently if not available
-try {
-  const pushNotifications = require('@/utils/pushNotifications');
-  if (pushNotifications.ensurePushTokenRegistered) {
-    ensurePushTokenRegistered = pushNotifications.ensurePushTokenRegistered;
-  }
-} catch {
-  // Silently fail - push notifications are optional
-}
-
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
 interface User extends SupabaseUser {
@@ -59,128 +33,71 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  console.log('[AuthProvider] ===== COMPONENT MOUNTING =====');
+  console.log('[AuthProvider] Mounting');
   
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  // 🚨 CRITICAL FIX: Start initialized immediately to prevent blocking
+  // 🚨 CRITICAL: Start ready immediately
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true);
   
-  console.log('[AuthProvider] Initial state - isLoading:', false, ', isInitialized:', true);
-  
   const isInitializingRef = useRef(false);
 
-  // 🚨 CRITICAL: Ultra-defensive push token registration
-  const registerPushTokenIfNeeded = useCallback(async (userId: string) => {
-    try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('timeout')), 5000)
-      );
-      
-      await Promise.race([
-        ensurePushTokenRegistered(userId),
-        timeoutPromise
-      ]);
-    } catch {
-      // Silently fail - push tokens are non-critical
-    }
-  }, []);
-
-  // 🚨 CRITICAL: Ultra-defensive profile loading
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('timeout')), 8000)
-      );
-      
-      const profilePromise = supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
 
-      let result: any;
-      try {
-        result = await Promise.race([profilePromise, timeoutPromise]);
-      } catch {
-        // Timeout or error - continue without profile
-        setProfile(null);
-        setUser({ ...authUser });
+      if (data) {
+        setProfile(data);
+        setUser({ ...authUser, profile: data });
         return;
       }
 
-      if (result?.data) {
-        setProfile(result.data);
-        setUser({ ...authUser, profile: result.data });
+      // Profile not found - try to create
+      if (error?.code === 'PGRST116') {
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .insert({
+            id: authUser.id,
+            email: authUser.email,
+            is_admin: false,
+            is_subscribed: false,
+          })
+          .select()
+          .single();
         
-        // Register push token in background - don't block
-        registerPushTokenIfNeeded(authUser.id).catch(() => {});
-        return;
-      }
-
-      // Profile not found - try to create it
-      if (result?.error?.code === 'PGRST116') {
-        try {
-          const { data: newProfile } = await supabase
-            .from('profiles')
-            .insert({
-              id: authUser.id,
-              email: authUser.email,
-              is_admin: false,
-              is_subscribed: false,
-            })
-            .select()
-            .single();
-          
-          if (newProfile) {
-            setProfile(newProfile);
-            setUser({ ...authUser, profile: newProfile });
-            return;
-          }
-        } catch {
-          // Silently fail
+        if (newProfile) {
+          setProfile(newProfile);
+          setUser({ ...authUser, profile: newProfile });
+          return;
         }
       }
 
-      // Fallback - set user without profile
+      // Fallback
       setProfile(null);
       setUser({ ...authUser });
-    } catch {
-      // Ultimate fallback
+    } catch (err) {
+      console.error('[AuthContext] Profile load error:', err);
       setProfile(null);
       setUser({ ...authUser });
     }
-  }, [registerPushTokenIfNeeded]);
+  }, []);
 
   const signOut = useCallback(async () => {
+    setUser(null);
+    setProfile(null);
+    setSession(null);
+    setIsLoading(false);
+    
     try {
-      // Clear local state first
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setIsLoading(false);
-      
-      // Try to logout from RevenueCat
-      try {
-        await logoutUser();
-      } catch {
-        // Silently fail
-      }
-      
-      // Try to sign out from Supabase
-      try {
-        await supabase.auth.signOut();
-      } catch {
-        // Silently fail
-      }
-    } catch {
-      // Ultimate fallback - ensure state is cleared
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setIsLoading(false);
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('[AuthContext] Sign out error:', err);
     }
   }, []);
 
@@ -189,15 +106,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
       
       if (error) {
-        // Handle invalid refresh tokens
         if (error.message.includes('Invalid Refresh Token') || 
-            error.message.includes('Refresh Token Not Found') ||
-            error.message.includes('refresh_token_not_found')) {
-          try {
-            await AsyncStorage.removeItem('supabase.auth.token');
-          } catch {
-            // Silently fail
-          }
+            error.message.includes('Refresh Token Not Found')) {
+          await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
           await signOut();
         }
         return;
@@ -209,112 +120,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await loadUserProfile(newSession.user);
         }
       }
-    } catch {
-      // Try to clear session on error
-      try {
-        await AsyncStorage.removeItem('supabase.auth.token');
-        await signOut();
-      } catch {
-        // Silently fail
-      }
+    } catch (err) {
+      console.error('[AuthContext] Refresh error:', err);
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL FIX: Initialize in background without blocking UI
+  // 🚨 CRITICAL: Initialize in background
   useEffect(() => {
-    if (isInitializingRef.current) {
-      return;
-    }
-
+    if (isInitializingRef.current) return;
     isInitializingRef.current = true;
+
     let mounted = true;
 
     const initializeAuth = async () => {
       try {
-        console.log('[AuthContext] Starting background initialization...');
+        console.log('[AuthContext] Starting init');
         
-        // Set a timeout to ensure we don't hang
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => {
-            console.warn('[AuthContext] Initialization timeout after 3s');
-            reject(new Error('Auth initialization timeout'));
-          }, 3000)
-        );
-
-        const authPromise = (async () => {
-          const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-          
-          if (sessionError) {
-            console.error('[AuthContext] Session error:', sessionError.message);
-            // Handle invalid refresh tokens
-            if (sessionError.message.includes('Invalid Refresh Token') || 
-                sessionError.message.includes('Refresh Token Not Found') ||
-                sessionError.message.includes('refresh_token_not_found')) {
-              try {
-                await AsyncStorage.removeItem('supabase.auth.token');
-              } catch {
-                // Silently fail
-              }
-              
-              if (mounted) {
-                setUser(null);
-                setProfile(null);
-                setSession(null);
-              }
-              return;
-            }
-          }
-          
-          if (!mounted) return;
-
-          if (initialSession?.user) {
-            console.log('[AuthContext] Session found, loading profile...');
-            setSession(initialSession);
-            await loadUserProfile(initialSession.user);
-          } else {
-            console.log('[AuthContext] No session found');
-          }
-
-          // Initialize RevenueCat in background on native platforms
-          if (mounted && Platform.OS !== 'web') {
-            (async () => {
-              try {
-                const initialized = await initializeRevenueCat();
-                if (initialized && initialSession?.user) {
-                  await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
-                }
-              } catch {
-                // Silently fail
-              }
-            })();
-          }
-        })();
-
-        await Promise.race([authPromise, timeoutPromise]);
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
-      } catch (error) {
-        console.warn('[AuthContext] Initialization error (non-critical):', error);
+        if (error) {
+          console.error('[AuthContext] Session error:', error);
+          if (error.message.includes('Invalid Refresh Token')) {
+            await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
+          }
+          return;
+        }
+        
+        if (!mounted) return;
+
+        if (initialSession?.user) {
+          console.log('[AuthContext] Session found');
+          setSession(initialSession);
+          await loadUserProfile(initialSession.user);
+        } else {
+          console.log('[AuthContext] No session');
+        }
+      } catch (err) {
+        console.error('[AuthContext] Init error:', err);
       } finally {
         isInitializingRef.current = false;
-        console.log('[AuthContext] Background initialization complete');
+        console.log('[AuthContext] Init complete');
       }
     };
 
-    // Run initialization in background
     initializeAuth();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
 
+      console.log('[AuthContext] Auth state change:', event);
+
       if (event === 'SIGNED_OUT') {
-        try {
-          await logoutUser();
-        } catch {
-          // Silently fail
-        }
-        
         setUser(null);
         setProfile(null);
         setSession(null);
@@ -323,16 +179,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         await loadUserProfile(newSession.user);
         setIsLoading(false);
-        
-        if (Platform.OS !== 'web') {
-          (async () => {
-            try {
-              await identifyUser(newSession.user.id, newSession.user.email || undefined);
-            } catch {
-              // Silently fail
-            }
-          })();
-        }
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
         setSession(newSession);
       } else if (event === 'USER_UPDATED' && newSession?.user) {
@@ -351,19 +197,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadUserProfile, registerPushTokenIfNeeded]);
+  }, [loadUserProfile]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
       await loadUserProfile(session.user);
-      
-      try {
-        await registerPushTokenIfNeeded(session.user.id);
-      } catch {
-        // Silently fail
-      }
     }
-  }, [session?.user, loadUserProfile, registerPushTokenIfNeeded]);
+  }, [session?.user, loadUserProfile]);
 
   const signUp = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
@@ -378,13 +218,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       };
 
-      const redirectTo = getRedirectUrl();
-
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: redirectTo,
+          emailRedirectTo: getRedirectUrl(),
         },
       });
 
@@ -395,7 +233,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             message: 'This email is already registered. Please sign in instead.' 
           };
         }
-        
         return { success: false, message: error.message };
       }
 
@@ -427,12 +264,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.message.includes('Email not confirmed')) {
           return { 
             success: false, 
-            message: 'Please verify your email address before signing in. Check your inbox for the confirmation link.' 
+            message: 'Please verify your email address before signing in.' 
           };
         } else if (error.message.includes('Invalid login credentials')) {
           return { 
             success: false, 
-            message: 'Invalid email or password. Please try again.' 
+            message: 'Invalid email or password.' 
           };
         }
         
@@ -460,56 +297,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userId = user.id;
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
-
-      if (profileError) {
-        return { success: false, message: 'Failed to delete profile data: ' + profileError.message };
-      }
-
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-      if (authError) {
-        await signOut();
-        return { success: false, message: 'Account data deleted but auth deletion failed. Please contact support.' };
-      }
+      await supabase.from('profiles').delete().eq('id', userId);
+      await supabase.auth.admin.deleteUser(userId);
 
       setUser(null);
       setProfile(null);
       setSession(null);
       setIsLoading(false);
 
-      try {
-        await logoutUser();
-      } catch {
-        // Silently fail
-      }
-
       return { success: true, message: 'Your account has been permanently deleted' };
     } catch (error: any) {
       await signOut();
-      return { success: false, message: error.message || 'An unexpected error occurred while deleting your account' };
+      return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
 
   const checkSubscription = useCallback((): boolean => {
-    if (!profile) {
-      return false;
-    }
-
-    if (profile.is_admin) {
-      return true;
-    }
-
-    if (!profile.is_subscribed) {
-      return false;
-    }
-    
-    if (!profile.subscription_end_date) {
-      return true;
-    }
+    if (!profile) return false;
+    if (profile.is_admin) return true;
+    if (!profile.is_subscribed) return false;
+    if (!profile.subscription_end_date) return true;
     
     const endDate = new Date(profile.subscription_end_date);
     return endDate > new Date();
@@ -524,14 +331,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const canManageLocation = useCallback((locationId: string): boolean => {
-    if (profile?.is_admin) {
-      return true;
-    }
-    
+    if (profile?.is_admin) return true;
     if (profile?.is_regional_admin && profile.managed_locations) {
       return profile.managed_locations.includes(locationId);
     }
-    
     return false;
   }, [profile]);
 
