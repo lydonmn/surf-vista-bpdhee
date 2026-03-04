@@ -17,7 +17,6 @@ import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeS
 import { LocationSelector } from "@/components/LocationSelector";
 import { openPaywall } from "@/utils/paywallHelper";
 
-// 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
   
@@ -30,7 +29,6 @@ function calculateSurfRating(surfData: any): number {
     return 5;
   }
   
-  // Parse wave height - handle ranges like "1.0-1.5 ft"
   const parseValue = (str: string): number => {
     const cleaned = String(str).replace(/[^0-9.-]/g, '');
     const parsed = parseFloat(cleaned);
@@ -41,7 +39,6 @@ function calculateSurfRating(surfData: any): number {
   const cleanedStr = String(surfHeightStr).trim();
   
   if (cleanedStr.includes('-')) {
-    // It's a range, take the average
     const parts = cleanedStr.split('-');
     const low = parseValue(parts[0]);
     const high = parseValue(parts[1]);
@@ -55,61 +52,55 @@ function calculateSurfRating(surfData: any): number {
   const windDir = windDirStr.toLowerCase();
   const isOffshore = windDir.includes('w') || windDir.includes('n');
 
-  // 🚨 CRITICAL FIX: Start at 3 instead of 5 for more realistic ratings
   let rating = 3;
 
-  // Height contribution (more conservative)
   if (surfHeight >= 6) {
-    rating += 5; // 8/10 for overhead
+    rating += 5;
   } else if (surfHeight >= 4) {
-    rating += 4; // 7/10 for chest-head high
+    rating += 4;
   } else if (surfHeight >= 3) {
-    rating += 3; // 6/10 for waist-chest high
+    rating += 3;
   } else if (surfHeight >= 2) {
-    rating += 2; // 5/10 for waist high
+    rating += 2;
   } else if (surfHeight >= 1.5) {
-    rating += 1; // 4/10 for knee-waist
+    rating += 1;
   } else if (surfHeight >= 1) {
-    rating += 0; // 3/10 for ankle-knee (base rating)
+    rating += 0;
   } else {
-    rating -= 1; // 2/10 for less than 1 foot
+    rating -= 1;
   }
 
-  // Period contribution (more conservative)
   if (period >= 12) {
-    rating += 2; // Long period groundswell
+    rating += 2;
   } else if (period >= 10) {
-    rating += 1; // Good period
+    rating += 1;
   } else if (period >= 8) {
-    rating += 0; // Moderate period (no change)
+    rating += 0;
   } else if (period >= 6) {
-    rating -= 1; // Short period
+    rating -= 1;
   } else if (period > 0) {
-    rating -= 2; // Very short period wind swell
+    rating -= 2;
   }
 
-  // Wind contribution (check direction too)
   if (isOffshore) {
-    // Offshore wind is good
     if (windSpeed < 5) {
-      rating += 1; // Light offshore, glassy
+      rating += 1;
     } else if (windSpeed < 10) {
-      rating += 1; // Offshore grooming
+      rating += 1;
     } else if (windSpeed < 15) {
-      rating += 0; // Strong offshore (no change)
+      rating += 0;
     } else {
-      rating -= 1; // Too strong offshore
+      rating -= 1;
     }
   } else {
-    // Onshore wind is bad
     if (windSpeed < 5) {
-      rating += 0; // Light onshore (no change)
+      rating += 0;
     } else if (windSpeed < 10) {
-      rating -= 1; // Moderate onshore
+      rating -= 1;
     } else if (windSpeed < 15) {
-      rating -= 2; // Strong onshore
+      rating -= 2;
     } else {
-      rating -= 3; // Very strong onshore, blown out
+      rating -= 3;
     }
   }
 
@@ -132,10 +123,12 @@ export default function HomeScreen() {
   const theme = useTheme();
   const authData = useAuth();
   const locationData = useLocation();
-  const surfData = useSurfData();
   
   const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = authData;
   const { currentLocation, locationData: locData } = locationData;
+  
+  // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
+  const surfData = useSurfData(currentLocation);
   const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = surfData;
   
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -167,7 +160,6 @@ export default function HomeScreen() {
       return todayReports[0];
     }
     
-    // Fallback to most recent report
     const sortedReports = [...locationSurfReports].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
@@ -262,14 +254,12 @@ export default function HomeScreen() {
     setIsSubscribing(false);
   }, [user, refreshProfile]);
 
-  // 🚨 CRITICAL FIX: Always show content with overlay if needed
   const showLockedOverlay = !user || !isSubscribed;
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
   
-  // Use locData instead of locationData to avoid naming conflict
   const displayName = locData?.displayName || 'Folly Beach, SC';
 
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
@@ -788,7 +778,6 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* 🚨 CRITICAL FIX: Locked overlay that appears on top of content */}
       {showLockedOverlay && (
         <View style={[styles.lockedOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.95)' }]}>
           <View style={styles.lockedContent}>
