@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "SurfVista",
@@ -15,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
-      "buildNumber": "49",
+      "buildNumber": "50",
       "infoPlist": {
         "NSCameraUsageDescription": "SurfVista needs access to your camera to upload drone footage.",
         "NSPhotoLibraryUsageDescription": "SurfVista needs access to your photo library to upload videos.",
@@ -37,7 +38,7 @@
         "backgroundColor": "#0A1929"
       },
       "package": "com.therealfollysurfreport.surfvista",
-      "versionCode": 49,
+      "versionCode": 50,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -93,7 +94,8 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

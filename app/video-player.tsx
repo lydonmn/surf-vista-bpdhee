@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { VideoView, useVideoPlayer } from "expo-video";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { supabase } from "@/app/integrations/supabase/client";
@@ -10,6 +9,7 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { VideoView, useVideoPlayer } from "expo-video";
 
 interface Video {
   id: string;
@@ -152,6 +152,7 @@ export default function VideoPlayerScreen() {
     }
   }, [videoUrl]);
 
+  // 🚨 CRITICAL FIX: ALWAYS call useVideoPlayer unconditionally
   const player = useVideoPlayer(memoizedVideoUrl, (player) => {
     if (memoizedVideoUrl && isMountedRef.current) {
       try {
@@ -160,8 +161,8 @@ export default function VideoPlayerScreen() {
         player.volume = volume;
         player.allowsExternalPlayback = true;
         lastPlaybackActivityRef.current = Date.now();
-      } catch (e) {
-        console.error('[VideoPlayer] Error configuring player:', e);
+      } catch (playerError) {
+        console.error('[VideoPlayer] Error configuring player:', playerError);
       }
     }
   });
@@ -172,8 +173,8 @@ export default function VideoPlayerScreen() {
     
     try {
       player.play();
-    } catch (err) {
-      console.error('[VideoPlayer] Play error (caught):', err);
+    } catch (playError) {
+      console.error('[VideoPlayer] Play error (caught):', playError);
     }
   }, [player]);
 
@@ -182,8 +183,8 @@ export default function VideoPlayerScreen() {
     
     try {
       player.pause();
-    } catch (err) {
-      console.error('[VideoPlayer] Pause error (caught):', err);
+    } catch (pauseError) {
+      console.error('[VideoPlayer] Pause error (caught):', pauseError);
     }
   }, [player]);
 
@@ -193,24 +194,24 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch (e) {
-        // Silently fail
+      } catch (hapticsError) {
+        console.log('[VideoPlayer] Haptics error:', hapticsError);
       }
     }
     
     if (player) {
       try {
         await safePause();
-      } catch (e) {
-        // Silently fail
+      } catch (pauseError) {
+        console.log('[VideoPlayer] Pause error on exit:', pauseError);
       }
     }
     
     if (isFullscreen && Platform.OS !== 'web') {
       try {
         await ScreenOrientation.unlockAsync();
-      } catch (e) {
-        // Silently fail
+      } catch (orientationError) {
+        console.log('[VideoPlayer] Orientation error:', orientationError);
       }
     }
     
@@ -289,7 +290,8 @@ export default function VideoPlayerScreen() {
             const pathParts = url.pathname.split('/');
             fileName = pathParts[pathParts.length - 1];
           }
-        } catch (e) {
+        } catch (urlError) {
+          console.error('[VideoPlayer] URL parsing error:', urlError);
           throw new Error('Invalid video URL format');
         }
 
@@ -334,7 +336,7 @@ export default function VideoPlayerScreen() {
   useEffect(() => {
     if (!player || !videoUrl || !isMountedRef.current) return;
 
-    const statusListener = player.addListener('statusChange', (status) => {
+    const statusListener = player.addListener('statusChange', (status: any) => {
       if (!isMountedRef.current) return;
       
       if (status.error) {
@@ -355,7 +357,9 @@ export default function VideoPlayerScreen() {
               player.replace(videoUrl);
               setTimeout(() => {
                 if (player && isMountedRef.current) {
-                  safePlay().catch(() => {});
+                  safePlay().catch(() => {
+                    console.log('[VideoPlayer] Retry play failed');
+                  });
                 }
               }, 100);
             }
@@ -389,7 +393,9 @@ export default function VideoPlayerScreen() {
         if (!isPlaying && isMountedRef.current) {
           setTimeout(() => {
             if (player && isMountedRef.current) {
-              safePlay().catch(() => {});
+              safePlay().catch(() => {
+                console.log('[VideoPlayer] Auto-play failed');
+              });
             }
           }, 50);
         }
@@ -419,7 +425,7 @@ export default function VideoPlayerScreen() {
       }
     });
 
-    const playingListener = player.addListener('playingChange', (newIsPlaying) => {
+    const playingListener = player.addListener('playingChange', (newIsPlaying: boolean) => {
       if (!isMountedRef.current) return;
       
       setIsPlaying(newIsPlaying);
@@ -433,7 +439,7 @@ export default function VideoPlayerScreen() {
       }
     });
 
-    const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate) => {
+    const timeUpdateListener = player.addListener('timeUpdate', (timeUpdate: any) => {
       if (!isMountedRef.current) return;
       
       const newTime = timeUpdate.currentTime || 0;
@@ -480,8 +486,8 @@ export default function VideoPlayerScreen() {
     if (videoUrl && player && isMountedRef.current) {
       try {
         player.replace(videoUrl);
-      } catch (e) {
-        console.error('[VideoPlayer] Error loading source:', e);
+      } catch (replaceError) {
+        console.error('[VideoPlayer] Error loading source:', replaceError);
         if (isMountedRef.current) {
           setError('Failed to load video source');
         }
@@ -533,9 +539,11 @@ export default function VideoPlayerScreen() {
     
     if (Platform.OS !== 'web') {
       try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      } catch (e) {
-        // Silently fail
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
+          console.log('[VideoPlayer] Haptics failed');
+        });
+      } catch (hapticsError) {
+        console.log('[VideoPlayer] Haptics error:', hapticsError);
       }
     }
     
@@ -550,7 +558,9 @@ export default function VideoPlayerScreen() {
           setControlsVisible(true);
           clearControlsTimeout();
         }
-      }).catch(() => {});
+      }).catch(() => {
+        console.log('[VideoPlayer] Pause failed');
+      });
     } else {
       refreshConnectionIfNeeded();
       
@@ -559,7 +569,9 @@ export default function VideoPlayerScreen() {
           setIsPlaying(true);
           resetControlsTimeout();
         }
-      }).catch(() => {});
+      }).catch(() => {
+        console.log('[VideoPlayer] Play failed');
+      });
     }
   }, [player, resetControlsTimeout, clearControlsTimeout, refreshConnectionIfNeeded, safePlay, safePause]);
 
@@ -572,9 +584,11 @@ export default function VideoPlayerScreen() {
     
     if (Platform.OS !== 'web') {
       try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      } catch (e) {
-        // Silently fail
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
+          console.log('[VideoPlayer] Haptics failed');
+        });
+      } catch (hapticsError) {
+        console.log('[VideoPlayer] Haptics error:', hapticsError);
       }
     }
   }, [clearControlsTimeout]);
@@ -595,9 +609,11 @@ export default function VideoPlayerScreen() {
     
     if (Platform.OS !== 'web') {
       try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      } catch (e) {
-        // Silently fail
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
+          console.log('[VideoPlayer] Haptics failed');
+        });
+      } catch (hapticsError) {
+        console.log('[VideoPlayer] Haptics error:', hapticsError);
       }
     }
   }, [player, duration, resetControlsTimeout]);
@@ -610,8 +626,8 @@ export default function VideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch (e) {
-        // Silently fail
+      } catch (hapticsError) {
+        console.log('[VideoPlayer] Haptics error:', hapticsError);
       }
     }
     
@@ -633,7 +649,8 @@ export default function VideoPlayerScreen() {
           }
           await ScreenOrientation.unlockAsync();
         }
-      } catch (e) {
+      } catch (orientationError) {
+        console.log('[VideoPlayer] Orientation error:', orientationError);
         if (isMountedRef.current) {
           setIsFullscreen(newFullscreenState);
           setControlsVisible(true);
@@ -647,7 +664,7 @@ export default function VideoPlayerScreen() {
     if (newFullscreenState && isPlaying) {
       startControlsTimeout();
     }
-  }, [isFullscreen, videoOrientation, video, isPlaying, startControlsTimeout]);
+  }, [isFullscreen, isPlaying, startControlsTimeout]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';

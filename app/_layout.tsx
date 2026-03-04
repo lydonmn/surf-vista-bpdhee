@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -73,11 +73,11 @@ function ErrorBoundary({ children }: { children: React.ReactNode }) {
     // Set up global error handler for non-React errors
     if (typeof ErrorUtils !== 'undefined') {
       const originalHandler = ErrorUtils.getGlobalHandler();
-      ErrorUtils.setGlobalHandler((error, isFatal) => {
-        console.error('[GlobalErrorHandler] Caught error:', error);
-        console.error('[GlobalErrorHandler] Error stack:', error.stack);
+      ErrorUtils.setGlobalHandler((errorObj, isFatal) => {
+        console.error('[GlobalErrorHandler] Caught error:', errorObj);
+        console.error('[GlobalErrorHandler] Error stack:', errorObj.stack);
         console.error('[GlobalErrorHandler] Is fatal:', isFatal);
-        originalHandler?.(error, isFatal);
+        originalHandler?.(errorObj, isFatal);
       });
     }
   }, []);
@@ -135,10 +135,10 @@ export default function RootLayout() {
   const responseListener = useRef<Notifications.Subscription | undefined>();
 
   console.log('[RootLayout] Loading fonts...');
-  const [loaded, error] = useFonts({
+  const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-  console.log('[RootLayout] Fonts loaded:', loaded, ', error:', !!error);
+  console.log('[RootLayout] Fonts loaded:', loaded);
 
   // 🚨 CRITICAL FIX: Hide splash screen immediately on mount
   useEffect(() => {
@@ -150,13 +150,13 @@ export default function RootLayout() {
 
   // 🚨 CRITICAL FIX: Also hide when fonts load
   useEffect(() => {
-    if (loaded || error) {
-      console.log('[RootLayout] Fonts loaded or error - hiding splash screen');
+    if (loaded) {
+      console.log('[RootLayout] Fonts loaded - hiding splash screen');
       SplashScreen.hideAsync().catch((err) => {
         console.log('[RootLayout] Splash screen already hidden or error:', err);
       });
     }
-  }, [loaded, error]);
+  }, [loaded]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -172,8 +172,8 @@ export default function RootLayout() {
             router.push('/(tabs)/report');
           }
         });
-      } catch (error) {
-        console.warn('[Notifications] Setup failed (non-critical):', error);
+      } catch (notificationError) {
+        console.warn('[Notifications] Setup failed (non-critical):', notificationError);
       }
     }
 
@@ -181,14 +181,14 @@ export default function RootLayout() {
       try {
         notificationListener.current?.remove();
         responseListener.current?.remove();
-      } catch (error) {
-        // Silently fail
+      } catch (cleanupError) {
+        console.log('[Notifications] Cleanup error:', cleanupError);
       }
     };
   }, []);
 
   // 🚨 CRITICAL FIX: Don't block rendering - show content immediately
-  console.log('[RootLayout] Rendering layout (loaded:', loaded, ', error:', !!error, ')');
+  console.log('[RootLayout] Rendering layout (loaded:', loaded, ')');
 
   // 🚨 CRITICAL FIX: Always render the app, even if fonts aren't loaded yet
   // This prevents white screen issues - fonts will load in the background
