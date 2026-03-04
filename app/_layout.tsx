@@ -116,7 +116,6 @@ export default function RootLayout() {
   console.log('[RootLayout] Component mounting');
   
   const colorScheme = useColorScheme();
-  const [appReady, setAppReady] = useState(false);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -125,23 +124,16 @@ export default function RootLayout() {
   // 🚨 CRITICAL FIX: Simple, non-blocking initialization
   useEffect(() => {
     if (loaded || fontError) {
-      console.log('[RootLayout] Fonts ready, showing app');
+      console.log('[RootLayout] Fonts ready, hiding splash');
       
       // Hide splash screen
       SplashScreen.hideAsync()
         .then(() => console.log('[RootLayout] Splash hidden'))
         .catch((err) => console.log('[RootLayout] Splash hide error:', err));
-      
-      // Mark app as ready
-      setAppReady(true);
     }
   }, [loaded, fontError]);
 
-  // Show nothing until fonts are loaded
-  if (!appReady) {
-    return null;
-  }
-
+  // 🚨 CRITICAL FIX: Always render immediately - don't wait for fonts
   console.log('[RootLayout] Rendering app');
 
   return (

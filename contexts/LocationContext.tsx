@@ -137,17 +137,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Start initialization after a brief delay to let UI render
-    const delayedInit = setTimeout(() => {
-      if (mountedRef.current) {
-        initialize();
-      }
-    }, 250);
+    // Start initialization immediately - no delay
+    initialize();
 
     return () => {
       console.log('[LocationContext] Cleanup');
       mountedRef.current = false;
-      clearTimeout(delayedInit);
     };
   }, [fetchLocations]);
 

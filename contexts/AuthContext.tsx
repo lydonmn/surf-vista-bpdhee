@@ -42,7 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true); // Start true immediately
   
-  const isInitializingRef = useRef(false);
   const mountedRef = useRef(true);
 
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
@@ -138,12 +137,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 🚨 CRITICAL FIX: Simplified initialization - no blocking, no race conditions
   useEffect(() => {
-    if (isInitializingRef.current) {
-      console.log('[AuthContext] Already initializing, skipping');
-      return;
-    }
-    
-    isInitializingRef.current = true;
     console.log('[AuthContext] Starting initialization');
 
     // Set up auth state listener first
@@ -154,25 +147,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setProfile(null);
-          setSession(null);
-          setIsLoading(false);
+          if (mountedRef.current) {
+            setUser(null);
+            setProfile(null);
+            setSession(null);
+            setIsLoading(false);
+          }
         } else if (event === 'SIGNED_IN' && newSession?.user) {
-          setSession(newSession);
-          await loadUserProfile(newSession.user);
-          setIsLoading(false);
+          if (mountedRef.current) {
+            setSession(newSession);
+            await loadUserProfile(newSession.user);
+            setIsLoading(false);
+          }
         } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-          setSession(newSession);
+          if (mountedRef.current) {
+            setSession(newSession);
+          }
         } else if (event === 'USER_UPDATED' && newSession?.user) {
-          setSession(newSession);
-          await loadUserProfile(newSession.user);
-          setIsLoading(false);
+          if (mountedRef.current) {
+            setSession(newSession);
+            await loadUserProfile(newSession.user);
+            setIsLoading(false);
+          }
         } else if (!newSession) {
-          setUser(null);
-          setProfile(null);
-          setSession(null);
-          setIsLoading(false);
+          if (mountedRef.current) {
+            setUser(null);
+            setProfile(null);
+            setSession(null);
+            setIsLoading(false);
+          }
         }
       } catch (err) {
         console.error('[AuthContext] Auth state error:', err);
@@ -193,8 +196,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (initialSession?.user) {
           console.log('[AuthContext] Initial session found');
-          setSession(initialSession);
-          await loadUserProfile(initialSession.user);
+          if (mountedRef.current) {
+            setSession(initialSession);
+            await loadUserProfile(initialSession.user);
+          }
         } else {
           console.log('[AuthContext] No initial session');
         }
@@ -203,12 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Start loading session after a brief delay to let UI render
-    setTimeout(() => {
-      if (mountedRef.current) {
-        loadInitialSession();
-      }
-    }, 200);
+    // Start loading session immediately - no delay
+    loadInitialSession();
 
     return () => {
       console.log('[AuthContext] Cleanup');
