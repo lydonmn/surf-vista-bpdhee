@@ -44,7 +44,7 @@ export default function VideoPlayerV2Screen() {
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
-  const { videos, currentIndex } = useVideoQueue(locationIdStr);
+  const { videos } = useVideoQueue(locationIdStr);
 
   // Get URLs for preloading (current + next 2-3)
   const videoUrls = videos.map(v => v.video_url);
@@ -629,9 +629,9 @@ export default function VideoPlayerV2Screen() {
     );
   }
 
-  // Get the best source (local or remote)
-  const videoSource = getSource(video.video_url);
-  const nextVideoSource = nextVideo ? getSource(nextVideo.video_url) : null;
+  // Get the best source (local or remote) - currently unused but available for future optimization
+  // const videoSource = getSource(video.video_url);
+  // const nextVideoSource = nextVideo ? getSource(nextVideo.video_url) : null;
 
   const currentTimeText = formatTime(currentTime);
   const durationText = formatTime(duration);

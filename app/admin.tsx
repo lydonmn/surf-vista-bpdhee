@@ -24,16 +24,16 @@ interface VideoMetadata {
 const MAX_DURATION_SECONDS = 600;
 const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024;
 
-// Helper function to get Mux thumbnail URL
-const getMuxThumbnailUrl = (videoUrl: string) => {
-  if (!videoUrl || !videoUrl.includes('stream.mux.com/')) {
-    return null;
-  }
-  const playbackId = videoUrl.split('stream.mux.com/')[1]?.split('.m3u8')[0];
-  return playbackId
-    ? `https://image.mux.com/${playbackId}/thumbnail.jpg?width=800&fit_mode=preserve&time=1`
-    : null;
-};
+// Helper function to get Mux thumbnail URL (unused but kept for future reference)
+// const getMuxThumbnailUrl = (videoUrl: string) => {
+//   if (!videoUrl || !videoUrl.includes('stream.mux.com/')) {
+//     return null;
+//   }
+//   const playbackId = videoUrl.split('stream.mux.com/')[1]?.split('.m3u8')[0];
+//   return playbackId
+//     ? `https://image.mux.com/${playbackId}/thumbnail.jpg?width=800&fit_mode=preserve&time=1`
+//     : null;
+// };
 
 export default function AdminScreen() {
   const theme = useTheme();

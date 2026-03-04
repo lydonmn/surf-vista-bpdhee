@@ -5,10 +5,32 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, ErrorUtils } from 'react-native';
 import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
+
+// 🚨 CRITICAL: Global error handler for native crashes
+if (ErrorUtils) {
+  const originalHandler = ErrorUtils.getGlobalHandler();
+  
+  ErrorUtils.setGlobalHandler((error, isFatal) => {
+    console.error('[GlobalErrorHandler] Fatal:', isFatal, 'Error:', error);
+    
+    // Log to help debug
+    if (error && error.message) {
+      console.error('[GlobalErrorHandler] Message:', error.message);
+    }
+    if (error && error.stack) {
+      console.error('[GlobalErrorHandler] Stack:', error.stack);
+    }
+    
+    // Call original handler
+    if (originalHandler) {
+      originalHandler(error, isFatal);
+    }
+  });
+}
 
 // Prevent auto-hiding of splash screen
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -95,40 +117,46 @@ export default function RootLayout() {
   
   const colorScheme = useColorScheme();
   const [appReady, setAppReady] = useState(false);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
+  // 🚨 CRITICAL: Aggressive timeout to prevent hanging
+  useEffect(() => {
+    const forceReady = setTimeout(() => {
+      console.log('[RootLayout] Force ready timeout');
+      setAppReady(true);
+      setFontsLoaded(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 1000); // 1 second max wait
+
+    return () => clearTimeout(forceReady);
+  }, []);
+
   // Hide splash screen when ready
   useEffect(() => {
-    const hideSplash = async () => {
-      if (loaded || fontError) {
-        console.log('[RootLayout] Fonts ready, hiding splash');
+    if (loaded || fontError) {
+      console.log('[RootLayout] Fonts ready');
+      setFontsLoaded(true);
+      
+      const hideSplash = async () => {
         try {
           await SplashScreen.hideAsync();
-          setAppReady(true);
-        } catch (err) {
-          console.log('[RootLayout] Splash already hidden');
-          setAppReady(true);
+          console.log('[RootLayout] Splash hidden');
+        } catch (error) {
+          console.log('[RootLayout] Splash already hidden', error);
         }
-      }
-    };
+        setAppReady(true);
+      };
 
-    // Timeout to ensure splash is hidden
-    const timeout = setTimeout(() => {
-      console.log('[RootLayout] Timeout - hiding splash anyway');
-      SplashScreen.hideAsync().catch(() => {});
-      setAppReady(true);
-    }, 2000);
-
-    hideSplash();
-
-    return () => clearTimeout(timeout);
+      hideSplash();
+    }
   }, [loaded, fontError]);
 
   // Show nothing until app is ready
-  if (!appReady) {
+  if (!appReady || !fontsLoaded) {
     return null;
   }
 

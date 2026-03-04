@@ -104,8 +104,8 @@ export default function AdminCronSetupScreen() {
 
       Alert.alert('Success', 'Cron jobs created successfully!');
       loadCronJobs();
-    } catch (e) {
-      console.error('Error:', e);
+    } catch (error) {
+      console.error('[AdminCronSetup] Create error:', error);
       Alert.alert('Error', 'Failed to create cron jobs');
     } finally {
       setLoading(false);
@@ -134,7 +134,8 @@ export default function AdminCronSetupScreen() {
                 Alert.alert('Success', 'Cron job deleted');
                 loadCronJobs();
               }
-            } catch (e) {
+            } catch (error) {
+              console.error('[AdminCronSetup] Delete error:', error);
               Alert.alert('Error', 'Failed to delete cron job');
             } finally {
               setLoading(false);

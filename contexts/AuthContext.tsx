@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   // 🚨 CRITICAL: Start ready immediately
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(true);
+  const [isInitialized] = useState(true);
   
   const isInitializingRef = useRef(false);
 
@@ -125,18 +125,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL: Initialize in background
+  // 🚨 CRITICAL: Initialize in background with timeout protection
   useEffect(() => {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
 
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const initializeAuth = async () => {
       try {
         console.log('[AuthContext] Starting init');
         
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        // 🚨 CRITICAL: Timeout protection
+        const initPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Auth init timeout')), 3000);
+        });
+
+        const { data: { session: initialSession }, error } = await Promise.race([
+          initPromise,
+          timeoutPromise
+        ]) as any;
+        
+        clearTimeout(timeoutId);
         
         if (error) {
           console.error('[AuthContext] Session error:', error);
@@ -157,44 +169,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error('[AuthContext] Init error:', err);
+        // Continue anyway - don't block app startup
       } finally {
+        clearTimeout(timeoutId);
         isInitializingRef.current = false;
         console.log('[AuthContext] Init complete');
       }
     };
 
-    initializeAuth();
+    // Delay initialization slightly to let native modules settle
+    const delayedInit = setTimeout(() => {
+      initializeAuth();
+    }, 100);
+
+    const cleanup = () => {
+      clearTimeout(delayedInit);
+      clearTimeout(timeoutId);
+    };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
 
       console.log('[AuthContext] Auth state change:', event);
 
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setProfile(null);
-        setSession(null);
-        setIsLoading(false);
-      } else if (event === 'SIGNED_IN' && newSession?.user) {
-        setSession(newSession);
-        await loadUserProfile(newSession.user);
-        setIsLoading(false);
-      } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-        setSession(newSession);
-      } else if (event === 'USER_UPDATED' && newSession?.user) {
-        setSession(newSession);
-        await loadUserProfile(newSession.user);
-        setIsLoading(false);
-      } else if (!newSession) {
-        setUser(null);
-        setProfile(null);
-        setSession(null);
-        setIsLoading(false);
+      try {
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setProfile(null);
+          setSession(null);
+          setIsLoading(false);
+        } else if (event === 'SIGNED_IN' && newSession?.user) {
+          setSession(newSession);
+          await loadUserProfile(newSession.user);
+          setIsLoading(false);
+        } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+          setSession(newSession);
+        } else if (event === 'USER_UPDATED' && newSession?.user) {
+          setSession(newSession);
+          await loadUserProfile(newSession.user);
+          setIsLoading(false);
+        } else if (!newSession) {
+          setUser(null);
+          setProfile(null);
+          setSession(null);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('[AuthContext] Auth state change error:', err);
       }
     });
 
     return () => {
       mounted = false;
+      cleanup();
       subscription.unsubscribe();
     };
   }, [loadUserProfile]);

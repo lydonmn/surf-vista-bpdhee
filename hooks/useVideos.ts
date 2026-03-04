@@ -372,7 +372,9 @@ export function useVideos() {
   };
 
   const fetchVideos = useCallback(() => {
-    fetchVideosRef.current?.();
+    if (fetchVideosRef.current) {
+      fetchVideosRef.current();
+    }
   }, []);
 
   const backgroundRefresh = useCallback(async () => {
@@ -417,7 +419,7 @@ export function useVideos() {
   useEffect(() => {
     console.log('[useVideos] Location changed to:', currentLocation);
     fetchVideos();
-  }, [currentLocation]);
+  }, [currentLocation, fetchVideos]);
 
   // 🚨 FIXED: Set up background polling for processing videos
   useEffect(() => {

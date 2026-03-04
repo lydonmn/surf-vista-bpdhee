@@ -130,9 +130,13 @@ export default function HomeScreen() {
   
   // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
-  const { currentLocation, locationData } = useLocation();
-  const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
+  const authData = useAuth();
+  const locationData = useLocation();
+  const surfData = useSurfData();
+  
+  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = authData;
+  const { currentLocation, locationData: locData } = locationData;
+  const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = surfData;
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
@@ -264,6 +268,9 @@ export default function HomeScreen() {
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
+  
+  // Use locData instead of locationData to avoid naming conflict
+  const displayName = locData?.displayName || 'Folly Beach, SC';
 
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
@@ -398,7 +405,7 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No videos available yet for {locationData.displayName}
+                No videos available yet for {displayName}
               </Text>
             </View>
           )}
@@ -436,7 +443,7 @@ export default function HomeScreen() {
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading surf reports for {locationData.displayName}...
+              Loading surf reports for {displayName}...
             </Text>
           </View>
         ) : !todaysReport && !surfConditions ? (
@@ -451,7 +458,7 @@ export default function HomeScreen() {
               No Report Available
             </Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
+              Surf reports for {displayName} will be generated automatically each morning at 6 AM EST.
             </Text>
           </View>
         ) : (
@@ -664,7 +671,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
                 <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
-                  No surf conditions narrative available for {locationData.displayName}.
+                  No surf conditions narrative available for {displayName}.
                 </Text>
               </View>
             )}

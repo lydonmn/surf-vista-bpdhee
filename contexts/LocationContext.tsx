@@ -63,7 +63,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
   // 🚨 CRITICAL: Start ready immediately
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
 
   const fetchLocations = useCallback(async () => {
     try {
@@ -102,15 +102,30 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+
     const initialize = async () => {
       try {
         console.log('[LocationContext] Starting init');
         
-        // Fetch locations
-        await fetchLocations();
+        // 🚨 CRITICAL: Timeout protection
+        const initPromise = (async () => {
+          await fetchLocations();
+          const saved = await AsyncStorage.getItem(STORAGE_KEY);
+          return saved;
+        })();
 
-        // Load saved location
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Location init timeout')), 3000);
+        });
+
+        const saved = await Promise.race([initPromise, timeoutPromise]) as string | null;
+        
+        clearTimeout(timeoutId);
+
+        if (!mounted) return;
+
         if (saved) {
           console.log('[LocationContext] Loaded saved location:', saved);
           setCurrentLocation(saved);
@@ -119,10 +134,22 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         console.log('[LocationContext] Init complete');
       } catch (err) {
         console.error('[LocationContext] Init error:', err);
+        // Continue with defaults - don't block app
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
 
-    initialize();
+    // Delay initialization slightly to let native modules settle
+    const delayedInit = setTimeout(() => {
+      initialize();
+    }, 150);
+
+    return () => {
+      mounted = false;
+      clearTimeout(delayedInit);
+      clearTimeout(timeoutId);
+    };
   }, [fetchLocations]);
 
   const setLocation = useCallback(async (location: Location) => {
