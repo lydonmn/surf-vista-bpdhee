@@ -26,10 +26,7 @@ function calculateSurfRating(surfData: any): number {
   const windSpeedStr = surfData.wind_speed || '0';
   const windDirStr = surfData.wind_direction || '';
   
-  console.log('[calculateSurfRating] Input:', { surfHeightStr, periodStr, windSpeedStr, windDirStr });
-  
   if (surfHeightStr === 'N/A' || surfHeightStr === '' || surfHeightStr === 'null') {
-    console.log('[calculateSurfRating] Wave sensors offline - returning neutral rating of 5');
     return 5;
   }
   
@@ -49,18 +46,14 @@ function calculateSurfRating(surfData: any): number {
     const low = parseValue(parts[0]);
     const high = parseValue(parts[1]);
     surfHeight = (low + high) / 2;
-    console.log('[calculateSurfRating] Parsed range:', { low, high, average: surfHeight });
   } else {
     surfHeight = parseValue(cleanedStr);
-    console.log('[calculateSurfRating] Parsed single value:', surfHeight);
   }
   
   const period = parseValue(periodStr);
   const windSpeed = parseValue(windSpeedStr);
   const windDir = windDirStr.toLowerCase();
   const isOffshore = windDir.includes('w') || windDir.includes('n');
-
-  console.log('[calculateSurfRating] Numeric values:', { surfHeight, period, windSpeed, isOffshore });
 
   // 🚨 CRITICAL FIX: Start at 3 instead of 5 for more realistic ratings
   let rating = 3;
@@ -121,7 +114,6 @@ function calculateSurfRating(surfData: any): number {
   }
 
   const finalRating = Math.max(1, Math.min(10, Math.round(rating)));
-  console.log(`[calculateSurfRating] ✅ Final rating: ${finalRating}/10 (height=${surfHeight}ft, period=${period}s, wind=${windSpeed}mph ${isOffshore ? 'offshore' : 'onshore'})`);
   
   return finalRating;
 }
@@ -129,42 +121,11 @@ function calculateSurfRating(surfData: any): number {
 export default function HomeScreen() {
   console.log('[HomeScreen] ===== COMPONENT RENDERING =====');
   
-  // 🚨 CRITICAL: Wrap all hooks in try-catch to prevent crashes
-  let theme, user, profile, checkSubscription, isLoading, isInitialized, refreshProfile;
-  let isSubscribed = false;
-  let currentLocation, locationData;
-  let surfReports, surfConditions, weatherData, weatherForecast, surfLoading, error, refreshData;
-  
-  // 🚨 FIX: All hooks must be called unconditionally
-  theme = useTheme();
-  console.log('[HomeScreen] Theme loaded:', !!theme);
-  
+  // 🚨 CRITICAL: ALL hooks must be called unconditionally at the top
+  const theme = useTheme();
   const authContext = useAuth();
-  user = authContext.user;
-  profile = authContext.profile;
-  checkSubscription = authContext.checkSubscription;
-  isLoading = authContext.isLoading;
-  isInitialized = authContext.isInitialized;
-  refreshProfile = authContext.refreshProfile;
-  console.log('[HomeScreen] Auth state - user:', !!user, 'profile:', !!profile, 'isLoading:', isLoading);
-  
-  isSubscribed = checkSubscription();
-  console.log('[HomeScreen] Subscription status:', isSubscribed);
-  
   const locationContext = useLocation();
-  currentLocation = locationContext.currentLocation;
-  locationData = locationContext.locationData;
-  console.log('[HomeScreen] Location - current:', currentLocation, 'data:', !!locationData);
-  
   const surfDataContext = useSurfData();
-  surfReports = surfDataContext.surfReports;
-  surfConditions = surfDataContext.surfConditions;
-  weatherData = surfDataContext.weatherData;
-  weatherForecast = surfDataContext.weatherForecast;
-  surfLoading = surfDataContext.isLoading;
-  error = surfDataContext.error;
-  refreshData = surfDataContext.refreshData;
-  console.log('[HomeScreen] Surf data - reports:', surfReports?.length, 'conditions:', !!surfConditions, 'loading:', surfLoading);
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
@@ -172,138 +133,81 @@ export default function HomeScreen() {
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
-  // ✅ FIX: ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  const todayDate = useMemo(() => {
-    const date = getESTDate();
-    console.log('[HomeScreen] Today\'s date:', date);
-    return date;
-  }, []);
+  // Extract values from contexts with fallbacks
+  const user = authContext.user;
+  const profile = authContext.profile;
+  const checkSubscription = authContext.checkSubscription;
+  const isLoading = authContext.isLoading;
+  const isInitialized = authContext.isInitialized;
+  const refreshProfile = authContext.refreshProfile;
+  
+  const currentLocation = locationContext.currentLocation;
+  const locationData = locationContext.locationData;
+  
+  const surfReports = surfDataContext.surfReports;
+  const surfConditions = surfDataContext.surfConditions;
+  const weatherData = surfDataContext.weatherData;
+  const weatherForecast = surfDataContext.weatherForecast;
+  const surfLoading = surfDataContext.isLoading;
+  const error = surfDataContext.error;
+  const refreshData = surfDataContext.refreshData;
+  
+  const isSubscribed = checkSubscription();
 
-  // 🚨 CRITICAL FIX: NEVER block rendering - always show content
-  // Even if theme or locationData is missing, show something
-  
-  const safeTheme = theme || { colors: { background: '#1C1C1E', text: '#FFFFFF', card: '#2C2C2E' }, dark: true };
-  const safeLocationData = locationData || { id: 'folly-beach', name: 'Folly Beach', displayName: 'Folly Beach, SC', coordinates: { lat: 32.6552, lon: -79.9403 }, buoyId: '41004', tideStationId: '8665530' };
-  
-  console.log('[HomeScreen] Using theme:', !!theme ? 'real' : 'fallback');
-  console.log('[HomeScreen] Using locationData:', !!locationData ? 'real' : 'fallback');
+  const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
-    const filtered = surfReports.filter(report => report.location === currentLocation);
-    console.log('[HomeScreen] Filtered reports for location:', currentLocation, 'count:', filtered.length);
-    return filtered;
+    return surfReports.filter(report => report.location === currentLocation);
   }, [surfReports, currentLocation]);
 
   const locationWeatherForecast = useMemo(() => {
-    const filtered = weatherForecast.filter(forecast => forecast.location === currentLocation);
-    console.log('[HomeScreen] Filtered weather forecast for location:', currentLocation, 'count:', filtered.length);
-    return filtered;
+    return weatherForecast.filter(forecast => forecast.location === currentLocation);
   }, [weatherForecast, currentLocation]);
 
   const todaysReport = useMemo(() => {
-    try {
-      console.log('[HomeScreen] ===== FINDING TODAY\'S REPORT =====');
-      console.log('[HomeScreen] Current EST date:', todayDate);
-      console.log('[HomeScreen] Current location:', currentLocation, safeLocationData.displayName);
-      console.log('[HomeScreen] Total reports for this location:', locationSurfReports.length);
-      
-      const todayReports = locationSurfReports.filter(report => {
-        if (!report.date) return false;
-        const reportDate = report.date.split('T')[0];
-        const matchesToday = reportDate === todayDate;
-        console.log('[HomeScreen] Checking report:', reportDate, 'vs today:', todayDate, '=', matchesToday);
-        return matchesToday;
-      });
-      
-      console.log('[HomeScreen] Found', todayReports.length, 'reports for today at', safeLocationData.displayName);
-      
-      if (todayReports.length > 0) {
-        const report = todayReports[0];
-        console.log('[HomeScreen] ===== USING TODAY\'S REPORT =====');
-        console.log('[HomeScreen] Report ID:', report.id);
-        console.log('[HomeScreen] Report date:', report.date);
-        console.log('[HomeScreen] Report location:', report.location);
-        console.log('[HomeScreen] wave_height:', report.wave_height);
-        console.log('[HomeScreen] surf_height:', (report as any).surf_height);
-        console.log('[HomeScreen] wind_speed:', report.wind_speed);
-        console.log('[HomeScreen] wind_direction:', report.wind_direction);
-        console.log('[HomeScreen] Has report_text (edited):', !!report.report_text);
-        console.log('[HomeScreen] Has conditions (auto):', !!report.conditions);
-        console.log('[HomeScreen] Conditions length:', report.conditions?.length || 0);
-        return report;
-      } else {
-        console.log('[HomeScreen] No report for today, checking for most recent report...');
-        
-        const sortedReports = [...locationSurfReports].sort((a, b) => {
-          const dateA = new Date(a.date).getTime();
-          const dateB = new Date(b.date).getTime();
-          return dateB - dateA;
-        });
-        
-        if (sortedReports.length > 0) {
-          const mostRecentReport = sortedReports[0];
-          console.log('[HomeScreen] ===== USING MOST RECENT REPORT =====');
-          console.log('[HomeScreen] Report ID:', mostRecentReport.id);
-          console.log('[HomeScreen] Report date:', mostRecentReport.date);
-          console.log('[HomeScreen] Report location:', mostRecentReport.location);
-          console.log('[HomeScreen] wave_height:', mostRecentReport.wave_height);
-          console.log('[HomeScreen] surf_height:', (mostRecentReport as any).surf_height);
-          return mostRecentReport;
-        }
-        
-        console.log('[HomeScreen] ❌ No reports found at all for', safeLocationData.displayName);
-        return null;
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Error filtering reports:', error);
-      return null;
+    const todayReports = locationSurfReports.filter(report => {
+      if (!report.date) return false;
+      const reportDate = report.date.split('T')[0];
+      return reportDate === todayDate;
+    });
+    
+    if (todayReports.length > 0) {
+      return todayReports[0];
     }
-  }, [locationSurfReports, todayDate, currentLocation, safeLocationData.displayName]);
+    
+    // Fallback to most recent report
+    const sortedReports = [...locationSurfReports].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+    
+    return sortedReports[0] || null;
+  }, [locationSurfReports, todayDate]);
 
-  // 🚨 CRITICAL FIX: Get today's weather forecast as fallback for current conditions
   const todaysWeatherForecast = useMemo(() => {
-    const todayForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === todayDate);
-    console.log('[HomeScreen] Today\'s weather forecast:', todayForecast ? 'Found' : 'Not found');
-    return todayForecast;
+    return locationWeatherForecast.find(f => f.date.split('T')[0] === todayDate);
   }, [locationWeatherForecast, todayDate]);
 
-  // 🚨 CRITICAL FIX: Always prioritize report rating if it exists (manually edited or stored)
   const ratingValue = useMemo(() => {
-    console.log('[HomeScreen] ===== CALCULATING CURRENT RATING =====');
-    console.log('[HomeScreen] Has surfConditions:', !!surfConditions);
-    console.log('[HomeScreen] Has todaysReport:', !!todaysReport);
-    console.log('[HomeScreen] Today\'s report rating:', todaysReport?.rating);
-    console.log('[HomeScreen] Today\'s report edited_at:', todaysReport?.edited_at);
-    
-    // 🚨 PRIORITY 1: ALWAYS use report rating if it exists (whether manually edited or auto-generated)
-    // This ensures the rating shown matches what's in the database
     if (todaysReport?.rating !== null && todaysReport?.rating !== undefined) {
-      console.log('[HomeScreen] ✅ Using rating from report (database value):', todaysReport.rating);
       return todaysReport.rating;
     }
     
-    // 🚨 PRIORITY 2: Use surf_conditions if available (most current data from scheduled updates)
     if (surfConditions) {
-      const rating = calculateSurfRating(surfConditions);
-      console.log('[HomeScreen] ✅ Using calculated rating from surf_conditions (from scheduled updates):', rating);
-      return rating;
+      return calculateSurfRating(surfConditions);
     }
     
-    // 🚨 PRIORITY 3: Last resort - calculate from report data
     if (todaysReport) {
-      const rating = calculateSurfRating(todaysReport);
-      console.log('[HomeScreen] Calculated rating from report data:', rating);
-      return rating;
+      return calculateSurfRating(todaysReport);
     }
     
-    console.log('[HomeScreen] No data available, using default rating: 5');
     return 5;
   }, [surfConditions, todaysReport]);
 
   const loadLatestVideo = useCallback(async () => {
     try {
       setIsLoadingVideo(true);
-      console.log('[HomeScreen] Fetching latest video for location:', currentLocation, safeLocationData.displayName);
       
       const { data: videoData, error: videoError } = await supabase
         .from('videos')
@@ -313,16 +217,10 @@ export default function HomeScreen() {
         .limit(1)
         .maybeSingle();
 
-      if (videoError) {
-        console.log('[HomeScreen] Video fetch error:', videoError.message);
-      } else if (videoData) {
-        console.log('[HomeScreen] ✅ Video loaded:', videoData.title, 'for location:', videoData.location, safeLocationData.displayName);
-        console.log('[HomeScreen] Video URL:', videoData.video_url);
-        console.log('[HomeScreen] Thumbnail URL:', videoData.thumbnail_url);
+      if (videoData) {
         setLatestVideo(videoData);
         hasLoadedVideoRef.current = true;
       } else {
-        console.log('[HomeScreen] No videos found for location:', currentLocation, safeLocationData.displayName);
         setLatestVideo(null);
       }
     } catch (error) {
@@ -330,20 +228,16 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingVideo(false);
     }
-  }, [currentLocation, safeLocationData.displayName]);
+  }, [currentLocation]);
 
-  // ✅ REVERTED: Only load video when location changes, not on every focus
   useEffect(() => {
     if (isInitialized && !isLoading && user && profile && isSubscribed) {
-      console.log('[HomeScreen] Location changed to:', currentLocation, safeLocationData.displayName);
-      console.log('[HomeScreen] Loading video for location');
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo, safeLocationData.displayName]);
+  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo]);
 
   const handleRefresh = async () => {
-    console.log('[HomeScreen] User initiated manual refresh for location:', currentLocation, safeLocationData.displayName);
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
@@ -351,9 +245,6 @@ export default function HomeScreen() {
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
-      console.log('[HomeScreen] Opening enhanced video player for:', latestVideo.id);
-      console.log('[HomeScreen] ✅ Using video preloader for instant playback');
-      
       router.push({
         pathname: '/video-player-v2',
         params: {
@@ -365,10 +256,7 @@ export default function HomeScreen() {
   }, [latestVideo, currentLocation]);
 
   const handleSubscribeNow = async () => {
-    console.log('[HomeScreen] 🔘 Subscribe button pressed');
-    
     if (!user) {
-      console.log('[HomeScreen] No user, redirecting to login');
       router.push('/login');
       return;
     }
@@ -376,89 +264,28 @@ export default function HomeScreen() {
     setIsSubscribing(true);
     
     await openPaywall(user.id, user.email || undefined, async () => {
-      console.log('[HomeScreen] ✅ Subscription successful, refreshing profile');
       await refreshProfile();
     });
     
     setIsSubscribing(false);
   };
 
-  // 🚨 CRITICAL FIX: If contexts failed to load, show error screen
-  if (!theme || !locationData) {
-    console.error('[HomeScreen] CRITICAL: Missing required contexts!');
-    return (
-      <View style={[styles.container, { backgroundColor: '#000000' }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="exclamationmark.triangle.fill"
-            android_material_icon_name="warning"
-            size={64}
-            color="#FF9800"
-          />
-          <Text style={[styles.errorText, { color: '#FFFFFF', marginTop: 16 }]}>
-            App initialization failed
-          </Text>
-          <Text style={[styles.errorSubtext, { color: '#CCCCCC', marginTop: 8 }]}>
-            Please restart the app
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // 🚨 CRITICAL FIX: Always show content, just with a subscribe overlay if needed
-  // This prevents white screen issues on web and ensures something is always visible
+  // 🚨 CRITICAL FIX: Always show content with overlay if needed
   const showLockedOverlay = !user || !isSubscribed;
-
-  console.log('[HomeScreen] Showing content for', safeLocationData.displayName);
-  console.log('[HomeScreen] Surf conditions available:', !!surfConditions);
-  console.log('[HomeScreen] Surf conditions:', surfConditions);
-  console.log('[HomeScreen] Weather data available:', !!weatherData);
-  console.log('[HomeScreen] Weather data:', weatherData);
-  console.log('[HomeScreen] Today\'s weather forecast available:', !!todaysWeatherForecast);
-  console.log('[HomeScreen] Today\'s weather forecast:', todaysWeatherForecast);
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
-  console.log('[HomeScreen] ===== NARRATIVE DISPLAY =====');
-  console.log('[HomeScreen] Location:', safeLocationData.displayName);
-  console.log('[HomeScreen] Report location:', todaysReport?.location);
-  console.log('[HomeScreen] Narrative length:', narrativeText?.length || 0);
-  console.log('[HomeScreen] Narrative preview:', narrativeText?.substring(0, 100));
-  console.log('[HomeScreen] Is custom (edited):', isCustomReport);
-  console.log('[HomeScreen] Source:', isCustomReport ? 'report_text (edited)' : 'conditions (auto)');
-  console.log('[HomeScreen] Is from today:', isReportFromToday);
-
-  // 🚨 CRITICAL FIX: Always display surf_height (rideable face height), not wave_height
-  // Priority: surf_conditions (most recent) > todaysReport (stored)
   const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
-  console.log('[HomeScreen] ===== WAVE DATA CHECK =====');
-  console.log('[HomeScreen] surfConditions surf_height:', surfConditions?.surf_height);
-  console.log('[HomeScreen] surfConditions wave_height:', surfConditions?.wave_height);
-  console.log('[HomeScreen] surfConditions updated_at:', surfConditions?.updated_at);
-  console.log('[HomeScreen] todaysReport surf_height:', (todaysReport as any)?.surf_height);
-  console.log('[HomeScreen] todaysReport wave_height:', todaysReport?.wave_height);
-  console.log('[HomeScreen] todaysReport updated_at:', todaysReport?.updated_at);
-  console.log('[HomeScreen] Final surfHeightValue:', surfHeightValue);
-  console.log('[HomeScreen] Final waveHeightValue:', waveHeightValue);
-  console.log('[HomeScreen] ===========================');
-  
-  // 🚨 CRITICAL FIX: ALWAYS prioritize surf_height over wave_height for display
-  // Surf height is the rideable face height that surfers care about
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
     ? surfHeightValue 
     : (waveHeightValue && waveHeightValue !== 'N/A' && waveHeightValue !== null) 
       ? waveHeightValue 
       : 'N/A';
   
-  console.log('[HomeScreen] 🏄 Final surf height display:', surfHeightDisplay);
-  console.log('[HomeScreen] Data source:', surfConditions ? 'surf_conditions (real-time buoy)' : 'todaysReport (stored)');
-  
-  // 🚨 CRITICAL FIX: Use isValidValue helper to properly validate wind data
   const isValidValue = (val: any): boolean => {
     if (val === null || val === undefined) return false;
     if (typeof val === 'string') {
@@ -470,7 +297,6 @@ export default function HomeScreen() {
     return true;
   };
   
-  // Prioritize weatherData for wind (most accurate), then surfConditions, then report
   const windSpeedValue = isValidValue(weatherData?.wind_speed) 
     ? weatherData.wind_speed 
     : isValidValue(surfConditions?.wind_speed)
@@ -487,7 +313,6 @@ export default function HomeScreen() {
         ? todaysReport.wind_direction
         : null;
   
-  // 🚨 CRITICAL FIX: Always format wind speed with "mph" unit
   const windSpeedFormatted = windSpeedValue 
     ? (typeof windSpeedValue === 'string' && windSpeedValue.includes('mph') 
         ? windSpeedValue 
@@ -498,27 +323,7 @@ export default function HomeScreen() {
     ? `${windSpeedFormatted} ${String(windDirValue).trim()}`
     : 'N/A';
   
-  console.log('[HomeScreen] 🌬️ WIND DATA DEBUG:', {
-    weatherData_wind_speed: weatherData?.wind_speed,
-    weatherData_wind_direction: weatherData?.wind_direction,
-    surfConditions_wind_speed: surfConditions?.wind_speed,
-    surfConditions_wind_direction: surfConditions?.wind_direction,
-    todaysReport_wind_speed: todaysReport?.wind_speed,
-    todaysReport_wind_direction: todaysReport?.wind_direction,
-    windSpeedValue,
-    windDirValue,
-    final_windDisplay: windDisplay,
-  });
-  
-  // 🚨 CRITICAL FIX: Use weather_forecast as fallback when weather_data is not available for today
-  // Check if weatherData is from today, if not use forecast
   const weatherDataIsFromToday = weatherData?.date?.split('T')[0] === todayDate;
-  
-  console.log('[HomeScreen] ===== WEATHER DATA FALLBACK LOGIC =====');
-  console.log('[HomeScreen] weatherData date:', weatherData?.date);
-  console.log('[HomeScreen] weatherData is from today:', weatherDataIsFromToday);
-  console.log('[HomeScreen] todaysWeatherForecast available:', !!todaysWeatherForecast);
-  console.log('[HomeScreen] =======================================');
   
   const airTempValue = (weatherDataIsFromToday && weatherData?.temperature) 
     ? weatherData.temperature 
@@ -540,45 +345,9 @@ export default function HomeScreen() {
   const waterTempDisplay = formatWaterTemp(waterTempValue);
   
   const ratingColorValue = getRatingColor(ratingValue);
-  const ratingLabel = 'Stoke Rating';
-
-  console.log('[HomeScreen] ===== CURRENT CONDITIONS DATA SOURCES =====');
-  console.log('[HomeScreen] Surf height:', surfHeightDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
-  console.log('[HomeScreen] Wind:', windDisplay, '(from', surfConditions ? 'surf_conditions' : weatherData ? 'weatherData' : 'report', ')');
-  console.log('[HomeScreen] Air temp:', airTempDisplay, '(from', weatherDataIsFromToday ? 'weatherData' : todaysWeatherForecast ? 'weatherForecast' : 'report', ')');
-  console.log('[HomeScreen] Weather:', weatherDescDisplay, '(from', weatherDataIsFromToday ? 'weatherData' : todaysWeatherForecast ? 'weatherForecast' : 'report', ')');
-  console.log('[HomeScreen] Water temp:', waterTempDisplay, '(from', surfConditions ? 'surf_conditions' : 'report', ')');
-  console.log('[HomeScreen] 🎯 STOKE METER:', ratingValue, '/10');
-  console.log('[HomeScreen] ================================================');
-
-  const errorTitleText = 'Unable to fetch surf data';
-  const emptyVideoText = `No videos available yet for ${safeLocationData.displayName}`;
-  const currentDateText = new Date().toLocaleDateString('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric'
-  });
-  const oldDataBadgeText = 'Showing most recent report';
-  const loadingReportsText = `Loading surf reports for ${safeLocationData.displayName}...`;
-  const noReportTitleText = 'No Report Available';
-  const noReportDescText = `Surf reports for ${safeLocationData.displayName} will be generated automatically each morning at 6 AM EST.`;
-  const currentConditionsTitle = 'Current Conditions';
-  const airTempLabel = 'Air Temp';
-  const weatherLabel = 'Weather';
-  const surfHeightLabel = 'Surf Height';
-  const windLabel = 'Wind';
-  const waterTempLabel = 'Water Temp';
-  const surfReportTitle = 'Surf Report';
-  const noNarrativeText = `No surf conditions narrative available for ${safeLocationData.displayName}.`;
-  const editedNotePrefix = 'Edited ';
-  const viewFullReportText = 'View Full Report';
-  const forecastTitle = '7-Day Forecast';
-  const swellLabel = 'swell';
-  const noForecastText = 'No forecast data available yet. Pull down to refresh or check back later.';
 
   return (
-    <View style={[styles.container, { backgroundColor: safeTheme.colors.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView 
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
@@ -599,15 +368,13 @@ export default function HomeScreen() {
             color="#FFFFFF"
           />
           <View style={styles.errorTextContainer}>
-            <Text style={styles.errorText}>{errorTitleText}</Text>
-            <Text style={styles.errorSubtext}>
-              {error}
-            </Text>
+            <Text style={styles.errorText}>Unable to fetch surf data</Text>
+            <Text style={styles.errorSubtext}>{error}</Text>
           </View>
         </View>
       )}
 
-      <View style={[styles.videoSection, { backgroundColor: safeTheme.colors.card }]}>
+      <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
         {isLoadingVideo ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -619,14 +386,12 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.videoPreviewContainer}>
-              {/* ✅ FIX: Use dedicated preview component with proper state management */}
               <VideoPreviewThumbnail
                 videoUrl={latestVideo.video_url}
                 thumbnailUrl={latestVideo.thumbnail_url}
                 style={styles.videoPreview}
               />
               
-              {/* Play button overlay */}
               <View style={styles.videoOverlay}>
                 <View style={styles.playButtonContainer}>
                   <IconSymbol
@@ -645,7 +410,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              {emptyVideoText}
+              No videos available yet for {locationData.displayName}
             </Text>
           </View>
         )}
@@ -656,8 +421,13 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.dateContainer}>
-        <Text style={[styles.dateText, { color: safeTheme.colors.text }]}>
-          {currentDateText}
+        <Text style={[styles.dateText, { color: theme.colors.text }]}>
+          {new Date().toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+          })}
         </Text>
         {todaysReport && !isReportFromToday && (
           <View style={styles.oldDataBadge}>
@@ -668,7 +438,7 @@ export default function HomeScreen() {
               color={colors.accent}
             />
             <Text style={[styles.oldDataText, { color: colors.accent }]}>
-              {oldDataBadgeText}
+              Showing most recent report
             </Text>
           </View>
         )}
@@ -678,44 +448,44 @@ export default function HomeScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            {loadingReportsText}
+            Loading surf reports for {locationData.displayName}...
           </Text>
         </View>
       ) : !todaysReport && !surfConditions ? (
-        <View style={[styles.emptyCard, { backgroundColor: safeTheme.colors.card }]}>
+        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
           <IconSymbol
             ios_icon_name="water.waves"
             android_material_icon_name="waves"
             size={48}
             color={colors.textSecondary}
           />
-          <Text style={[styles.emptyTitle, { color: safeTheme.colors.text }]}>
-            {noReportTitleText}
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            No Report Available
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            {noReportDescText}
+            Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
           </Text>
         </View>
       ) : (
         <View style={[
           styles.reportCard, 
           { 
-            backgroundColor: safeTheme.colors.card,
+            backgroundColor: theme.colors.card,
             borderWidth: 1,
-            borderColor: safeTheme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
+            borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
           }
         ]}>
           <View style={styles.conditionsSection}>
-            <Text style={[styles.sectionTitle, { color: safeTheme.colors.text }]}>
-              {currentConditionsTitle}
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Current Conditions
             </Text>
             
             <View style={styles.conditionsGrid}>
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="thermometer"
@@ -725,18 +495,18 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {airTempLabel}
+                      Air Temp
                     </Text>
-                    <Text style={[styles.conditionValue, { color: safeTheme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {airTempDisplay}
                     </Text>
                   </View>
                 </View>
 
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="cloud.fill"
@@ -746,9 +516,9 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {weatherLabel}
+                      Weather
                     </Text>
-                    <Text style={[styles.conditionValue, { color: safeTheme.colors.text }]} numberOfLines={1}>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]} numberOfLines={1}>
                       {weatherDescDisplay}
                     </Text>
                   </View>
@@ -757,9 +527,9 @@ export default function HomeScreen() {
 
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="water.waves"
@@ -769,18 +539,18 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {surfHeightLabel}
+                      Surf Height
                     </Text>
-                    <Text style={[styles.conditionValue, { color: safeTheme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {surfHeightDisplay}
                     </Text>
                   </View>
                 </View>
 
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="wind"
@@ -790,9 +560,9 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {windLabel}
+                      Wind
                     </Text>
-                    <Text style={[styles.conditionValue, { color: safeTheme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {windDisplay}
                     </Text>
                   </View>
@@ -801,9 +571,9 @@ export default function HomeScreen() {
 
               <View style={styles.conditionRow}>
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="drop.fill"
@@ -813,18 +583,18 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {waterTempLabel}
+                      Water Temp
                     </Text>
-                    <Text style={[styles.conditionValue, { color: safeTheme.colors.text }]}>
+                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                       {waterTempDisplay}
                     </Text>
                   </View>
                 </View>
 
                 <View style={[styles.conditionItem, {
-                  backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
                 }]}>
                   <IconSymbol
                     ios_icon_name="star.fill"
@@ -834,7 +604,7 @@ export default function HomeScreen() {
                   />
                   <View style={styles.conditionTextContainer}>
                     <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      {ratingLabel}
+                      Stoke Rating
                     </Text>
                     <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
                       {ratingValue}
@@ -852,8 +622,8 @@ export default function HomeScreen() {
             <View style={[
               styles.reportNarrativeSection, 
               { 
-                borderTopColor: safeTheme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
-                backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
                 borderRadius: 12,
                 padding: 16,
                 marginTop: 8
@@ -866,8 +636,8 @@ export default function HomeScreen() {
                   size={20}
                   color={colors.primary}
                 />
-                <Text style={[styles.sectionTitle, { color: safeTheme.colors.text, marginBottom: 0 }]}>
-                  {surfReportTitle}
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                  Surf Report
                 </Text>
               </View>
               
@@ -877,7 +647,7 @@ export default function HomeScreen() {
               />
               {todaysReport?.report_text && todaysReport.edited_at && (
                 <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                  {editedNotePrefix}{new Date(todaysReport.edited_at).toLocaleDateString()}
+                  Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
                 </Text>
               )}
             </View>
@@ -887,8 +657,8 @@ export default function HomeScreen() {
             <View style={[
               styles.reportNarrativeSection, 
               { 
-                borderTopColor: safeTheme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
-                backgroundColor: safeTheme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
                 borderRadius: 12,
                 padding: 16,
                 marginTop: 8
@@ -901,12 +671,12 @@ export default function HomeScreen() {
                   size={20}
                   color={colors.primary}
                 />
-                <Text style={[styles.sectionTitle, { color: safeTheme.colors.text, marginBottom: 0 }]}>
-                  {surfReportTitle}
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                  Surf Report
                 </Text>
               </View>
               <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
-                {noNarrativeText}
+                No surf conditions narrative available for {locationData.displayName}.
               </Text>
             </View>
           )}
@@ -915,7 +685,7 @@ export default function HomeScreen() {
             style={[styles.detailsButton, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/(tabs)/report')}
           >
-            <Text style={styles.detailsButtonText}>{viewFullReportText}</Text>
+            <Text style={styles.detailsButtonText}>View Full Report</Text>
             <IconSymbol
               ios_icon_name="chevron.right"
               android_material_icon_name="chevron-right"
@@ -927,7 +697,7 @@ export default function HomeScreen() {
       )}
 
       {!surfLoading && (
-        <View style={[styles.forecastCard, { backgroundColor: safeTheme.colors.card }]}>
+        <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
           <View style={styles.forecastHeader}>
             <IconSymbol
               ios_icon_name="calendar"
@@ -935,8 +705,8 @@ export default function HomeScreen() {
               size={24}
               color={colors.primary}
             />
-            <Text style={[styles.forecastTitle, { color: safeTheme.colors.text }]}>
-              {forecastTitle}
+            <Text style={[styles.forecastTitle, { color: theme.colors.text }]}>
+              7-Day Forecast
             </Text>
           </View>
           
@@ -975,27 +745,13 @@ export default function HomeScreen() {
               
               const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
               
-              console.log('[HomeScreen] Forecast day', index, ':', {
-                date: forecastDateStr,
-                dayName,
-                monthDay,
-                hasReport: !!dayReport,
-                hasForecast: !!dayWeatherForecast,
-                surf_height: daySurfHeight,
-                wave_height: dayWaveHeight,
-                waveDisplay,
-                highTemp: highTempDisplay,
-                lowTemp: lowTempDisplay,
-                weather: weatherDesc
-              });
-              
               return (
                 <View key={index} style={[styles.forecastDay, { 
-                  backgroundColor: safeTheme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
                   borderWidth: 1,
-                  borderColor: safeTheme.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+                  borderColor: theme.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
                 }]}>
-                  <Text style={[styles.forecastDayName, { color: safeTheme.colors.text }]}>
+                  <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
                     {dayName}
                   </Text>
                   <Text style={[styles.forecastDate, { color: colors.textSecondary }]}>
@@ -1005,10 +761,10 @@ export default function HomeScreen() {
                     {waveDisplay}
                   </Text>
                   <Text style={[styles.forecastLabel, { color: colors.textSecondary }]}>
-                    {swellLabel}
+                    swell
                   </Text>
                   <View style={styles.forecastTempRow}>
-                    <Text style={[styles.forecastTemp, { color: safeTheme.colors.text }]}>
+                    <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
                       {highTempDisplay}
                     </Text>
                     <Text style={[styles.forecastTempDivider, { color: colors.textSecondary }]}>
@@ -1018,7 +774,7 @@ export default function HomeScreen() {
                       {lowTempDisplay}
                     </Text>
                   </View>
-                  <Text style={[styles.forecastWeather, { color: safeTheme.colors.text }]} numberOfLines={2}>
+                  <Text style={[styles.forecastWeather, { color: theme.colors.text }]} numberOfLines={2}>
                     {weatherDesc}
                   </Text>
                 </View>
@@ -1029,7 +785,7 @@ export default function HomeScreen() {
           {locationWeatherForecast.length === 0 && locationSurfReports.length === 0 && (
             <View style={styles.noForecastContainer}>
               <Text style={[styles.noForecastText, { color: colors.textSecondary }]}>
-                {noForecastText}
+                No forecast data available yet. Pull down to refresh or check back later.
               </Text>
             </View>
           )}

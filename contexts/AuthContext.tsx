@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  // 🚨 CRITICAL FIX: Start with isLoading=false and isInitialized=true to prevent white screen
+  // 🚨 CRITICAL FIX: Start initialized immediately to prevent blocking
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true);
   
