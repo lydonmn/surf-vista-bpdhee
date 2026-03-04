@@ -118,39 +118,27 @@ function calculateSurfRating(surfData: any): number {
   return finalRating;
 }
 
+function getRatingColor(rating: number): string {
+  if (rating >= 8) return '#22C55E';
+  if (rating >= 6) return '#FFC107';
+  if (rating >= 4) return '#FF9800';
+  return '#F44336';
+}
+
 export default function HomeScreen() {
   console.log('[HomeScreen] ===== COMPONENT RENDERING =====');
   
-  // 🚨 CRITICAL: ALL hooks must be called unconditionally at the top
+  // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
-  const authContext = useAuth();
-  const locationContext = useLocation();
-  const surfDataContext = useSurfData();
+  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = useAuth();
+  const { currentLocation, locationData } = useLocation();
+  const { surfReports, surfConditions, weatherData, weatherForecast, isLoading: surfLoading, error, refreshData } = useSurfData();
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const hasLoadedVideoRef = useRef(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
-
-  // Extract values from contexts with fallbacks
-  const user = authContext.user;
-  const profile = authContext.profile;
-  const checkSubscription = authContext.checkSubscription;
-  const isLoading = authContext.isLoading;
-  const isInitialized = authContext.isInitialized;
-  const refreshProfile = authContext.refreshProfile;
-  
-  const currentLocation = locationContext.currentLocation;
-  const locationData = locationContext.locationData;
-  
-  const surfReports = surfDataContext.surfReports;
-  const surfConditions = surfDataContext.surfConditions;
-  const weatherData = surfDataContext.weatherData;
-  const weatherForecast = surfDataContext.weatherForecast;
-  const surfLoading = surfDataContext.isLoading;
-  const error = surfDataContext.error;
-  const refreshData = surfDataContext.refreshData;
   
   const isSubscribed = checkSubscription();
 
@@ -209,7 +197,7 @@ export default function HomeScreen() {
     try {
       setIsLoadingVideo(true);
       
-      const { data: videoData, error: videoError } = await supabase
+      const { data: videoData } = await supabase
         .from('videos')
         .select('*')
         .eq('location', currentLocation)
@@ -237,11 +225,11 @@ export default function HomeScreen() {
     }
   }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo]);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await Promise.all([refreshData(), loadLatestVideo()]);
     setIsRefreshing(false);
-  };
+  }, [refreshData, loadLatestVideo]);
 
   const handleVideoPress = useCallback(() => {
     if (latestVideo) {
@@ -255,7 +243,7 @@ export default function HomeScreen() {
     }
   }, [latestVideo, currentLocation]);
 
-  const handleSubscribeNow = async () => {
+  const handleSubscribeNow = useCallback(async () => {
     if (!user) {
       router.push('/login');
       return;
@@ -268,7 +256,7 @@ export default function HomeScreen() {
     });
     
     setIsSubscribing(false);
-  };
+  }, [user, refreshProfile]);
 
   // 🚨 CRITICAL FIX: Always show content with overlay if needed
   const showLockedOverlay = !user || !isSubscribed;
@@ -359,439 +347,439 @@ export default function HomeScreen() {
           />
         }
       >
-      {error && (
-        <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
-          <IconSymbol
-            ios_icon_name="exclamationmark.triangle.fill"
-            android_material_icon_name="warning"
-            size={24}
-            color="#FFFFFF"
-          />
-          <View style={styles.errorTextContainer}>
-            <Text style={styles.errorText}>Unable to fetch surf data</Text>
-            <Text style={styles.errorSubtext}>{error}</Text>
-          </View>
-        </View>
-      )}
-
-      <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
-        {isLoadingVideo ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : latestVideo ? (
-          <TouchableOpacity
-            style={styles.videoCard}
-            onPress={handleVideoPress}
-            activeOpacity={0.7}
-          >
-            <View style={styles.videoPreviewContainer}>
-              <VideoPreviewThumbnail
-                videoUrl={latestVideo.video_url}
-                thumbnailUrl={latestVideo.thumbnail_url}
-                style={styles.videoPreview}
-              />
-              
-              <View style={styles.videoOverlay}>
-                <View style={styles.playButtonContainer}>
-                  <IconSymbol
-                    ios_icon_name="play.circle.fill"
-                    android_material_icon_name="play-circle"
-                    size={64}
-                    color="rgba(255, 255, 255, 0.9)"
-                  />
-                </View>
-                <View style={styles.videoTitleOverlay}>
-                  <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No videos available yet for {locationData.displayName}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.locationSelectorContainer}>
-        <LocationSelector />
-      </View>
-
-      <View style={styles.dateContainer}>
-        <Text style={[styles.dateText, { color: theme.colors.text }]}>
-          {new Date().toLocaleDateString('en-US', {
-            timeZone: 'America/New_York',
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric'
-          })}
-        </Text>
-        {todaysReport && !isReportFromToday && (
-          <View style={styles.oldDataBadge}>
+        {error && (
+          <View style={[styles.errorCard, { backgroundColor: colors.errorBackground }]}>
             <IconSymbol
-              ios_icon_name="clock"
-              android_material_icon_name="schedule"
-              size={12}
-              color={colors.accent}
-            />
-            <Text style={[styles.oldDataText, { color: colors.accent }]}>
-              Showing most recent report
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {surfLoading && !isRefreshing ? (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading surf reports for {locationData.displayName}...
-          </Text>
-        </View>
-      ) : !todaysReport && !surfConditions ? (
-        <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
-          <IconSymbol
-            ios_icon_name="water.waves"
-            android_material_icon_name="waves"
-            size={48}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            No Report Available
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
-          </Text>
-        </View>
-      ) : (
-        <View style={[
-          styles.reportCard, 
-          { 
-            backgroundColor: theme.colors.card,
-            borderWidth: 1,
-            borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
-          }
-        ]}>
-          <View style={styles.conditionsSection}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Current Conditions
-            </Text>
-            
-            <View style={styles.conditionsGrid}>
-              <View style={styles.conditionRow}>
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="thermometer"
-                    android_material_icon_name="thermostat"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Air Temp
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {airTempDisplay}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="cloud.fill"
-                    android_material_icon_name="cloud"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Weather
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]} numberOfLines={1}>
-                      {weatherDescDisplay}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.conditionRow}>
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="water.waves"
-                    android_material_icon_name="waves"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Surf Height
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {surfHeightDisplay}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="wind"
-                    android_material_icon_name="air"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Wind
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {windDisplay}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.conditionRow}>
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="drop.fill"
-                    android_material_icon_name="water-drop"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Water Temp
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
-                      {waterTempDisplay}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={[styles.conditionItem, {
-                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
-                }]}>
-                  <IconSymbol
-                    ios_icon_name="star.fill"
-                    android_material_icon_name="star"
-                    size={18}
-                    color={ratingColorValue}
-                  />
-                  <View style={styles.conditionTextContainer}>
-                    <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
-                      Stoke Rating
-                    </Text>
-                    <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
-                      {ratingValue}
-                      <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>
-                        /10
-                      </Text>
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {narrativeText && (
-            <View style={[
-              styles.reportNarrativeSection, 
-              { 
-                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
-                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
-                borderRadius: 12,
-                padding: 16,
-                marginTop: 8
-              }
-            ]}>
-              <View style={styles.reportTitleRow}>
-                <IconSymbol
-                  ios_icon_name="doc.text.fill"
-                  android_material_icon_name="description"
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
-                  Surf Report
-                </Text>
-              </View>
-              
-              <ReportTextDisplay 
-                text={narrativeText}
-                isCustom={isCustomReport}
-              />
-              {todaysReport?.report_text && todaysReport.edited_at && (
-                <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
-                  Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {!narrativeText && (
-            <View style={[
-              styles.reportNarrativeSection, 
-              { 
-                borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
-                backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
-                borderRadius: 12,
-                padding: 16,
-                marginTop: 8
-              }
-            ]}>
-              <View style={styles.reportTitleRow}>
-                <IconSymbol
-                  ios_icon_name="doc.text.fill"
-                  android_material_icon_name="description"
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
-                  Surf Report
-                </Text>
-              </View>
-              <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
-                No surf conditions narrative available for {locationData.displayName}.
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[styles.detailsButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/(tabs)/report')}
-          >
-            <Text style={styles.detailsButtonText}>View Full Report</Text>
-            <IconSymbol
-              ios_icon_name="chevron.right"
-              android_material_icon_name="chevron-right"
-              size={20}
+              ios_icon_name="exclamationmark.triangle.fill"
+              android_material_icon_name="warning"
+              size={24}
               color="#FFFFFF"
             />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!surfLoading && (
-        <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.forecastHeader}>
-            <IconSymbol
-              ios_icon_name="calendar"
-              android_material_icon_name="calendar-today"
-              size={24}
-              color={colors.primary}
-            />
-            <Text style={[styles.forecastTitle, { color: theme.colors.text }]}>
-              7-Day Forecast
-            </Text>
+            <View style={styles.errorTextContainer}>
+              <Text style={styles.errorText}>Unable to fetch surf data</Text>
+              <Text style={styles.errorSubtext}>{error}</Text>
+            </View>
           </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.forecastScrollContent}
-          >
-            {Array.from({ length: 7 }).map((_, index) => {
-              const forecastDateStr = getESTDateOffset(index);
-              
-              const dayReport = locationSurfReports.find(r => r.date.split('T')[0] === forecastDateStr);
-              const dayWeatherForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === forecastDateStr);
-              
-              const dayName = index === 0 ? 'Today' : 
-                            index === 1 ? 'Tomorrow' : 
-                            new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', { 
-                              timeZone: 'America/New_York',
-                              weekday: 'short' 
-                            });
-              
-              const monthDay = new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', {
-                timeZone: 'America/New_York',
-                month: 'short',
-                day: 'numeric'
-              });
-              
-              const highTempDisplay = dayWeatherForecast?.high_temp ? `${Math.round(dayWeatherForecast.high_temp)}°` : dayReport?.air_temp ? `${Math.round(Number(dayReport.air_temp))}°` : '--';
-              const lowTempDisplay = dayWeatherForecast?.low_temp ? `${Math.round(dayWeatherForecast.low_temp)}°` : '--';
-              
-              const daySurfHeight = (dayReport as any)?.surf_height;
-              const dayWaveHeight = dayReport?.wave_height;
-              const waveDisplay = dayWeatherForecast?.swell_height_range || 
-                                 (daySurfHeight && daySurfHeight !== 'N/A' && daySurfHeight !== null ? daySurfHeight : 
-                                  (dayWaveHeight && dayWaveHeight !== 'N/A' && dayWaveHeight !== null ? dayWaveHeight : '--'));
-              
-              const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
-              
-              return (
-                <View key={index} style={[styles.forecastDay, { 
-                  backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                  borderWidth: 1,
-                  borderColor: theme.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
-                }]}>
-                  <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
-                    {dayName}
-                  </Text>
-                  <Text style={[styles.forecastDate, { color: colors.textSecondary }]}>
-                    {monthDay}
-                  </Text>
-                  <Text style={[styles.forecastWaveHeight, { color: colors.primary }]}>
-                    {waveDisplay}
-                  </Text>
-                  <Text style={[styles.forecastLabel, { color: colors.textSecondary }]}>
-                    swell
-                  </Text>
-                  <View style={styles.forecastTempRow}>
-                    <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
-                      {highTempDisplay}
-                    </Text>
-                    <Text style={[styles.forecastTempDivider, { color: colors.textSecondary }]}>
-                      /
-                    </Text>
-                    <Text style={[styles.forecastTempLabel, { color: colors.textSecondary }]}>
-                      {lowTempDisplay}
-                    </Text>
+        )}
+
+        <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
+          {isLoadingVideo ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          ) : latestVideo ? (
+            <TouchableOpacity
+              style={styles.videoCard}
+              onPress={handleVideoPress}
+              activeOpacity={0.7}
+            >
+              <View style={styles.videoPreviewContainer}>
+                <VideoPreviewThumbnail
+                  videoUrl={latestVideo.video_url}
+                  thumbnailUrl={latestVideo.thumbnail_url}
+                  style={styles.videoPreview}
+                />
+                
+                <View style={styles.videoOverlay}>
+                  <View style={styles.playButtonContainer}>
+                    <IconSymbol
+                      ios_icon_name="play.circle.fill"
+                      android_material_icon_name="play-circle"
+                      size={64}
+                      color="rgba(255, 255, 255, 0.9)"
+                    />
                   </View>
-                  <Text style={[styles.forecastWeather, { color: theme.colors.text }]} numberOfLines={2}>
-                    {weatherDesc}
-                  </Text>
+                  <View style={styles.videoTitleOverlay}>
+                    <Text style={styles.videoTitleOnVideo}>SurfVista</Text>
+                  </View>
                 </View>
-              );
-            })}
-          </ScrollView>
-          
-          {locationWeatherForecast.length === 0 && locationSurfReports.length === 0 && (
-            <View style={styles.noForecastContainer}>
-              <Text style={[styles.noForecastText, { color: colors.textSecondary }]}>
-                No forecast data available yet. Pull down to refresh or check back later.
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No videos available yet for {locationData.displayName}
               </Text>
             </View>
           )}
         </View>
-      )}
-    </ScrollView>
+
+        <View style={styles.locationSelectorContainer}>
+          <LocationSelector />
+        </View>
+
+        <View style={styles.dateContainer}>
+          <Text style={[styles.dateText, { color: theme.colors.text }]}>
+            {new Date().toLocaleDateString('en-US', {
+              timeZone: 'America/New_York',
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </Text>
+          {todaysReport && !isReportFromToday && (
+            <View style={styles.oldDataBadge}>
+              <IconSymbol
+                ios_icon_name="clock"
+                android_material_icon_name="schedule"
+                size={12}
+                color={colors.accent}
+              />
+              <Text style={[styles.oldDataText, { color: colors.accent }]}>
+                Showing most recent report
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {surfLoading && !isRefreshing ? (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+              Loading surf reports for {locationData.displayName}...
+            </Text>
+          </View>
+        ) : !todaysReport && !surfConditions ? (
+          <View style={[styles.emptyCard, { backgroundColor: theme.colors.card }]}>
+            <IconSymbol
+              ios_icon_name="water.waves"
+              android_material_icon_name="waves"
+              size={48}
+              color={colors.textSecondary}
+            />
+            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+              No Report Available
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Surf reports for {locationData.displayName} will be generated automatically each morning at 6 AM EST.
+            </Text>
+          </View>
+        ) : (
+          <View style={[
+            styles.reportCard, 
+            { 
+              backgroundColor: theme.colors.card,
+              borderWidth: 1,
+              borderColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'
+            }
+          ]}>
+            <View style={styles.conditionsSection}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Current Conditions
+              </Text>
+              
+              <View style={styles.conditionsGrid}>
+                <View style={styles.conditionRow}>
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="thermometer"
+                      android_material_icon_name="thermostat"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Air Temp
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {airTempDisplay}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="cloud.fill"
+                      android_material_icon_name="cloud"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Weather
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]} numberOfLines={1}>
+                        {weatherDescDisplay}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.conditionRow}>
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="water.waves"
+                      android_material_icon_name="waves"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Surf Height
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {surfHeightDisplay}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="wind"
+                      android_material_icon_name="air"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Wind
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {windDisplay}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.conditionRow}>
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="drop.fill"
+                      android_material_icon_name="water-drop"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Water Temp
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {waterTempDisplay}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="star.fill"
+                      android_material_icon_name="star"
+                      size={18}
+                      color={ratingColorValue}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Stoke Rating
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: ratingColorValue }]}>
+                        {ratingValue}
+                        <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>
+                          /10
+                        </Text>
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {narrativeText && (
+              <View style={[
+                styles.reportNarrativeSection, 
+                { 
+                  borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                  borderRadius: 12,
+                  padding: 16,
+                  marginTop: 8
+                }
+              ]}>
+                <View style={styles.reportTitleRow}>
+                  <IconSymbol
+                    ios_icon_name="doc.text.fill"
+                    android_material_icon_name="description"
+                    size={20}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                    Surf Report
+                  </Text>
+                </View>
+                
+                <ReportTextDisplay 
+                  text={narrativeText}
+                  isCustom={isCustomReport}
+                />
+                {todaysReport?.report_text && todaysReport.edited_at && (
+                  <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                    Edited {new Date(todaysReport.edited_at).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {!narrativeText && (
+              <View style={[
+                styles.reportNarrativeSection, 
+                { 
+                  borderTopColor: theme.dark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)',
+                  backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.08)' : 'rgba(0, 122, 255, 0.04)',
+                  borderRadius: 12,
+                  padding: 16,
+                  marginTop: 8
+                }
+              ]}>
+                <View style={styles.reportTitleRow}>
+                  <IconSymbol
+                    ios_icon_name="doc.text.fill"
+                    android_material_icon_name="description"
+                    size={20}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                    Surf Report
+                  </Text>
+                </View>
+                <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
+                  No surf conditions narrative available for {locationData.displayName}.
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.detailsButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/(tabs)/report')}
+            >
+              <Text style={styles.detailsButtonText}>View Full Report</Text>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!surfLoading && (
+          <View style={[styles.forecastCard, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.forecastHeader}>
+              <IconSymbol
+                ios_icon_name="calendar"
+                android_material_icon_name="calendar-today"
+                size={24}
+                color={colors.primary}
+              />
+              <Text style={[styles.forecastTitle, { color: theme.colors.text }]}>
+                7-Day Forecast
+              </Text>
+            </View>
+            
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.forecastScrollContent}
+            >
+              {Array.from({ length: 7 }).map((_, index) => {
+                const forecastDateStr = getESTDateOffset(index);
+                
+                const dayReport = locationSurfReports.find(r => r.date.split('T')[0] === forecastDateStr);
+                const dayWeatherForecast = locationWeatherForecast.find(f => f.date.split('T')[0] === forecastDateStr);
+                
+                const dayName = index === 0 ? 'Today' : 
+                              index === 1 ? 'Tomorrow' : 
+                              new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', { 
+                                timeZone: 'America/New_York',
+                                weekday: 'short' 
+                              });
+                
+                const monthDay = new Date(forecastDateStr + 'T12:00:00').toLocaleDateString('en-US', {
+                  timeZone: 'America/New_York',
+                  month: 'short',
+                  day: 'numeric'
+                });
+                
+                const highTempDisplay = dayWeatherForecast?.high_temp ? `${Math.round(dayWeatherForecast.high_temp)}°` : dayReport?.air_temp ? `${Math.round(Number(dayReport.air_temp))}°` : '--';
+                const lowTempDisplay = dayWeatherForecast?.low_temp ? `${Math.round(dayWeatherForecast.low_temp)}°` : '--';
+                
+                const daySurfHeight = (dayReport as any)?.surf_height;
+                const dayWaveHeight = dayReport?.wave_height;
+                const waveDisplay = dayWeatherForecast?.swell_height_range || 
+                                   (daySurfHeight && daySurfHeight !== 'N/A' && daySurfHeight !== null ? daySurfHeight : 
+                                    (dayWaveHeight && dayWaveHeight !== 'N/A' && dayWaveHeight !== null ? dayWaveHeight : '--'));
+                
+                const weatherDesc = dayWeatherForecast?.conditions || dayReport?.weather_conditions || 'N/A';
+                
+                return (
+                  <View key={index} style={[styles.forecastDay, { 
+                    backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+                  }]}>
+                    <Text style={[styles.forecastDayName, { color: theme.colors.text }]}>
+                      {dayName}
+                    </Text>
+                    <Text style={[styles.forecastDate, { color: colors.textSecondary }]}>
+                      {monthDay}
+                    </Text>
+                    <Text style={[styles.forecastWaveHeight, { color: colors.primary }]}>
+                      {waveDisplay}
+                    </Text>
+                    <Text style={[styles.forecastLabel, { color: colors.textSecondary }]}>
+                      swell
+                    </Text>
+                    <View style={styles.forecastTempRow}>
+                      <Text style={[styles.forecastTemp, { color: theme.colors.text }]}>
+                        {highTempDisplay}
+                      </Text>
+                      <Text style={[styles.forecastTempDivider, { color: colors.textSecondary }]}>
+                        /
+                      </Text>
+                      <Text style={[styles.forecastTempLabel, { color: colors.textSecondary }]}>
+                        {lowTempDisplay}
+                      </Text>
+                    </View>
+                    <Text style={[styles.forecastWeather, { color: theme.colors.text }]} numberOfLines={2}>
+                      {weatherDesc}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            
+            {locationWeatherForecast.length === 0 && locationSurfReports.length === 0 && (
+              <View style={styles.noForecastContainer}>
+                <Text style={[styles.noForecastText, { color: colors.textSecondary }]}>
+                  No forecast data available yet. Pull down to refresh or check back later.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
 
       {/* 🚨 CRITICAL FIX: Locked overlay that appears on top of content */}
       {showLockedOverlay && (
@@ -832,13 +820,6 @@ export default function HomeScreen() {
       )}
     </View>
   );
-}
-
-function getRatingColor(rating: number): string {
-  if (rating >= 8) return '#22C55E';
-  if (rating >= 6) return '#FFC107';
-  if (rating >= 4) return '#FF9800';
-  return '#F44336';
 }
 
 const styles = StyleSheet.create({
@@ -892,35 +873,6 @@ const styles = StyleSheet.create({
   loadingContainer: {
     paddingVertical: 20,
     alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  text: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  debugText: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 16,
-    fontStyle: 'italic',
-  },
-  subscribeButton: {
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  subscribeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
   errorCard: {
     flexDirection: 'row',

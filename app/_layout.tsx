@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -133,26 +133,40 @@ export default function RootLayout() {
   
   const notificationListener = useRef<Notifications.Subscription | undefined>();
   const responseListener = useRef<Notifications.Subscription | undefined>();
+  const [appReady, setAppReady] = useState(false);
 
   console.log('[RootLayout] Loading fonts...');
-  const [loaded] = useFonts({
+  const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-  console.log('[RootLayout] Fonts loaded:', loaded);
+  console.log('[RootLayout] Fonts loaded:', loaded, ', Font error:', fontError);
 
-  // 🚨 CRITICAL FIX: Hide splash screen when fonts are loaded
+  // 🚨 CRITICAL FIX: Hide splash screen when fonts are loaded OR after timeout
   useEffect(() => {
-    if (loaded) {
-      console.log('[RootLayout] Fonts loaded - hiding splash screen');
-      const timer = setTimeout(() => {
-        SplashScreen.hideAsync().catch((err) => {
+    const hideSplash = async () => {
+      if (loaded || fontError) {
+        console.log('[RootLayout] Fonts ready - hiding splash screen');
+        try {
+          await SplashScreen.hideAsync();
+          setAppReady(true);
+        } catch (err) {
           console.log('[RootLayout] Splash screen already hidden or error:', err);
-        });
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [loaded]);
+          setAppReady(true);
+        }
+      }
+    };
+
+    // Set a timeout to ensure splash screen is hidden even if fonts fail
+    const timeout = setTimeout(() => {
+      console.warn('[RootLayout] Font loading timeout - hiding splash screen anyway');
+      SplashScreen.hideAsync().catch(() => {});
+      setAppReady(true);
+    }, 3000);
+
+    hideSplash();
+
+    return () => clearTimeout(timeout);
+  }, [loaded, fontError]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -183,9 +197,9 @@ export default function RootLayout() {
     };
   }, []);
 
-  // 🚨 CRITICAL FIX: Show loading screen until fonts are loaded
-  if (!loaded) {
-    console.log('[RootLayout] Waiting for fonts to load...');
+  // 🚨 CRITICAL FIX: Show loading screen until app is ready
+  if (!appReady) {
+    console.log('[RootLayout] Waiting for app to be ready...');
     return null;
   }
 
