@@ -364,13 +364,25 @@ export default function HomeScreen() {
   // 🚨 CRITICAL FIX: Don't show loading screen - render content immediately
   // The contexts are now non-blocking and will update when ready
 
-  // 🚨 SAFETY CHECK: Ensure we always have valid theme and locationData
-  if (!theme || !locationData) {
-    console.log('[HomeScreen] Missing critical data - theme:', !!theme, 'locationData:', !!locationData);
+  // 🚨 CRITICAL FIX: More defensive checks with better error handling
+  if (!theme) {
+    console.error('[HomeScreen] CRITICAL: Theme is undefined!');
     return (
-      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>Loading theme...</Text>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ color: '#FFFFFF', marginTop: 16 }}>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!locationData) {
+    console.error('[HomeScreen] CRITICAL: LocationData is undefined!');
+    console.log('[HomeScreen] Current location:', currentLocation);
+    console.log('[HomeScreen] Available locations:', locations?.length);
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Text style={{ color: theme.colors.text, fontSize: 18, marginBottom: 16, textAlign: 'center' }}>Loading location data...</Text>
+        <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
