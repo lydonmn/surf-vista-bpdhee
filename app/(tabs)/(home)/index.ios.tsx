@@ -345,21 +345,8 @@ export default function HomeScreen() {
     setIsSubscribing(false);
   };
 
-  // 🚨 CRITICAL FIX: Only show loading if we're actually loading AND initialized
-  // Don't block on isInitialized alone - it might be stuck
-  if (isLoading && !user) {
-    const loadingTextContent = 'Loading your profile...';
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            {loadingTextContent}
-          </Text>
-        </View>
-      </View>
-    );
-  }
+  // 🚨 CRITICAL FIX: Don't show loading screen - render content immediately
+  // The contexts are now non-blocking and will update when ready
 
   if (!user || !isSubscribed) {
     console.log('[HomeScreen] Showing locked content');

@@ -224,21 +224,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isInitializingRef.current = true;
     let mounted = true;
 
-    // 🚨 CRITICAL FIX: Set initialized immediately to prevent white screen
+    // 🚨 CRITICAL FIX: Set initialized AND loading to false immediately to prevent white screen
     // The app should render even if auth is still loading
     setIsInitialized(true);
+    setIsLoading(false);
 
     const initializeAuth = async () => {
       try {
+        console.log('[AuthContext] Starting initialization...');
+        
         // Set a shorter timeout to ensure we don't hang on startup
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Auth initialization timeout')), 3000)
+          setTimeout(() => {
+            console.warn('[AuthContext] Initialization timeout after 3s');
+            reject(new Error('Auth initialization timeout'));
+          }, 3000)
         );
 
         const authPromise = (async () => {
           const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
           
           if (sessionError) {
+            console.error('[AuthContext] Session error:', sessionError.message);
             // Handle invalid refresh tokens
             if (sessionError.message.includes('Invalid Refresh Token') || 
                 sessionError.message.includes('Refresh Token Not Found') ||
@@ -253,7 +260,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setUser(null);
                 setProfile(null);
                 setSession(null);
-                setIsLoading(false);
               }
               return;
             }
@@ -262,12 +268,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!mounted) return;
 
           if (initialSession?.user) {
+            console.log('[AuthContext] Session found, loading profile...');
             setSession(initialSession);
             await loadUserProfile(initialSession.user);
-          }
-          
-          if (mounted) {
-            setIsLoading(false);
+          } else {
+            console.log('[AuthContext] No session found');
           }
 
           // Initialize RevenueCat in background on native platforms
@@ -289,11 +294,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
       } catch (error) {
         console.warn('[AuthContext] Initialization error (non-critical):', error);
-        if (mounted) {
-          setIsLoading(false);
-        }
       } finally {
         isInitializingRef.current = false;
+        console.log('[AuthContext] Initialization complete');
       }
     };
 
