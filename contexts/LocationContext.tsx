@@ -70,7 +70,8 @@ const DEFAULT_LOCATIONS: LocationData[] = [
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
-  const [isLoading, setIsLoading] = useState(true);
+  // 🚨 CRITICAL FIX: Start with isLoading=false to prevent white screen
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchLocations = useCallback(async () => {
     try {
@@ -115,12 +116,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initialize = async () => {
       try {
-        console.log('[LocationContext] Initializing...');
+        console.log('[LocationContext] Starting background initialization...');
         
-        // 🚨 CRITICAL FIX: Set loading to false immediately to prevent blocking
-        setIsLoading(false);
-        
-        // Set a shorter timeout to ensure we don't hang on startup
+        // Set a timeout to ensure we don't hang
         const timeoutPromise = new Promise((resolve) => 
           setTimeout(() => {
             console.warn('[LocationContext] Initialization timeout after 2s - using defaults');
@@ -143,13 +141,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         })();
 
         await Promise.race([initPromise, timeoutPromise]);
-        console.log('[LocationContext] Initialization complete');
+        console.log('[LocationContext] Background initialization complete');
         
       } catch (error) {
         console.error('[LocationContext] Error initializing (non-critical):', error);
       }
     };
 
+    // Run initialization in background
     initialize();
   }, [fetchLocations]);
 

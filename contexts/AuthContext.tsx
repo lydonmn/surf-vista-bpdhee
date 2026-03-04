@@ -62,8 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
+  // 🚨 CRITICAL FIX: Start with isLoading=false and isInitialized=true to prevent white screen
+  const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(true);
   
   const isInitializingRef = useRef(false);
 
@@ -215,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL: Ultra-defensive initialization with aggressive timeout
+  // 🚨 CRITICAL FIX: Initialize in background without blocking UI
   useEffect(() => {
     if (isInitializingRef.current) {
       return;
@@ -224,16 +225,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isInitializingRef.current = true;
     let mounted = true;
 
-    // 🚨 CRITICAL FIX: Set initialized AND loading to false immediately to prevent white screen
-    // The app should render even if auth is still loading
-    setIsInitialized(true);
-    setIsLoading(false);
-
     const initializeAuth = async () => {
       try {
-        console.log('[AuthContext] Starting initialization...');
+        console.log('[AuthContext] Starting background initialization...');
         
-        // Set a shorter timeout to ensure we don't hang on startup
+        // Set a timeout to ensure we don't hang
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => {
             console.warn('[AuthContext] Initialization timeout after 3s');
@@ -296,10 +292,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('[AuthContext] Initialization error (non-critical):', error);
       } finally {
         isInitializingRef.current = false;
-        console.log('[AuthContext] Initialization complete');
+        console.log('[AuthContext] Background initialization complete');
       }
     };
 
+    // Run initialization in background
     initializeAuth();
 
     const {
