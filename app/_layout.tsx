@@ -12,16 +12,10 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
-// Global error handler - catches all unhandled JS errors
-if (typeof ErrorUtils !== 'undefined') {
-  ErrorUtils.setGlobalHandler((error, isFatal) => {
-    console.error('FATAL JS ERROR:', error.message);
-    console.error('STACK:', error.stack);
-  });
-}
-
 // Prevent auto-hiding of splash screen
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Silently fail if splash screen is already hidden
+});
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -34,28 +28,38 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {
+        // Silently fail if splash screen is already hidden
+      });
     }
   }, [loaded, error]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        console.log('[Notifications] Received:', notification);
-      });
+      try {
+        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+          console.log('[Notifications] Received:', notification);
+        });
 
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        console.log('[Notifications] Tapped:', response);
-        const data = response.notification.request.content.data;
-        if (data?.type === 'daily_report') {
-          router.push('/(tabs)/report');
-        }
-      });
+        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+          console.log('[Notifications] Tapped:', response);
+          const data = response.notification.request.content.data;
+          if (data?.type === 'daily_report') {
+            router.push('/(tabs)/report');
+          }
+        });
+      } catch (error) {
+        console.warn('[Notifications] Setup failed (non-critical):', error);
+      }
     }
 
     return () => {
-      notificationListener.current?.remove();
-      responseListener.current?.remove();
+      try {
+        notificationListener.current?.remove();
+        responseListener.current?.remove();
+      } catch (error) {
+        // Silently fail
+      }
     };
   }, []);
 

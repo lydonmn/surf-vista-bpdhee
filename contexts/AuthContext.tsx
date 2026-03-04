@@ -215,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL: Ultra-defensive initialization
+  // 🚨 CRITICAL: Ultra-defensive initialization with timeout
   useEffect(() => {
     if (isInitializingRef.current) {
       return;
@@ -226,57 +226,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          // Handle invalid refresh tokens
-          if (sessionError.message.includes('Invalid Refresh Token') || 
-              sessionError.message.includes('Refresh Token Not Found') ||
-              sessionError.message.includes('refresh_token_not_found')) {
-            try {
-              await AsyncStorage.removeItem('supabase.auth.token');
-            } catch {
-              // Silently fail
-            }
-            
-            if (mounted) {
-              setUser(null);
-              setProfile(null);
-              setSession(null);
-              setIsLoading(false);
-              setIsInitialized(true);
-            }
-            return;
-          }
-        }
-        
-        if (!mounted) return;
+        // Set a timeout to ensure we don't hang on startup
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth initialization timeout')), 10000)
+        );
 
-        if (initialSession?.user) {
-          setSession(initialSession);
-          await loadUserProfile(initialSession.user);
-        }
-        
-        if (mounted) {
-          setIsLoading(false);
-          setIsInitialized(true);
-        }
-
-        // Initialize RevenueCat in background on native platforms
-        if (mounted && Platform.OS !== 'web') {
-          (async () => {
-            try {
-              const initialized = await initializeRevenueCat();
-              if (initialized && initialSession?.user) {
-                await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+        const authPromise = (async () => {
+          const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError) {
+            // Handle invalid refresh tokens
+            if (sessionError.message.includes('Invalid Refresh Token') || 
+                sessionError.message.includes('Refresh Token Not Found') ||
+                sessionError.message.includes('refresh_token_not_found')) {
+              try {
+                await AsyncStorage.removeItem('supabase.auth.token');
+              } catch {
+                // Silently fail
               }
-            } catch {
-              // Silently fail
+              
+              if (mounted) {
+                setUser(null);
+                setProfile(null);
+                setSession(null);
+                setIsLoading(false);
+                setIsInitialized(true);
+              }
+              return;
             }
-          })();
-        }
+          }
+          
+          if (!mounted) return;
+
+          if (initialSession?.user) {
+            setSession(initialSession);
+            await loadUserProfile(initialSession.user);
+          }
+          
+          if (mounted) {
+            setIsLoading(false);
+            setIsInitialized(true);
+          }
+
+          // Initialize RevenueCat in background on native platforms
+          if (mounted && Platform.OS !== 'web') {
+            (async () => {
+              try {
+                const initialized = await initializeRevenueCat();
+                if (initialized && initialSession?.user) {
+                  await identifyUser(initialSession.user.id, initialSession.user.email || undefined);
+                }
+              } catch {
+                // Silently fail
+              }
+            })();
+          }
+        })();
+
+        await Promise.race([authPromise, timeoutPromise]);
         
-      } catch {
+      } catch (error) {
+        console.warn('[AuthContext] Initialization error (non-critical):', error);
         if (mounted) {
           setIsLoading(false);
           setIsInitialized(true);

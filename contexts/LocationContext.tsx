@@ -117,19 +117,32 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       try {
         console.log('[LocationContext] Initializing...');
         
-        // Fetch locations from database first
-        await fetchLocations();
+        // Set a timeout to ensure we don't hang on startup
+        const timeoutPromise = new Promise((resolve) => 
+          setTimeout(() => {
+            console.warn('[LocationContext] Initialization timeout - using defaults');
+            resolve(null);
+          }, 5000)
+        );
 
-        // Load saved location preference
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          console.log('[LocationContext] Loaded saved location preference:', saved);
-          setCurrentLocation(saved);
-        } else {
-          console.log('[LocationContext] No saved location, using default: folly-beach');
-        }
+        const initPromise = (async () => {
+          // Fetch locations from database first
+          await fetchLocations();
+
+          // Load saved location preference
+          const saved = await AsyncStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            console.log('[LocationContext] Loaded saved location preference:', saved);
+            setCurrentLocation(saved);
+          } else {
+            console.log('[LocationContext] No saved location, using default: folly-beach');
+          }
+        })();
+
+        await Promise.race([initPromise, timeoutPromise]);
+        
       } catch (error) {
-        console.error('[LocationContext] Error initializing:', error);
+        console.error('[LocationContext] Error initializing (non-critical):', error);
       } finally {
         setIsLoading(false);
       }
