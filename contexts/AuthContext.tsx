@@ -35,22 +35,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('[AuthProvider] Mounting');
   
+  // 🚨 CRITICAL FIX: Initialize with null/false immediately - no blocking
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  // 🚨 CRITICAL: Start ready immediately
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitialized] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(true); // Start true immediately
   
   const isInitializingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
+    if (!mountedRef.current) return;
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
+
+      if (!mountedRef.current) return;
 
       if (data) {
         setProfile(data);
@@ -71,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .select()
           .single();
         
+        if (!mountedRef.current) return;
+        
         if (newProfile) {
           setProfile(newProfile);
           setUser({ ...authUser, profile: newProfile });
@@ -79,12 +86,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Fallback
-      setProfile(null);
-      setUser({ ...authUser });
+      if (mountedRef.current) {
+        setProfile(null);
+        setUser({ ...authUser });
+      }
     } catch (err) {
       console.error('[AuthContext] Profile load error:', err);
-      setProfile(null);
-      setUser({ ...authUser });
+      if (mountedRef.current) {
+        setProfile(null);
+        setUser({ ...authUser });
+      }
     }
   }, []);
 
@@ -125,72 +136,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL: Initialize in background with timeout protection
+  // 🚨 CRITICAL FIX: Simplified initialization - no blocking, no race conditions
   useEffect(() => {
-    if (isInitializingRef.current) return;
+    if (isInitializingRef.current) {
+      console.log('[AuthContext] Already initializing, skipping');
+      return;
+    }
+    
     isInitializingRef.current = true;
+    console.log('[AuthContext] Starting initialization');
 
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout;
-
-    const initializeAuth = async () => {
-      try {
-        console.log('[AuthContext] Starting init');
-        
-        // 🚨 CRITICAL: Timeout protection
-        const initPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Auth init timeout')), 3000);
-        });
-
-        const { data: { session: initialSession }, error } = await Promise.race([
-          initPromise,
-          timeoutPromise
-        ]) as any;
-        
-        clearTimeout(timeoutId);
-        
-        if (error) {
-          console.error('[AuthContext] Session error:', error);
-          if (error.message.includes('Invalid Refresh Token')) {
-            await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
-          }
-          return;
-        }
-        
-        if (!mounted) return;
-
-        if (initialSession?.user) {
-          console.log('[AuthContext] Session found');
-          setSession(initialSession);
-          await loadUserProfile(initialSession.user);
-        } else {
-          console.log('[AuthContext] No session');
-        }
-      } catch (err) {
-        console.error('[AuthContext] Init error:', err);
-        // Continue anyway - don't block app startup
-      } finally {
-        clearTimeout(timeoutId);
-        isInitializingRef.current = false;
-        console.log('[AuthContext] Init complete');
-      }
-    };
-
-    // Delay initialization slightly to let native modules settle
-    const delayedInit = setTimeout(() => {
-      initializeAuth();
-    }, 100);
-
-    const cleanup = () => {
-      clearTimeout(delayedInit);
-      clearTimeout(timeoutId);
-    };
-
+    // Set up auth state listener first
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
 
-      console.log('[AuthContext] Auth state change:', event);
+      console.log('[AuthContext] Auth event:', event);
 
       try {
         if (event === 'SIGNED_OUT') {
@@ -215,13 +175,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false);
         }
       } catch (err) {
-        console.error('[AuthContext] Auth state change error:', err);
+        console.error('[AuthContext] Auth state error:', err);
       }
     });
 
+    // Load initial session in background (non-blocking)
+    const loadInitialSession = async () => {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[AuthContext] Session error:', error);
+          return;
+        }
+        
+        if (!mountedRef.current) return;
+
+        if (initialSession?.user) {
+          console.log('[AuthContext] Initial session found');
+          setSession(initialSession);
+          await loadUserProfile(initialSession.user);
+        } else {
+          console.log('[AuthContext] No initial session');
+        }
+      } catch (err) {
+        console.error('[AuthContext] Init error:', err);
+      }
+    };
+
+    // Start loading session after a brief delay to let UI render
+    setTimeout(() => {
+      if (mountedRef.current) {
+        loadInitialSession();
+      }
+    }, 200);
+
     return () => {
-      mounted = false;
-      cleanup();
+      console.log('[AuthContext] Cleanup');
+      mountedRef.current = false;
       subscription.unsubscribe();
     };
   }, [loadUserProfile]);

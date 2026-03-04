@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/app/integrations/supabase/client';
 
@@ -60,12 +60,15 @@ const DEFAULT_LOCATIONS: LocationData[] = [
 export function LocationProvider({ children }: { children: ReactNode }) {
   console.log('[LocationProvider] Mounting');
   
+  // 🚨 CRITICAL FIX: Initialize with defaults immediately - no blocking
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
-  // 🚨 CRITICAL: Start ready immediately
-  const [isLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const mountedRef = useRef(true);
 
   const fetchLocations = useCallback(async () => {
+    if (!mountedRef.current) return;
+    
     try {
       console.log('[LocationContext] Fetching locations');
       
@@ -74,6 +77,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('is_active', true)
         .order('name');
+
+      if (!mountedRef.current) return;
 
       if (error) {
         console.error('[LocationContext] Error:', error);
@@ -93,38 +98,32 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           tideStationId: loc.tide_station_id
         }));
 
-        console.log('[LocationContext] Loaded', formattedLocations.length, 'locations');
-        setLocations(formattedLocations);
+        if (mountedRef.current) {
+          console.log('[LocationContext] Loaded', formattedLocations.length, 'locations');
+          setLocations(formattedLocations);
+        }
       }
     } catch (err) {
       console.error('[LocationContext] Exception:', err);
     }
   }, []);
 
+  // 🚨 CRITICAL FIX: Simplified initialization - no blocking, no race conditions
   useEffect(() => {
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout;
+    console.log('[LocationContext] Starting initialization');
 
+    // Load locations and saved preference in background (non-blocking)
     const initialize = async () => {
       try {
-        console.log('[LocationContext] Starting init');
+        // Fetch locations from database
+        await fetchLocations();
         
-        // 🚨 CRITICAL: Timeout protection
-        const initPromise = (async () => {
-          await fetchLocations();
-          const saved = await AsyncStorage.getItem(STORAGE_KEY);
-          return saved;
-        })();
+        if (!mountedRef.current) return;
 
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Location init timeout')), 3000);
-        });
-
-        const saved = await Promise.race([initPromise, timeoutPromise]) as string | null;
+        // Load saved location preference
+        const saved = await AsyncStorage.getItem(STORAGE_KEY);
         
-        clearTimeout(timeoutId);
-
-        if (!mounted) return;
+        if (!mountedRef.current) return;
 
         if (saved) {
           console.log('[LocationContext] Loaded saved location:', saved);
@@ -135,20 +134,20 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.error('[LocationContext] Init error:', err);
         // Continue with defaults - don't block app
-      } finally {
-        clearTimeout(timeoutId);
       }
     };
 
-    // Delay initialization slightly to let native modules settle
+    // Start initialization after a brief delay to let UI render
     const delayedInit = setTimeout(() => {
-      initialize();
-    }, 150);
+      if (mountedRef.current) {
+        initialize();
+      }
+    }, 250);
 
     return () => {
-      mounted = false;
+      console.log('[LocationContext] Cleanup');
+      mountedRef.current = false;
       clearTimeout(delayedInit);
-      clearTimeout(timeoutId);
     };
   }, [fetchLocations]);
 

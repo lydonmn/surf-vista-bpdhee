@@ -117,46 +117,28 @@ export default function RootLayout() {
   
   const colorScheme = useColorScheme();
   const [appReady, setAppReady] = useState(false);
-  const [fontsLoaded, setFontsLoaded] = useState(false);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // 🚨 CRITICAL: Aggressive timeout to prevent hanging
-  useEffect(() => {
-    const forceReady = setTimeout(() => {
-      console.log('[RootLayout] Force ready timeout');
-      setAppReady(true);
-      setFontsLoaded(true);
-      SplashScreen.hideAsync().catch(() => {});
-    }, 1000); // 1 second max wait
-
-    return () => clearTimeout(forceReady);
-  }, []);
-
-  // Hide splash screen when ready
+  // 🚨 CRITICAL FIX: Simple, non-blocking initialization
   useEffect(() => {
     if (loaded || fontError) {
-      console.log('[RootLayout] Fonts ready');
-      setFontsLoaded(true);
+      console.log('[RootLayout] Fonts ready, showing app');
       
-      const hideSplash = async () => {
-        try {
-          await SplashScreen.hideAsync();
-          console.log('[RootLayout] Splash hidden');
-        } catch (error) {
-          console.log('[RootLayout] Splash already hidden', error);
-        }
-        setAppReady(true);
-      };
-
-      hideSplash();
+      // Hide splash screen
+      SplashScreen.hideAsync()
+        .then(() => console.log('[RootLayout] Splash hidden'))
+        .catch((err) => console.log('[RootLayout] Splash hide error:', err));
+      
+      // Mark app as ready
+      setAppReady(true);
     }
   }, [loaded, fontError]);
 
-  // Show nothing until app is ready
-  if (!appReady || !fontsLoaded) {
+  // Show nothing until fonts are loaded
+  if (!appReady) {
     return null;
   }
 
