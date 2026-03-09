@@ -33,21 +33,24 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  console.log('[AuthProvider] Mounting');
+  console.log('[AuthProvider] ===== MOUNTING =====');
   
-  // 🚨 CRITICAL FIX: Initialize with null/false immediately - no blocking
+  // 🚨 CRITICAL FIX: Start with initialized=false, set to true after setup
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(true); // Start true immediately
+  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   const mountedRef = useRef(true);
+  const initStartedRef = useRef(false);
 
   const loadUserProfile = useCallback(async (authUser: SupabaseUser) => {
     if (!mountedRef.current) return;
     
     try {
+      console.log('[AuthContext] Loading profile for user:', authUser.id);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!mountedRef.current) return;
 
       if (data) {
+        console.log('[AuthContext] Profile loaded successfully');
         setProfile(data);
         setUser({ ...authUser, profile: data });
         return;
@@ -64,6 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Profile not found - try to create
       if (error?.code === 'PGRST116') {
+        console.log('[AuthContext] Profile not found, creating...');
+        
         const { data: newProfile } = await supabase
           .from('profiles')
           .insert({
@@ -78,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mountedRef.current) return;
         
         if (newProfile) {
+          console.log('[AuthContext] Profile created successfully');
           setProfile(newProfile);
           setUser({ ...authUser, profile: newProfile });
           return;
@@ -85,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Fallback
+      console.log('[AuthContext] Using user without profile');
       if (mountedRef.current) {
         setProfile(null);
         setUser({ ...authUser });
@@ -99,6 +107,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    console.log('[AuthContext] Signing out...');
+    
     setUser(null);
     setProfile(null);
     setSession(null);
@@ -106,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     try {
       await supabase.auth.signOut();
+      console.log('[AuthContext] Sign out successful');
     } catch (err) {
       console.error('[AuthContext] Sign out error:', err);
     }
@@ -113,9 +124,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     try {
+      console.log('[AuthContext] Refreshing session...');
+      
       const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
       
       if (error) {
+        console.error('[AuthContext] Refresh error:', error);
+        
         if (error.message.includes('Invalid Refresh Token') || 
             error.message.includes('Refresh Token Not Found')) {
           await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
@@ -125,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (newSession) {
+        console.log('[AuthContext] Session refreshed successfully');
         setSession(newSession);
         if (newSession.user) {
           await loadUserProfile(newSession.user);
@@ -135,66 +151,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadUserProfile, signOut]);
 
-  // 🚨 CRITICAL FIX: Simplified initialization - no blocking, no race conditions
+  // 🚨 CRITICAL FIX: Proper initialization sequence
   useEffect(() => {
-    console.log('[AuthContext] Starting initialization');
+    // Prevent double initialization
+    if (initStartedRef.current) {
+      console.log('[AuthContext] Init already started, skipping...');
+      return;
+    }
+    
+    initStartedRef.current = true;
+    console.log('[AuthContext] ===== STARTING INITIALIZATION =====');
 
-    // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!mountedRef.current) return;
+    let authSubscription: { unsubscribe: () => void } | null = null;
 
-      console.log('[AuthContext] Auth event:', event);
-
+    const initialize = async () => {
       try {
-        if (event === 'SIGNED_OUT') {
-          if (mountedRef.current) {
-            setUser(null);
-            setProfile(null);
-            setSession(null);
-            setIsLoading(false);
-          }
-        } else if (event === 'SIGNED_IN' && newSession?.user) {
-          if (mountedRef.current) {
-            setSession(newSession);
-            await loadUserProfile(newSession.user);
-            setIsLoading(false);
-          }
-        } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-          if (mountedRef.current) {
-            setSession(newSession);
-          }
-        } else if (event === 'USER_UPDATED' && newSession?.user) {
-          if (mountedRef.current) {
-            setSession(newSession);
-            await loadUserProfile(newSession.user);
-            setIsLoading(false);
-          }
-        } else if (!newSession) {
-          if (mountedRef.current) {
-            setUser(null);
-            setProfile(null);
-            setSession(null);
-            setIsLoading(false);
-          }
-        }
-      } catch (err) {
-        console.error('[AuthContext] Auth state error:', err);
-      }
-    });
+        // Set up auth state listener first
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+          if (!mountedRef.current) return;
 
-    // Load initial session in background (non-blocking)
-    const loadInitialSession = async () => {
-      try {
+          console.log('[AuthContext] Auth event:', event);
+
+          try {
+            if (event === 'SIGNED_OUT') {
+              if (mountedRef.current) {
+                setUser(null);
+                setProfile(null);
+                setSession(null);
+                setIsLoading(false);
+              }
+            } else if (event === 'SIGNED_IN' && newSession?.user) {
+              if (mountedRef.current) {
+                setSession(newSession);
+                await loadUserProfile(newSession.user);
+                setIsLoading(false);
+              }
+            } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+              if (mountedRef.current) {
+                setSession(newSession);
+              }
+            } else if (event === 'USER_UPDATED' && newSession?.user) {
+              if (mountedRef.current) {
+                setSession(newSession);
+                await loadUserProfile(newSession.user);
+                setIsLoading(false);
+              }
+            } else if (!newSession) {
+              if (mountedRef.current) {
+                setUser(null);
+                setProfile(null);
+                setSession(null);
+                setIsLoading(false);
+              }
+            }
+          } catch (err) {
+            console.error('[AuthContext] Auth state error:', err);
+          }
+        });
+
+        authSubscription = subscription;
+
+        // Load initial session
+        console.log('[AuthContext] Loading initial session...');
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error('[AuthContext] Session error:', error);
-          return;
-        }
-        
-        if (!mountedRef.current) return;
-
-        if (initialSession?.user) {
+        } else if (initialSession?.user) {
           console.log('[AuthContext] Initial session found');
           if (mountedRef.current) {
             setSession(initialSession);
@@ -203,18 +226,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           console.log('[AuthContext] No initial session');
         }
+
+        // Mark as initialized
+        if (mountedRef.current) {
+          console.log('[AuthContext] ===== INITIALIZATION COMPLETE =====');
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
       } catch (err) {
         console.error('[AuthContext] Init error:', err);
+        if (mountedRef.current) {
+          setIsLoading(false);
+          setIsInitialized(true);
+        }
       }
     };
 
-    // Start loading session immediately - no delay
-    loadInitialSession();
+    initialize();
 
     return () => {
-      console.log('[AuthContext] Cleanup');
+      console.log('[AuthContext] ===== CLEANUP =====');
       mountedRef.current = false;
-      subscription.unsubscribe();
+      if (authSubscription) {
+        authSubscription.unsubscribe();
+      }
     };
   }, [loadUserProfile]);
 

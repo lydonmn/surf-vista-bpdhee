@@ -10,6 +10,11 @@ import 'react-native-reanimated';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 
+// 🚨 CRITICAL: Prevent auto-hiding of splash screen
+SplashScreen.preventAutoHideAsync().catch((err) => {
+  console.log('[RootLayout] Splash screen already hidden or error:', err);
+});
+
 // 🚨 CRITICAL: Global error handler for native crashes
 if (ErrorUtils) {
   const originalHandler = ErrorUtils.getGlobalHandler();
@@ -31,11 +36,6 @@ if (ErrorUtils) {
     }
   });
 }
-
-// Prevent auto-hiding of splash screen
-SplashScreen.preventAutoHideAsync().catch(() => {
-  console.log('[RootLayout] Splash screen already hidden');
-});
 
 // 🚨 CRITICAL: Global error boundary component
 class ErrorBoundaryClass extends React.Component<
@@ -113,28 +113,45 @@ const errorStyles = StyleSheet.create({
 });
 
 export default function RootLayout() {
-  console.log('[RootLayout] Component mounting');
+  console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
   
   const colorScheme = useColorScheme();
+  const [appReady, setAppReady] = useState(false);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // 🚨 CRITICAL FIX: Simple, non-blocking initialization
+  // 🚨 CRITICAL FIX: Wait for fonts to load before rendering app
   useEffect(() => {
+    console.log('[RootLayout] Font loading status - loaded:', loaded, 'error:', fontError);
+    
     if (loaded || fontError) {
-      console.log('[RootLayout] Fonts ready, hiding splash');
+      console.log('[RootLayout] Fonts ready, preparing app...');
       
-      // Hide splash screen
-      SplashScreen.hideAsync()
-        .then(() => console.log('[RootLayout] Splash hidden'))
-        .catch((err) => console.log('[RootLayout] Splash hide error:', err));
+      // Small delay to ensure everything is ready
+      setTimeout(() => {
+        console.log('[RootLayout] Hiding splash screen...');
+        SplashScreen.hideAsync()
+          .then(() => {
+            console.log('[RootLayout] Splash hidden successfully');
+            setAppReady(true);
+          })
+          .catch((err) => {
+            console.log('[RootLayout] Splash hide error:', err);
+            setAppReady(true); // Continue anyway
+          });
+      }, 100);
     }
   }, [loaded, fontError]);
 
-  // 🚨 CRITICAL FIX: Always render immediately - don't wait for fonts
-  console.log('[RootLayout] Rendering app');
+  // 🚨 CRITICAL FIX: Don't render anything until fonts are loaded
+  if (!loaded && !fontError) {
+    console.log('[RootLayout] Waiting for fonts to load...');
+    return null;
+  }
+
+  console.log('[RootLayout] Rendering app - appReady:', appReady);
 
   return (
     <ErrorBoundaryClass>

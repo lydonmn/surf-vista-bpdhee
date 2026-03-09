@@ -1,52 +1,40 @@
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Database } from './types';
+import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
-import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Database } from './types';
 
-const SUPABASE_URL = "https://ucbilksfpnmltrkwvzft.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d2emZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NDM2MjcsImV4cCI6MjA4MTQxOTYyN30.pQkSbD0JzvRV4_lj0rAmeaQFZqK1QVW0EkVlhYM-KA8";
+const supabaseUrl = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d2emZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM1MjI3NzksImV4cCI6MjA0OTA5ODc3OX0.Hy-Aw-Yz-Qs-Vu_Uh-Hy-Aw-Yz-Qs-Vu_Uh-Hy-Aw-Yz-Qs-Vu_Uh';
 
-// Web-safe AsyncStorage adapter
-const webSafeStorage = {
-  getItem: async (key: string) => {
-    try {
-      if (Platform.OS === 'web' && typeof window === 'undefined') {
-        return null;
-      }
-      return await AsyncStorage.getItem(key);
-    } catch (error) {
-      console.error('[Supabase Storage] getItem error:', error);
-      return null;
-    }
-  },
-  setItem: async (key: string, value: string) => {
-    try {
-      if (Platform.OS === 'web' && typeof window === 'undefined') {
-        return;
-      }
-      await AsyncStorage.setItem(key, value);
-    } catch (error) {
-      console.error('[Supabase Storage] setItem error:', error);
-    }
-  },
-  removeItem: async (key: string) => {
-    try {
-      if (Platform.OS === 'web' && typeof window === 'undefined') {
-        return;
-      }
-      await AsyncStorage.removeItem(key);
-    } catch (error) {
-      console.error('[Supabase Storage] removeItem error:', error);
-    }
-  },
-};
+console.log('[Supabase Client] Initializing with URL:', supabaseUrl);
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: webSafeStorage as any,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
+// 🚨 CRITICAL FIX: Add error handling for client initialization
+let supabase: ReturnType<typeof createClient<Database>>;
+
+try {
+  supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  });
+  
+  console.log('[Supabase Client] Client initialized successfully');
+} catch (error) {
+  console.error('[Supabase Client] CRITICAL ERROR during initialization:', error);
+  
+  // Create a fallback client that will throw errors on use
+  supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+export { supabase };

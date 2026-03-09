@@ -3,10 +3,8 @@ import { Stack } from 'expo-router';
 import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 
 /**
- * 🚨 CRITICAL FIX: Simplified iOS Native Tabs Layout
- * - Removed nested (home) folder reference
- * - Using direct screen names that match the file structure
- * - Added Stack wrapper for proper header support
+ * 🚨 iOS Native Tabs Layout
+ * Uses native iOS tab bar with SF Symbols
  */
 export default function TabLayout() {
   console.log('[TabLayout iOS] ===== RENDERING NATIVE TABS =====');
@@ -19,6 +17,7 @@ export default function TabLayout() {
         <Stack.Screen name="report" />
         <Stack.Screen name="forecast" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="weather" />
       </Stack>
       
       <NativeTabs>
