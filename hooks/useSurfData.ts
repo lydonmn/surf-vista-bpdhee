@@ -409,18 +409,20 @@ export function useSurfData(currentLocation: string) {
     }
   }, []);
 
-  useEffect(() => {
-    currentLocationRef.current = currentLocation;
-  }, [currentLocation]);
-
+  // 🚨 CRITICAL FIX: Update location ref and trigger fetch without circular dependency
   useEffect(() => {
     console.log('[useSurfData] Location changed to:', currentLocation);
+    currentLocationRef.current = currentLocation;
+    
+    // Reset fetch state and trigger immediate fetch
     if (!isFetchingRef.current) {
       lastFetchTimeRef.current = 0;
-      fetchData();
+      // Call fetchDataRef.current directly to avoid dependency on fetchData
+      fetchDataRef.current?.();
     }
-  }, [currentLocation, fetchData]);
+  }, [currentLocation]); // Only depend on currentLocation, not fetchData
 
+  // 🚨 CRITICAL FIX: Set up periodic refresh without dependency on fetchData
   useEffect(() => {
     console.log('[useSurfData] Setting up periodic refresh...');
     
@@ -437,11 +439,11 @@ export function useSurfData(currentLocation: string) {
         lastFetchDateRef.current = currentDate;
         lastFetchTimeRef.current = 0;
         if (!isFetchingRef.current) {
-          fetchData();
+          fetchDataRef.current?.(); // Use ref instead of fetchData
         }
       } else {
         if (!isFetchingRef.current) {
-          fetchData();
+          fetchDataRef.current?.(); // Use ref instead of fetchData
         }
       }
     }, REFRESH_INTERVAL);
@@ -452,8 +454,9 @@ export function useSurfData(currentLocation: string) {
         refreshIntervalRef.current = null;
       }
     };
-  }, [fetchData]);
+  }, []); // No dependencies - stable interval
 
+  // 🚨 CRITICAL FIX: App state listener without dependency on fetchData
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       console.log('[useSurfData] App state changed:', appStateRef.current, '->', nextAppState);
@@ -469,7 +472,7 @@ export function useSurfData(currentLocation: string) {
         }
         
         if (!isFetchingRef.current) {
-          fetchData();
+          fetchDataRef.current?.(); // Use ref instead of fetchData
         }
       }
       
@@ -481,7 +484,7 @@ export function useSurfData(currentLocation: string) {
     return () => {
       appStateSubscription.remove();
     };
-  }, [fetchData]);
+  }, []); // No dependencies - stable listener
 
   useEffect(() => {
     console.log('[useSurfData] Setting up real-time subscriptions for location:', currentLocation);
