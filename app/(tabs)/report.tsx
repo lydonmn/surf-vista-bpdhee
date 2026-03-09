@@ -129,7 +129,7 @@ export default function ReportScreen() {
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
   const isSubscribed = checkSubscription();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData();
+  const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
@@ -769,6 +769,7 @@ export default function ReportScreen() {
       console.log('[ReportScreen] 🌊 1. Location ID mismatch:', currentLocation, 'vs tide data locations:', uniqueTideLocations);
       console.log('[ReportScreen] 🌊 2. Date mismatch: today:', todayDate, 'tomorrow:', tomorrowDateStr, 'vs tide data dates:', uniqueTideDates);
       console.log('[ReportScreen] 🌊 3. No tide data fetched for this location yet');
+      console.log('[ReportScreen] 🌊 4. Tide data is OLD and needs to be refreshed');
     } else {
       console.log('[ReportScreen] 🌊 ✅ Found', reportTides.length, 'tide entries for', locationData.displayName);
       reportTides.forEach((tide, idx) => {
@@ -1086,9 +1087,14 @@ export default function ReportScreen() {
                 )}
               </>
             ) : (
-              <Text style={[styles.conditionValue, { color: valueColor }]}>
-                No tide data available for {locationData.displayName}
-              </Text>
+              <View style={styles.noTideDataContainer}>
+                <Text style={[styles.noTideDataText, { color: valueColor }]}>
+                  No tide data available for {locationData.displayName}
+                </Text>
+                <Text style={[styles.noTideDataHint, { color: colors.textSecondary }]}>
+                  Tide data may be outdated. Tap &quot;Update Data&quot; above to fetch the latest tide schedule from NOAA.
+                </Text>
+              </View>
             )}
           </View>
         </View>
@@ -1709,6 +1715,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     flex: 1,
     lineHeight: 16,
+  },
+  noTideDataContainer: {
+    paddingVertical: 12,
+    gap: 8,
+  },
+  noTideDataText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noTideDataHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
   conditionsBox: {
     padding: 16,
