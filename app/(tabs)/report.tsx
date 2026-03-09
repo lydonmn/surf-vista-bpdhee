@@ -678,9 +678,8 @@ export default function ReportScreen() {
     const dataUpdatedAt = displayData.updated_at || report.updated_at;
     const dataUpdatedText = formatLastUpdated(dataUpdatedAt);
     
-    // 🌊 JUPITER TIDE FIX: More flexible date filtering to handle timezone issues
-    // Instead of strict date matching, show tide data for today OR the next available date
-    console.log('[ReportScreen] 🌊 ===== TIDE DATA FILTERING (FLEXIBLE) =====');
+    // 🌊 TIDE DATA FILTERING: Show COMPLETE tide schedule (all 4 tides for 24-hour period)
+    console.log('[ReportScreen] 🌊 ===== TIDE DATA FILTERING =====');
     console.log('[ReportScreen] 🌊 Current location ID:', currentLocation);
     console.log('[ReportScreen] 🌊 Location display name:', locationData.displayName);
     console.log('[ReportScreen] 🌊 Location tide station ID:', locationData.tideStationId);
@@ -695,36 +694,61 @@ export default function ReportScreen() {
     const uniqueTideDates = [...new Set(tideData.map(t => t.date.split('T')[0]))];
     console.log('[ReportScreen] 🌊 Unique dates in tide data:', uniqueTideDates);
     
-    // 🚨 CRITICAL FIX: More flexible tide filtering
-    // First try exact date match, then try next day (to handle timezone issues)
+    // 🚨 CRITICAL FIX: Show ALL tides for today + early morning tides from tomorrow
+    // A typical day has 4 tides: 2 high and 2 low
+    // If today only has 3 tides, the 4th tide is likely after midnight (tomorrow)
     const tomorrowDate = new Date(todayDate);
     tomorrowDate.setDate(tomorrowDate.getDate() + 1);
     const tomorrowDateStr = tomorrowDate.toISOString().split('T')[0];
     
-    console.log('[ReportScreen] 🌊 Tomorrow\'s date:', tomorrowDateStr);
-    
-    const reportTides = tideData.filter(tide => {
+    const todayTides = tideData.filter(tide => {
       const tideDate = tide.date.split('T')[0];
       const matchesLocation = tide.location === currentLocation;
-      
-      // Accept tide data for today OR tomorrow (to handle timezone issues)
-      const matchesDate = tideDate === todayDate || tideDate === tomorrowDateStr;
-      
-      console.log('[ReportScreen] 🌊 Tide filter check:', {
-        tide_date: tideDate,
-        tide_location: tide.location,
-        tide_time: tide.time,
-        tide_type: tide.type,
-        tide_height: tide.height,
-        today_date: todayDate,
-        tomorrow_date: tomorrowDateStr,
-        current_location: currentLocation,
-        matches_date: matchesDate,
-        matches_location: matchesLocation,
-        included: matchesDate && matchesLocation
-      });
+      const matchesDate = tideDate === todayDate;
       
       return matchesDate && matchesLocation;
+    });
+    
+    console.log('[ReportScreen] 🌊 Found', todayTides.length, 'tides for today');
+    
+    // If we have less than 4 tides for today, include early morning tides from tomorrow
+    let reportTides = [...todayTides];
+    
+    if (todayTides.length < 4) {
+      console.log('[ReportScreen] 🌊 Incomplete schedule detected (', todayTides.length, 'tides), checking tomorrow for missing tides...');
+      
+      const tomorrowTides = tideData.filter(tide => {
+        const tideDate = tide.date.split('T')[0];
+        const matchesLocation = tide.location === currentLocation;
+        const matchesTomorrow = tideDate === tomorrowDateStr;
+        
+        if (!matchesTomorrow || !matchesLocation) return false;
+        
+        // Only include early morning tides (before 6 AM) from tomorrow
+        const [tideHour] = tide.time.split(':').map(Number);
+        const isEarlyMorning = tideHour < 6;
+        
+        console.log('[ReportScreen] 🌊 Tomorrow tide check:', {
+          tide_time: tide.time,
+          tide_hour: tideHour,
+          is_early_morning: isEarlyMorning,
+          tide_type: tide.type,
+        });
+        
+        return isEarlyMorning;
+      });
+      
+      if (tomorrowTides.length > 0) {
+        console.log('[ReportScreen] 🌊 Adding', tomorrowTides.length, 'early morning tides from tomorrow to complete schedule');
+        reportTides = [...todayTides, ...tomorrowTides];
+      }
+    }
+    
+    // Sort by time to ensure proper order
+    reportTides.sort((a, b) => {
+      const aDate = new Date(`${a.date}T${a.time}`);
+      const bDate = new Date(`${b.date}T${b.time}`);
+      return aDate.getTime() - bDate.getTime();
     });
     
     console.log('[ReportScreen] 🌊 TIDE DATA SUMMARY:', {
@@ -1013,39 +1037,54 @@ export default function ReportScreen() {
               </Text>
             </View>
             {reportTides.length > 0 ? (
-              <View style={styles.tideTimesContainer}>
-                {reportTides.map((tide, tideIndex) => {
-                  const isHighTide = tide.type === 'high' || tide.type === 'High';
-                  const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
-                  const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                  });
-                  const tideTypeText = isHighTide ? 'High' : 'Low';
-                  const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
-                  
-                  return (
-                    <View key={tideIndex} style={styles.tideTimeItem}>
-                      <IconSymbol
-                        ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
-                        android_material_icon_name={isHighTide ? 'north' : 'south'}
-                        size={16}
-                        color={tideIconColor}
-                      />
-                      <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                        {tideTypeText}
-                      </Text>
-                      <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                        {tideTime}
-                      </Text>
-                      <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
-                        {tideHeightText}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+              <>
+                <View style={styles.tideTimesContainer}>
+                  {reportTides.map((tide, tideIndex) => {
+                    const isHighTide = tide.type === 'high' || tide.type === 'High';
+                    const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
+                    const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    });
+                    const tideTypeText = isHighTide ? 'High' : 'Low';
+                    const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
+                    
+                    return (
+                      <View key={tideIndex} style={styles.tideTimeItem}>
+                        <IconSymbol
+                          ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
+                          android_material_icon_name={isHighTide ? 'north' : 'south'}
+                          size={16}
+                          color={tideIconColor}
+                        />
+                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                          {tideTypeText}
+                        </Text>
+                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
+                          {tideTime}
+                        </Text>
+                        <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
+                          {tideHeightText}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                {reportTides.length < 4 && (
+                  <View style={[styles.tideWarning, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                    <IconSymbol
+                      ios_icon_name="info.circle"
+                      android_material_icon_name="info"
+                      size={14}
+                      color="#FF9800"
+                    />
+                    <Text style={[styles.tideWarningText, { color: '#FF9800' }]}>
+                      Incomplete schedule ({reportTides.length}/4 tides). Pull down to refresh or tap &quot;Update Data&quot; for complete tide information.
+                    </Text>
+                  </View>
+                )}
+              </>
             ) : (
               <Text style={[styles.conditionValue, { color: valueColor }]}>
                 No tide data available for {locationData.displayName}
@@ -1656,6 +1695,20 @@ const styles = StyleSheet.create({
   tideHeightText: {
     fontSize: 12,
     marginLeft: 'auto',
+  },
+  tideWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  tideWarningText: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 16,
   },
   conditionsBox: {
     padding: 16,
