@@ -1,8 +1,7 @@
-
 {
   "expo": {
     "name": "SurfVista",
-    "slug": "SurfVista",
+    "slug": "surfvista",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/SurfVista Logo.png",
