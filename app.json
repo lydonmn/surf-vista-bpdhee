@@ -52,8 +52,7 @@
             "./assets/notification-sound.wav"
           ]
         }
-      ],
-      "react-native-purchases"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
