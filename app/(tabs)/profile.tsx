@@ -268,109 +268,149 @@ export default function ProfileScreen() {
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Subscription
-          </Text>
+          <View style={styles.sectionHeader}>
+            <IconSymbol
+              ios_icon_name="checkmark.circle.fill"
+              android_material_icon_name="check-circle"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Subscription Status
+            </Text>
+          </View>
           
-          {isSubscribed ? (
-            <>
-              <View style={styles.subscriptionStatus}>
-                <IconSymbol
-                  ios_icon_name="checkmark.circle.fill"
-                  android_material_icon_name="check-circle"
-                  size={24}
-                  color="#4CAF50"
-                />
-                <Text style={[styles.subscriptionText, { color: theme.colors.text }]}>
-                  Active Subscription
-                </Text>
-              </View>
-              
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.primary }]}
-                onPress={handleManageSubscription}
-                disabled={isLoading}
-              >
-                <IconSymbol
-                  ios_icon_name="gear"
-                  android_material_icon_name="settings"
-                  size={20}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.buttonText}>Manage Subscription</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.subscriptionStatus}>
-                <IconSymbol
-                  ios_icon_name="xmark.circle.fill"
-                  android_material_icon_name="cancel"
-                  size={24}
-                  color="#F44336"
-                />
-                <Text style={[styles.subscriptionText, { color: theme.colors.text }]}>
-                  No Active Subscription
-                </Text>
-              </View>
-              
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.accent }]}
-                onPress={handleSubscribeNow}
-                disabled={isLoading}
-              >
-                <IconSymbol
-                  ios_icon_name="star.fill"
-                  android_material_icon_name="star"
-                  size={20}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.buttonText}>Subscribe Now</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Status:
+            </Text>
+            <View style={styles.statusBadge}>
+              <Text style={[styles.statusText, { color: isSubscribed ? '#4CAF50' : colors.textSecondary }]}>
+                {isSubscribed ? 'Active ✓' : 'Inactive'}
+              </Text>
+            </View>
+          </View>
 
           <TouchableOpacity
-            style={[styles.secondaryButton, { borderColor: colors.primary }]}
-            onPress={handleRestorePurchases}
+            style={[styles.actionButton, { backgroundColor: '#5B9BD5' }]}
+            onPress={handleManageSubscription}
+            disabled={isLoading}
+          >
+            <IconSymbol
+              ios_icon_name="gear"
+              android_material_icon_name="settings"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.actionButtonText}>Manage Subscription</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#FF8C69' }]}
+            onPress={handleRefreshProducts}
             disabled={isLoading}
           >
             <IconSymbol
               ios_icon_name="arrow.clockwise"
               android_material_icon_name="refresh"
               size={20}
-              color={colors.primary}
+              color="#FFFFFF"
             />
-            <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
-              Restore Purchases
-            </Text>
+            <Text style={styles.actionButtonText}>Refresh Products</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#5B9BD5' }]}
+            onPress={handleRestorePurchases}
+            disabled={isLoading}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise.circle"
+              android_material_icon_name="restore"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.actionButtonText}>Restore Purchases</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#5B9BD5' }]}
+            onPress={handleRefreshProfile}
+            disabled={isLoading}
+          >
+            <IconSymbol
+              ios_icon_name="arrow.clockwise"
+              android_material_icon_name="refresh"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.actionButtonText}>Refresh Profile Data</Text>
           </TouchableOpacity>
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Notifications
-          </Text>
+          <View style={styles.sectionHeader}>
+            <IconSymbol
+              ios_icon_name="bell.fill"
+              android_material_icon_name="notifications"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Notifications
+            </Text>
+          </View>
           
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={[styles.settingLabel, { color: theme.colors.text }]}>
-                Daily Surf Reports
+                Daily Surf Report
               </Text>
               <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
-                Get notified at 6 AM EST
+                Get a push notification at 6 AM EST with your daily surf report summary
               </Text>
+              {notificationsEnabled && (
+                <View style={styles.statusIndicator}>
+                  <IconSymbol
+                    ios_icon_name="checkmark.circle.fill"
+                    android_material_icon_name="check-circle"
+                    size={16}
+                    color="#4CAF50"
+                  />
+                  <Text style={[styles.statusIndicatorText, { color: '#4CAF50' }]}>
+                    Linked to 6AM reports
+                  </Text>
+                </View>
+              )}
+              {hasPermission && (
+                <View style={styles.statusIndicator}>
+                  <Text style={[styles.permissionText, { color: '#4CAF50' }]}>
+                    Permission: Granted ✓
+                  </Text>
+                </View>
+              )}
             </View>
             <Switch
               value={notificationsEnabled}
               onValueChange={handleToggleDailyNotifications}
-              trackColor={{ false: colors.textSecondary, true: colors.primary }}
+              trackColor={{ false: colors.textSecondary, true: '#5B9BD5' }}
               thumbColor="#FFFFFF"
             />
           </View>
 
           {notificationsEnabled && (
             <View style={styles.locationSelectorContainer}>
+              <View style={styles.locationHeader}>
+                <IconSymbol
+                  ios_icon_name="location.fill"
+                  android_material_icon_name="place"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.locationHeaderText, { color: theme.colors.text }]}>
+                  Report Locations
+                </Text>
+              </View>
               <NotificationLocationSelector
                 selectedLocations={notificationLocations}
                 onLocationsChange={handleLocationsChange}
@@ -394,71 +434,58 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Account
-          </Text>
-          
+        {(profile?.is_admin || profile?.is_regional_admin) && (
           <TouchableOpacity
-            style={[styles.secondaryButton, { borderColor: colors.primary }]}
-            onPress={handleRefreshProfile}
-            disabled={isLoading}
+            style={[styles.section, styles.adminSection, { backgroundColor: theme.colors.card }]}
+            onPress={() => router.push('/admin')}
           >
-            <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
-              Refresh Profile
+            <View style={styles.adminHeader}>
+              <View style={styles.adminTitleRow}>
+                <IconSymbol
+                  ios_icon_name="gear"
+                  android_material_icon_name="settings"
+                  size={24}
+                  color={colors.primary}
+                />
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Admin Panel
+                </Text>
+              </View>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={24}
+                color={colors.textSecondary}
+              />
+            </View>
+            <Text style={[styles.adminDescription, { color: colors.textSecondary }]}>
+              Manage videos, surf reports, and subscription settings
             </Text>
           </TouchableOpacity>
+        )}
 
-          <TouchableOpacity
-            style={[styles.secondaryButton, { borderColor: colors.primary }]}
-            onPress={handleRefreshProducts}
-            disabled={isLoading}
-          >
+        <TouchableOpacity
+          style={[styles.section, styles.linkSection, { backgroundColor: theme.colors.card }]}
+          onPress={() => router.push('/privacy-policy')}
+        >
+          <View style={styles.linkRow}>
             <IconSymbol
-              ios_icon_name="arrow.clockwise"
-              android_material_icon_name="refresh"
-              size={20}
+              ios_icon_name="hand.raised.fill"
+              android_material_icon_name="privacy-tip"
+              size={24}
               color={colors.primary}
             />
-            <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
-              Refresh Products
+            <Text style={[styles.linkText, { color: theme.colors.text }]}>
+              Privacy Policy
             </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.dangerButton, { backgroundColor: colors.errorBackground }]}
-            onPress={confirmSignOut}
-            disabled={isLoading}
-          >
             <IconSymbol
-              ios_icon_name="arrow.right.square.fill"
-              android_material_icon_name="logout"
-              size={20}
-              color="#FFFFFF"
+              ios_icon_name="chevron.right"
+              android_material_icon_name="chevron-right"
+              size={24}
+              color={colors.textSecondary}
             />
-            <Text style={styles.buttonText}>Sign Out</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.dangerButton, { backgroundColor: '#D32F2F' }]}
-            onPress={confirmDeleteAccount}
-            disabled={isLoading || isDeleting}
-          >
-            <IconSymbol
-              ios_icon_name="trash.fill"
-              android_material_icon_name="delete"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.buttonText}>Delete Account</Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       <Modal
@@ -631,22 +658,34 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 16,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  subscriptionStatus: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 16,
   },
-  subscriptionText: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  statusLabel: {
+    fontSize: 16,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  statusText: {
     fontSize: 16,
     fontWeight: '600',
   },
-  button: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -655,42 +694,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
   },
-  buttonText: {
+  actionButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    marginBottom: 12,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dangerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
   settingRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 16,
   },
   settingInfo: {
     flex: 1,
+    paddingRight: 16,
   },
   settingLabel: {
     fontSize: 16,
@@ -699,9 +716,38 @@ const styles = StyleSheet.create({
   },
   settingDescription: {
     fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  statusIndicatorText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  permissionText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   locationSelectorContainer: {
-    marginTop: 8,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  locationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  locationHeaderText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   permissionButton: {
     flexDirection: 'row',
@@ -711,6 +757,42 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 8,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  adminSection: {
+    flexDirection: 'column',
+  },
+  adminHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  adminTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  adminDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  linkSection: {
+    padding: 16,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  linkText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
