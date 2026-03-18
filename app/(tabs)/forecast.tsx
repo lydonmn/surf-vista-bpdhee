@@ -156,9 +156,12 @@ export default function ForecastScreen() {
     console.log('[ForecastScreen] Weather forecast count:', weatherForecast.length);
     console.log('[ForecastScreen] Tide data count:', tideData.length);
 
-    // Fall back to mock forecast data when Supabase returns nothing
-    const effectiveForecast = weatherForecast.length > 0 ? weatherForecast : mockWeatherForecast;
-    if (weatherForecast.length === 0) {
+    // Fall back to mock forecast data when Supabase returns nothing OR all rows have null temps
+    const hasRealTempData = weatherForecast.some(f => f.high_temp !== null && f.low_temp !== null);
+    const effectiveForecast = (weatherForecast.length > 0 && hasRealTempData) ? weatherForecast : mockWeatherForecast;
+    if (!hasRealTempData) {
+      console.log('[ForecastScreen] ⚠️ Supabase forecast has no temp data (all null), using mock fallback');
+    } else if (weatherForecast.length === 0) {
       console.log('[ForecastScreen] ⚠️ No Supabase forecast data, using mock fallback');
     }
     
