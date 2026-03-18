@@ -131,6 +131,7 @@ export type Database = {
           id: string
           location: string
           swell_direction: string | null
+          surf_height: string | null
           updated_at: string | null
           water_temp: string | null
           wave_height: string | null
@@ -145,6 +146,7 @@ export type Database = {
           id?: string
           location?: string
           swell_direction?: string | null
+          surf_height?: string | null
           updated_at?: string | null
           water_temp?: string | null
           wave_height?: string | null
@@ -159,6 +161,7 @@ export type Database = {
           id?: string
           location?: string
           swell_direction?: string | null
+          surf_height?: string | null
           updated_at?: string | null
           water_temp?: string | null
           wave_height?: string | null
@@ -394,6 +397,8 @@ export type Database = {
           location: string
           low_temp: number | null
           precipitation_chance: number | null
+          prediction_confidence: number | null
+          prediction_source: string | null
           swell_height_max: number | null
           swell_height_min: number | null
           swell_height_range: string | null
@@ -413,6 +418,8 @@ export type Database = {
           location?: string
           low_temp?: number | null
           precipitation_chance?: number | null
+          prediction_confidence?: number | null
+          prediction_source?: string | null
           swell_height_max?: number | null
           swell_height_min?: number | null
           swell_height_range?: string | null
@@ -432,6 +439,8 @@ export type Database = {
           location?: string
           low_temp?: number | null
           precipitation_chance?: number | null
+          prediction_confidence?: number | null
+          prediction_source?: string | null
           swell_height_max?: number | null
           swell_height_min?: number | null
           swell_height_range?: string | null

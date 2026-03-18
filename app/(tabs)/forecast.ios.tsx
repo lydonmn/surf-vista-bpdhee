@@ -11,6 +11,7 @@ import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 import { openPaywall } from '@/utils/paywallHelper';
 import { useLocation } from '@/contexts/LocationContext';
+import { mockWeatherForecast } from '@/data/mockData';
 
 interface DayForecast {
   date: string;
@@ -154,6 +155,12 @@ export default function ForecastScreen() {
     console.log('[ForecastScreen] Surf reports count:', surfReports.length);
     console.log('[ForecastScreen] Weather forecast count:', weatherForecast.length);
     console.log('[ForecastScreen] Tide data count:', tideData.length);
+
+    // Fall back to mock forecast data when Supabase returns nothing
+    const effectiveForecast = weatherForecast.length > 0 ? weatherForecast : mockWeatherForecast;
+    if (weatherForecast.length === 0) {
+      console.log('[ForecastScreen] ⚠️ No Supabase forecast data, using mock fallback');
+    }
     
     const forecastMap = new Map<string, DayForecast>();
     const today = getTodayDateString();
@@ -181,7 +188,8 @@ export default function ForecastScreen() {
       }
     });
 
-    weatherForecast.forEach(forecast => {
+    // Add weather forecasts (use effectiveForecast which falls back to mock data)
+    effectiveForecast.forEach(forecast => {
       if (forecast.date >= today) {
         console.log(`[ForecastScreen] Adding weather forecast for ${forecast.date}:`, {
           high_temp: forecast.high_temp,

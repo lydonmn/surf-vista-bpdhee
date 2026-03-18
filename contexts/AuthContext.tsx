@@ -387,13 +387,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const isRegionalAdmin = useCallback((): boolean => {
-    return profile?.is_regional_admin || false;
+    return (profile as any)?.is_regional_admin || false;
   }, [profile]);
 
   const canManageLocation = useCallback((locationId: string): boolean => {
     if (profile?.is_admin) return true;
-    if (profile?.is_regional_admin && profile.managed_locations) {
-      return profile.managed_locations.includes(locationId);
+    const p = profile as any;
+    if (p?.is_regional_admin && p.managed_locations) {
+      return p.managed_locations.includes(locationId);
     }
     return false;
   }, [profile]);

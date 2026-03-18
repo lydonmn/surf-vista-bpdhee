@@ -55,13 +55,13 @@ export interface WeatherForecast {
   icon?: string;
   wind_speed?: number;
   wind_direction?: string;
-  precipitation_chance?: number;
+  precipitation_chance?: number | null;
   humidity?: number;
   swell_height_min?: number;
   swell_height_max?: number;
-  swell_height_range?: string;
+  swell_height_range?: string | null;
   prediction_confidence?: number | null;
-  prediction_source?: 'actual' | 'ai_prediction' | 'buoy_estimation' | 'baseline';
+  prediction_source?: string | null;
   created_at?: string;
   updated_at?: string;
 }
