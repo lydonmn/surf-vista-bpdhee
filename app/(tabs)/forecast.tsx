@@ -118,7 +118,7 @@ export default function ForecastScreen() {
   const { user, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
   const { currentLocation, locationData } = useLocation();
   const isSubscribed = checkSubscription();
-  const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData();
+  const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [isSubscribing, setIsSubscribing] = useState(false);
