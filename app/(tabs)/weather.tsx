@@ -8,13 +8,15 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { WeatherCard } from '@/components/WeatherCard';
 import { TideCard } from '@/components/TideCard';
 import { useSurfData } from '@/hooks/useSurfData';
+import { useLocation } from '@/contexts/LocationContext';
 import { useState } from 'react';
 
 export default function WeatherScreen() {
   const theme = useTheme();
   const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const isSubscribed = checkSubscription();
-  const { weatherData, tideData, isLoading, error, refreshData } = useSurfData();
+  const { currentLocation } = useLocation();
+  const { weatherData, tideData, isLoading, error, refreshData } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {

@@ -42,8 +42,8 @@ export default function ProfileScreen() {
   const isSubscribed = checkSubscription();
 
   const checkPermissions = useCallback(async () => {
-    const permission = await checkNotificationPermissions();
-    setHasPermission(permission);
+    const result = await checkNotificationPermissions();
+    setHasPermission(result.granted);
   }, []);
 
   useEffect(() => {

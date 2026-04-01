@@ -20,6 +20,7 @@ export async function openPaywall(
   try {
     // Ensure RevenueCat is initialized first
     if (!isPaymentSystemAvailable()) {
+
       console.log('[PaywallHelper] ⚠️ Payment system not available, initializing...');
       const initialized = await initializeRevenueCat();
       
