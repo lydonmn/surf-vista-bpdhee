@@ -34,16 +34,6 @@
     "plugins": [
       "expo-router",
       [
-        "expo-build-properties",
-        {
-          "ios": {
-            "deploymentTarget": "15.1",
-            "useFrameworks": "static",
-            "newArchEnabled": false
-          }
-        }
-      ],
-      [
         "expo-notifications",
         {
           "icon": "./assets/images/SurfVista Logo.png",
@@ -62,7 +52,6 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-project-id"
       }
     }
   }

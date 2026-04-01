@@ -29,7 +29,7 @@
     "crypto-js": "^4.2.0",
     "difflib": "^0.2.4",
     "eas": "^0.1.0",
-    "expo": "~55.0.0",
+    "expo": "~54.0.33",
     "expo-audio": "^1.1.1",
     "expo-blur": "^15.0.6",
     "expo-build-properties": "^55.0.9",
