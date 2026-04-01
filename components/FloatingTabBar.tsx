@@ -27,6 +27,7 @@ export default function FloatingTabBar({ tabs }: FloatingTabBarProps) {
       videocam: { ios: isActive ? 'video.fill' : 'video', android: 'videocam' },
       water: { ios: isActive ? 'water.waves' : 'water.waves', android: 'waves' },
       person: { ios: isActive ? 'person.fill' : 'person', android: 'person' },
+      'calendar-today': { ios: 'calendar', android: 'calendar-today' },
     };
 
     return iconMap[icon] || { ios: icon, android: icon };

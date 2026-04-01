@@ -17,7 +17,6 @@ export default function TabLayout() {
         <Stack.Screen name="report" />
         <Stack.Screen name="forecast" />
         <Stack.Screen name="profile" />
-        <Stack.Screen name="weather" />
       </Stack>
       
       <NativeTabs>
