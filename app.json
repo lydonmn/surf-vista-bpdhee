@@ -9,14 +9,23 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lukestageberg.SurfVista",
+      "bundleIdentifier": "Therealfollysurfreport.SurfVista",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to upload surf report videos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload surf report videos.",
-        "NSMicrophoneUsageDescription": "This app uses the microphone to record audio for surf report videos."
+        "NSMicrophoneUsageDescription": "This app uses the microphone to record audio for surf report videos.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "config": {
         "usesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "aps-environment": "production",
+        "com.apple.security.application-groups": [
+          "group.Therealfollysurfreport.SurfVista.onesignal"
+        ]
       }
     },
     "android": {
@@ -32,6 +41,12 @@
       "favicon": "./assets/images/SurfVista Logo.png"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production"
+        }
+      ],
       "expo-router",
       [
         "expo-notifications",
@@ -51,7 +66,8 @@
       "router": {
         "origin": false
       },
-      "eas": {}
+      "eas": {},
+      "oneSignalAppId": "b991c245-3c87-4a1b-9676-b23323e73f07"
     }
   }
 }

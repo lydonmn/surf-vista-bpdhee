@@ -9,6 +9,7 @@ import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } fr
 import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -119,8 +120,10 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Set up notification listeners at the app root
+  // Set up notification listeners at the app root — native only
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     // Foreground notification listener
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('[RootLayout] Foreground notification received:', notification.request.identifier);
@@ -185,6 +188,7 @@ export default function RootLayout() {
     <ErrorBoundaryClass>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
+        <NotificationProvider>
           <LocationProvider>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -213,6 +217,7 @@ export default function RootLayout() {
               <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
               <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+              <Stack.Screen name="notification-preferences" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
               <Stack.Screen 
                 name="modal" 
@@ -241,6 +246,7 @@ export default function RootLayout() {
             </Stack>
             <StatusBar style="auto" />
           </LocationProvider>
+        </NotificationProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundaryClass>

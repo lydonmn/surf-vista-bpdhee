@@ -15,6 +15,7 @@ import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataF
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
+import { NotificationBell } from "@/components/NotificationBell";
 import { openPaywall } from "@/utils/paywallHelper";
 
 function calculateSurfRating(surfData: any): number {
@@ -352,6 +353,13 @@ export default function HomeScreen() {
             </View>
           </View>
         )}
+
+        <View style={styles.screenHeader}>
+          <Text style={[styles.screenTitle, { color: theme.colors.text }]}>
+            SurfVista
+          </Text>
+          <NotificationBell variant="compact" size={28} />
+        </View>
 
         <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
           {isLoadingVideo ? (
@@ -819,6 +827,17 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 16,
     paddingBottom: 100,
+  },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  screenTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
   },
   locationSelectorContainer: {
     paddingHorizontal: 16,
