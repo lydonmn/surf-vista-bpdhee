@@ -37,10 +37,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/SurfVista Logo.png",
-          "color": "#ffffff",
-          "sounds": [
-            "./assets/notification-sound.wav"
-          ]
+          "color": "#ffffff"
         }
       ],
       "@react-native-community/datetimepicker",

@@ -183,9 +183,11 @@ export function NotificationLocationSelector({
                         <Text style={[styles.locationName, { color: theme.colors.text }]}>
                           {location.name}
                         </Text>
-                        <Text style={[styles.locationSubtext, { color: colors.textSecondary }]}>
-                          {location.displayName}
-                        </Text>
+                        {!!location.displayName && location.displayName !== location.name && (
+                          <Text style={[styles.locationSubtext, { color: colors.textSecondary }]}>
+                            {location.displayName}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>

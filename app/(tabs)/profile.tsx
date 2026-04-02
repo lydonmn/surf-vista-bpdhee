@@ -5,7 +5,6 @@ import { router } from "expo-router";
 import { 
   restorePurchases, 
   presentCustomerCenter,
-  presentPaywall,
   forceRefreshOfferings,
   isPaymentSystemAvailable,
   initializeRevenueCat
@@ -90,20 +89,23 @@ export default function ProfileScreen() {
   }, [user?.id, loadNotificationStatus, loadNotificationLocations]);
 
   const handleToggleDailyNotifications = async (value: boolean) => {
+    console.log('[Profile] Toggle daily notifications:', value);
     if (!user?.id) return;
 
-    if (value && !hasPermission) {
-      await openNotificationSettings();
-      return;
-    }
-
+    setNotificationsEnabled(value);
     try {
-      setNotificationsEnabled(value);
-      await setDailyReportNotifications(user.id, value);
-      
+      const success = await setDailyReportNotifications(user.id, value);
+      if (!success) {
+        console.warn('[Profile] setDailyReportNotifications returned false — reverting UI');
+        setNotificationsEnabled(!value);
+        return;
+      }
       if (value) {
         await ensurePushTokenRegistered(user.id);
       }
+      // Re-check OS permission state after toggle
+      const permResult = await checkNotificationPermissions();
+      setHasPermission(permResult.granted);
     } catch (toggleError) {
       console.error('[Profile] Error toggling notifications:', toggleError);
       setNotificationsEnabled(!value);
@@ -111,6 +113,7 @@ export default function ProfileScreen() {
   };
 
   const handleLocationsChange = async (newLocations: string[]) => {
+    console.log('[Profile] Updating notification locations:', newLocations);
     if (!user?.id) return;
     
     try {
@@ -122,10 +125,12 @@ export default function ProfileScreen() {
   };
 
   const confirmSignOut = () => {
+    console.log('[Profile] Sign out button pressed');
     setShowSignOutModal(true);
   };
 
   const handleSignOut = async () => {
+    console.log('[Profile] Confirming sign out');
     setShowSignOutModal(false);
     setIsLoading(true);
     
@@ -140,6 +145,7 @@ export default function ProfileScreen() {
   };
 
   const confirmDeleteAccount = () => {
+    console.log('[Profile] Delete account button pressed');
     setShowDeleteModal(true);
   };
 
@@ -149,6 +155,7 @@ export default function ProfileScreen() {
   };
 
   const finalDeleteAccount = async () => {
+    console.log('[Profile] Final delete account confirmed');
     setShowDeleteConfirmModal(false);
     setIsDeleting(true);
     setDeleteError(null);
@@ -170,6 +177,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProfile = async () => {
+    console.log('[Profile] Refresh profile pressed');
     setIsLoading(true);
     try {
       await refreshProfile();
@@ -181,6 +189,7 @@ export default function ProfileScreen() {
   };
 
   const handleRefreshProducts = async () => {
+    console.log('[Profile] Refresh products pressed');
     setIsLoading(true);
     try {
       await forceRefreshOfferings();
@@ -193,6 +202,7 @@ export default function ProfileScreen() {
   };
 
   const handleRestorePurchases = async () => {
+    console.log('[Profile] Restore purchases pressed');
     setIsLoading(true);
     try {
       await restorePurchases();
@@ -205,8 +215,9 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
+    console.log('[Profile] Manage subscription pressed');
     try {
-      const available = await isPaymentSystemAvailable();
+      const available = isPaymentSystemAvailable();
       if (available) {
         await presentCustomerCenter();
       }
@@ -215,17 +226,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSubscribeNow = async () => {
-    try {
-      const available = await isPaymentSystemAvailable();
-      if (available) {
-        await presentPaywall();
-        await refreshProfile();
-      }
-    } catch (subscribeError) {
-      console.error('[Profile] Subscribe error:', subscribeError);
-    }
-  };
+
 
   if (!user) {
     return (
@@ -466,7 +467,10 @@ export default function ProfileScreen() {
 
         <TouchableOpacity
           style={[styles.section, styles.linkSection, { backgroundColor: theme.colors.card }]}
-          onPress={() => router.push('/privacy-policy')}
+          onPress={() => {
+            console.log('[Profile] Privacy policy pressed');
+            router.push('/privacy-policy');
+          }}
         >
           <View style={styles.linkRow}>
             <IconSymbol
@@ -484,6 +488,42 @@ export default function ProfileScreen() {
               size={24}
               color={colors.textSecondary}
             />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.section, styles.signOutSection, { backgroundColor: theme.colors.card }]}
+          onPress={confirmSignOut}
+          disabled={isLoading}
+        >
+          <View style={styles.linkRow}>
+            <IconSymbol
+              ios_icon_name="rectangle.portrait.and.arrow.right"
+              android_material_icon_name="logout"
+              size={24}
+              color={colors.error}
+            />
+            <Text style={[styles.linkText, { color: colors.error }]}>
+              Sign Out
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.section, styles.linkSection, { backgroundColor: theme.colors.card }]}
+          onPress={confirmDeleteAccount}
+          disabled={isLoading}
+        >
+          <View style={styles.linkRow}>
+            <IconSymbol
+              ios_icon_name="trash.fill"
+              android_material_icon_name="delete"
+              size={24}
+              color="#D32F2F"
+            />
+            <Text style={[styles.linkText, { color: '#D32F2F' }]}>
+              Delete Account
+            </Text>
           </View>
         </TouchableOpacity>
       </ScrollView>
@@ -782,6 +822,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   linkSection: {
+    padding: 16,
+  },
+  signOutSection: {
     padding: 16,
   },
   linkRow: {

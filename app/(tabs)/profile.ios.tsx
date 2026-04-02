@@ -90,17 +90,20 @@ export default function ProfileScreen() {
     console.log('[Profile] Toggle daily notifications:', value);
     if (!user?.id) return;
 
-    if (value && !hasPermission) {
-      await openNotificationSettings();
-      return;
-    }
-
+    setNotificationsEnabled(value);
     try {
-      setNotificationsEnabled(value);
-      await setDailyReportNotifications(user.id, value);
+      const success = await setDailyReportNotifications(user.id, value);
+      if (!success) {
+        console.warn('[Profile] setDailyReportNotifications returned false — reverting UI');
+        setNotificationsEnabled(!value);
+        return;
+      }
       if (value) {
         await ensurePushTokenRegistered(user.id);
       }
+      // Re-check OS permission state after toggle
+      const permResult = await checkNotificationPermissions();
+      setHasPermission(permResult.granted);
     } catch (toggleError) {
       console.error('[Profile] Error toggling notifications:', toggleError);
       setNotificationsEnabled(!value);
@@ -108,6 +111,7 @@ export default function ProfileScreen() {
   };
 
   const handleLocationsChange = async (newLocations: string[]) => {
+    console.log('[Profile] Updating notification locations:', newLocations);
     if (!user?.id) return;
     try {
       setNotificationLocationsState(newLocations);

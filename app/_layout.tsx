@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, ErrorUtils } from 'react-native';
 import 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 
@@ -117,10 +118,39 @@ export default function RootLayout() {
   
   const colorScheme = useColorScheme();
   const [appReady, setAppReady] = useState(false);
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  // Set up notification listeners at the app root
+  useEffect(() => {
+    // Foreground notification listener
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[RootLayout] Foreground notification received:', notification.request.identifier);
+      console.log('[RootLayout] Notification title:', notification.request.content.title);
+      console.log('[RootLayout] Notification body:', notification.request.content.body);
+    });
+
+    // Notification response listener (user tapped notification)
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('[RootLayout] Notification tapped:', response.notification.request.identifier);
+      console.log('[RootLayout] Notification action:', response.actionIdentifier);
+      const data = response.notification.request.content.data;
+      console.log('[RootLayout] Notification data:', data);
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        notificationListener.current.remove();
+      }
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
+    };
+  }, []);
 
   // 🚨 CRITICAL FIX: Wait for fonts to load before rendering app
   useEffect(() => {
