@@ -41,12 +41,6 @@
       "favicon": "./assets/images/SurfVista Logo.png"
     },
     "plugins": [
-      [
-        "onesignal-expo-plugin",
-        {
-          "mode": "development"
-        }
-      ],
       "expo-router",
       [
         "expo-notifications",

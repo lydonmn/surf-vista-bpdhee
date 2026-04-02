@@ -145,7 +145,7 @@ importers:
         version: 15.0.10(expo@54.0.33)(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))
       onesignal-expo-plugin:
         specifier: ^2.4.0
-        version: 2.4.0(react-native-onesignal@5.4.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0)))
+        version: 2.4.0(onesignal@file:stubs/onesignal)
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -168,8 +168,8 @@ importers:
         specifier: ^1.20.1
         version: 1.20.1(react-native-web@0.21.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-onesignal:
-        specifier: ^5.4.1
-        version: 5.4.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))
+        specifier: file:stubs/onesignal
+        version: onesignal@file:stubs/onesignal
       react-native-reanimated:
         specifier: ~4.1.0
         version: 4.1.6(@babel/core@7.28.6)(react-native-worklets@0.5.1(@babel/core@7.28.6)(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -4675,8 +4675,12 @@ packages:
 
   onesignal-expo-plugin@2.4.0:
     resolution: {integrity: sha512-gH0IUDyJAsSKCsIm1Lf2Zb9HRQVOmUpIqSDpQDRIjxNBpHKWMWM0Rtw9Vtr2/exmt4mmqj4Sz/XJo+jWLbxqtw==}
+    version: 2.4.0
     peerDependencies:
       react-native-onesignal: '>=5.0.0'
+
+  onesignal@file:stubs/onesignal:
+    resolution: {directory: stubs/onesignal, type: directory}
 
   onetime@2.0.1:
     resolution: {integrity: sha512-oyyPpiMaKARvvcgip+JV+7zci5L8D1W9RZIz2l1o08AM3pfspitVWnPt3mzHcBPp12oYMTy0pqrFs/C+m3EwsQ==}
@@ -5054,11 +5058,6 @@ packages:
     peerDependenciesMeta:
       react-native-web:
         optional: true
-
-  react-native-onesignal@5.4.1:
-    resolution: {integrity: sha512-ZsLyYa3aTBZkwQeZDlRjfwbqkwFC1Ug289bNAJYntGOL9MdCdAZdB85COco53VkFJTJ3T3VgbhqXpYOlsVye5w==}
-    peerDependencies:
-      react-native: '>=0.76.0'
 
   react-native-reanimated@4.1.6:
     resolution: {integrity: sha512-F+ZJBYiok/6Jzp1re75F/9aLzkgoQCOh4yxrnwATa8392RvM3kx+fiXXFvwcgE59v48lMwd9q0nzF1oJLXpfxQ==}
@@ -11619,10 +11618,12 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  onesignal-expo-plugin@2.4.0(react-native-onesignal@5.4.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))):
+  onesignal-expo-plugin@2.4.0(onesignal@file:stubs/onesignal):
     dependencies:
       '@expo/image-utils': 0.8.12
-      react-native-onesignal: 5.4.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))
+      react-native-onesignal: onesignal@file:stubs/onesignal
+
+  onesignal@file:stubs/onesignal: {}
 
   onetime@2.0.1:
     dependencies:
@@ -11989,11 +11990,6 @@ snapshots:
       react-native: 0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0)
     optionalDependencies:
       react-native-web: 0.21.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-
-  react-native-onesignal@5.4.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0)):
-    dependencies:
-      invariant: 2.2.4
-      react-native: 0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0)
 
   react-native-reanimated@4.1.6(@babel/core@7.28.6)(react-native-worklets@0.5.1(@babel/core@7.28.6)(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:

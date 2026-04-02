@@ -1,0 +1,6 @@
+{
+  "name": "react-native-onesignal",
+  "version": "5.4.1",
+  "main": "index.js",
+  "types": "index.d.ts"
+}
