@@ -397,7 +397,7 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No videos available yet for {locationData.displayName}
+                No videos available yet for {locationData?.displayName}
               </Text>
             </View>
           )}
@@ -435,7 +435,7 @@ export default function HomeScreen() {
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading surf reports for {locationData.displayName}...
+              Loading surf reports for {locationData?.displayName}...
             </Text>
           </View>
         ) : !todaysReport && !surfConditions ? (
@@ -663,7 +663,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
                 <Text style={[styles.noReportText, { color: colors.textSecondary }]}>
-                  No surf conditions narrative available for {locationData.displayName}.
+                  No surf conditions narrative available for {locationData?.displayName}.
                 </Text>
               </View>
             )}

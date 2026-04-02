@@ -7,6 +7,18 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.unstable_enablePackageExports = true;
 
+// Redirect react-native-onesignal to a no-op stub on web so Metro doesn't
+// try to load the native module (which doesn't exist in the web bundle).
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && moduleName === 'react-native-onesignal') {
+    return {
+      filePath: path.resolve(__dirname, 'stubs/react-native-onesignal.web.js'),
+      type: 'sourceFile',
+    };
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 // Use turborepo to restore the cache when possible
 config.cacheStores = [
     new FileStore({ root: path.join(__dirname, 'node_modules', '.cache', 'metro') }),
