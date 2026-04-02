@@ -771,7 +771,7 @@ export default function VideoPlayerV2Screen() {
         <Text style={styles.headerBackText}>Back</Text>
       </TouchableOpacity>
 
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}>
         <View style={styles.videoContainer}>
           <VideoView
             style={styles.video}
@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   headerBackButton: {
     flexDirection: 'row',
@@ -1091,6 +1091,7 @@ const styles = StyleSheet.create({
   controlsContainer: {
     padding: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    marginBottom: 8,
   },
   mainControls: {
     flexDirection: 'row',
