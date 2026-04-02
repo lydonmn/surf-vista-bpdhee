@@ -42,7 +42,10 @@
             "./assets/notification-sound.wav"
           ]
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-video",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
@@ -51,8 +54,7 @@
       "router": {
         "origin": false
       },
-      "eas": {
-      }
+      "eas": {}
     }
   }
 }
