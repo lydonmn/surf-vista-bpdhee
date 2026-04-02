@@ -368,6 +368,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
           'For now, you can still use all other features of the app.',
           [{ text: 'OK' }]
         );
+      } else if (__DEV__) {
+        console.warn('[Push Notifications] Dev build — push token unavailable until production build. Preference will still be saved.');
       } else {
         console.log('[Push Notifications] Production build - silently handling error');
       }
@@ -573,15 +575,20 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
         return false;
       }
       
-      // If on physical device and no token, fail
+      // If on physical device and no token
       if (Platform.OS !== 'web' && Device.isDevice && !pushToken) {
-        console.error('[Push Notifications] ❌ CRITICAL: Physical device but no token obtained');
-        safeAlert(
-          'Registration Failed',
-          'Failed to register for push notifications. Please check your notification settings and try again.',
-          [{ text: 'OK' }]
-        );
-        return false;
+        console.warn('[Push Notifications] ⚠️ Physical device but no token obtained (expected in dev/preview builds)');
+        // In dev builds, APNs entitlements may not be provisioned — don't block the user
+        // The toggle will still save the preference; token will be obtained in production builds
+        if (!__DEV__) {
+          safeAlert(
+            'Registration Failed',
+            'Failed to register for push notifications. Please check your notification settings and try again.',
+            [{ text: 'OK' }]
+          );
+          return false;
+        }
+        // In dev, continue without a token — save the preference anyway
       }
     }
 
