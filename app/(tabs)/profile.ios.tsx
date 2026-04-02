@@ -6,7 +6,6 @@ import {
   restorePurchases,
   presentCustomerCenter,
   forceRefreshOfferings,
-  isPaymentSystemAvailable,
   initializeRevenueCat
 } from '@/utils/superwallConfig';
 import { NotificationLocationSelector } from "@/components/NotificationLocationSelector";
@@ -211,9 +210,12 @@ export default function ProfileScreen() {
   const handleManageSubscription = async () => {
     console.log('[Profile] Manage subscription pressed');
     try {
-      const available = isPaymentSystemAvailable();
-      if (available) {
+      if (isSubscribed) {
         await presentCustomerCenter();
+      } else {
+        await openPaywall(user?.id, user?.email || undefined, async () => {
+          await refreshProfile();
+        });
       }
     } catch (manageError) {
       console.error('[Profile] Manage subscription error:', manageError);

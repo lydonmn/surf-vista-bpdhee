@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
+import { initializeRevenueCat } from '@/utils/superwallConfig';
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -119,6 +120,15 @@ export default function RootLayout() {
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  // Initialize RevenueCat early on native platforms
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    console.log('[RootLayout] Initializing RevenueCat...');
+    initializeRevenueCat()
+      .then((ok) => console.log('[RootLayout] RevenueCat initialized:', ok))
+      .catch((err) => console.warn('[RootLayout] RevenueCat init error:', err));
+  }, []);
 
   // Set up notification listeners at the app root — native only
   useEffect(() => {

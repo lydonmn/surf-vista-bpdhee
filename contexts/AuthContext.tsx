@@ -129,14 +129,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session: newSession }, error } = await supabase.auth.refreshSession();
       
       if (error) {
-        console.error('[AuthContext] Refresh error:', error);
-        
-        if (error.message.includes('Invalid Refresh Token') || 
-            error.message.includes('Refresh Token Not Found')) {
+        const isRefreshTokenError =
+          error.message?.includes('refresh_token') ||
+          error.message?.includes('Refresh Token Not Found') ||
+          error.message?.includes('Invalid Refresh Token') ||
+          (error as any).code === 'refresh_token_not_found';
+
+        if (isRefreshTokenError) {
+          console.warn('[AuthContext] Stale refresh token on refresh, signing out silently');
           if (Platform.OS !== 'web') {
             await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
           }
           await signOut();
+        } else {
+          console.error('[AuthContext] Refresh error:', error);
         }
         return;
       }
@@ -218,7 +224,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('[AuthContext] Session error:', error);
+          const isRefreshTokenError =
+            error.message?.includes('refresh_token') ||
+            error.message?.includes('Refresh Token Not Found') ||
+            (error as any).code === 'refresh_token_not_found';
+          if (isRefreshTokenError) {
+            console.warn('[AuthContext] Stale refresh token detected, signing out silently');
+            await supabase.auth.signOut().catch(() => {});
+          } else {
+            console.error('[AuthContext] Session error:', error);
+          }
         } else if (initialSession?.user) {
           console.log('[AuthContext] Initial session found');
           if (mountedRef.current) {
