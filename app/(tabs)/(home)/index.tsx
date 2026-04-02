@@ -15,7 +15,7 @@ import { formatWaterTemp, getESTDate, getESTDateOffset } from "@/utils/surfDataF
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
-import { NotificationBell } from "@/components/NotificationBell";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 
 function calculateSurfRating(surfData: any): number {
@@ -122,6 +122,7 @@ export default function HomeScreen() {
   
   // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const authData = useAuth();
   const locationData = useLocation();
   
@@ -328,7 +329,7 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView 
         style={styles.container}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -356,7 +357,6 @@ export default function HomeScreen() {
           <Text style={[styles.screenTitle, { color: theme.colors.text }]}>
             SurfVista
           </Text>
-          <NotificationBell variant="compact" size={28} />
         </View>
 
         <View style={[styles.videoSection, { backgroundColor: theme.colors.card }]}>
