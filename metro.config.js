@@ -5,8 +5,7 @@ const fs = require('fs');
 
 const config = getDefaultConfig(__dirname);
 
-// Cache-bust key — increment when patching native modules for web
-config.cacheVersion = 'onesignal-stub-v5-' + Date.now();
+config.resolver.unstable_enablePackageExports = true;
 
 // Use turborepo to restore the cache when possible
 config.cacheStores = [
@@ -103,29 +102,6 @@ config.server.enhanceMiddleware = (middleware) => {
     // Pass through to default Metro middleware
     return middleware(req, res, next);
   };
-};
-
-// Alias react-native-onesignal to a no-op stub on web to prevent
-// TurboModuleRegistry.getEnforcing crashes in the browser bundle.
-const onesignalStub = path.resolve(__dirname, 'stubs/onesignal/index.js');
-const onesignalDir = path.resolve(__dirname, 'node_modules/react-native-onesignal');
-const originalResolver = config.resolver.resolveRequest;
-config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === 'web') {
-    // Block by module name (top-level import)
-    if (moduleName === 'react-native-onesignal' || moduleName.startsWith('react-native-onesignal/')) {
-      return { filePath: onesignalStub, type: 'sourceFile' };
-    }
-    // Block any module being resolved FROM inside the onesignal package
-    // This catches internal imports like NativeOneSignal.ts -> TurboModuleRegistry
-    if (context.originModulePath && context.originModulePath.startsWith(onesignalDir)) {
-      return { filePath: onesignalStub, type: 'sourceFile' };
-    }
-  }
-  if (originalResolver) {
-    return originalResolver(context, moduleName, platform);
-  }
-  return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;

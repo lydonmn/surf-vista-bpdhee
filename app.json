@@ -4,9 +4,14 @@
     "slug": "surfvista",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/SurfVista Logo.png",
+    "icon": "./assets/images/f78f48ab-d8cd-478c-b17c-2c0bf89cc174.jpeg",
     "scheme": "surfvista",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/f78f48ab-d8cd-478c-b17c-2c0bf89cc174.jpeg",
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
@@ -30,8 +35,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/SurfVista Logo.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/f78f48ab-d8cd-478c-b17c-2c0bf89cc174.jpeg",
+        "backgroundColor": "#000000"
       },
       "package": "com.lukestageberg.SurfVista"
     },
@@ -45,7 +50,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/SurfVista Logo.png",
+          "icon": "./assets/images/f78f48ab-d8cd-478c-b17c-2c0bf89cc174.jpeg",
           "color": "#ffffff"
         }
       ],
