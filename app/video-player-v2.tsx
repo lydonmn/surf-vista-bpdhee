@@ -13,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { openPaywall } from '@/utils/paywallHelper';
 
 const CONTROLS_HIDE_DELAY = 3000;
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
@@ -20,6 +22,19 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
+  const { user, checkSubscription } = useAuth();
+  const isSubscribed = checkSubscription();
+
+  // Paywall guard — redirect non-subscribers immediately
+  useEffect(() => {
+    if (!isSubscribed) {
+      console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
+      openPaywall(user?.id, user?.email || undefined).then(() => {
+        router.back();
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const [video, setVideo] = useState<VideoType | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);

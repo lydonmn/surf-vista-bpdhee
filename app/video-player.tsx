@@ -10,6 +10,8 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from "expo-video";
+import { useAuth } from "@/contexts/AuthContext";
+import { openPaywall } from "@/utils/paywallHelper";
 
 interface Video {
   id: string;
@@ -30,6 +32,19 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerScreen() {
   const insets = useSafeAreaInsets();
   const { videoId, preloadedUrl } = useLocalSearchParams();
+  const { user, checkSubscription } = useAuth();
+  const isSubscribed = checkSubscription();
+
+  // Paywall guard — redirect non-subscribers immediately
+  useEffect(() => {
+    if (!isSubscribed) {
+      console.log('[VideoPlayer] Non-subscriber attempted to access video player — opening paywall');
+      openPaywall(user?.id, user?.email || undefined).then(() => {
+        router.back();
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const [video, setVideo] = useState<Video | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);

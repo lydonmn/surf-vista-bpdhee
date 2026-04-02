@@ -16,7 +16,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
 import { NotificationBell } from "@/components/NotificationBell";
-import { openPaywall } from "@/utils/paywallHelper";
+
 
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
@@ -125,7 +125,7 @@ export default function HomeScreen() {
   const authData = useAuth();
   const locationData = useLocation();
   
-  const { user, profile, checkSubscription, isLoading, isInitialized, refreshProfile } = authData;
+  const { user, profile, checkSubscription, isLoading, isInitialized } = authData;
   const { currentLocation, locationData: locData } = locationData;
   
   // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
@@ -136,8 +136,6 @@ export default function HomeScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const hasLoadedVideoRef = useRef(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
-  
   const isSubscribed = checkSubscription();
 
   const todayDate = useMemo(() => getESTDate(), []);
@@ -240,22 +238,7 @@ export default function HomeScreen() {
     }
   }, [latestVideo, currentLocation]);
 
-  const handleSubscribeNow = useCallback(async () => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-    
-    setIsSubscribing(true);
-    
-    await openPaywall(user.id, user.email || undefined, async () => {
-      await refreshProfile();
-    });
-    
-    setIsSubscribing(false);
-  }, [user, refreshProfile]);
 
-  const showLockedOverlay = !user || !isSubscribed;
 
   const narrativeText = todaysReport ? selectNarrativeText(todaysReport) : null;
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
@@ -795,43 +778,6 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
-
-      {showLockedOverlay && (
-        <View style={[styles.lockedOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.95)' }]}>
-          <View style={styles.lockedContent}>
-            <IconSymbol
-              ios_icon_name="lock.fill"
-              android_material_icon_name="lock"
-              size={64}
-              color={colors.textSecondary}
-            />
-            <Text style={[styles.lockedTitle, { color: '#FFFFFF' }]}>
-              Subscriber Only Content
-            </Text>
-            <Text style={[styles.lockedText, { color: colors.textSecondary }]}>
-              Subscribe to access exclusive 6K drone footage and detailed surf reports
-            </Text>
-            {user && (
-              <Text style={[styles.lockedDebugText, { color: colors.textSecondary }]}>
-                You are signed in but not subscribed
-              </Text>
-            )}
-            <TouchableOpacity
-              style={[styles.lockedButton, { backgroundColor: colors.accent }]}
-              onPress={handleSubscribeNow}
-              disabled={isSubscribing}
-            >
-              {isSubscribing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.lockedButtonText}>
-                  {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

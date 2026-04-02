@@ -10,6 +10,7 @@ import { useVideos } from "@/hooks/useVideos";
 import { supabase } from "@/app/integrations/supabase/client";
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
+import { openPaywall } from "@/utils/paywallHelper";
 
 // 🎬 Mux HLS URL prefix for detection
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
@@ -110,10 +111,19 @@ export default function VideosScreen() {
     );
   };
 
-  const handleVideoPress = React.useCallback((videoId: string, preloadedUrl?: string, videoStatus?: string) => {
+  const handleVideoPress = React.useCallback(async (videoId: string, preloadedUrl?: string, videoStatus?: string) => {
     // Don't allow playing processing videos
     if (videoStatus === 'processing') {
       Alert.alert('Video Processing', 'This video is still being processed by Mux. Please wait a moment and try again.');
+      return;
+    }
+
+    // Non-subscribers: show paywall instead of playing
+    if (!isSubscribed) {
+      console.log('[VideosScreen] Non-subscriber tapped video — opening paywall');
+      await openPaywall(user?.id, user?.email || undefined, async () => {
+        // Subscription acquired — nothing extra needed here
+      });
       return;
     }
 
@@ -127,7 +137,7 @@ export default function VideosScreen() {
         preloadedUrl: preloadedUrl || '',
       }
     });
-  }, []);
+  }, [isSubscribed, user]);
 
   // Helper function to get the correct video source for preview
   const getVideoPreviewSource = React.useCallback((video: any) => {
@@ -169,42 +179,7 @@ export default function VideosScreen() {
     );
   }
 
-  if (!user || !isSubscribed) {
-    console.log('VideosScreen - Showing locked content');
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={64}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscriber Only Content
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            Subscribe to access our exclusive drone footage library
-          </Text>
-          {user && (
-            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              You are signed in but not subscribed
-            </Text>
-          )}
-          <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.subscribeButtonText}>
-              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  console.log('VideosScreen - Showing video library for location:', locationData.displayName);
+  console.log('VideosScreen - Showing video library for location:', locationData.displayName, '| isSubscribed:', isSubscribed);
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -296,32 +271,56 @@ export default function VideosScreen() {
                           <VideoPreview videoUrl={videoSource} />
                           <View style={styles.videoOverlay}>
                             <View style={styles.playButtonContainer}>
-                              <IconSymbol
-                                ios_icon_name="play.circle.fill"
-                                android_material_icon_name="play_circle"
-                                size={64}
-                                color="rgba(255, 255, 255, 0.9)"
-                              />
-                              <Text style={styles.tapToPlayText}>Tap to play fullscreen</Text>
+                              {isSubscribed ? (
+                                <IconSymbol
+                                  ios_icon_name="play.circle.fill"
+                                  android_material_icon_name="play_circle"
+                                  size={64}
+                                  color="rgba(255, 255, 255, 0.9)"
+                                />
+                              ) : (
+                                <IconSymbol
+                                  ios_icon_name="lock.circle.fill"
+                                  android_material_icon_name="lock"
+                                  size={64}
+                                  color="rgba(255, 255, 255, 0.9)"
+                                />
+                              )}
+                              <Text style={styles.tapToPlayText}>
+                                {isSubscribed ? 'Tap to play fullscreen' : 'Subscribe to watch'}
+                              </Text>
                             </View>
                           </View>
                         </>
                       ) : (
                         <View style={styles.placeholderContainer}>
                           <IconSymbol
-                            ios_icon_name="video.fill"
-                            android_material_icon_name="videocam"
+                            ios_icon_name={isSubscribed ? "video.fill" : "lock.fill"}
+                            android_material_icon_name={isSubscribed ? "videocam" : "lock"}
                             size={48}
                             color={colors.textSecondary}
                           />
                         </View>
                       )}
                       
-                      {/* 🚨 NEW: Processing badge overlay */}
+                      {/* Processing badge overlay */}
                       {isProcessing && (
                         <View style={styles.processingBadge}>
                           <ActivityIndicator size="small" color="#FFFFFF" />
                           <Text style={styles.processingText}>Processing...</Text>
+                        </View>
+                      )}
+
+                      {/* Lock badge for non-subscribers */}
+                      {!isSubscribed && !isProcessing && (
+                        <View style={styles.lockBadge}>
+                          <IconSymbol
+                            ios_icon_name="lock.fill"
+                            android_material_icon_name="lock"
+                            size={12}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.lockBadgeText}>PRO</Text>
                         </View>
                       )}
                     </View>
@@ -663,5 +662,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  lockBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  lockBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
