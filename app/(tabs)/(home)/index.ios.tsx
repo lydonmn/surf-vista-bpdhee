@@ -122,7 +122,7 @@ export default function HomeScreen() {
   
   // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading, isInitialized } = useAuth();
+  const { isLoading, isInitialized } = useAuth();
   const { currentLocation, locationData } = useLocation();
   
   // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
@@ -132,8 +132,6 @@ export default function HomeScreen() {
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const hasLoadedVideoRef = useRef(false);
-  const isSubscribed = checkSubscription();
-
   const todayDate = useMemo(() => getESTDate(), []);
 
   const locationSurfReports = useMemo(() => {
@@ -210,11 +208,12 @@ export default function HomeScreen() {
   }, [currentLocation]);
 
   useEffect(() => {
-    if (isInitialized && !isLoading && user && profile && isSubscribed) {
+    console.log('[HomeScreen iOS] loadLatestVideo effect triggered, location:', currentLocation);
+    if (isInitialized && !isLoading) {
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [currentLocation, isInitialized, isLoading, user, profile, isSubscribed, loadLatestVideo]);
+  }, [currentLocation, isInitialized, isLoading, loadLatestVideo]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
