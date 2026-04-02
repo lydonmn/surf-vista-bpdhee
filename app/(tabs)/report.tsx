@@ -13,7 +13,7 @@ import { Video } from "@/types";
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
-import { openPaywall } from "@/utils/paywallHelper";
+
 
 // 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
 function calculateSurfRating(surfData: any): number {
@@ -126,14 +126,12 @@ function calculateSurfRating(surfData: any): number {
 
 export default function ReportScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized, refreshProfile } = useAuth();
-  const isSubscribed = checkSubscription();
+  const { profile, isLoading: authLoading, isInitialized } = useAuth();
   const { currentLocation, locationData } = useLocation();
   const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
   
   // Track if we've loaded data to prevent reload on every focus
   const hasLoadedDataRef = useRef(false);
@@ -387,8 +385,7 @@ export default function ReportScreen() {
     useCallback(() => {
       console.log('[ReportScreen] Screen focused');
       
-      // Only load data if we haven't loaded it yet
-      if (isInitialized && !authLoading && user && profile && isSubscribed) {
+      if (isInitialized && !authLoading) {
         if (!hasLoadedDataRef.current) {
           console.log('[ReportScreen] First load - fetching data for', locationData.displayName);
           refreshData();
@@ -402,12 +399,12 @@ export default function ReportScreen() {
           loadLatestVideo();
         }
       }
-    }, [isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName])
+    }, [isInitialized, authLoading, refreshData, loadLatestVideo, locationData.displayName])
   );
 
   // Reload data when location changes
   useEffect(() => {
-    if (isInitialized && !authLoading && user && profile && isSubscribed) {
+    if (isInitialized && !authLoading) {
       console.log('[ReportScreen] Location changed to:', currentLocation, locationData.displayName);
       console.log('[ReportScreen] Reloading data and video for new location');
       hasLoadedDataRef.current = false;
@@ -415,7 +412,7 @@ export default function ReportScreen() {
       refreshData();
       loadLatestVideo();
     }
-  }, [currentLocation, isInitialized, authLoading, user, profile, isSubscribed, refreshData, loadLatestVideo, locationData.displayName]);
+  }, [currentLocation, isInitialized, authLoading, refreshData, loadLatestVideo, locationData.displayName]);
 
   const handleRefresh = async () => {
     console.log('[ReportScreen] User initiated refresh for location:', currentLocation, locationData.displayName);
@@ -485,24 +482,7 @@ export default function ReportScreen() {
     router.push('/edit-report');
   }, [locationData.displayName]);
 
-  const handleSubscribeNow = async () => {
-    console.log('[ReportScreen] 🔘 Subscribe button pressed');
-    
-    if (!user) {
-      console.log('[ReportScreen] No user, redirecting to login');
-      router.push('/login');
-      return;
-    }
-    
-    setIsSubscribing(true);
-    
-    await openPaywall(user.id, user.email || undefined, async () => {
-      console.log('[ReportScreen] ✅ Subscription successful, refreshing profile');
-      await refreshProfile();
-    });
-    
-    setIsSubscribing(false);
-  };
+
 
 
 
@@ -1151,46 +1131,6 @@ export default function ReportScreen() {
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
             Loading your profile...
           </Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (!user || !isSubscribed) {
-    console.log('[ReportScreen] Showing locked content');
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={64}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscriber Only Content
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            Subscribe to access detailed surf reports with live NOAA weather data, tide schedules, and surf conditions
-          </Text>
-          {user && (
-            <Text style={[styles.debugText, { color: colors.textSecondary }]}>
-              You are signed in but not subscribed
-            </Text>
-          )}
-          <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={handleSubscribeNow}
-            disabled={isSubscribing}
-          >
-            {isSubscribing ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.subscribeButtonText}>
-                {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-              </Text>
-            )}
-          </TouchableOpacity>
         </View>
       </View>
     );
