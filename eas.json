@@ -1,4 +1,3 @@
-
 {
   "cli": {
     "version": ">= 5.0.0"
@@ -20,6 +19,7 @@
     },
     "production": {
       "distribution": "store",
+      "credentialsSource": "remote",
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
@@ -47,5 +47,5 @@
         "appleTeamId": "your-team-id"
       }
     }
-  },
+  }
 }

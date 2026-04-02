@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "buildNumber": "32",
-      "bundleIdentifier": "Therealfollysurfreport.SurfVista",
+      "bundleIdentifier": "com.therealfollysurfreport.surfvista",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to upload surf report videos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload surf report videos.",
