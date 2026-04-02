@@ -303,23 +303,33 @@ export default function HomeScreen() {
     ? `${windSpeedFormatted} ${String(windDirValue).trim()}`
     : 'N/A';
   
-  const weatherDataIsFromToday = weatherData?.date?.split('T')[0] === todayDate;
-  
-  const airTempValue = (weatherDataIsFromToday && weatherData?.temperature) 
-    ? weatherData.temperature 
-    : todaysWeatherForecast?.high_temp 
-      ? todaysWeatherForecast.high_temp 
-      : todaysReport?.air_temp;
-  
-  const airTempDisplay = airTempValue ? `${Math.round(Number(airTempValue))}°F` : 'N/A';
-  
-  const weatherDescDisplay = (weatherDataIsFromToday && weatherData?.conditions) 
-    ? weatherData.conditions 
-    : todaysWeatherForecast?.conditions 
-      ? todaysWeatherForecast.conditions 
-      : todaysReport?.weather_conditions 
-        ? todaysReport.weather_conditions 
-        : 'N/A';
+  // Use weatherData (current conditions) directly — no date guard so stale-but-present data
+  // is still shown rather than falling through to N/A. Fall back to forecast then report.
+  const airTempValue = isValidValue(weatherData?.temperature)
+    ? weatherData!.temperature
+    : isValidValue(todaysWeatherForecast?.high_temp)
+      ? todaysWeatherForecast!.high_temp
+      : isValidValue(todaysReport?.air_temp)
+        ? todaysReport!.air_temp
+        : null;
+
+  console.log('[HomeScreen] airTempValue:', airTempValue, '| weatherData?.temperature:', weatherData?.temperature, '| forecast high_temp:', todaysWeatherForecast?.high_temp);
+
+  const airTempDisplay = airTempValue !== null && airTempValue !== undefined
+    ? `${Math.round(Number(airTempValue))}°F`
+    : 'N/A';
+
+  const weatherDescDisplay = isValidValue(weatherData?.conditions)
+    ? String(weatherData!.conditions)
+    : isValidValue(weatherData?.forecast)
+      ? String(weatherData!.forecast)
+      : isValidValue(todaysWeatherForecast?.conditions)
+        ? String(todaysWeatherForecast!.conditions)
+        : isValidValue(todaysReport?.weather_conditions)
+          ? String(todaysReport!.weather_conditions)
+          : 'N/A';
+
+  console.log('[HomeScreen] weatherDescDisplay:', weatherDescDisplay, '| weatherData?.conditions:', weatherData?.conditions);
   
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
