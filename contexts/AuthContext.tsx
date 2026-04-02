@@ -133,7 +133,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         if (error.message.includes('Invalid Refresh Token') || 
             error.message.includes('Refresh Token Not Found')) {
-          await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
+          if (Platform.OS !== 'web') {
+            await AsyncStorage.removeItem('supabase.auth.token').catch(() => {});
+          }
           await signOut();
         }
         return;

@@ -5,36 +5,30 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, ErrorUtils } from 'react-native';
-import 'react-native-reanimated';
+import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 
-// 🚨 CRITICAL: Prevent auto-hiding of splash screen
-SplashScreen.preventAutoHideAsync().catch((err) => {
-  console.log('[RootLayout] Splash screen already hidden or error:', err);
-});
+// Only prevent splash screen auto-hide on native — SplashScreen throws on web
+if (Platform.OS !== 'web') {
+  SplashScreen.preventAutoHideAsync().catch((err) => {
+    console.log('[RootLayout] Splash screen already hidden or error:', err);
+  });
+}
 
-// 🚨 CRITICAL: Global error handler for native crashes
-if (ErrorUtils) {
-  const originalHandler = ErrorUtils.getGlobalHandler();
-  
-  ErrorUtils.setGlobalHandler((error, isFatal) => {
+// ErrorUtils is native-only — not available on web
+const NativeErrorUtils = Platform.OS !== 'web'
+  ? (global as unknown as { ErrorUtils?: { getGlobalHandler: () => ((e: Error, f: boolean) => void) | null; setGlobalHandler: (h: (e: Error, f: boolean) => void) => void } }).ErrorUtils
+  : undefined;
+
+if (NativeErrorUtils) {
+  const originalHandler = NativeErrorUtils.getGlobalHandler();
+  NativeErrorUtils.setGlobalHandler((error: Error, isFatal: boolean) => {
     console.error('[GlobalErrorHandler] Fatal:', isFatal, 'Error:', error);
-    
-    // Log to help debug
-    if (error && error.message) {
-      console.error('[GlobalErrorHandler] Message:', error.message);
-    }
-    if (error && error.stack) {
-      console.error('[GlobalErrorHandler] Stack:', error.stack);
-    }
-    
-    // Call original handler
-    if (originalHandler) {
-      originalHandler(error, isFatal);
-    }
+    if (error?.message) console.error('[GlobalErrorHandler] Message:', error.message);
+    if (error?.stack) console.error('[GlobalErrorHandler] Stack:', error.stack);
+    if (originalHandler) originalHandler(error, isFatal);
   });
 }
 
@@ -161,16 +155,20 @@ export default function RootLayout() {
       
       // Small delay to ensure everything is ready
       setTimeout(() => {
-        console.log('[RootLayout] Hiding splash screen...');
-        SplashScreen.hideAsync()
-          .then(() => {
-            console.log('[RootLayout] Splash hidden successfully');
-            setAppReady(true);
-          })
-          .catch((err) => {
-            console.log('[RootLayout] Splash hide error:', err);
-            setAppReady(true); // Continue anyway
-          });
+        if (Platform.OS !== 'web') {
+          console.log('[RootLayout] Hiding splash screen...');
+          SplashScreen.hideAsync()
+            .then(() => {
+              console.log('[RootLayout] Splash hidden successfully');
+              setAppReady(true);
+            })
+            .catch((err) => {
+              console.log('[RootLayout] Splash hide error:', err);
+              setAppReady(true);
+            });
+        } else {
+          setAppReady(true);
+        }
       }, 100);
     }
   }, [loaded, fontError]);

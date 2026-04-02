@@ -5,14 +5,16 @@ import { Platform, Alert, Linking } from 'react-native';
 import { supabase } from '@/app/integrations/supabase/client';
 import Constants from 'expo-constants';
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Configure notification handler — skip on web (expo-notifications has no web support)
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 /**
  * ✅ V10.3 PRODUCTION FIX: Safe alert wrapper that prevents crashes
