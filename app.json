@@ -30,7 +30,7 @@
       "entitlements": {
         "aps-environment": "production",
         "com.apple.security.application-groups": [
-          "group.Therealfollysurfreport.SurfVista.onesignal"
+          "group.com.therealfollysurfreport.surfvista.onesignal"
         ]
       }
     },
