@@ -221,7 +221,7 @@ export default function RootLayout() {
   }, [loaded, fontError]);
 
   // Don't render anything until fonts are loaded or onboarding state is known
-  if ((!loaded && !fontError) || onboardingComplete === null) {
+  if ((!loaded && !fontError)) {
     return null;
   }
 

@@ -107,7 +107,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     const mockPackage = {
       identifier: "$rc_monthly",
       product: {
-        title: "Monthly",
+        title: "Premium",
         priceString: "$12.99/month",
         description: "Unlock all premium features",
       },
