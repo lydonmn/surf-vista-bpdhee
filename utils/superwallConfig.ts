@@ -6,8 +6,9 @@ import { supabase } from '@/app/integrations/supabase/client';
 type CustomerInfo = any;
 type PurchasesOffering = any;
 
-const REVENUECAT_API_KEY_IOS = 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda';
-const REVENUECAT_API_KEY_ANDROID = 'goog_YOUR_ANDROID_KEY_HERE';
+// NOTE: API keys are intentionally NOT stored here.
+// Purchases.configure() is called exclusively in SubscriptionContext.tsx on app startup.
+// This file only calls getOfferings/getCustomerInfo/presentPaywall — it never re-configures the SDK.
 
 export const PAYMENT_CONFIG = {
   PRODUCTS: {
@@ -98,32 +99,18 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
         return false;
       }
 
-      const REVENUECAT_API_KEY = Platform.OS === 'ios'
-        ? REVENUECAT_API_KEY_IOS
-        : REVENUECAT_API_KEY_ANDROID;
-
-      if (REVENUECAT_API_KEY.includes('YOUR_')) {
-        initializationError = 'API key not configured.';
-        console.warn('[RevenueCat] ⚠️', initializationError);
+      // SDK is configured exclusively by SubscriptionContext on app startup.
+      // This function only verifies the SDK is ready, then fetches offerings.
+      // DO NOT call Purchases.configure() here — it would re-initialize with a
+      // stale/wrong key and reset the SDK state mid-session.
+      if (typeof Purchases?.getOfferings !== 'function') {
+        initializationError = 'react-native-purchases native module not ready.';
+        console.warn('[RevenueCat] ⚠️ SDK not ready — SubscriptionContext has not configured it yet');
         isPaymentSystemInitialized = false;
         return false;
       }
 
-      try {
-        const LOG_LEVEL = getLogLevel();
-        if (LOG_LEVEL) {
-          Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
-        }
-        console.log('[RevenueCat] 🔑 Configuring with API key...');
-        await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
-        console.log('[RevenueCat] ✅ SDK configured successfully');
-        isPaymentSystemInitialized = true;
-      } catch (configError: any) {
-        initializationError = `SDK configuration failed: ${configError?.message}`;
-        console.error('[RevenueCat] ❌ Configuration error:', configError);
-        isPaymentSystemInitialized = false;
-        return false;
-      }
+      isPaymentSystemInitialized = true;
 
       try {
         console.log('[RevenueCat] 📦 Fetching offerings...');

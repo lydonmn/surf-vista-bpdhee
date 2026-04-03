@@ -396,7 +396,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
  * const { isSubscribed, purchasePackage, packages, isWeb } = useSubscription();
  *
  * if (!isSubscribed) {
- *   return <Button onPress={() => router.push("/paywall")}>Upgrade</Button>;
+ *   return <Button onPress={() => openPaywall()}>Upgrade</Button>;
  * }
  */
 export function useSubscription() {
