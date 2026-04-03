@@ -56,7 +56,7 @@ export async function openPaywallIfNeeded(
   await revenueCatConfigured;
   console.log('[PaywallHelper] RC confirmed configured — presenting paywall if needed');
   try {
-    const result = await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: 'SurfVista' });
+    const result = await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: 'pro' });
     console.log('[PaywallHelper] RevenueCat native paywall if-needed dismissed, result:', result);
   } catch (paywallErr: unknown) {
     // Swallow errors from the paywall (e.g. user cancellation, native module unavailable in Expo Go)

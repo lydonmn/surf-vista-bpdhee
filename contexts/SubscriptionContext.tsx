@@ -26,17 +26,21 @@ import Purchases, {
   PurchasesOfferings,
   PurchasesOffering,
   PurchasesPackage,
+  LOG_LEVEL,
 } from "react-native-purchases";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
-import { configureRevenueCat } from "@/utils/revenueCatInit";
 
 // Import auth hook for user syncing (validated at setup time)
 import { useAuth } from "./AuthContext";
 
-// Read config from app.json (expo.extra)
+// Read API keys from app.json (expo.extra)
 const extra = Constants.expoConfig?.extra || {};
-const ENTITLEMENT_ID = extra.revenueCatEntitlementId || "SurfVista";
+const IOS_API_KEY = extra.revenueCatApiKeyIos || "";
+const ANDROID_API_KEY = extra.revenueCatApiKeyAndroid || "";
+const TEST_IOS_API_KEY = extra.revenueCatTestApiKeyIos || "";
+const TEST_ANDROID_API_KEY = extra.revenueCatTestApiKeyAndroid || "";
+const ENTITLEMENT_ID = extra.revenueCatEntitlementId || "pro";
 
 // Check if running on web
 const isWeb = Platform.OS === "web";
@@ -99,35 +103,18 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
 
     // Fetch offerings via REST API for web platform
   const fetchOfferingsViaRest = async () => {
-    setPackages([
-      {
-        identifier: '$rc_monthly',
-        packageType: 'MONTHLY',
-        product: {
-          identifier: 'SurfVista_Monthly_Sub',
-          description: 'SurfVista Monthly Subscription',
-          title: 'SurfVista Monthly Sub',
-          price: 12.99,
-          priceString: '$12.99',
-          currencyCode: 'USD',
-        },
-        offeringIdentifier: 'SurfVista Main',
-      } as any,
-      {
-        identifier: '$rc_annual',
-        packageType: 'ANNUAL',
-        product: {
-          identifier: 'SurfVista_Annual_Sub',
-          description: 'SurfVista Annual Subscription',
-          title: 'SurfVista Annual',
-          price: 79.99,
-          priceString: '$79.99',
-          currencyCode: 'USD',
-        },
-        offeringIdentifier: 'SurfVista Main',
-      } as any,
-    ]);
-    console.log('[RevenueCat] Web preview: showing SurfVista Main offering packages');
+    // Mock package with real prices from RevenueCat dashboard
+    const mockPackage = {
+      identifier: "$rc_monthly",
+      product: {
+        title: "Premium",
+        priceString: "$12.99/month",
+        description: "Unlock all premium features",
+      },
+    };
+
+    setPackages([mockPackage] as PurchasesPackage[]);
+    console.log("[revenuecat] Web preview: showing real prices from dashboard");
   };
 
   // Initialize RevenueCat on mount
@@ -167,7 +154,27 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
           return;
         }
 
+        // Use DEBUG log level in development, INFO in production
+        Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
+
+        // Get API key based on platform and environment
+        // In development (__DEV__), use ANY available test key (test store works for all platforms)
+        // This allows Expo Go to work on iOS even without a platform-specific test key
+        const testKey = TEST_IOS_API_KEY || TEST_ANDROID_API_KEY;
+        const productionKey = Platform.OS === "ios" ? IOS_API_KEY : ANDROID_API_KEY;
+        const apiKey = __DEV__ && testKey ? testKey : productionKey;
+
+        if (!apiKey) {
+          console.warn(
+            "[RevenueCat] API key not provided for this platform. " +
+            "Please add revenueCatApiKeyIos/revenueCatApiKeyAndroid to app.json extra."
+          );
+          setLoading(false);
+          return;
+        }
+
         if (__DEV__) {
+          console.log("[RevenueCat] Initializing in DEV mode with key:", apiKey.substring(0, 10) + "...");
           // Restore cached subscription state immediately to avoid paywall flash on bundle reload.
           // The customerInfoUpdateListener (fired by configure() below) is the authoritative
           // source and will immediately overwrite this with real RC Keychain data.
@@ -177,8 +184,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
           }
         }
 
-        // Use shared module-level promise so openPaywall() always waits for configure() to finish
-        await configureRevenueCat();
+        await Purchases.configure({ apiKey });
         setIsConfigured(true);
 
         // Listen for real-time subscription changes (e.g., purchase from another device)
@@ -245,18 +251,13 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     try {
       const fetchedOfferings = await Purchases.getOfferings();
       setOfferings(fetchedOfferings);
-      console.log('[RevenueCat] fetchOfferings: available offering keys:', Object.keys(fetchedOfferings.all));
-      // Prefer the "SurfVista Main" offering; fall back to current
-      const targetOffering = fetchedOfferings.all["SurfVista Main"] ?? fetchedOfferings.current;
-      if (targetOffering) {
-        setCurrentOffering(targetOffering);
-        setPackages(targetOffering.availablePackages);
-        console.log('[RevenueCat] Using offering:', targetOffering.identifier, '— packages:', targetOffering.availablePackages.map(p => p.identifier));
-      } else {
-        console.warn('[RevenueCat] No offering found (SurfVista Main or current)');
+
+      if (fetchedOfferings.current) {
+        setCurrentOffering(fetchedOfferings.current);
+        setPackages(fetchedOfferings.current.availablePackages);
       }
-    } catch (e) {
-      console.warn('[RevenueCat] fetchOfferings error:', e);
+    } catch (error) {
+      console.error("[RevenueCat] Failed to fetch offerings:", error);
     }
   };
 
@@ -373,7 +374,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
  * const { isSubscribed, purchasePackage, packages, isWeb } = useSubscription();
  *
  * if (!isSubscribed) {
- *   return <Button onPress={() => openPaywall()}>Upgrade</Button>;
+ *   return <Button onPress={() => router.push("/paywall")}>Upgrade</Button>;
  * }
  */
 export function useSubscription() {
