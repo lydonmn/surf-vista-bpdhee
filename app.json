@@ -28,10 +28,7 @@
         "usesNonExemptEncryption": false
       },
       "entitlements": {
-        "aps-environment": "production",
-        "com.apple.security.application-groups": [
-          "group.Therealfollysurfreport.SurfVista.onesignal"
-        ]
+        "aps-environment": "production"
       }
     },
     "android": {
