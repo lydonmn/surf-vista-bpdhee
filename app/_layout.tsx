@@ -11,7 +11,6 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
-import { initializeRevenueCat } from '@/utils/superwallConfig';
 import { isOnboardingComplete } from "@/utils/onboardingStorage";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
@@ -159,15 +158,6 @@ export default function RootLayout() {
       setOnboardingComplete(complete);
     });
   }, [pathname]);
-
-  // Initialize RevenueCat early on native platforms
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    console.log('[RootLayout] Initializing RevenueCat...');
-    initializeRevenueCat()
-      .then((ok) => console.log('[RootLayout] RevenueCat initialized:', ok))
-      .catch((err) => console.warn('[RootLayout] RevenueCat init error:', err));
-  }, []);
 
   // Set up notification listeners at the app root — native only
   useEffect(() => {
