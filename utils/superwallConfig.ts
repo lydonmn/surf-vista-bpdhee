@@ -2,12 +2,13 @@
 // This file exists only for backward compatibility with any remaining imports.
 import { Platform } from 'react-native';
 import { openPaywall, openPaywallIfNeeded } from './paywallHelper';
+import { configureRevenueCat } from './revenueCatInit';
 
 export { openPaywall as presentPaywall, openPaywallIfNeeded };
 
 export async function initializeRevenueCat(): Promise<boolean> {
-  // No-op: RevenueCat is initialized by SubscriptionContext
-  console.log('[superwallConfig] initializeRevenueCat() called — no-op, RC managed by SubscriptionContext');
+  console.log('[superwallConfig] initializeRevenueCat() called — delegating to configureRevenueCat');
+  await configureRevenueCat();
   return true;
 }
 
