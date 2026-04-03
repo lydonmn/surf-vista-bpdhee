@@ -1,61 +1,19 @@
 
-import { Alert } from 'react-native';
-import {
-  presentPaywall,
-  isPaymentSystemAvailable,
-  initializeRevenueCat,
-} from './superwallConfig';
+import { router } from 'expo-router';
 
 /**
  * Helper function to present the paywall from any screen.
- * Auto-initializes RevenueCat if not yet ready, then presents the paywall.
+ * Navigates to /paywall using router.push — ensures the paywall screen
+ * always shows correctly in TestFlight/production (no SDK presentPaywall call).
+ *
+ * onSuccess is kept for API compatibility but is not called here since
+ * the paywall screen handles its own post-purchase navigation.
  */
 export async function openPaywall(
   userId?: string,
   userEmail?: string,
   onSuccess?: () => void
 ): Promise<void> {
-  console.log('[PaywallHelper] Opening paywall - userId:', userId);
-
-  try {
-    // Always ensure RevenueCat is initialized before presenting
-    if (!isPaymentSystemAvailable()) {
-      console.log('[PaywallHelper] RevenueCat not ready, initializing now...');
-      const initialized = await initializeRevenueCat();
-      console.log('[PaywallHelper] Initialization result:', initialized);
-      // presentPaywall handles its own not-initialized guard — continue regardless
-    }
-
-    const result = await presentPaywall(userId, userEmail);
-    console.log('[PaywallHelper] Paywall result:', result.state);
-
-    if (result.state === 'purchased' || result.state === 'restored') {
-      Alert.alert(
-        'Success!',
-        result.message || 'Subscription activated successfully!',
-        [{ text: 'OK', onPress: onSuccess }]
-      );
-    } else if (result.state === 'not_configured') {
-      Alert.alert(
-        'Setup Required',
-        result.message || 'Subscriptions are not configured yet.',
-        [{ text: 'OK' }]
-      );
-    } else if (result.state === 'error') {
-      Alert.alert(
-        'Error',
-        result.message || 'Unable to load subscription options.',
-        [{ text: 'OK' }]
-      );
-    }
-    // 'declined' — user cancelled, do nothing
-
-  } catch (error) {
-    console.error('[PaywallHelper] Error opening paywall:', error);
-    Alert.alert(
-      'Subscribe Failed',
-      'Unable to open subscription page. Please try again later.',
-      [{ text: 'OK' }]
-    );
-  }
+  console.log('[PaywallHelper] Opening paywall via router.push - userId:', userId);
+  router.push('/paywall');
 }

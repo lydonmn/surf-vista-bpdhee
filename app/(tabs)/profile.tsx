@@ -229,6 +229,21 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSubscribeNow = async () => {
+    console.log('[Profile] Subscribe now pressed');
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    try {
+      await openPaywall(user.id, user.email || undefined, async () => {
+        await refreshProfile();
+      });
+    } catch (subscribeError) {
+      console.error('[Profile] Subscribe error:', subscribeError);
+    }
+  };
+
 
 
   if (!user) {
@@ -350,6 +365,22 @@ export default function ProfileScreen() {
             />
             <Text style={styles.actionButtonText}>Refresh Profile Data</Text>
           </TouchableOpacity>
+
+          {!isSubscribed && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.accent }]}
+              onPress={handleSubscribeNow}
+              disabled={isLoading}
+            >
+              <IconSymbol
+                ios_icon_name="star.fill"
+                android_material_icon_name="star"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Subscribe Now</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card }]}>

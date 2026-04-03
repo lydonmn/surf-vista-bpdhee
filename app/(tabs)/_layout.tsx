@@ -1,8 +1,11 @@
 
 import { Stack } from 'expo-router';
 import FloatingTabBar, { TabBarItem } from '@/components/FloatingTabBar';
+import { useSubscriptionGuard } from "@/hooks/useSubscriptionGuard";
 
 export default function TabLayout() {
+  useSubscriptionGuard();
+
   const tabs: TabBarItem[] = [
     {
       name: '(home)',
