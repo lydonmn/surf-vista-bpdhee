@@ -121,9 +121,7 @@ export default function VideosScreen() {
     // Non-subscribers: show paywall instead of playing
     if (!isSubscribed) {
       console.log('[VideosScreen] Non-subscriber tapped video — opening paywall');
-      await openPaywall(user?.id, user?.email || undefined, async () => {
-        // Subscription acquired — nothing extra needed here
-      });
+      await openPaywall();
       return;
     }
 

@@ -65,7 +65,9 @@ export default function OnboardingScreen() {
 
     if (isLastStep) {
       await completeOnboarding();
-      router.replace("/paywall");
+      router.replace("/(tabs)");
+      const { openPaywall } = await import('@/utils/paywallHelper');
+      openPaywall().catch(() => {});
     } else {
       if (isAnimating.current) return;
       isAnimating.current = true;

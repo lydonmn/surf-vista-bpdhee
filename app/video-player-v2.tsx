@@ -29,7 +29,7 @@ export default function VideoPlayerV2Screen() {
   useEffect(() => {
     if (!isSubscribed) {
       console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
-      openPaywall(user?.id, user?.email || undefined).then(() => {
+      openPaywall().then(() => {
         router.back();
       });
     }

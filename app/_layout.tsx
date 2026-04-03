@@ -246,7 +246,6 @@ export default function RootLayout() {
               <Stack.Screen name="admin-regional" options={{ headerShown: false }} />
               <Stack.Screen name="admin-video-cache" options={{ headerShown: false }} />
               <Stack.Screen name="setup-admin" options={{ headerShown: false }} />
-              <Stack.Screen name="demo-paywall" options={{ headerShown: false }} />
               <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
               <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
