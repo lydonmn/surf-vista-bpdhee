@@ -100,7 +100,7 @@ export const PAYMENT_CONFIG = {
     MONTHLY_SUBSCRIPTION: 'surfvista_Monthly',
     ANNUAL_SUBSCRIPTION: 'surfvista_Annual',
   },
-  ENTITLEMENT_ID: 'pro',
+  ENTITLEMENT_ID: 'SurfVista',
   OFFERING_ID: 'default',
   PACKAGE_IDS: {
     MONTHLY: '$rc_monthly',
