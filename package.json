@@ -66,6 +66,7 @@
     "react-native-maps": "^1.20.1",
     "react-native-onesignal": "file:stubs/onesignal",
     "react-native-purchases": "^9.15.1",
+    "react-native-purchases-ui": "^9.15.1",
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "~4.16.0",
