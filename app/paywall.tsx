@@ -276,6 +276,17 @@ export default function PaywallScreen() {
         <View style={[styles.floatingOrb, styles.orb3]} />
 
         <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => {
+              console.log('[Paywall] Close button pressed');
+              router.back();
+            }}
+            style={styles.closeButton}
+          >
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
+
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
@@ -285,11 +296,11 @@ export default function PaywallScreen() {
             <View style={styles.header}>
               {/* Premium badge */}
               <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+                <Text style={styles.premiumBadgeText}>SURFVISTA PRO</Text>
               </View>
-              <Text style={styles.title}>Upgrade to Premium</Text>
+              <Text style={styles.title}>Unlock SurfVista Pro</Text>
               <Text style={styles.subtitle}>
-                Unlock all features and get the most out of the app
+                Get full access to drone videos and premium surf content
               </Text>
             </View>
 
@@ -591,6 +602,22 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 24,
     paddingTop: 60,
+  },
+  closeButton: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    zIndex: 10,
+    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  closeButtonText: {
+    color: "white",
+    fontSize: 24,
+    fontWeight: "600",
   },
   header: {
     alignItems: "center",

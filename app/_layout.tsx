@@ -112,7 +112,7 @@ const errorStyles = StyleSheet.create({
 });
 
 function SubscriptionRedirect() {
-  const { isSubscribed, loading } = useSubscription();
+  const { loading } = useSubscription();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -133,23 +133,10 @@ function SubscriptionRedirect() {
       if (cancelled) return;
       if (!done) {
         router.replace("/onboarding");
-        return;
       }
-      const onPaywall = pathname === "/paywall";
-      if (onPaywall) return;
-      if (!isSubscribed) {
-        router.replace("/paywall");
-      }
-    }).catch(() => {
-      if (cancelled) return;
-      const onPaywall = pathname === "/paywall";
-      if (onPaywall) return;
-      if (!isSubscribed) {
-        router.replace("/paywall");
-      }
-    });
+    }).catch(() => {});
     return () => { cancelled = true; };
-  }, [isSubscribed, loading, authLoading, pathname, user]);
+  }, [loading, authLoading, pathname, user]);
 
   return null;
 }
