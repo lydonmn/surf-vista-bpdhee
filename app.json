@@ -68,7 +68,13 @@
         "origin": false
       },
       "eas": {},
-      "oneSignalAppId": "b991c245-3c87-4a1b-9676-b23323e73f07"
+      "oneSignalAppId": "b991c245-3c87-4a1b-9676-b23323e73f07",
+      "revenueCatApiKeyIos": "appl_ZexnzniGbUDDjnzWtDktSfCKwRG",
+      "revenueCatApiKeyAndroid": "goog_HpaeitYCWGXDSXGokGGUQzHxGiA",
+      "revenueCatTestApiKeyIos": "test_LsPhGryqLzbTsyffWcddIcgxOHx",
+      "revenueCatTestApiKeyAndroid": "test_LsPhGryqLzbTsyffWcddIcgxOHx",
+      "revenueCatEntitlementId": "pro",
+      "nativelyProjectId": "e1ee166c-212b-4eca-a1d7-44183b7be073"
     }
   }
 }

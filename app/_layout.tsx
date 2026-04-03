@@ -2,15 +2,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
+import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { initializeRevenueCat } from '@/utils/superwallConfig';
+import { isOnboardingComplete } from "@/utils/onboardingStorage";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -109,17 +111,69 @@ const errorStyles = StyleSheet.create({
   },
 });
 
+function SubscriptionRedirect() {
+  const { isSubscribed, loading } = useSubscription();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (loading || authLoading) return;
+    const onAuthScreen = pathname === "/login";
+    if (onAuthScreen) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    const onOnboarding = pathname.startsWith("/onboarding");
+    if (onOnboarding) return;
+
+    let cancelled = false;
+    isOnboardingComplete().then((done) => {
+      if (cancelled) return;
+      if (!done) {
+        router.replace("/onboarding");
+        return;
+      }
+      const onPaywall = pathname === "/paywall";
+      if (onPaywall) return;
+      if (!isSubscribed) {
+        router.replace("/paywall");
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      const onPaywall = pathname === "/paywall";
+      if (onPaywall) return;
+      if (!isSubscribed) {
+        router.replace("/paywall");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isSubscribed, loading, authLoading, pathname, user]);
+
+  return null;
+}
+
 export default function RootLayout() {
   console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
-  
+
   const colorScheme = useColorScheme();
   const [appReady, setAppReady] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
+  const pathname = usePathname();
+
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  useEffect(() => {
+    isOnboardingComplete().then((complete) => {
+      setOnboardingComplete(complete);
+    });
+  }, [pathname]);
 
   // Initialize RevenueCat early on native platforms
   useEffect(() => {
@@ -159,13 +213,13 @@ export default function RootLayout() {
     };
   }, []);
 
-  // 🚨 CRITICAL FIX: Wait for fonts to load before rendering app
+  // Wait for fonts to load before rendering app
   useEffect(() => {
     console.log('[RootLayout] Font loading status - loaded:', loaded, 'error:', fontError);
-    
+
     if (loaded || fontError) {
       console.log('[RootLayout] Fonts ready, preparing app...');
-      
+
       // Small delay to ensure everything is ready
       setTimeout(() => {
         if (Platform.OS !== 'web') {
@@ -186,9 +240,9 @@ export default function RootLayout() {
     }
   }, [loaded, fontError]);
 
-  // 🚨 CRITICAL FIX: Don't render anything until fonts are loaded
-  if (!loaded && !fontError) {
-    console.log('[RootLayout] Waiting for fonts to load...');
+  // Don't render anything until fonts are loaded or onboarding state is known
+  if ((!loaded && !fontError) || onboardingComplete === null) {
+    console.log('[RootLayout] Waiting for fonts/onboarding state...');
     return null;
   }
 
@@ -198,9 +252,14 @@ export default function RootLayout() {
     <ErrorBoundaryClass>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
+        <SubscriptionProvider>
+          <SubscriptionRedirect />
         <NotificationProvider>
           <LocationProvider>
+
             <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -257,6 +316,7 @@ export default function RootLayout() {
             <StatusBar style="auto" />
           </LocationProvider>
         </NotificationProvider>
+        </SubscriptionProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundaryClass>
