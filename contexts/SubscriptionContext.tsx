@@ -40,7 +40,7 @@ const IOS_API_KEY = extra.revenueCatApiKeyIos || "";
 const ANDROID_API_KEY = extra.revenueCatApiKeyAndroid || "";
 const TEST_IOS_API_KEY = extra.revenueCatTestApiKeyIos || "";
 const TEST_ANDROID_API_KEY = extra.revenueCatTestApiKeyAndroid || "";
-const ENTITLEMENT_ID = extra.revenueCatEntitlementId || "pro";
+const ENTITLEMENT_ID = extra.revenueCatEntitlementId || "SurfVista";
 
 // Check if running on web
 const isWeb = Platform.OS === "web";
@@ -103,18 +103,35 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
 
     // Fetch offerings via REST API for web platform
   const fetchOfferingsViaRest = async () => {
-    // Mock package with real prices from RevenueCat dashboard
-    const mockPackage = {
-      identifier: "$rc_monthly",
-      product: {
-        title: "Premium",
-        priceString: "$12.99/month",
-        description: "Unlock all premium features",
-      },
-    };
-
-    setPackages([mockPackage] as PurchasesPackage[]);
-    console.log("[revenuecat] Web preview: showing real prices from dashboard");
+    setPackages([
+      {
+        identifier: '$rc_monthly',
+        packageType: 'MONTHLY',
+        product: {
+          identifier: 'SurfVista_Monthly_Sub',
+          description: 'SurfVista Monthly Subscription',
+          title: 'SurfVista Monthly Sub',
+          price: 12.99,
+          priceString: '$12.99',
+          currencyCode: 'USD',
+        },
+        offeringIdentifier: 'SurfVista Main',
+      } as any,
+      {
+        identifier: '$rc_annual',
+        packageType: 'ANNUAL',
+        product: {
+          identifier: 'SurfVista_Annual_Sub',
+          description: 'SurfVista Annual Subscription',
+          title: 'SurfVista Annual',
+          price: 79.99,
+          priceString: '$79.99',
+          currencyCode: 'USD',
+        },
+        offeringIdentifier: 'SurfVista Main',
+      } as any,
+    ]);
+    console.log('[RevenueCat] Web preview: showing SurfVista Main offering packages');
   };
 
   // Initialize RevenueCat on mount
@@ -251,13 +268,18 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     try {
       const fetchedOfferings = await Purchases.getOfferings();
       setOfferings(fetchedOfferings);
-
-      if (fetchedOfferings.current) {
-        setCurrentOffering(fetchedOfferings.current);
-        setPackages(fetchedOfferings.current.availablePackages);
+      console.log('[RevenueCat] fetchOfferings: available offering keys:', Object.keys(fetchedOfferings.all));
+      // Prefer the "SurfVista Main" offering; fall back to current
+      const targetOffering = fetchedOfferings.all["SurfVista Main"] ?? fetchedOfferings.current;
+      if (targetOffering) {
+        setCurrentOffering(targetOffering);
+        setPackages(targetOffering.availablePackages);
+        console.log('[RevenueCat] Using offering:', targetOffering.identifier, '— packages:', targetOffering.availablePackages.map(p => p.identifier));
+      } else {
+        console.warn('[RevenueCat] No offering found (SurfVista Main or current)');
       }
-    } catch (error) {
-      console.error("[RevenueCat] Failed to fetch offerings:", error);
+    } catch (e) {
+      console.warn('[RevenueCat] fetchOfferings error:', e);
     }
   };
 

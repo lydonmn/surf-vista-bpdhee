@@ -80,10 +80,12 @@ export default function PaywallScreen() {
   const [webMockState, setWebMockState] = useState<"idle" | "processing">("idle");
   const [webMockDialogState, setWebMockDialogState] = useState<"hidden" | "selecting" | "failed">("hidden");
 
-  // Update selected package when packages load
+  // Update selected package when packages load — prefer annual
   React.useEffect(() => {
     if (packages.length > 0 && !selectedPackage) {
-      setSelectedPackage(packages[0]);
+      const annual = packages.find(p => p.identifier === '$rc_annual');
+      setSelectedPackage(annual ?? packages[0]);
+      console.log('[Paywall] Pre-selecting package:', (annual ?? packages[0]).identifier);
     }
   }, [packages, selectedPackage]);
 
@@ -314,6 +316,9 @@ export default function PaywallScreen() {
               <View style={styles.packagesContainer}>
                 {packages.map((pkg) => {
                   const isSelected = selectedPackage?.identifier === pkg.identifier;
+                  const isAnnual = pkg.identifier === '$rc_annual';
+                  const priceDisplay = pkg.product.priceString ?? '';
+                  const savingsText = isAnnual ? 'Save 49% vs monthly' : 'per month';
                   return (
                     <TouchableOpacity
                       key={pkg.identifier}
@@ -321,27 +326,40 @@ export default function PaywallScreen() {
                         styles.packageCard,
                         isSelected && styles.packageCardSelected,
                       ]}
-                      onPress={() => setSelectedPackage(pkg)}
+                      onPress={() => {
+                        console.log('[Paywall] Package selected:', pkg.identifier);
+                        setSelectedPackage(pkg);
+                      }}
                     >
                       {isSelected && <View style={styles.selectedIndicator} />}
                       <View style={styles.packageHeader}>
-                        <Text style={styles.packageTitle}>{pkg.product.title}</Text>
+                        <View style={styles.packageTitleRow}>
+                          <Text style={styles.packageTitle}>{pkg.product.title}</Text>
+                          {isAnnual && (
+                            <View style={styles.bestValueBadge}>
+                              <Text style={styles.bestValueText}>Best Value</Text>
+                            </View>
+                          )}
+                        </View>
                         {isSelected && (
                           <View style={styles.checkmarkCircle}>
                             <Text style={styles.checkmark}>✓</Text>
                           </View>
                         )}
                       </View>
-                      {pkg.product.priceString ? (
+                      {priceDisplay ? (
                         <Text style={styles.packagePrice}>
-                          {pkg.product.priceString}
+                          {priceDisplay}
                         </Text>
                       ) : null}
-                      {pkg.product.description && (
+                      <Text style={styles.packageSavings}>
+                        {savingsText}
+                      </Text>
+                      {pkg.product.description ? (
                         <Text style={styles.packageDescription}>
                           {pkg.product.description}
                         </Text>
-                      )}
+                      ) : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -679,10 +697,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  packageTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+  },
   packageTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: "#fff",
+  },
+  bestValueBadge: {
+    backgroundColor: "rgba(255, 215, 0, 0.35)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.6)",
+  },
+  bestValueText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFD700",
+    letterSpacing: 0.5,
+  },
+  packageSavings: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.65)",
+    marginTop: 2,
   },
   checkmarkCircle: {
     width: 24,
