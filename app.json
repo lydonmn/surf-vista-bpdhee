@@ -4,11 +4,11 @@
     "slug": "surfvista",
     "version": "13.0.3",
     "orientation": "portrait",
-    "icon": "./assets/images/d1b0f78f-fe17-49d7-a60f-6db90ccdc8ba.jpeg",
+    "icon": "./assets/images/1eb314fe-569b-405a-a853-21fbb4d0a20e.jpeg",
     "scheme": "surfvista",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/d1b0f78f-fe17-49d7-a60f-6db90ccdc8ba.jpeg",
+      "image": "./assets/images/1eb314fe-569b-405a-a853-21fbb4d0a20e.jpeg",
       "resizeMode": "cover",
       "backgroundColor": "#000000"
     },
@@ -33,7 +33,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/d1b0f78f-fe17-49d7-a60f-6db90ccdc8ba.jpeg",
+        "foregroundImage": "./assets/images/1eb314fe-569b-405a-a853-21fbb4d0a20e.jpeg",
         "backgroundColor": "#000000"
       },
       "package": "com.lukestageberg.SurfVista",
@@ -49,7 +49,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/d1b0f78f-fe17-49d7-a60f-6db90ccdc8ba.jpeg",
+          "icon": "./assets/images/1eb314fe-569b-405a-a853-21fbb4d0a20e.jpeg",
           "color": "#ffffff"
         }
       ],
