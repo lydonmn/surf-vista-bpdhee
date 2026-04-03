@@ -29,9 +29,14 @@ export default function VideoPlayerV2Screen() {
   useEffect(() => {
     if (!isSubscribed) {
       console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
-      openPaywall().then(() => {
-        router.back();
-      });
+      openPaywall()
+        .then(() => {
+          router.back();
+        })
+        .catch((err: unknown) => {
+          console.warn('[VideoPlayerV2] openPaywall error (swallowed):', err);
+          router.back();
+        });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

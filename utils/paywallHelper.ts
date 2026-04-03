@@ -25,8 +25,14 @@ export async function openPaywall(
   // Wait for the module-level promise to fully resolve before presenting UI
   await revenueCatConfigured;
   console.log('[PaywallHelper] RC confirmed configured — presenting paywall');
-  await RevenueCatUI.presentPaywall();
-  console.log('[PaywallHelper] RevenueCat native paywall dismissed');
+  try {
+    const result = await RevenueCatUI.presentPaywall();
+    console.log('[PaywallHelper] RevenueCat native paywall dismissed, result:', result);
+  } catch (paywallErr: unknown) {
+    // Swallow errors from the paywall (e.g. user cancellation, native module unavailable in Expo Go)
+    console.warn('[PaywallHelper] presentPaywall error (swallowed):', paywallErr);
+    return;
+  }
   if (onSuccess) {
     try {
       await onSuccess();
@@ -49,8 +55,14 @@ export async function openPaywallIfNeeded(
   await configureRevenueCat();
   await revenueCatConfigured;
   console.log('[PaywallHelper] RC confirmed configured — presenting paywall if needed');
-  await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: 'SurfVista' });
-  console.log('[PaywallHelper] RevenueCat native paywall if-needed dismissed');
+  try {
+    const result = await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: 'SurfVista' });
+    console.log('[PaywallHelper] RevenueCat native paywall if-needed dismissed, result:', result);
+  } catch (paywallErr: unknown) {
+    // Swallow errors from the paywall (e.g. user cancellation, native module unavailable in Expo Go)
+    console.warn('[PaywallHelper] presentPaywallIfNeeded error (swallowed):', paywallErr);
+    return;
+  }
   if (onSuccess) {
     try {
       await onSuccess();

@@ -53,7 +53,11 @@ export async function restorePurchases(): Promise<{ success: boolean; state?: 'r
 
 export async function presentCustomerCenter(): Promise<void> {
   console.log('[superwallConfig] presentCustomerCenter() — delegating to openPaywall');
-  await openPaywall();
+  try {
+    await openPaywall();
+  } catch (err: unknown) {
+    console.warn('[superwallConfig] presentCustomerCenter error (swallowed):', err);
+  }
 }
 
 export async function forceRefreshOfferings(): Promise<{ success: boolean; message: string }> {
