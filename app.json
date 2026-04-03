@@ -49,7 +49,6 @@
     },
     "plugins": [
       "expo-router",
-      "react-native-purchases",
       [
         "expo-notifications",
         {
