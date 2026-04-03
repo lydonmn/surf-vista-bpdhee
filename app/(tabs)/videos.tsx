@@ -11,6 +11,7 @@ import { supabase } from "@/app/integrations/supabase/client";
 import { VideoPreloadIndicator } from "@/components/VideoPreloadIndicator";
 import { useLocation } from "@/contexts/LocationContext";
 import { openPaywall } from "@/utils/paywallHelper";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 // 🎬 Mux HLS URL prefix for detection
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
@@ -20,6 +21,7 @@ export default function VideosScreen() {
   const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
   const { locationData } = useLocation();
+  const { loading: rcLoading } = useSubscription();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
   const isSubscribed = checkSubscription();
@@ -120,6 +122,10 @@ export default function VideosScreen() {
 
     // Non-subscribers: show paywall instead of playing
     if (!isSubscribed) {
+      if (rcLoading) {
+        console.log('[VideosScreen] RC still initializing — ignoring paywall tap');
+        return;
+      }
       console.log('[VideosScreen] Non-subscriber tapped video — opening paywall');
       await openPaywall();
       return;
@@ -135,7 +141,7 @@ export default function VideosScreen() {
         preloadedUrl: preloadedUrl || '',
       }
     });
-  }, [isSubscribed, user]);
+  }, [isSubscribed, rcLoading, user]);
 
   // Helper function to get the correct video source for preview
   const getVideoPreviewSource = React.useCallback((video: any) => {

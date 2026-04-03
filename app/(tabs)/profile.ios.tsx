@@ -23,10 +23,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { openPaywall } from "@/utils/paywallHelper";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const { user, profile, signOut, deleteAccount, refreshProfile, checkSubscription } = useAuth();
+  const { loading: rcLoading } = useSubscription();
 
   const [isLoading, setIsLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -345,12 +347,14 @@ export default function ProfileScreen() {
 
           {!isSubscribed && (
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.accent }]}
+              style={[styles.actionButton, { backgroundColor: colors.accent }, rcLoading && { opacity: 0.5 }]}
               onPress={handleSubscribeNow}
-              disabled={isLoading}
+              disabled={isLoading || rcLoading}
             >
               <IconSymbol ios_icon_name="star.fill" android_material_icon_name="star" size={20} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Subscribe Now</Text>
+              <Text style={styles.actionButtonText}>
+                {rcLoading ? 'Loading...' : 'Subscribe Now'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>

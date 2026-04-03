@@ -9,6 +9,7 @@ import {
   initializeRevenueCat
 } from '@/utils/superwallConfig';
 import { openPaywall } from '@/utils/paywallHelper';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 import { NotificationLocationSelector } from "@/components/NotificationLocationSelector";
 import { useTheme } from "@react-navigation/native";
 import { 
@@ -27,7 +28,8 @@ import { colors } from "@/styles/commonStyles";
 export default function ProfileScreen() {
   const theme = useTheme();
   const { user, profile, signOut, deleteAccount, refreshProfile, checkSubscription } = useAuth();
-  
+  const { loading: rcLoading } = useSubscription();
+
   const [isLoading, setIsLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationLocations, setNotificationLocationsState] = useState<string[]>([]);
@@ -368,9 +370,9 @@ export default function ProfileScreen() {
 
           {!isSubscribed && (
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.accent }]}
+              style={[styles.actionButton, { backgroundColor: colors.accent }, rcLoading && { opacity: 0.5 }]}
               onPress={handleSubscribeNow}
-              disabled={isLoading}
+              disabled={isLoading || rcLoading}
             >
               <IconSymbol
                 ios_icon_name="star.fill"
@@ -378,7 +380,9 @@ export default function ProfileScreen() {
                 size={20}
                 color="#FFFFFF"
               />
-              <Text style={styles.actionButtonText}>Subscribe Now</Text>
+              <Text style={styles.actionButtonText}>
+                {rcLoading ? 'Loading...' : 'Subscribe Now'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
