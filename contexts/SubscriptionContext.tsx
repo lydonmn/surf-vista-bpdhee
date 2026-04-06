@@ -14,7 +14,7 @@
  * 2. Run: pnpm install react-native-purchases && npx expo prebuild
  */
 
-import React, {
+import {
   createContext,
   useContext,
   useState,
@@ -26,20 +26,16 @@ import Purchases, {
   PurchasesOfferings,
   PurchasesOffering,
   PurchasesPackage,
-  LOG_LEVEL,
 } from "react-native-purchases";
+import { configureRevenueCat } from "@/utils/revenueCatInit";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
 // Import auth hook for user syncing (validated at setup time)
 import { useAuth } from "./AuthContext";
 
-// Read API keys from app.json (expo.extra)
+// Read config from app.json (expo.extra)
 const extra = Constants.expoConfig?.extra || {};
-const IOS_API_KEY = extra.revenueCatApiKeyIos || "";
-const ANDROID_API_KEY = extra.revenueCatApiKeyAndroid || "";
-const TEST_IOS_API_KEY = extra.revenueCatTestApiKeyIos || "";
-const TEST_ANDROID_API_KEY = extra.revenueCatTestApiKeyAndroid || "";
 const ENTITLEMENT_ID = extra.revenueCatEntitlementId || "SurfVista";
 
 // Check if running on web
@@ -154,37 +150,16 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
           return;
         }
 
-        // Use DEBUG log level in development, INFO in production
-        Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
-
-        // Get API key based on platform and environment
-        // In development (__DEV__), use ANY available test key (test store works for all platforms)
-        // This allows Expo Go to work on iOS even without a platform-specific test key
-        const testKey = TEST_IOS_API_KEY || TEST_ANDROID_API_KEY;
-        const productionKey = Platform.OS === "ios" ? IOS_API_KEY : ANDROID_API_KEY;
-        const apiKey = __DEV__ && testKey ? testKey : productionKey;
-
-        if (!apiKey) {
-          console.warn(
-            "[RevenueCat] API key not provided for this platform. " +
-            "Please add revenueCatApiKeyIos/revenueCatApiKeyAndroid to app.json extra."
-          );
-          setLoading(false);
-          return;
-        }
-
+        // Restore cached subscription state immediately to avoid paywall flash on bundle reload
         if (__DEV__) {
-          console.log("[RevenueCat] Initializing in DEV mode with key:", apiKey.substring(0, 10) + "...");
-          // Restore cached subscription state immediately to avoid paywall flash on bundle reload.
-          // The customerInfoUpdateListener (fired by configure() below) is the authoritative
-          // source and will immediately overwrite this with real RC Keychain data.
           const cached = await SecureStore.getItemAsync(NATIVE_PURCHASE_KEY).catch(() => null);
           if (cached === "true") {
             setIsSubscribed(true);
           }
         }
 
-        await Purchases.configure({ apiKey });
+        // Use shared configureRevenueCat() so the revenueCatConfigured promise resolves
+        await configureRevenueCat();
         setIsConfigured(true);
 
         // Listen for real-time subscription changes (e.g., purchase from another device)
