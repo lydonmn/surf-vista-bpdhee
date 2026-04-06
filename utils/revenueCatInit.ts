@@ -23,19 +23,15 @@ export async function configureRevenueCat(): Promise<void> {
       return;
     }
     const extra = Constants.expoConfig?.extra || {};
-    const testKey = extra.revenueCatTestApiKeyIos || extra.revenueCatTestApiKeyAndroid || '';
-    const productionKey =
-      Platform.OS === 'ios'
-        ? (extra.revenueCatApiKeyIos || '')
-        : (extra.revenueCatApiKeyAndroid || '');
-    const usingTestKey = __DEV__ && !!testKey;
-    const apiKey = usingTestKey ? testKey : productionKey;
+    const apiKey = Platform.OS === 'ios'
+      ? (extra.revenueCatApiKeyIos || 'appl_uyUNhkTURhBCqiVsRaBqBYbhIda')
+      : (extra.revenueCatApiKeyAndroid || '');
     if (!apiKey) {
-      console.warn('[RC] No API key found — cannot configure. __DEV__:', __DEV__, 'platform:', Platform.OS);
+      console.warn('[RC] No API key found — cannot configure. platform:', Platform.OS);
       _resolveConfigured();
       return;
     }
-    console.log('[RC] Configuring with', usingTestKey ? 'TEST key' : 'PRODUCTION key', 'platform:', Platform.OS);
+    console.log('[RC] Configuring with PRODUCTION key, platform:', Platform.OS);
     Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
     await Purchases.configure({ apiKey });
     _configured = true;
