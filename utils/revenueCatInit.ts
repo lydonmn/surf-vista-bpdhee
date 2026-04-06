@@ -28,16 +28,18 @@ export async function configureRevenueCat(): Promise<void> {
       Platform.OS === 'ios'
         ? (extra.revenueCatApiKeyIos || '')
         : (extra.revenueCatApiKeyAndroid || '');
-    const apiKey = __DEV__ && testKey ? testKey : productionKey;
+    const usingTestKey = __DEV__ && !!testKey;
+    const apiKey = usingTestKey ? testKey : productionKey;
     if (!apiKey) {
-      console.warn('[RC] No API key found — cannot configure');
+      console.warn('[RC] No API key found — cannot configure. __DEV__:', __DEV__, 'platform:', Platform.OS);
       _resolveConfigured();
       return;
     }
+    console.log('[RC] Configuring with', usingTestKey ? 'TEST key' : 'PRODUCTION key', 'platform:', Platform.OS);
     Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.INFO);
     await Purchases.configure({ apiKey });
     _configured = true;
-    console.log('[RC] Purchases.configure() complete');
+    console.log('[RC] Purchases.configure() complete — ready to present paywall');
     _resolveConfigured();
   } catch (e) {
     console.warn('[RC] configure error:', e);
