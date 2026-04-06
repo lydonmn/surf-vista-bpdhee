@@ -14,6 +14,7 @@ import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 import { openPaywall } from '@/utils/paywallHelper';
 
 const CONTROLS_HIDE_DELAY = 3000;
@@ -22,8 +23,8 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
-  const { user, checkSubscription } = useAuth();
-  const isSubscribed = checkSubscription();
+  const { user } = useAuth();
+  const { isSubscribed } = useSubscription();
 
   // Paywall guard — redirect non-subscribers immediately
   useEffect(() => {

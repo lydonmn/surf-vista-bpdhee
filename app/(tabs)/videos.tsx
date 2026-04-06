@@ -18,13 +18,12 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export default function VideosScreen() {
   const theme = useTheme();
-  const { user, profile, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
+  const { user, profile, isLoading: authLoading, isInitialized } = useAuth();
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
   const { locationData } = useLocation();
-  const { loading: rcLoading } = useSubscription();
+  const { isSubscribed, loading: rcLoading } = useSubscription();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
-  const isSubscribed = checkSubscription();
 
   useEffect(() => {
     console.log('VideosScreen - Auth state:', {

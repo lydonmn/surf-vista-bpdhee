@@ -6,7 +6,6 @@ import {
   restorePurchases,
   presentCustomerCenter,
   forceRefreshOfferings,
-  initializeRevenueCat
 } from '@/utils/superwallConfig';
 import { NotificationLocationSelector } from "@/components/NotificationLocationSelector";
 import { useTheme } from "@react-navigation/native";
@@ -27,8 +26,8 @@ import { useSubscription } from "@/contexts/SubscriptionContext";
 
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, profile, signOut, deleteAccount, refreshProfile, checkSubscription } = useAuth();
-  const { loading: rcLoading } = useSubscription();
+  const { user, profile, signOut, deleteAccount, refreshProfile } = useAuth();
+  const { isSubscribed, loading: rcLoading } = useSubscription();
 
   const [isLoading, setIsLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -40,8 +39,6 @@ export default function ProfileScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const isSubscribed = checkSubscription();
-
   const checkPermissions = useCallback(async () => {
     const result = await checkNotificationPermissions();
     setHasPermission(result.granted);
@@ -50,17 +47,6 @@ export default function ProfileScreen() {
   useEffect(() => {
     checkPermissions();
   }, [checkPermissions]);
-
-  useEffect(() => {
-    const initializePayments = async () => {
-      try {
-        await initializeRevenueCat();
-      } catch (initError) {
-        console.log('[Profile] RevenueCat initialization error:', initError);
-      }
-    };
-    initializePayments();
-  }, []);
 
   const loadNotificationStatus = useCallback(async () => {
     if (!user?.id) return;

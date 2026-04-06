@@ -36,6 +36,7 @@ export async function restorePurchases(): Promise<{ success: boolean; state?: 'r
     return { success: false, message: 'Restore purchases is only available in the mobile app.' };
   }
   try {
+    await configureRevenueCat();
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Purchases = (await import('react-native-purchases')).default;
     const customerInfo = await Purchases.restorePurchases();
