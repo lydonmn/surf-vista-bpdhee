@@ -4,11 +4,11 @@
     "slug": "surfvista",
     "version": "13.0.3",
     "orientation": "portrait",
-    "icon": "./assets/images/85c51089-afb6-4e59-b9b0-fdf28d28e1ff.jpeg",
+    "icon": "./assets/images/IMG_9054.png",
     "scheme": "surfvista",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/85c51089-afb6-4e59-b9b0-fdf28d28e1ff.jpeg",
+      "image": "./assets/images/IMG_9054.png",
       "resizeMode": "cover",
       "backgroundColor": "#000000"
     },
@@ -33,7 +33,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/85c51089-afb6-4e59-b9b0-fdf28d28e1ff.jpeg",
+        "foregroundImage": "./assets/images/IMG_9054.png",
         "backgroundColor": "#000000"
       },
       "package": "com.lukestageberg.SurfVista",
