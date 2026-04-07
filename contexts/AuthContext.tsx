@@ -50,6 +50,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     try {
       console.log('[AuthContext] Loading profile for user:', authUser.id);
+
+      // Load cached profile immediately so subscribers never see the lock on launch
+      try {
+        const cached = await AsyncStorage.getItem(`cached_profile_${authUser.id}`);
+        if (cached && mountedRef.current) {
+          const cachedProfile = JSON.parse(cached) as Profile;
+          console.log('[AuthContext] Restored cached profile (is_admin:', cachedProfile.is_admin, ', is_subscribed:', cachedProfile.is_subscribed, ')');
+          setProfile(cachedProfile);
+          setUser({ ...authUser, profile: cachedProfile });
+        }
+      } catch (cacheErr) {
+        console.warn('[AuthContext] Could not read cached profile:', cacheErr);
+      }
       
       const { data, error } = await supabase
         .from('profiles')
@@ -63,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] Profile loaded successfully');
         setProfile(data);
         setUser({ ...authUser, profile: data });
+        // Persist fresh profile so next launch is instant
+        AsyncStorage.setItem(`cached_profile_${authUser.id}`, JSON.stringify(data)).catch(() => {});
         return;
       }
 

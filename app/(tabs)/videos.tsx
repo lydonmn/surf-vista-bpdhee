@@ -24,7 +24,9 @@ export default function VideosScreen() {
   const { isSubscribed, loading: rcLoading } = useSubscription();
   // Use DB subscription state as immediate fallback while RevenueCat loads
   const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
-  const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized;
+  const profileLoaded = isInitialized && !authLoading && profile !== null;
+  // Lock ONLY shows when fully initialized, profile loaded, RC done, AND confirmed non-subscriber
+  const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized || !profileLoaded;
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
 
