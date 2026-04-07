@@ -22,6 +22,7 @@ export default function VideosScreen() {
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
   const { locationData } = useLocation();
   const { isSubscribed, loading: rcLoading } = useSubscription();
+  const hasAccess = isSubscribed || !!profile?.is_admin;
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
 
@@ -120,7 +121,7 @@ export default function VideosScreen() {
     }
 
     // Non-subscribers: show paywall instead of playing
-    if (!isSubscribed) {
+    if (!hasAccess) {
       if (rcLoading) {
         console.log('[VideosScreen] RC still initializing — ignoring paywall tap');
         return;
@@ -140,7 +141,7 @@ export default function VideosScreen() {
         preloadedUrl: preloadedUrl || '',
       }
     });
-  }, [isSubscribed, rcLoading, user]);
+  }, [hasAccess, rcLoading]);
 
   // Helper function to get the correct video source for preview
   const getVideoPreviewSource = React.useCallback((video: any) => {
@@ -274,7 +275,7 @@ export default function VideosScreen() {
                           <VideoPreview videoUrl={videoSource} />
                           <View style={styles.videoOverlay}>
                             <View style={styles.playButtonContainer}>
-                              {isSubscribed ? (
+                              {hasAccess || rcLoading ? (
                                 <IconSymbol
                                   ios_icon_name="play.circle.fill"
                                   android_material_icon_name="play_circle"
@@ -290,7 +291,7 @@ export default function VideosScreen() {
                                 />
                               )}
                               <Text style={styles.tapToPlayText}>
-                                {isSubscribed ? 'Tap to play fullscreen' : 'Subscribe to watch'}
+                                {hasAccess || rcLoading ? 'Tap to play fullscreen' : 'Subscribe to watch'}
                               </Text>
                             </View>
                           </View>
@@ -298,8 +299,8 @@ export default function VideosScreen() {
                       ) : (
                         <View style={styles.placeholderContainer}>
                           <IconSymbol
-                            ios_icon_name={isSubscribed ? "video.fill" : "lock.fill"}
-                            android_material_icon_name={isSubscribed ? "videocam" : "lock"}
+                            ios_icon_name={hasAccess || rcLoading ? "video.fill" : "lock.fill"}
+                            android_material_icon_name={hasAccess || rcLoading ? "videocam" : "lock"}
                             size={48}
                             color={colors.textSecondary}
                           />
@@ -315,7 +316,7 @@ export default function VideosScreen() {
                       )}
 
                       {/* Lock badge for non-subscribers */}
-                      {!isSubscribed && !isProcessing && (
+                      {!hasAccess && !rcLoading && !isProcessing && (
                         <View style={styles.lockBadge}>
                           <IconSymbol
                             ios_icon_name="lock.fill"
