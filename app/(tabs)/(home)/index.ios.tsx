@@ -3,6 +3,8 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import { openPaywall } from "@/utils/paywallHelper";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -123,7 +125,8 @@ export default function HomeScreen() {
   // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { isLoading, isInitialized } = useAuth();
+  const { isLoading, isInitialized, profile } = useAuth();
+  const { isSubscribed, loading: rcLoading } = useSubscription();
   const { currentLocation, locationData } = useLocation();
   
   // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
@@ -222,17 +225,29 @@ export default function HomeScreen() {
     setIsRefreshing(false);
   }, [refreshData, loadLatestVideo]);
 
-  const handleVideoPress = useCallback(() => {
-    if (latestVideo) {
-      router.push({
-        pathname: '/video-player-v2',
-        params: {
-          videoId: latestVideo.id,
-          locationId: currentLocation,
-        }
-      });
+  const handleVideoPress = useCallback(async () => {
+    console.log('[HomeScreen] Video preview tapped');
+    if (!latestVideo) return;
+
+    // Use DB subscription state as immediate fallback while RevenueCat loads
+    const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
+    const hasAccess = isSubscribed || dbSubscribed || rcLoading || !isInitialized;
+
+    if (!hasAccess) {
+      console.log('[HomeScreen] Non-subscriber tapped video preview — opening paywall');
+      await openPaywall();
+      return;
     }
-  }, [latestVideo, currentLocation]);
+
+    console.log('[HomeScreen] Opening video player for:', latestVideo.id);
+    router.push({
+      pathname: '/video-player-v2',
+      params: {
+        videoId: latestVideo.id,
+        locationId: currentLocation,
+      }
+    });
+  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, isInitialized]);
 
 
 
