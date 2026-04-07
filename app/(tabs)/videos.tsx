@@ -22,7 +22,7 @@ export default function VideosScreen() {
   const { videos, isLoading: videosLoading, error, refreshVideos } = useVideos();
   const { locationData } = useLocation();
   const { isSubscribed, loading: rcLoading } = useSubscription();
-  const hasAccess = isSubscribed || !!profile?.is_admin;
+  const hasAccess = isSubscribed || !!profile?.is_admin || rcLoading || authLoading || !isInitialized;
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
 
