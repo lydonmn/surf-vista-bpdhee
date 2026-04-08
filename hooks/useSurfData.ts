@@ -468,12 +468,15 @@ export function useSurfData(currentLocation: string) {
         if (dateChanged) {
           console.log('[useSurfData] 📅 DATE CHANGED while app was in background!');
           lastFetchDateRef.current = currentDate;
-          lastFetchTimeRef.current = 0;
         }
-        
-        if (!isFetchingRef.current) {
-          fetchDataRef.current?.(); // Use ref instead of fetchData
-        }
+
+        // Reset debounce timer so foreground resume always triggers a fresh fetch
+        lastFetchTimeRef.current = 0;
+        // Also reset the fetching guard in case it got stuck
+        isFetchingRef.current = false;
+
+        console.log('[useSurfData] App foregrounded — forcing fresh fetch');
+        fetchDataRef.current?.();
       }
       
       appStateRef.current = nextAppState;
