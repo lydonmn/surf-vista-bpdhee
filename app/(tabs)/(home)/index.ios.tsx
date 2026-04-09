@@ -125,7 +125,7 @@ export default function HomeScreen() {
   // 🚨 CRITICAL FIX: ALL hooks must be called unconditionally at the top level
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { isLoading, isInitialized, profile } = useAuth();
+  const { isLoading, isLoading: authLoading, isInitialized, profile } = useAuth();
   const { isSubscribed, loading: rcLoading } = useSubscription();
   const { currentLocation, locationData } = useLocation();
   
@@ -231,7 +231,7 @@ export default function HomeScreen() {
 
     // Use DB subscription state as immediate fallback while RevenueCat loads
     const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
-    const hasAccess = isSubscribed || dbSubscribed || rcLoading || !isInitialized;
+    const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized;
 
     if (!hasAccess) {
       console.log('[HomeScreen] Non-subscriber tapped video preview — opening paywall');
@@ -247,7 +247,7 @@ export default function HomeScreen() {
         locationId: currentLocation,
       }
     });
-  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, isInitialized]);
+  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
 
 
 

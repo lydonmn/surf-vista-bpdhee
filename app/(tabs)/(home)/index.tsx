@@ -128,7 +128,7 @@ export default function HomeScreen() {
   const authData = useAuth();
   const locationData = useLocation();
   
-  const { isLoading, isInitialized, profile } = authData;
+  const { isLoading, isLoading: authLoading, isInitialized, profile } = authData;
   const { isSubscribed, loading: rcLoading } = useSubscription();
   const { currentLocation, locationData: locData } = locationData;
   
@@ -235,7 +235,7 @@ export default function HomeScreen() {
 
     // Use DB subscription state as immediate fallback while RevenueCat loads
     const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
-    const hasAccess = isSubscribed || dbSubscribed || rcLoading || !isInitialized;
+    const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized;
 
     if (!hasAccess) {
       console.log('[HomeScreen] Non-subscriber tapped video preview — opening paywall');
@@ -251,7 +251,7 @@ export default function HomeScreen() {
         locationId: currentLocation,
       }
     });
-  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, isInitialized]);
+  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
 
 
 
