@@ -1,6 +1,7 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, Image } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
 
 interface VideoPreviewThumbnailProps {
@@ -9,88 +10,86 @@ interface VideoPreviewThumbnailProps {
   style?: any;
 }
 
-/**
- * Helper to extract Mux playback ID from video URL
- */
 function extractMuxPlaybackId(videoUrl: string): string | null {
   try {
-    // Mux HLS URLs are in format: https://stream.mux.com/{playback_id}.m3u8
     if (videoUrl.includes('stream.mux.com/')) {
       const parts = videoUrl.split('stream.mux.com/');
-      if (parts.length === 2) {
-        const playbackId = parts[1].split('.m3u8')[0];
-        console.log('[VideoPreviewThumbnail] Extracted Mux playback ID:', playbackId);
-        return playbackId;
-      }
+      if (parts.length === 2) return parts[1].split('.m3u8')[0];
     }
-  } catch (e) {
-    console.error('[VideoPreviewThumbnail] Error extracting playback ID:', e);
-  }
+  } catch {}
   return null;
 }
 
-/**
- * Generate high-quality Mux thumbnail URL
- */
 function getMuxThumbnailUrl(videoUrl: string): string | null {
   const playbackId = extractMuxPlaybackId(videoUrl);
   if (!playbackId) return null;
-  
-  // Add quality parameters for max resolution
-  const thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.jpg?width=1920&fit_mode=preserve&time=1`;
-  console.log('[VideoPreviewThumbnail] Generated high-quality Mux thumbnail URL:', thumbnailUrl);
-  return thumbnailUrl;
+  return `https://image.mux.com/${playbackId}/thumbnail.jpg?width=1920&fit_mode=preserve&time=1`;
 }
 
-/**
- * 🚨 CRITICAL FIX: Simple thumbnail-only component
- * NO video player - just shows static thumbnail image
- * This prevents all video player errors that were causing crashes
- */
 export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPreviewThumbnailProps) {
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
-  // Try to get high-quality Mux thumbnail first
-  const highQualityThumbnail = getMuxThumbnailUrl(videoUrl);
-  const finalThumbnailUrl = highQualityThumbnail || thumbnailUrl;
+  const player = useVideoPlayer(videoUrl || '', (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.volume = 0;
+  });
 
-  console.log('[VideoPreviewThumbnail] Using thumbnail URL:', finalThumbnailUrl);
+  useEffect(() => {
+    if (!videoUrl) return;
+    console.log('[VideoPreviewThumbnail] Starting inline muted autoplay for:', videoUrl);
+    try {
+      player.play();
+      setVideoReady(true);
+    } catch (e) {
+      console.error('[VideoPreviewThumbnail] Failed to start playback:', e);
+      setVideoError(true);
+    }
+  }, [videoUrl]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        console.log('[VideoPreviewThumbnail] Unmounting — pausing player');
+        player.pause();
+      } catch {}
+    };
+  }, []);
+
+  const finalThumbnailUrl = getMuxThumbnailUrl(videoUrl) || thumbnailUrl;
+
+  if (videoError || !videoUrl) {
+    return (
+      <View style={[styles.container, style]}>
+        {finalThumbnailUrl ? (
+          <Image source={{ uri: finalThumbnailUrl }} style={styles.thumbnail} resizeMode="cover" />
+        ) : (
+          <View style={[styles.container, styles.centered]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, style]}>
-      {/* Show loading spinner while image loads */}
-      {imageLoading && !imageError && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      )}
-
-      {/* Show thumbnail image */}
-      {finalThumbnailUrl && !imageError ? (
+      {!videoReady && finalThumbnailUrl && (
         <Image
           source={{ uri: finalThumbnailUrl }}
-          style={styles.thumbnail}
+          style={[styles.thumbnail, styles.thumbnailOverlay]}
           resizeMode="cover"
-          onLoadStart={() => {
-            console.log('[VideoPreviewThumbnail] Image loading started');
-            setImageLoading(true);
-          }}
-          onLoad={() => {
-            console.log('[VideoPreviewThumbnail] Image loaded successfully');
-            setImageLoading(false);
-          }}
-          onError={(error) => {
-            console.error('[VideoPreviewThumbnail] Image load error:', error);
-            setImageLoading(false);
-            setImageError(true);
-          }}
         />
-      ) : (
-        <View style={styles.fallback}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
       )}
+      <VideoView
+        player={player}
+        style={styles.thumbnail}
+        contentFit="cover"
+        nativeControls={false}
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+      />
     </View>
   );
 }
@@ -102,26 +101,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     position: 'relative',
   },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   thumbnail: {
     width: '100%',
     height: '100%',
   },
-  loadingOverlay: {
+  thumbnailOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    zIndex: 2,
-  },
-  fallback: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
+    zIndex: 1,
   },
 });
