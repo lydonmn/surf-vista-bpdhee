@@ -16,6 +16,8 @@ import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import { LocationSelector } from "@/components/LocationSelector";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import { openPaywall } from "@/utils/paywallHelper";
 
 
 function calculateSurfRating(surfData: any): number {
@@ -126,8 +128,9 @@ export default function HomeScreen() {
   const authData = useAuth();
   const locationData = useLocation();
   
-  const { isLoading, isInitialized } = authData;
+  const { isLoading: authLoading, isInitialized, profile } = authData;
   const { currentLocation, locationData: locData } = locationData;
+  const { isSubscribed, loading: rcLoading } = useSubscription();
   
   // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
   const surfData = useSurfData(currentLocation);
@@ -214,11 +217,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     console.log('[HomeScreen] loadLatestVideo effect triggered, location:', currentLocation);
-    if (isInitialized && !isLoading) {
+    if (isInitialized && !authLoading) {
       hasLoadedVideoRef.current = false;
       loadLatestVideo();
     }
-  }, [currentLocation, isInitialized, isLoading, loadLatestVideo]);
+  }, [currentLocation, isInitialized, authLoading, loadLatestVideo]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -227,17 +230,34 @@ export default function HomeScreen() {
   }, [refreshData, loadLatestVideo]);
 
   const handleVideoPress = useCallback(async () => {
-    console.log('[HomeScreen] Video preview tapped');
     if (!latestVideo) return;
-    console.log('[HomeScreen] Opening video player for:', latestVideo.id);
+
+    // Wait — don't make any access decision while loading
+    if (rcLoading || authLoading || !isInitialized) {
+      console.log('[HomeScreen] Still loading — navigating directly');
+      router.push({
+        pathname: '/video-player-v2',
+        params: { videoId: latestVideo.id, locationId: currentLocation },
+      });
+      return;
+    }
+
+    // Check access: RevenueCat subscription OR DB subscription OR admin/superadmin
+    const dbAccess = !!profile?.is_subscribed || !!profile?.is_admin || !!profile?.is_superadmin;
+    const hasAccess = isSubscribed || dbAccess;
+
+    if (!hasAccess) {
+      console.log('[HomeScreen] Non-subscriber tapped video thumbnail — opening paywall');
+      await openPaywall();
+      return;
+    }
+
+    console.log('[HomeScreen] Subscriber/admin tapped video thumbnail — opening player');
     router.push({
       pathname: '/video-player-v2',
-      params: {
-        videoId: latestVideo.id,
-        locationId: currentLocation,
-      }
+      params: { videoId: latestVideo.id, locationId: currentLocation },
     });
-  }, [latestVideo, currentLocation]);
+  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
 
 
 
