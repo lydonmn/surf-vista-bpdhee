@@ -13,9 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSubscription } from '@/contexts/SubscriptionContext';
-import { openPaywall } from '@/utils/paywallHelper';
+
 
 const CONTROLS_HIDE_DELAY = 3000;
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
@@ -23,22 +21,6 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
-  const { user, profile } = useAuth();
-  const { isSubscribed, loading: rcLoading } = useSubscription();
-
-  // Paywall guard — only fires once both auth and RevenueCat have fully loaded
-  useEffect(() => {
-    // Don't check until everything is loaded
-    if (rcLoading) return;
-    // Admins and DB-confirmed subscribers always have access
-    const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
-    if (isSubscribed || dbSubscribed) return;
-    // Confirmed non-subscriber — show paywall
-    console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
-    openPaywall()
-      .then(() => router.back())
-      .catch(() => router.back());
-  }, [isSubscribed, rcLoading, profile]);
   
   const [video, setVideo] = useState<VideoType | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
