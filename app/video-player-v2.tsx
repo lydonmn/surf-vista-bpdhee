@@ -23,24 +23,22 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
-  const { user } = useAuth();
-  const { isSubscribed } = useSubscription();
+  const { user, profile } = useAuth();
+  const { isSubscribed, loading: rcLoading } = useSubscription();
 
-  // Paywall guard — redirect non-subscribers immediately
+  // Paywall guard — only fires once both auth and RevenueCat have fully loaded
   useEffect(() => {
-    if (!isSubscribed) {
-      console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
-      openPaywall()
-        .then(() => {
-          router.back();
-        })
-        .catch((err: unknown) => {
-          console.warn('[VideoPlayerV2] openPaywall error (swallowed):', err);
-          router.back();
-        });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Don't check until everything is loaded
+    if (rcLoading) return;
+    // Admins and DB-confirmed subscribers always have access
+    const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
+    if (isSubscribed || dbSubscribed) return;
+    // Confirmed non-subscriber — show paywall
+    console.log('[VideoPlayerV2] Non-subscriber attempted to access video player — opening paywall');
+    openPaywall()
+      .then(() => router.back())
+      .catch(() => router.back());
+  }, [isSubscribed, rcLoading, profile]);
   
   const [video, setVideo] = useState<VideoType | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
