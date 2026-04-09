@@ -232,8 +232,11 @@ export default function HomeScreen() {
     if (rcLoading || authLoading || !isInitialized) {
       console.log('[HomeScreen] Still loading — navigating directly');
       router.push({
-        pathname: '/video-player-v2',
-        params: { videoId: latestVideo.id, locationId: currentLocation },
+        pathname: '/video-player',
+        params: {
+          videoId: latestVideo.id,
+          preloadedUrl: '',
+        },
       });
       return;
     }
@@ -250,8 +253,11 @@ export default function HomeScreen() {
 
     console.log('[HomeScreen] Subscriber/admin tapped video thumbnail — opening player');
     router.push({
-      pathname: '/video-player-v2',
-      params: { videoId: latestVideo.id, locationId: currentLocation },
+      pathname: '/video-player',
+      params: {
+        videoId: latestVideo.id,
+        preloadedUrl: '',
+      },
     });
   }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
 
