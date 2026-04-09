@@ -3,8 +3,6 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSubscription } from "@/contexts/SubscriptionContext";
-import { openPaywall } from "@/utils/paywallHelper";
 import { router } from "expo-router";
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -128,8 +126,7 @@ export default function HomeScreen() {
   const authData = useAuth();
   const locationData = useLocation();
   
-  const { isLoading, isLoading: authLoading, isInitialized, profile } = authData;
-  const { isSubscribed, loading: rcLoading } = useSubscription();
+  const { isLoading, isInitialized } = authData;
   const { currentLocation, locationData: locData } = locationData;
   
   // 🚨 CRITICAL FIX: Pass currentLocation as parameter instead of calling useLocation inside hook
@@ -232,17 +229,6 @@ export default function HomeScreen() {
   const handleVideoPress = useCallback(async () => {
     console.log('[HomeScreen] Video preview tapped');
     if (!latestVideo) return;
-
-    // Use DB subscription state as immediate fallback while RevenueCat loads
-    const dbSubscribed = !!profile?.is_subscribed || !!profile?.is_admin;
-    const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized;
-
-    if (!hasAccess) {
-      console.log('[HomeScreen] Non-subscriber tapped video preview — opening paywall');
-      await openPaywall();
-      return;
-    }
-
     console.log('[HomeScreen] Opening video player for:', latestVideo.id);
     router.push({
       pathname: '/video-player-v2',
@@ -251,7 +237,7 @@ export default function HomeScreen() {
         locationId: currentLocation,
       }
     });
-  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
+  }, [latestVideo, currentLocation]);
 
 
 
