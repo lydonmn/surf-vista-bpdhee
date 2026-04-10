@@ -464,6 +464,7 @@ export default function ManageAllUsersScreen() {
       return 'Refunded';
     }
     if (!user.is_subscribed) return 'Not Subscribed';
+    if (!user.subscription_end_date) return 'Active';
     const daysLeft = getDaysLeft(user.subscription_end_date);
     if (daysLeft === 0) return 'Expired';
     return `Active (${daysLeft} days left)`;
@@ -471,7 +472,7 @@ export default function ManageAllUsersScreen() {
 
   const renderUserCard = ({ item }: { item: UserProfile }) => {
     const subscriptionStatus = getSubscriptionStatus(item);
-    const isActive = item.is_subscribed && getDaysLeft(item.subscription_end_date) > 0 && !item.subscription_paused;
+    const isActive = item.is_subscribed && (!item.subscription_end_date || getDaysLeft(item.subscription_end_date) > 0) && !item.subscription_paused;
     const isPaused = item.subscription_paused;
     const isRefunded = item.subscription_refunded;
     
