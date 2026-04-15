@@ -51,6 +51,7 @@ export default function ManageAllUsersScreen() {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedUserEmail, setSelectedUserEmail] = useState<string>('');
   const [freeMonthsInput, setFreeMonthsInput] = useState('');
+  const [durationUnit, setDurationUnit] = useState<'weeks' | 'months'>('months');
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -128,34 +129,37 @@ export default function ManageAllUsersScreen() {
   };
 
   const handleGrantFreeMonths = (userId: string, userEmail: string) => {
-    console.log('[ManageAllUsersScreen] Opening free months modal for:', userEmail);
+    console.log('[ManageAllUsersScreen] Opening free time modal for:', userEmail);
     setSelectedUserId(userId);
     setSelectedUserEmail(userEmail);
     setFreeMonthsInput('');
+    setDurationUnit('months');
     setFreeMonthsModalVisible(true);
   };
 
   const confirmGrantFreeMonths = async () => {
-    const months = parseInt(freeMonthsInput);
-    
-    if (isNaN(months) || months <= 0) {
-      showError('Invalid Input', 'Please enter a valid number of months (1 or greater)');
+    const amount = parseInt(freeMonthsInput);
+    const isWeeks = durationUnit === 'weeks';
+
+    if (isNaN(amount) || amount <= 0) {
+      showError('Invalid Input', `Please enter a valid number of ${durationUnit} (1 or greater)`);
       return;
     }
 
-    if (months > 120) {
-      showError('Invalid Input', 'Maximum 120 months (10 years) allowed');
+    const maxAmount = isWeeks ? 520 : 120; // 520 weeks = 10 years
+    if (amount > maxAmount) {
+      showError('Invalid Input', `Maximum ${maxAmount} ${durationUnit} allowed`);
       return;
     }
 
     try {
-      console.log('[ManageAllUsersScreen] Granting', months, 'free months to:', selectedUserEmail);
+      console.log('[ManageAllUsersScreen] Granting', amount, durationUnit, 'to:', selectedUserEmail);
       setFreeMonthsModalVisible(false);
 
       // Get current subscription end date or use today
       const user = users.find(u => u.id === selectedUserId);
       let currentEndDate = new Date();
-      
+
       if (user?.subscription_end_date) {
         const existingEndDate = new Date(user.subscription_end_date);
         // If subscription is still active, extend from end date
@@ -164,9 +168,13 @@ export default function ManageAllUsersScreen() {
         }
       }
 
-      // Add the free months
+      // Add the free weeks or months
       const newEndDate = new Date(currentEndDate);
-      newEndDate.setMonth(newEndDate.getMonth() + months);
+      if (isWeeks) {
+        newEndDate.setDate(newEndDate.getDate() + amount * 7);
+      } else {
+        newEndDate.setMonth(newEndDate.getMonth() + amount);
+      }
 
       // Update the user's subscription
       const { error } = await supabase
@@ -178,19 +186,20 @@ export default function ManageAllUsersScreen() {
         .eq('id', selectedUserId);
 
       if (error) {
-        console.error('[ManageAllUsersScreen] Error granting free months:', error);
-        showError('Error', `Failed to grant free months: ${error.message}`);
+        console.error('[ManageAllUsersScreen] Error granting free time:', error);
+        showError('Error', `Failed to grant free ${durationUnit}: ${error.message}`);
         return;
       }
 
+      const unitLabel = amount === 1 ? durationUnit.slice(0, -1) : durationUnit;
       showSuccess(
-        'Free Months Granted',
-        `Successfully granted ${months} free month${months > 1 ? 's' : ''} to ${selectedUserEmail}.\n\nNew subscription end date: ${newEndDate.toLocaleDateString()}`
+        `Free ${durationUnit.charAt(0).toUpperCase() + durationUnit.slice(1)} Granted`,
+        `Successfully granted ${amount} free ${unitLabel} to ${selectedUserEmail}.\n\nNew subscription end date: ${newEndDate.toLocaleDateString()}`
       );
       await fetchUsers();
     } catch (error) {
-      console.error('[ManageAllUsersScreen] Exception granting free months:', error);
-      showError('Error', 'Failed to grant free months');
+      console.error('[ManageAllUsersScreen] Exception granting free time:', error);
+      showError('Error', `Failed to grant free ${durationUnit}`);
     }
   };
 
@@ -828,7 +837,7 @@ export default function ManageAllUsersScreen() {
         </View>
       </Modal>
 
-      {/* Free Months Modal */}
+      {/* Free Time Modal */}
       <Modal
         visible={freeMonthsModalVisible}
         transparent={true}
@@ -839,7 +848,7 @@ export default function ManageAllUsersScreen() {
           <View style={[styles.freeMonthsModalContent, { backgroundColor: theme.colors.card }]}>
             <View style={styles.freeMonthsHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                Grant Free Months
+                Grant Free Time
               </Text>
               <TouchableOpacity onPress={() => setFreeMonthsModalVisible(false)}>
                 <IconSymbol
@@ -855,16 +864,56 @@ export default function ManageAllUsersScreen() {
               {selectedUserEmail}
             </Text>
 
+            {/* Weeks / Months segmented toggle */}
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  durationUnit === 'weeks' && styles.segmentButtonActive,
+                ]}
+                onPress={() => {
+                  console.log('[ManageAllUsersScreen] Duration unit switched to: weeks');
+                  setDurationUnit('weeks');
+                  setFreeMonthsInput('');
+                }}
+              >
+                <Text style={[
+                  styles.segmentButtonText,
+                  durationUnit === 'weeks' && styles.segmentButtonTextActive,
+                ]}>
+                  Weeks
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  durationUnit === 'months' && styles.segmentButtonActive,
+                ]}
+                onPress={() => {
+                  console.log('[ManageAllUsersScreen] Duration unit switched to: months');
+                  setDurationUnit('months');
+                  setFreeMonthsInput('');
+                }}
+              >
+                <Text style={[
+                  styles.segmentButtonText,
+                  durationUnit === 'months' && styles.segmentButtonTextActive,
+                ]}>
+                  Months
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={[styles.freeMonthsLabel, { color: theme.colors.text }]}>
-              Number of Free Months
+              {durationUnit === 'weeks' ? 'Number of Weeks' : 'Number of Months'}
             </Text>
             <TextInput
-              style={[styles.freeMonthsInput, { 
+              style={[styles.freeMonthsInput, {
                 color: theme.colors.text,
                 backgroundColor: colors.background,
                 borderColor: colors.border,
               }]}
-              placeholder="Enter number (1-120)"
+              placeholder={durationUnit === 'weeks' ? 'Enter number (1-520)' : 'Enter number (1-120)'}
               placeholderTextColor={colors.textSecondary}
               value={freeMonthsInput}
               onChangeText={setFreeMonthsInput}
@@ -873,8 +922,9 @@ export default function ManageAllUsersScreen() {
             />
 
             <Text style={[styles.freeMonthsHelperText, { color: colors.textSecondary }]}>
-              This will extend their subscription by the specified number of months.
-              If they already have an active subscription, the time will be added to their current end date.
+              {durationUnit === 'weeks'
+                ? 'This will extend their subscription by the specified number of weeks (7 days each). If they already have an active subscription, the time will be added to their current end date.'
+                : 'This will extend their subscription by the specified number of months. If they already have an active subscription, the time will be added to their current end date.'}
             </Text>
 
             <View style={styles.freeMonthsActions}>
@@ -1135,5 +1185,29 @@ const styles = StyleSheet.create({
   freeMonthsActions: {
     flexDirection: 'row',
     gap: 12,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.highlight,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 16,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  segmentButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  segmentButtonTextActive: {
+    color: '#FFFFFF',
   },
 });
