@@ -762,6 +762,22 @@ export default function AdminScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#0EA5E9' }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Survey Results');
+                router.push('/admin-survey');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="chart.bar.doc.horizontal.fill"
+                android_material_icon_name="bar_chart"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Survey Results</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.accent }]}
               onPress={() => {
                 console.log('[AdminScreen] Navigating to demo paywall for screenshots');

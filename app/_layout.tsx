@@ -11,7 +11,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
-import { isOnboardingComplete } from "@/utils/onboardingStorage";
+import { isOnboardingComplete, incrementAppOpenCount, hasSurveyBeenShown, markSurveyShown } from "@/utils/onboardingStorage";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -133,15 +133,28 @@ function SubscriptionRedirect() {
     }
 
     let cancelled = false;
-    isOnboardingComplete().then((done) => {
+    isOnboardingComplete().then(async (done) => {
       if (cancelled) return;
       if (!done) {
         console.log('[SubscriptionRedirect] Onboarding not complete, redirecting to onboarding (first-time user)');
         hasRedirected.current = true;
         router.replace("/onboarding");
       } else {
-        console.log('[SubscriptionRedirect] Onboarding already complete, skipping redirect');
-        hasRedirected.current = true;
+        // Check if we should show the survey (5th+ open, never shown before)
+        const [count, alreadyShown] = await Promise.all([
+          getAppOpenCount(),
+          hasSurveyBeenShown(),
+        ]);
+        console.log('[SubscriptionRedirect] App open count:', count, '| Survey shown:', alreadyShown);
+        if (count >= 5 && !alreadyShown) {
+          console.log('[SubscriptionRedirect] Triggering survey on app open', count);
+          markSurveyShown().catch(() => {});
+          hasRedirected.current = true;
+          router.replace("/onboarding");
+        } else {
+          console.log('[SubscriptionRedirect] Onboarding already complete, skipping redirect');
+          hasRedirected.current = true;
+        }
       }
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -191,6 +204,11 @@ export default function RootLayout() {
         responseListener.current.remove();
       }
     };
+  }, []);
+
+  // Increment app open count once on mount
+  useEffect(() => {
+    incrementAppOpenCount().catch(() => {});
   }, []);
 
   // Hide splash screen once fonts are ready

@@ -4,10 +4,14 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Scoped per project so different apps on the same Expo Go device don't share onboarding state
 const _PROJECT_SCOPE = Constants.expoConfig?.extra?.nativelyProjectId || Constants.expoConfig?.slug || "app";
 const ONBOARDING_KEY = `onboarding_complete_${_PROJECT_SCOPE}`;
+
+const APP_OPEN_COUNT_KEY = "app_open_count";
+const SURVEY_SHOWN_KEY = "survey_shown";
 
 export async function isOnboardingComplete(): Promise<boolean> {
   if (Platform.OS === "web") {
@@ -31,4 +35,51 @@ export async function resetOnboarding(): Promise<void> {
     return;
   }
   await SecureStore.deleteItemAsync(ONBOARDING_KEY);
+}
+
+// --- App open counter ---
+
+export async function incrementAppOpenCount(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(APP_OPEN_COUNT_KEY);
+    const current = raw ? parseInt(raw, 10) : 0;
+    const next = current + 1;
+    await AsyncStorage.setItem(APP_OPEN_COUNT_KEY, String(next));
+    console.log("[onboardingStorage] App open count incremented to:", next);
+    return next;
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to increment app open count:", err);
+    return 0;
+  }
+}
+
+export async function getAppOpenCount(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(APP_OPEN_COUNT_KEY);
+    return raw ? parseInt(raw, 10) : 0;
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to get app open count:", err);
+    return 0;
+  }
+}
+
+// --- Survey shown flag ---
+
+export async function markSurveyShown(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SURVEY_SHOWN_KEY, "true");
+    console.log("[onboardingStorage] Survey marked as shown");
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to mark survey shown:", err);
+  }
+}
+
+export async function hasSurveyBeenShown(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(SURVEY_SHOWN_KEY);
+    return value === "true";
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to check survey shown:", err);
+    return false;
+  }
 }
