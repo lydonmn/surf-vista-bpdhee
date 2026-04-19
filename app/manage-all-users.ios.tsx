@@ -1,9 +1,9 @@
 
 import { colors } from '@/styles/commonStyles';
-import { View, Text, StyleSheet, SectionList, ActivityIndicator, TextInput, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TextInput, TouchableOpacity, Modal, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/app/integrations/supabase/client';
@@ -34,11 +34,7 @@ interface UserStats {
   admins: number;
 }
 
-interface UserSection {
-  title: string;
-  count: number;
-  data: UserProfile[];
-}
+type TabKey = 'all' | 'active' | 'expired' | 'never';
 
 function getDisplayName(user: UserProfile): string {
   const full = user.full_name?.trim();
@@ -58,11 +54,29 @@ function isUserActive(user: UserProfile): boolean {
   return new Date(user.subscription_end_date) > new Date();
 }
 
+function isUserExpired(user: UserProfile): boolean {
+  // Has subscribed at some point but is currently not active
+  if (user.is_subscribed && isUserActive(user)) return false;
+  // Had a subscription end date (previously subscribed) or was refunded
+  return user.subscription_end_date !== null || (user.subscription_refunded === true);
+}
+
+function isUserNeverSubscribed(user: UserProfile): boolean {
+  return !user.is_subscribed && user.subscription_end_date === null && !user.subscription_refunded;
+}
+
+function sortByName(a: UserProfile, b: UserProfile): number {
+  const nameA = getDisplayName(a) || a.email;
+  const nameB = getDisplayName(b) || b.email;
+  return nameA.localeCompare(nameB);
+}
+
 export default function ManageAllUsersScreen() {
   const theme = useTheme();
   const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<UserStats>({ total: 0, subscribed: 0, admins: 0 });
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
@@ -88,7 +102,7 @@ export default function ManageAllUsersScreen() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
       if (error) {
         console.error('[ManageAllUsersScreen] Error fetching users:', error);
@@ -121,36 +135,53 @@ export default function ManageAllUsersScreen() {
       router.replace('/login');
       return;
     }
-
     fetchUsers();
   }, [user, fetchUsers]);
 
-  // Build filtered + sectioned data
-  const filteredUsers = searchTerm.trim() === ''
-    ? users
-    : users.filter(u => {
-        const name = getDisplayName(u).toLowerCase();
-        const email = u.email.toLowerCase();
-        const term = searchTerm.toLowerCase();
-        return name.includes(term) || email.includes(term);
-      });
+  // Search filter applied to all users
+  const searchFiltered = useMemo(() => {
+    if (searchTerm.trim() === '') return users;
+    const term = searchTerm.toLowerCase();
+    return users.filter(u => {
+      const name = getDisplayName(u).toLowerCase();
+      const email = u.email.toLowerCase();
+      return name.includes(term) || email.includes(term);
+    });
+  }, [users, searchTerm]);
 
-  const sortedFiltered = [...filteredUsers].sort((a, b) => {
-    const nameA = getDisplayName(a) || a.email;
-    const nameB = getDisplayName(b) || b.email;
-    return nameA.localeCompare(nameB);
-  });
+  // Tab buckets (computed from search-filtered list)
+  const allUsers = useMemo(
+    () => [...searchFiltered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    [searchFiltered]
+  );
+  const activeUsers = useMemo(
+    () => [...searchFiltered].filter(isUserActive).sort(sortByName),
+    [searchFiltered]
+  );
+  const expiredUsers = useMemo(
+    () => [...searchFiltered].filter(isUserExpired).sort(sortByName),
+    [searchFiltered]
+  );
+  const neverSubscribedUsers = useMemo(
+    () => [...searchFiltered].filter(isUserNeverSubscribed).sort(sortByName),
+    [searchFiltered]
+  );
 
-  const activeUsers = sortedFiltered.filter(isUserActive);
-  const expiredUsers = sortedFiltered.filter(u => !isUserActive(u));
+  const tabData: Record<TabKey, UserProfile[]> = {
+    all: allUsers,
+    active: activeUsers,
+    expired: expiredUsers,
+    never: neverSubscribedUsers,
+  };
 
-  const sections: UserSection[] = [];
-  if (activeUsers.length > 0) {
-    sections.push({ title: 'Active', count: activeUsers.length, data: activeUsers });
-  }
-  if (expiredUsers.length > 0) {
-    sections.push({ title: 'Expired', count: expiredUsers.length, data: expiredUsers });
-  }
+  const currentList = tabData[activeTab];
+
+  const tabs: { key: TabKey; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: allUsers.length },
+    { key: 'active', label: 'Active', count: activeUsers.length },
+    { key: 'expired', label: 'Expired', count: expiredUsers.length },
+    { key: 'never', label: 'Never Subscribed', count: neverSubscribedUsers.length },
+  ];
 
   const showSuccess = (title: string, message: string) => {
     setSuccessModalTitle(title);
@@ -473,10 +504,8 @@ export default function ManageAllUsersScreen() {
             try {
               console.log('[ManageAllUsersScreen] Confirming delete for:', userEmail, 'id:', userId);
 
-              // Optimistically remove from local state
               setUsers(prev => prev.filter(u => u.id !== userId));
 
-              // Attempt auth deletion first (requires service role key)
               try {
                 const { error: authError } = await supabase.auth.admin.deleteUser(userId);
                 if (authError) {
@@ -486,7 +515,6 @@ export default function ManageAllUsersScreen() {
                 console.warn('[ManageAllUsersScreen] Auth admin delete not available, deleting profile only');
               }
 
-              // Always delete from profiles table
               const { error: profileError } = await supabase
                 .from('profiles')
                 .delete()
@@ -494,7 +522,6 @@ export default function ManageAllUsersScreen() {
 
               if (profileError) {
                 console.error('[ManageAllUsersScreen] Error deleting profile:', profileError);
-                // Restore user in list on failure
                 await fetchUsers();
                 Alert.alert('Error', `Failed to delete account: ${profileError.message}`);
                 return;
@@ -545,25 +572,6 @@ export default function ManageAllUsersScreen() {
     const daysLeft = getDaysLeft(u.subscription_end_date);
     if (daysLeft === 0) return 'Expired';
     return `Active (${daysLeft} days left)`;
-  };
-
-  const renderSectionHeader = ({ section }: { section: UserSection }) => {
-    const isActive = section.title === 'Active';
-    const dotColor = isActive ? '#4CAF50' : '#9E9E9E';
-    const countBg = isActive ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)';
-    return (
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: dotColor }]} />
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          {section.title}
-        </Text>
-        <View style={[styles.sectionCountBadge, { backgroundColor: countBg }]}>
-          <Text style={[styles.sectionCountText, { color: dotColor }]}>
-            {section.count}
-          </Text>
-        </View>
-      </View>
-    );
   };
 
   const renderUserCard = ({ item }: { item: UserProfile }) => {
@@ -807,20 +815,61 @@ export default function ManageAllUsersScreen() {
           value={searchTerm}
           onChangeText={setSearchTerm}
         />
+        {searchTerm.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchTerm('')}>
+            <IconSymbol
+              ios_icon_name="xmark.circle.fill"
+              android_material_icon_name="close"
+              size={18}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Tab Bar */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabBarScroll}
+        contentContainerStyle={styles.tabBarContent}
+      >
+        {tabs.map(tab => {
+          const isActive = activeTab === tab.key;
+          const tabLabel = `${tab.label} (${tab.count})`;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[
+                styles.tabPill,
+                isActive ? styles.tabPillActive : styles.tabPillInactive,
+              ]}
+              onPress={() => {
+                console.log('[ManageAllUsersScreen] Tab selected:', tab.key);
+                setActiveTab(tab.key);
+              }}
+            >
+              <Text style={[
+                styles.tabPillText,
+                isActive ? styles.tabPillTextActive : styles.tabPillTextInactive,
+              ]}>
+                {tabLabel}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
-        <SectionList
-          sections={sections}
+        <FlatList
+          data={currentList}
           renderItem={renderUserCard}
-          renderSectionHeader={renderSectionHeader}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          stickySectionHeadersEnabled={false}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -1050,7 +1099,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 48,
+    paddingTop: 60,
     paddingBottom: 16,
   },
   backButton: {
@@ -1095,7 +1144,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.card,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
     gap: 8,
@@ -1105,6 +1154,39 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  tabBarScroll: {
+    flexGrow: 0,
+    marginBottom: 12,
+  },
+  tabBarContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tabPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  tabPillActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  tabPillInactive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  tabPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabPillTextActive: {
+    color: '#000000',
+  },
+  tabPillTextInactive: {
+    color: '#888888',
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1113,35 +1195,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 100,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 2,
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  sectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  sectionCountBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  sectionCountText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   emptyState: {
     padding: 40,
