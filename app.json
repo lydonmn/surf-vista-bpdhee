@@ -37,7 +37,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.lukestageberg.SurfVista",
-      "versionCode": 34
+      "versionCode": 35
     },
     "web": {
       "bundler": "metro",
