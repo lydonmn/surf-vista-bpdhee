@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -23,6 +24,7 @@ import {
 } from '@/utils/pushNotifications';
 
 const WAVE_HEIGHT_OPTIONS = [1, 2, 3, 4, 5, 6];
+const VIDEO_NOTIFICATIONS_KEY = 'video_notifications_enabled';
 
 interface Location {
   id: string;
@@ -39,6 +41,9 @@ export default function NotificationPreferencesScreen() {
   // Daily report toggle
   const [dailyReportEnabled, setDailyReportEnabled] = useState(false);
 
+  // New video notifications toggle
+  const [videoNotificationsEnabled, setVideoNotificationsEnabled] = useState(true);
+
   // Swell alert state
   const [swellAlertEnabled, setSwellAlertEnabled] = useState(false);
   const [minWaveHeight, setMinWaveHeight] = useState<number>(3);
@@ -52,12 +57,22 @@ export default function NotificationPreferencesScreen() {
     console.log('[NotificationPreferences] Loading preferences for user:', user.id);
     setLoading(true);
     try {
-      const [dailyStatus, locationIds, locationsResult, profileResult] = await Promise.all([
-        getDailyReportNotificationStatus(user.id),
-        getNotificationLocations(user.id),
-        supabase.from('locations').select('id, display_name').eq('is_active', true).order('display_name'),
-        supabase.from('profiles').select('min_wave_height').eq('id', user.id).single(),
-      ]);
+      const [dailyStatus, locationIds, locationsResult, profileResult, storedVideoNotif] =
+        await Promise.all([
+          getDailyReportNotificationStatus(user.id),
+          getNotificationLocations(user.id),
+          supabase
+            .from('locations')
+            .select('id, display_name')
+            .eq('is_active', true)
+            .order('display_name'),
+          supabase
+            .from('profiles')
+            .select('min_wave_height')
+            .eq('id', user.id)
+            .single(),
+          AsyncStorage.getItem(VIDEO_NOTIFICATIONS_KEY),
+        ]);
 
       setDailyReportEnabled(dailyStatus);
       setEnabledLocationIds(locationIds);
@@ -74,6 +89,17 @@ export default function NotificationPreferencesScreen() {
         setSwellAlertEnabled(false);
         setMinWaveHeight(3);
       }
+
+      // Default to true if never set
+      setVideoNotificationsEnabled(storedVideoNotif !== 'false');
+
+      console.log('[NotificationPreferences] Preferences loaded:', {
+        dailyReport: dailyStatus,
+        swellAlert: savedMinHeight !== null && savedMinHeight !== undefined,
+        minWaveHeight: savedMinHeight,
+        videoNotifications: storedVideoNotif !== 'false',
+        locationCount: locationsResult.data?.length ?? 0,
+      });
     } catch (err) {
       console.error('[NotificationPreferences] Error loading preferences:', err);
     } finally {
@@ -95,6 +121,22 @@ export default function NotificationPreferencesScreen() {
         setDailyReportEnabled(value);
         console.log('[NotificationPreferences] Daily report notifications set to:', value);
       }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleVideoNotificationsToggle = async (value: boolean) => {
+    console.log('[NotificationPreferences] Video notifications toggle pressed:', value);
+    setSaving(true);
+    try {
+      await AsyncStorage.setItem(VIDEO_NOTIFICATIONS_KEY, value ? 'true' : 'false');
+      setVideoNotificationsEnabled(value);
+      console.log('[NotificationPreferences] Video notifications saved to AsyncStorage:', value);
+      // NOTE: Requires a DB column `video_notifications boolean default true` on profiles
+      // to persist cross-device. Currently stored locally via AsyncStorage.
+    } catch (err) {
+      console.error('[NotificationPreferences] Error saving video notifications:', err);
     } finally {
       setSaving(false);
     }
@@ -203,6 +245,15 @@ export default function NotificationPreferencesScreen() {
     );
   }
 
+  const waveChipLabels: Record<number, string> = {
+    1: '1ft',
+    2: '2ft',
+    3: '3ft',
+    4: '4ft',
+    5: '5ft',
+    6: '6ft+',
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -215,8 +266,11 @@ export default function NotificationPreferencesScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Daily Report Section */}
         <Text style={styles.sectionLabel}>DAILY SURF REPORT</Text>
         <View style={styles.card}>
@@ -228,6 +282,24 @@ export default function NotificationPreferencesScreen() {
             <Switch
               value={dailyReportEnabled}
               onValueChange={handleDailyReportToggle}
+              trackColor={{ false: '#3A3A3C', true: '#0EA5E9' }}
+              thumbColor="#fff"
+              ios_backgroundColor="#3A3A3C"
+            />
+          </View>
+        </View>
+
+        {/* New Video Notifications Section */}
+        <Text style={styles.sectionLabel}>VIDEO UPDATES</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowTextGroup}>
+              <Text style={styles.rowTitle}>New Video Alerts</Text>
+              <Text style={styles.rowSubtitle}>Get notified when new surf videos are posted</Text>
+            </View>
+            <Switch
+              value={videoNotificationsEnabled}
+              onValueChange={handleVideoNotificationsToggle}
               trackColor={{ false: '#3A3A3C', true: '#0EA5E9' }}
               thumbColor="#fff"
               ios_backgroundColor="#3A3A3C"
@@ -252,48 +324,66 @@ export default function NotificationPreferencesScreen() {
             />
           </View>
 
-          {swellAlertEnabled && (
-            <>
-              <View style={styles.divider} />
-              <Text style={styles.thresholdLabel}>Minimum wave height</Text>
-              <View style={styles.waveHeightRow}>
-                {WAVE_HEIGHT_OPTIONS.map((height) => {
-                  const isSelected = minWaveHeight === height;
-                  const label = height === 6 ? '6ft+' : `${height}ft`;
-                  return (
-                    <TouchableOpacity
-                      key={height}
-                      style={[styles.waveChip, isSelected && styles.waveChipSelected]}
-                      onPress={() => handleWaveHeightSelect(height)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.waveChipText, isSelected && styles.waveChipTextSelected]}>
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
-          )}
+          <View style={styles.divider} />
+          <Text style={styles.thresholdLabel}>
+            {swellAlertEnabled
+              ? 'Minimum wave height — tap to change'
+              : 'Set a minimum wave height (enable above to activate)'}
+          </Text>
+          <View style={styles.waveHeightRow}>
+            {WAVE_HEIGHT_OPTIONS.map((height) => {
+              const isSelected = minWaveHeight === height;
+              const chipLabel = waveChipLabels[height];
+              const isDisabled = !swellAlertEnabled;
+              return (
+                <TouchableOpacity
+                  key={height}
+                  style={[
+                    styles.waveChip,
+                    isSelected && styles.waveChipSelected,
+                    isDisabled && styles.waveChipDisabled,
+                  ]}
+                  onPress={() => handleWaveHeightSelect(height)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.waveChipText,
+                      isSelected && styles.waveChipTextSelected,
+                      isDisabled && styles.waveChipTextDisabled,
+                    ]}
+                  >
+                    {chipLabel}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Per-Location Section */}
-        {dailyReportEnabled && locations.length > 0 && (
+        {/* Per-Location Section — always visible when locations exist */}
+        {locations.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>REPORT LOCATIONS</Text>
-            <Text style={styles.sectionHint}>Choose which locations to receive daily reports for</Text>
-            <View style={styles.card}>
+            <Text style={styles.sectionHint}>
+              {dailyReportEnabled
+                ? 'Choose which locations to receive daily reports for'
+                : 'Enable Morning Report above to activate location alerts'}
+            </Text>
+            <View style={[styles.card, !dailyReportEnabled && styles.cardDisabled]}>
               {locations.map((loc, index) => {
                 const isEnabled = enabledLocationIds.includes(loc.id);
                 const isLast = index === locations.length - 1;
                 return (
                   <View key={loc.id}>
                     <View style={styles.row}>
-                      <Text style={styles.rowTitle}>{loc.display_name}</Text>
+                      <Text style={[styles.rowTitle, !dailyReportEnabled && styles.textDisabled]}>
+                        {loc.display_name}
+                      </Text>
                       <Switch
-                        value={isEnabled}
+                        value={isEnabled && dailyReportEnabled}
                         onValueChange={(val) => handleLocationToggle(loc.id, val)}
+                        disabled={!dailyReportEnabled}
                         trackColor={{ false: '#3A3A3C', true: '#0EA5E9' }}
                         thumbColor="#fff"
                         ios_backgroundColor="#3A3A3C"
@@ -361,6 +451,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 24,
     paddingHorizontal: 16,
+    paddingBottom: 40,
   },
   centered: {
     flex: 1,
@@ -393,6 +484,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     overflow: 'hidden',
   },
+  cardDisabled: {
+    opacity: 0.5,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -413,6 +507,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748B',
     marginTop: 2,
+  },
+  textDisabled: {
+    color: '#475569',
   },
   divider: {
     height: 1,
@@ -445,6 +542,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0EA5E9',
     borderColor: '#0EA5E9',
   },
+  waveChipDisabled: {
+    opacity: 0.4,
+  },
   waveChipText: {
     fontSize: 14,
     color: '#94A3B8',
@@ -452,6 +552,9 @@ const styles = StyleSheet.create({
   },
   waveChipTextSelected: {
     color: '#fff',
+  },
+  waveChipTextDisabled: {
+    color: '#475569',
   },
   chevron: {
     fontSize: 22,
