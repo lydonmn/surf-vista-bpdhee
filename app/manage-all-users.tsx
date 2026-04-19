@@ -101,8 +101,8 @@ export default function ManageAllUsersScreen() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: true });
+        .select('id, email, full_name, first_name, last_name, name, is_admin, is_regional_admin, is_subscribed, subscription_end_date, created_at, managed_locations, subscription_paused, subscription_paused_days, subscription_paused_at, subscription_refunded, subscription_refunded_at')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('[ManageAllUsersScreen] Error fetching users:', error);
@@ -151,7 +151,7 @@ export default function ManageAllUsersScreen() {
 
   // Tab buckets (computed from search-filtered list)
   const allUsers = useMemo(
-    () => [...searchFiltered].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    () => [...searchFiltered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [searchFiltered]
   );
   const activeUsers = useMemo(
@@ -827,38 +827,40 @@ export default function ManageAllUsersScreen() {
         )}
       </View>
 
-      {/* Tab Bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabBarScroll}
-        contentContainerStyle={styles.tabBarContent}
-      >
-        {tabs.map(tab => {
-          const isActive = activeTab === tab.key;
-          const tabLabel = `${tab.label} (${tab.count})`;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.tabPill,
-                isActive ? styles.tabPillActive : styles.tabPillInactive,
-              ]}
-              onPress={() => {
-                console.log('[ManageAllUsersScreen] Tab selected:', tab.key);
-                setActiveTab(tab.key);
-              }}
-            >
-              <Text style={[
-                styles.tabPillText,
-                isActive ? styles.tabPillTextActive : styles.tabPillTextInactive,
-              ]}>
-                {tabLabel}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      {/* Tab Bar — fixed, never scrolls */}
+      <View style={[styles.tabBarWrapper, { backgroundColor: theme.colors.background }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabBarScroll}
+          contentContainerStyle={styles.tabBarContent}
+        >
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.key;
+            const tabLabel = `${tab.label} (${tab.count})`;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabPill,
+                  isActive ? styles.tabPillActive : styles.tabPillInactive,
+                ]}
+                onPress={() => {
+                  console.log('[ManageAllUsersScreen] Tab selected:', tab.key);
+                  setActiveTab(tab.key);
+                }}
+              >
+                <Text style={[
+                  styles.tabPillText,
+                  isActive ? styles.tabPillTextActive : styles.tabPillTextInactive,
+                ]}>
+                  {tabLabel}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -1154,9 +1156,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  tabBarWrapper: {
+    flexShrink: 0,
+    paddingBottom: 12,
+  },
   tabBarScroll: {
     flexGrow: 0,
-    marginBottom: 12,
   },
   tabBarContent: {
     paddingHorizontal: 16,
