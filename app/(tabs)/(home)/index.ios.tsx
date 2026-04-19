@@ -259,7 +259,7 @@ export default function HomeScreen() {
         preloadedUrl: '',
       },
     });
-  }, [latestVideo, currentLocation, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
+  }, [latestVideo, isSubscribed, profile, rcLoading, authLoading, isInitialized]);
 
 
 

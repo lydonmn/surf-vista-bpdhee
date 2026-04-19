@@ -287,6 +287,7 @@ export function useVideos() {
         }
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [PROCESSING_MAX_DURATION]);
 
   const fetchVideosRef = useRef<() => Promise<void>>();

@@ -5,7 +5,7 @@
  * their notification preferences using OneSignal tags.
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,

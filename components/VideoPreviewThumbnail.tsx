@@ -16,6 +16,7 @@ function extractMuxPlaybackId(videoUrl: string): string | null {
       const parts = videoUrl.split('stream.mux.com/');
       if (parts.length === 2) return parts[1].split('.m3u8')[0];
     }
+  // eslint-disable-next-line no-empty
   } catch {}
   return null;
 }
@@ -46,16 +47,17 @@ export function VideoPreviewThumbnail({ videoUrl, thumbnailUrl, style }: VideoPr
       console.error('[VideoPreviewThumbnail] Failed to start playback:', e);
       setVideoError(true);
     }
-  }, [videoUrl]);
+  }, [videoUrl, player]);
 
   useEffect(() => {
     return () => {
       try {
         console.log('[VideoPreviewThumbnail] Unmounting — pausing player');
         player.pause();
+      // eslint-disable-next-line no-empty
       } catch {}
     };
-  }, []);
+  }, [player]);
 
   const finalThumbnailUrl = getMuxThumbnailUrl(videoUrl) || thumbnailUrl;
 

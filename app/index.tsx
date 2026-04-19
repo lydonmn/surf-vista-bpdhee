@@ -1,6 +1,5 @@
 
 import { Redirect } from 'expo-router';
-import { NotificationBell } from "@/components/NotificationBell";
 
 /**
  * 🚨 CRITICAL: Simplified root index - immediate redirect

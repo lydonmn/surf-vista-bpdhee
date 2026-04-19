@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BackHandler,
   Pressable,
@@ -57,6 +57,7 @@ export default function OnboardingScreen() {
   }, [isFirstStep, goBack]);
 
   const handleSelect = (optionId: string) => {
+    console.log('[Onboarding] Option selected:', { step: currentStep, questionId: question.id, optionId });
     setAnswers((prev) => ({ ...prev, [currentStep]: optionId }));
   };
 
@@ -64,11 +65,14 @@ export default function OnboardingScreen() {
     if (!selectedOption) return;
 
     if (isLastStep) {
+      console.log('[Onboarding] Completing onboarding, answers:', answers);
       await completeOnboarding();
+      console.log('[Onboarding] Onboarding marked complete, navigating to paywall');
       router.replace("/paywall");
       const { openPaywall } = await import('@/utils/paywallHelper');
       openPaywall().catch(() => {});
     } else {
+      console.log('[Onboarding] Advancing to step', currentStep + 1);
       if (isAnimating.current) return;
       isAnimating.current = true;
       opacity.value = withTiming(0, { duration: 150 });

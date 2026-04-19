@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, usePathname, useRouter } from 'expo-router';
@@ -115,27 +115,38 @@ function SubscriptionRedirect() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
+    // Wait until both auth and subscription are resolved
     if (loading || authLoading) return;
-    const onAuthScreen = pathname === "/login";
-    if (onAuthScreen) return;
+    // Don't redirect if already on auth or onboarding screens
+    if (pathname === "/login" || pathname.startsWith("/onboarding")) return;
+    // Only run the redirect check once per session to avoid re-triggering mid-session
+    if (hasRedirected.current) return;
+
     if (!user) {
+      console.log('[SubscriptionRedirect] No user found, redirecting to login');
+      hasRedirected.current = true;
       router.replace("/login");
       return;
     }
-    const onOnboarding = pathname.startsWith("/onboarding");
-    if (onOnboarding) return;
 
     let cancelled = false;
     isOnboardingComplete().then((done) => {
       if (cancelled) return;
       if (!done) {
+        console.log('[SubscriptionRedirect] Onboarding not complete, redirecting to onboarding (first-time user)');
+        hasRedirected.current = true;
         router.replace("/onboarding");
+      } else {
+        console.log('[SubscriptionRedirect] Onboarding already complete, skipping redirect');
+        hasRedirected.current = true;
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [loading, authLoading, pathname, user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, authLoading, user]);
 
   return null;
 }
@@ -144,8 +155,6 @@ export default function RootLayout() {
   console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
 
   const colorScheme = useColorScheme();
-  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
-  const pathname = usePathname();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
@@ -153,11 +162,7 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  useEffect(() => {
-    isOnboardingComplete().then((complete) => {
-      setOnboardingComplete(complete);
-    });
-  }, [pathname]);
+
 
   // Set up notification listeners at the app root — native only
   useEffect(() => {

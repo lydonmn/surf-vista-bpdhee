@@ -3,7 +3,7 @@
 // at build time via the compiled ObjC/Java native module.
 // This JS stub prevents TurboModuleRegistry crashes on web.
 
-var OneSignal;
+let OneSignal;
 (function (_OneSignal) {
   _OneSignal.initialize = function() {};
   _OneSignal.login = function() {};
@@ -11,11 +11,11 @@ var OneSignal;
   _OneSignal.setConsentRequired = function() {};
   _OneSignal.setConsentGiven = function() {};
 
-  var Debug = _OneSignal.Debug = {};
+  const Debug = _OneSignal.Debug = {};
   Debug.setLogLevel = function() {};
   Debug.setAlertLevel = function() {};
 
-  var User = _OneSignal.User = {};
+  const User = _OneSignal.User = {};
   User.addTag = function() {};
   User.addTags = function() {};
   User.removeTag = function() {};
@@ -28,7 +28,7 @@ var OneSignal;
   User.setLanguage = function() {};
   User.addEventListener = function() {};
   User.removeEventListener = function() {};
-  var pushSubscription = User.pushSubscription = {};
+  const pushSubscription = User.pushSubscription = {};
   pushSubscription.addEventListener = function() {};
   pushSubscription.removeEventListener = function() {};
   pushSubscription.getIdAsync = async function() { return null; };
@@ -37,7 +37,7 @@ var OneSignal;
   pushSubscription.optIn = function() {};
   pushSubscription.optOut = function() {};
 
-  var Notifications = _OneSignal.Notifications = {};
+  const Notifications = _OneSignal.Notifications = {};
   Notifications.hasPermission = false;
   Notifications.getPermissionAsync = async function() { return false; };
   Notifications.requestPermission = async function() { return false; };
@@ -46,7 +46,7 @@ var OneSignal;
   Notifications.removeEventListener = function() {};
   Notifications.clearAll = function() {};
 
-  var InAppMessages = _OneSignal.InAppMessages = {};
+  const InAppMessages = _OneSignal.InAppMessages = {};
   InAppMessages.addEventListener = function() {};
   InAppMessages.removeEventListener = function() {};
   InAppMessages.addTrigger = function() {};
@@ -54,11 +54,11 @@ var OneSignal;
   InAppMessages.setPaused = function() {};
   InAppMessages.getPaused = async function() { return false; };
 
-  var Location = _OneSignal.Location = {};
+  const Location = _OneSignal.Location = {};
   Location.requestPermission = function() {};
   Location.setShared = function() {};
 
-  var Session = _OneSignal.Session = {};
+  const Session = _OneSignal.Session = {};
   Session.addOutcome = function() {};
   Session.addUniqueOutcome = function() {};
   Session.addOutcomeWithValue = function() {};

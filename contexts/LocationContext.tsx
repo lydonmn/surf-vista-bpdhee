@@ -63,7 +63,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   // 🚨 CRITICAL FIX: Initialize with defaults immediately - no blocking
   const [currentLocation, setCurrentLocation] = useState<Location>('folly-beach');
   const [locations, setLocations] = useState<LocationData[]>(DEFAULT_LOCATIONS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
   const mountedRef = useRef(true);
 
   const fetchLocations = useCallback(async () => {

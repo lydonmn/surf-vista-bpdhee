@@ -14,7 +14,7 @@
  *   <NotificationBell variant="compact" />
  */
 
-import React from "react";
+
 import {
   TouchableOpacity,
   Text,

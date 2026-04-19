@@ -22,6 +22,7 @@ interface State {
 }
 
 /** Extract a readable source location from a stack trace */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function extractSource(stack: string): string | null {
   if (!stack) return null;
   for (const line of stack.split("\n")) {

@@ -1,4 +1,4 @@
-import React from "react";
+
 import { Pressable, Text, View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useOnboardingColors } from "@/hooks/useOnboardingColors";

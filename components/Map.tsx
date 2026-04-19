@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, View, ViewStyle, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 

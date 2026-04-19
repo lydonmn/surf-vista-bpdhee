@@ -57,12 +57,7 @@ export default function EnhancedVideoPlayerScreen() {
   console.log('[EnhancedVideoPlayer] Current video index:', currentVideoIndex);
 
   // Use video preloader hook (silent background operation)
-  const { getSource, isPreloading } = useVideoPreloader(preloadQueue);
-
-  // Get next video for pre-buffering
-  const nextVideo = currentVideoIndex >= 0 && currentVideoIndex < videos.length - 1
-    ? videos[currentVideoIndex + 1]
-    : null;
+  const { isPreloading } = useVideoPreloader(preloadQueue);
 
   // 🚨 REMOVED: Audio session configuration (expo-video handles this automatically)
   // expo-video in Expo SDK 52+ manages audio sessions internally
