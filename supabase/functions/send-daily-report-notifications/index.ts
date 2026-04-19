@@ -1,34 +1,3 @@
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * V9.0 VERIFIED: SEND DAILY REPORT NOTIFICATIONS
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * ✅ VERIFIED FUNCTIONALITY:
- * 1. Called automatically at 5AM EST by daily-5am-report-with-retry function
- * 2. Fetches all users with daily_report_notifications = true
- * 3. Filters users by:
- *    - Valid push token (not null, not dummy tokens)
- *    - Location preference (notification_locations array)
- * 4. Sends push notifications via Expo Push API
- * 5. Handles batching (100 notifications per batch)
- * 6. Provides detailed logging for debugging
- * 
- * ✅ VERIFIED FLOW:
- * User opts in → Token registered → Saved to DB → 5AM report generated → 
- * This function called → Notifications sent → Users receive push notifications
- * 
- * ✅ VERIFIED REQUIREMENTS:
- * - EAS Build (not Expo Go)
- * - Physical device (not simulator)
- * - Valid Expo push token format: ExponentPushToken[...]
- * - User has granted notification permissions
- * - User has daily_report_notifications = true in profiles table
- * - User has valid push_token in profiles table
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -37,35 +6,55 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+function isValidExpoToken(token: string | null | undefined): boolean {
+  return !!token && token.startsWith('ExponentPushToken[');
+}
+
+async function sendExpoBatch(messages: object[]): Promise<{ successCount: number; failureCount: number }> {
+  let successCount = 0;
+  let failureCount = 0;
+  const batchSize = 100;
+  for (let i = 0; i < messages.length; i += batchSize) {
+    const batch = messages.slice(i, i + batchSize);
+    try {
+      const response = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(batch),
+      });
+      const result = await response.json();
+      if (result.data) {
+        for (const item of result.data) {
+          if (item.status === 'ok') successCount++;
+          else { failureCount++; console.error('[Notifications] Push failed:', JSON.stringify(item)); }
+        }
+      }
+    } catch (err) {
+      console.error('[Notifications] Batch send error:', err);
+      failureCount += batch.length;
+    }
   }
+  return { successCount, failureCount };
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    console.log('[Send Daily Notifications] ═══════════════════════════════════════');
-    console.log('[Send Daily Notifications] 📲 V9.0 VERIFIED: SENDING DAILY REPORT NOTIFICATIONS');
-    console.log('[Send Daily Notifications] ═══════════════════════════════════════');
-    console.log('[Send Daily Notifications] ✅ VERIFIED: This function is called automatically at 5AM EST');
-    console.log('[Send Daily Notifications] ✅ VERIFIED: Sends push notifications to all opted-in users');
-    console.log('[Send Daily Notifications] ✅ VERIFIED: Uses Expo Push API for reliable delivery');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse request body to get location and report data
     const body = await req.json();
-    const locationId = body.location || 'folly-beach';
-    const reportDate = body.date;
+    const locationId: string = body.location || 'folly-beach';
+    const reportDate: string = body.date;
 
-    console.log('[Send Daily Notifications] ===== REQUEST DETAILS =====');
-    console.log('[Send Daily Notifications] Location ID:', locationId);
-    console.log('[Send Daily Notifications] Report Date:', reportDate);
-    console.log('[Send Daily Notifications] Timestamp:', new Date().toISOString());
-    console.log('[Send Daily Notifications] ===================================');
+    console.log('[Notifications] Starting for location:', locationId, 'date:', reportDate);
 
-    // Fetch the generated report
+    // Fetch the surf report
     const { data: report, error: reportError } = await supabase
       .from('surf_reports')
       .select('*')
@@ -74,303 +63,146 @@ serve(async (req) => {
       .single();
 
     if (reportError || !report) {
-      console.error('[Send Daily Notifications] Report not found:', reportError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Report not found',
-        }),
-        { 
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+      console.error('[Notifications] Report not found:', reportError);
+      return new Response(JSON.stringify({ success: false, error: 'Report not found' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Fetch location details
-    const { data: location, error: locationError } = await supabase
+    // Fetch location display name
+    const { data: locationRow } = await supabase
       .from('locations')
       .select('display_name')
       .eq('id', locationId)
       .single();
+    const locationName = locationRow?.display_name || locationId;
 
-    const locationName = location?.display_name || 'Folly Beach, SC';
+    // Parse wave height as a number for swell alert comparisons
+    const waveHeightRaw: string = report.wave_height || '0';
+    const waveHeightNum = parseFloat(waveHeightRaw.replace(/[^0-9.]/g, '')) || 0;
 
-    // ✅ V6.9 FIX: Fetch ALL users who have opted in for daily notifications with detailed logging
-    console.log('[Send Daily Notifications] ===== FETCHING USERS =====');
-    const { data: allOptedInUsers, error: usersError } = await supabase
+    // Fetch ALL profiles
+    const { data: allProfiles, error: usersError } = await supabase
       .from('profiles')
-      .select('id, push_token, email, notification_locations, is_admin, daily_report_notifications')
-      .eq('daily_report_notifications', true);
+      .select('id, push_token, email, is_admin, daily_report_notifications, min_wave_height');
 
     if (usersError) {
-      console.error('[Send Daily Notifications] ❌ Error fetching users:', usersError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Failed to fetch users',
-        }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    if (!allOptedInUsers || allOptedInUsers.length === 0) {
-      console.log('[Send Daily Notifications] ⚠️ No users opted in for notifications');
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'No users to notify',
-          notificationsSent: 0,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`[Send Daily Notifications] ===== USER ANALYSIS =====`);
-    console.log(`[Send Daily Notifications] Total users with notifications enabled: ${allOptedInUsers.length}`);
-    
-    // ✅ V6.9 FIX: Detailed logging for each user
-    allOptedInUsers.forEach((user, index) => {
-      console.log(`[Send Daily Notifications] User ${index + 1}/${allOptedInUsers.length}:`);
-      console.log(`  - Email: ${user.email}`);
-      console.log(`  - Is Admin: ${user.is_admin}`);
-      console.log(`  - Has Push Token: ${!!user.push_token}`);
-      console.log(`  - Push Token Type: ${!user.push_token ? 'NONE' : user.push_token === 'web-dummy-token' ? 'WEB_DUMMY' : user.push_token === 'simulator-dummy-token' ? 'SIMULATOR_DUMMY' : 'VALID'}`);
-      console.log(`  - Notification Locations: ${JSON.stringify(user.notification_locations || ['folly-beach'])}`);
-      console.log(`  - Wants ${locationId}: ${(user.notification_locations || ['folly-beach']).includes(locationId)}`);
-    });
-
-    // Filter users who:
-    // 1. Have a valid push token (not null, not dummy tokens)
-    // 2. Have this location in their notification_locations array (or have no locations set, defaulting to all)
-    const eligibleUsers = allOptedInUsers.filter(user => {
-      // ✅ V6.9 FIX: Check if user has a VALID push token
-      if (!user.push_token) {
-        console.log(`[Send Daily Notifications] ⚠️ User ${user.email} has NO push token - SKIPPING`);
-        console.log(`[Send Daily Notifications]    → User needs to: 1) Enable notifications in profile, 2) Grant permission, 3) App must be EAS build`);
-        return false;
-      }
-      
-      if (user.push_token === 'web-dummy-token') {
-        console.log(`[Send Daily Notifications] ⚠️ User ${user.email} has WEB dummy token - SKIPPING`);
-        return false;
-      }
-      
-      if (user.push_token === 'simulator-dummy-token') {
-        console.log(`[Send Daily Notifications] ⚠️ User ${user.email} has SIMULATOR dummy token - SKIPPING`);
-        console.log(`[Send Daily Notifications]    → User needs to use a physical device or TestFlight build`);
-        return false;
-      }
-
-      // Check if user wants notifications for this location
-      const userLocations = user.notification_locations || ['folly-beach'];
-      const wantsThisLocation = userLocations.includes(locationId);
-      
-      if (!wantsThisLocation) {
-        console.log(`[Send Daily Notifications] ℹ️ User ${user.email} not subscribed to ${locationId} - SKIPPING`);
-        return false;
-      }
-
-      console.log(`[Send Daily Notifications] ✅ User ${user.email} ELIGIBLE for ${locationId} notification`);
-      console.log(`[Send Daily Notifications]    → Has valid token: ${user.push_token.substring(0, 20)}...`);
-      return true;
-    });
-
-    console.log('[Send Daily Notifications] ===== ELIGIBILITY SUMMARY =====');
-    console.log(`[Send Daily Notifications] Total opted-in users: ${allOptedInUsers.length}`);
-    console.log(`[Send Daily Notifications] Eligible users (with valid tokens): ${eligibleUsers.length}`);
-    console.log(`[Send Daily Notifications] Users without valid tokens: ${allOptedInUsers.length - eligibleUsers.length}`);
-
-    if (eligibleUsers.length === 0) {
-      const usersWithoutTokens = allOptedInUsers.filter(u => 
-        !u.push_token || u.push_token === 'web-dummy-token' || u.push_token === 'simulator-dummy-token'
-      );
-      
-      console.log('[Send Daily Notifications] ⚠️ NO ELIGIBLE USERS WITH VALID PUSH TOKENS');
-      console.log('[Send Daily Notifications] ===== USERS WITHOUT VALID TOKENS =====');
-      usersWithoutTokens.forEach(u => {
-        console.log(`  - ${u.email}: ${!u.push_token ? 'NO TOKEN' : u.push_token}`);
+      console.error('[Notifications] Error fetching users:', usersError);
+      return new Response(JSON.stringify({ success: false, error: 'Failed to fetch users' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-      console.log('[Send Daily Notifications] ===================================');
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'No eligible users with valid push tokens',
-          notificationsSent: 0,
-          totalOptedIn: allOptedInUsers.length,
-          usersWithoutValidTokens: usersWithoutTokens.length,
-          usersWithoutTokensDetails: usersWithoutTokens.map(u => ({
-            email: u.email,
-            isAdmin: u.is_admin,
-            tokenStatus: !u.push_token ? 'NONE' : u.push_token === 'web-dummy-token' ? 'WEB_DUMMY' : 'SIMULATOR_DUMMY'
-          })),
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
-    console.log(`[Send Daily Notifications] ===== SENDING TO ${eligibleUsers.length} USERS =====`);
-    eligibleUsers.forEach((user, index) => {
-      console.log(`  ${index + 1}. ${user.email} (${user.is_admin ? 'ADMIN' : 'USER'})`);
+    const allUsers = allProfiles || [];
+    console.log(`[Notifications] Total profiles: ${allUsers.length}`);
+
+    // Admin token audit
+    for (const user of allUsers) {
+      if (user.is_admin && !isValidExpoToken(user.push_token)) {
+        console.warn(`[Notifications] ⚠️ ADMIN USER HAS NO VALID PUSH TOKEN: ${user.email} (id: ${user.id}) — token: ${user.push_token ?? 'null'}`);
+      }
+    }
+
+    // Fetch notification_preferences for this specific location
+    const { data: locationPrefs } = await supabase
+      .from('notification_preferences')
+      .select('user_id, enabled')
+      .eq('location_id', locationId);
+
+    const prefMapForLocation = new Map<string, boolean>();
+    if (locationPrefs) {
+      for (const pref of locationPrefs) {
+        prefMapForLocation.set(pref.user_id, pref.enabled);
+      }
+    }
+
+    // Fetch all user_ids that have ANY notification_preferences rows
+    const { data: allPrefsRows } = await supabase
+      .from('notification_preferences')
+      .select('user_id');
+    const usersWithAnyPrefs = new Set((allPrefsRows || []).map((r: any) => r.user_id));
+
+    // Build daily report notification list
+    const dailyReportUsers = allUsers.filter(user => {
+      if (!user.daily_report_notifications) return false;
+      if (!isValidExpoToken(user.push_token)) {
+        console.log(`[Notifications] Skipping ${user.email} (daily): no valid token`);
+        return false;
+      }
+      // Never configured → fallback: send for all locations
+      if (!usersWithAnyPrefs.has(user.id)) {
+        console.log(`[Notifications] ${user.email}: no prefs configured, sending via fallback`);
+        return true;
+      }
+      const enabledForLocation = prefMapForLocation.get(user.id);
+      if (enabledForLocation === true) {
+        console.log(`[Notifications] ${user.email}: enabled for ${locationId}`);
+        return true;
+      }
+      console.log(`[Notifications] ${user.email}: not subscribed to ${locationId}, skipping`);
+      return false;
     });
 
-    // Create notification summary from report
-    const waveHeight = report.wave_height || 'N/A';
     const rating = report.rating || 0;
     const ratingEmoji = rating >= 8 ? '🔥' : rating >= 6 ? '👍' : rating >= 4 ? '🌊' : '😐';
-    
-    // Create a short summary (first 100 chars of conditions)
-    const fullConditions = report.conditions || 'Check the app for today\'s surf report!';
-    const summary = fullConditions.length > 100 
-      ? fullConditions.substring(0, 100) + '...' 
-      : fullConditions;
+    const conditions = report.conditions || "Check the app for today's surf report!";
+    const summary = conditions.length > 100 ? conditions.substring(0, 100) + '...' : conditions;
+    const notifTitle = `${ratingEmoji} ${locationName} Surf Report`;
+    const notifBody = `${waveHeightRaw} waves • ${rating}/10 rating\n${summary}`;
 
-    const notificationTitle = `${ratingEmoji} ${locationName} Surf Report`;
-    const notificationBody = `${waveHeight} waves • ${rating}/10 rating\n${summary}`;
-
-    console.log('[Send Daily Notifications] ===== NOTIFICATION CONTENT =====');
-    console.log('[Send Daily Notifications] Title:', notificationTitle);
-    console.log('[Send Daily Notifications] Body:', notificationBody);
-
-    // Send push notifications using Expo Push API
-    const expoPushUrl = 'https://exp.host/--/api/v2/push/send';
-    const messages = eligibleUsers.map(user => ({
+    const dailyMessages = dailyReportUsers.map(user => ({
       to: user.push_token,
       sound: 'default',
-      title: notificationTitle,
-      body: notificationBody,
-      data: {
-        type: 'daily_report',
-        reportId: report.id,
-        location: locationId,
-        date: reportDate,
-      },
+      title: notifTitle,
+      body: notifBody,
+      data: { type: 'daily_report', reportId: report.id, location: locationId, date: reportDate },
       priority: 'high',
       channelId: 'daily-reports',
     }));
 
-    console.log(`[Send Daily Notifications] ===== SENDING ${messages.length} NOTIFICATIONS =====`);
+    console.log(`[Notifications] Sending daily report to ${dailyMessages.length} users`);
+    const dailyResult = dailyMessages.length > 0
+      ? await sendExpoBatch(dailyMessages)
+      : { successCount: 0, failureCount: 0 };
 
-    const notificationResults = [];
-    let successCount = 0;
-    let failureCount = 0;
-    const failedUsers: any[] = [];
+    // Swell alert notifications
+    const swellAlertUsers = allUsers.filter(user => {
+      if (user.min_wave_height === null || user.min_wave_height === undefined) return false;
+      if (!isValidExpoToken(user.push_token)) return false;
+      const meets = waveHeightNum >= user.min_wave_height;
+      if (meets) console.log(`[Notifications] ${user.email}: swell alert (${waveHeightNum}ft >= ${user.min_wave_height}ft threshold)`);
+      return meets;
+    });
 
-    // Send notifications in batches of 100 (Expo's limit)
-    const batchSize = 100;
-    for (let i = 0; i < messages.length; i += batchSize) {
-      const batch = messages.slice(i, i + batchSize);
-      const batchUsers = eligibleUsers.slice(i, i + batchSize);
-      
-      console.log(`[Send Daily Notifications] Sending batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(messages.length / batchSize)}...`);
-      
-      try {
-        const response = await fetch(expoPushUrl, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(batch),
-        });
+    const swellMessages = swellAlertUsers.map(user => ({
+      to: user.push_token,
+      sound: 'default',
+      title: '🌊 Swell Alert',
+      body: `${waveHeightNum}ft waves at ${locationName} right now!`,
+      data: { type: 'swell_alert', location: locationId, waveHeight: waveHeightNum },
+      priority: 'high',
+      channelId: 'swell-alerts',
+    }));
 
-        const result = await response.json();
-        notificationResults.push(result);
+    console.log(`[Notifications] Swell check: ${waveHeightNum}ft — ${swellAlertUsers.length} users meet threshold`);
+    const swellResult = swellMessages.length > 0
+      ? await sendExpoBatch(swellMessages)
+      : { successCount: 0, failureCount: 0 };
 
-        // Count successes and failures
-        if (result.data) {
-          for (let j = 0; j < result.data.length; j++) {
-            const item = result.data[j];
-            const userEmail = batchUsers[j]?.email || 'unknown';
-            
-            if (item.status === 'ok') {
-              successCount++;
-              console.log(`[Send Daily Notifications] ✅ Sent to ${userEmail}`);
-            } else {
-              failureCount++;
-              const errorDetails = item.details?.error || item.message || 'Unknown error';
-              console.error(`[Send Daily Notifications] ❌ Failed to send to ${userEmail}: ${errorDetails}`);
-              failedUsers.push({
-                email: userEmail,
-                error: errorDetails,
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('[Send Daily Notifications] ❌ Batch send error:', error);
-        failureCount += batch.length;
-        batch.forEach((msg, idx) => {
-          failedUsers.push({
-            email: batchUsers[idx]?.email || 'unknown',
-            error: 'Batch send failed',
-          });
-        });
-      }
-    }
-
-    console.log('[Send Daily Notifications] ═══════════════════════════════════════');
-    console.log('[Send Daily Notifications] ===== V9.0 FINAL RESULTS =====');
-    console.log(`[Send Daily Notifications] ✅ Successfully sent: ${successCount}`);
-    console.log(`[Send Daily Notifications] ❌ Failed: ${failureCount}`);
-    console.log(`[Send Daily Notifications] 📊 Total opted-in users: ${allOptedInUsers.length}`);
-    console.log(`[Send Daily Notifications] 📊 Eligible users (with valid tokens): ${eligibleUsers.length}`);
-    console.log(`[Send Daily Notifications] 📊 Users without valid tokens: ${allOptedInUsers.length - eligibleUsers.length}`);
-    console.log('[Send Daily Notifications] ===================================');
-    console.log('[Send Daily Notifications] ✅ V9.0 VERIFICATION:');
-    console.log('[Send Daily Notifications]    - Push notifications ARE being sent ✓');
-    console.log('[Send Daily Notifications]    - Using Expo Push API ✓');
-    console.log('[Send Daily Notifications]    - Triggered at 5AM EST daily ✓');
-    console.log('[Send Daily Notifications]    - Location-based filtering ✓');
-    console.log('[Send Daily Notifications]    - Valid token verification ✓');
-    
-    if (failedUsers.length > 0) {
-      console.log('[Send Daily Notifications] ===== FAILED USERS =====');
-      failedUsers.forEach(u => {
-        console.log(`  - ${u.email}: ${u.error}`);
-      });
-    }
-    
-    if (successCount > 0) {
-      console.log('[Send Daily Notifications] ===== SUCCESS CONFIRMATION =====');
-      console.log(`[Send Daily Notifications] ✅ ${successCount} notification(s) successfully sent to Expo Push API`);
-      console.log('[Send Daily Notifications] ✅ Users will receive notifications on their devices');
-      console.log('[Send Daily Notifications] ✅ Notification delivery confirmed');
-    }
-    
-    console.log('[Send Daily Notifications] ═══════════════════════════════════════');
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Notifications sent to ${successCount} users`,
-        notificationsSent: successCount,
-        notificationsFailed: failureCount,
-        totalOptedIn: allOptedInUsers.length,
-        eligibleUsers: eligibleUsers.length,
-        usersWithoutValidTokens: allOptedInUsers.length - eligibleUsers.length,
-        failedUsers: failedUsers,
-        location: locationName,
-        date: reportDate,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({
+      success: true,
+      dailyReport: { sent: dailyResult.successCount, failed: dailyResult.failureCount, eligible: dailyReportUsers.length },
+      swellAlerts: { sent: swellResult.successCount, failed: swellResult.failureCount, eligible: swellAlertUsers.length, waveHeight: waveHeightNum },
+      totalProfiles: allUsers.length,
+      totalOptedIn: allUsers.filter(u => u.daily_report_notifications).length,
+      location: locationName,
+      date: reportDate,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    console.error('[Send Daily Notifications] 💥 Fatal error:', error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message,
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    console.error('[Notifications] Fatal error:', error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });

@@ -9,6 +9,43 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // 🎬 Mux HLS URL prefix
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
+const EXPO_PUSH_URL_MUX = 'https://exp.host/--/api/v2/push/send';
+
+async function sendVideoPushNotifications(supabase: any, videoTitle: string | null): Promise<void> {
+  try {
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('push_token, email')
+      .not('push_token', 'is', null);
+
+    if (error) { console.error('[mux-webhook] Error fetching profiles for push:', error); return; }
+
+    const validTokens = (profiles || []).filter((p: any) => p.push_token?.startsWith('ExponentPushToken['));
+    if (validTokens.length === 0) { console.log('[mux-webhook] No valid push tokens for video notification'); return; }
+
+    const title = '🎥 New Video Available';
+    const body = `${videoTitle || 'A new surf video'} is ready to watch`;
+
+    for (let i = 0; i < validTokens.length; i += 100) {
+      const batch = validTokens.slice(i, i + 100).map((p: any) => ({
+        to: p.push_token, sound: 'default', title, body,
+        data: { type: 'new_video' }, priority: 'high', channelId: 'videos',
+      }));
+      try {
+        const res = await fetch(EXPO_PUSH_URL_MUX, {
+          method: 'POST',
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(batch),
+        });
+        const result = await res.json();
+        const ok = result.data?.filter((r: any) => r.status === 'ok').length ?? 0;
+        console.log(`[mux-webhook] Video push batch ${Math.floor(i/100)+1}: ${ok}/${batch.length} ok`);
+      } catch (err) { console.error('[mux-webhook] Video push batch error:', err); }
+    }
+    console.log(`[mux-webhook] ✅ Video push sent to ${validTokens.length} users`);
+  } catch (err) { console.error('[mux-webhook] sendVideoPushNotifications error:', err); }
+}
+
 // Verify Mux webhook signature
 async function verifyMuxSignature(
   body: string,
@@ -161,6 +198,8 @@ Deno.serve(async (req: Request) => {
 
       console.log('[mux-webhook] ✅ Video updated successfully:', updateData[0].id);
       console.log('[mux-webhook] 🎬 Video URL set to:', videoUrl);
+
+      await sendVideoPushNotifications(supabase, updateData[0]?.title || null);
 
       return new Response(
         JSON.stringify({ 
