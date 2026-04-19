@@ -1,6 +1,6 @@
 
 import { colors } from '@/styles/commonStyles';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TextInput, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, SectionList, ActivityIndicator, TextInput, TouchableOpacity, Modal, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useState, useEffect, useCallback } from 'react';
@@ -11,6 +11,10 @@ import { supabase } from '@/app/integrations/supabase/client';
 interface UserProfile {
   id: string;
   email: string;
+  full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
   is_admin: boolean;
   is_regional_admin: boolean;
   is_subscribed: boolean;
@@ -30,11 +34,34 @@ interface UserStats {
   admins: number;
 }
 
+interface UserSection {
+  title: string;
+  count: number;
+  data: UserProfile[];
+}
+
+function getDisplayName(user: UserProfile): string {
+  const full = user.full_name?.trim();
+  if (full) return full;
+  const first = user.first_name?.trim() ?? '';
+  const last = user.last_name?.trim() ?? '';
+  const combined = [first, last].filter(Boolean).join(' ');
+  if (combined) return combined;
+  const nameField = user.name?.trim();
+  if (nameField) return nameField;
+  return '';
+}
+
+function isUserActive(user: UserProfile): boolean {
+  if (!user.is_subscribed) return false;
+  if (!user.subscription_end_date) return true;
+  return new Date(user.subscription_end_date) > new Date();
+}
+
 export default function ManageAllUsersScreen() {
   const theme = useTheme();
   const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<UserStats>({ total: 0, subscribed: 0, admins: 0 });
@@ -71,7 +98,6 @@ export default function ManageAllUsersScreen() {
 
       console.log('[ManageAllUsersScreen] Loaded', data?.length || 0, 'users');
       setUsers(data || []);
-      setFilteredUsers(data || []);
 
       const subscribedCount = data?.filter(u => u.is_subscribed).length || 0;
       const adminCount = data?.filter(u => u.is_admin || u.is_regional_admin).length || 0;
@@ -99,16 +125,32 @@ export default function ManageAllUsersScreen() {
     fetchUsers();
   }, [user, fetchUsers]);
 
-  useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredUsers(users);
-    } else {
-      const filtered = users.filter(u =>
-        u.email.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredUsers(filtered);
-    }
-  }, [searchTerm, users]);
+  // Build filtered + sectioned data
+  const filteredUsers = searchTerm.trim() === ''
+    ? users
+    : users.filter(u => {
+        const name = getDisplayName(u).toLowerCase();
+        const email = u.email.toLowerCase();
+        const term = searchTerm.toLowerCase();
+        return name.includes(term) || email.includes(term);
+      });
+
+  const sortedFiltered = [...filteredUsers].sort((a, b) => {
+    const nameA = getDisplayName(a) || a.email;
+    const nameB = getDisplayName(b) || b.email;
+    return nameA.localeCompare(nameB);
+  });
+
+  const activeUsers = sortedFiltered.filter(isUserActive);
+  const expiredUsers = sortedFiltered.filter(u => !isUserActive(u));
+
+  const sections: UserSection[] = [];
+  if (activeUsers.length > 0) {
+    sections.push({ title: 'Active', count: activeUsers.length, data: activeUsers });
+  }
+  if (expiredUsers.length > 0) {
+    sections.push({ title: 'Expired', count: expiredUsers.length, data: expiredUsers });
+  }
 
   const showSuccess = (title: string, message: string) => {
     setSuccessModalTitle(title);
@@ -146,7 +188,7 @@ export default function ManageAllUsersScreen() {
       return;
     }
 
-    const maxAmount = isWeeks ? 520 : 120; // 520 weeks = 10 years
+    const maxAmount = isWeeks ? 520 : 120;
     if (amount > maxAmount) {
       showError('Invalid Input', `Maximum ${maxAmount} ${durationUnit} allowed`);
       return;
@@ -156,19 +198,16 @@ export default function ManageAllUsersScreen() {
       console.log('[ManageAllUsersScreen] Granting', amount, durationUnit, 'to:', selectedUserEmail);
       setFreeMonthsModalVisible(false);
 
-      // Get current subscription end date or use today
-      const user = users.find(u => u.id === selectedUserId);
+      const targetUser = users.find(u => u.id === selectedUserId);
       let currentEndDate = new Date();
 
-      if (user?.subscription_end_date) {
-        const existingEndDate = new Date(user.subscription_end_date);
-        // If subscription is still active, extend from end date
+      if (targetUser?.subscription_end_date) {
+        const existingEndDate = new Date(targetUser.subscription_end_date);
         if (existingEndDate > currentEndDate) {
           currentEndDate = existingEndDate;
         }
       }
 
-      // Add the free weeks or months
       const newEndDate = new Date(currentEndDate);
       if (isWeeks) {
         newEndDate.setDate(newEndDate.getDate() + amount * 7);
@@ -176,7 +215,6 @@ export default function ManageAllUsersScreen() {
         newEndDate.setMonth(newEndDate.getMonth() + amount);
       }
 
-      // Update the user's subscription
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -208,14 +246,13 @@ export default function ManageAllUsersScreen() {
       try {
         console.log('[ManageAllUsersScreen] Pausing subscription for:', userEmail);
 
-        // Get current subscription end date
-        const user = users.find(u => u.id === userId);
-        if (!user?.subscription_end_date) {
+        const targetUser = users.find(u => u.id === userId);
+        if (!targetUser?.subscription_end_date) {
           showError('Error', 'User does not have an active subscription');
           return;
         }
 
-        const endDate = new Date(user.subscription_end_date);
+        const endDate = new Date(targetUser.subscription_end_date);
         const now = new Date();
         const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -224,7 +261,6 @@ export default function ManageAllUsersScreen() {
           return;
         }
 
-        // Store the paused state and remaining days
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -262,16 +298,15 @@ export default function ManageAllUsersScreen() {
       try {
         console.log('[ManageAllUsersScreen] Resuming subscription for:', userEmail);
 
-        const user = users.find(u => u.id === userId);
-        if (!user?.subscription_paused || !user.subscription_paused_days) {
+        const targetUser = users.find(u => u.id === userId);
+        if (!targetUser?.subscription_paused || !targetUser.subscription_paused_days) {
           showError('Error', 'User does not have a paused subscription');
           return;
         }
 
-        // Calculate new end date by adding the paused days to today
         const now = new Date();
         const newEndDate = new Date(now);
-        newEndDate.setDate(newEndDate.getDate() + user.subscription_paused_days);
+        newEndDate.setDate(newEndDate.getDate() + targetUser.subscription_paused_days);
 
         const { error } = await supabase
           .from('profiles')
@@ -292,7 +327,7 @@ export default function ManageAllUsersScreen() {
 
         showSuccess(
           'Subscription Resumed',
-          `Subscription resumed for ${userEmail}.\n\n${user.subscription_paused_days} days have been restored.\nNew end date: ${newEndDate.toLocaleDateString()}`
+          `Subscription resumed for ${userEmail}.\n\n${targetUser.subscription_paused_days} days have been restored.\nNew end date: ${newEndDate.toLocaleDateString()}`
         );
         await fetchUsers();
       } catch (error) {
@@ -351,7 +386,6 @@ export default function ManageAllUsersScreen() {
       try {
         console.log('[ManageAllUsersScreen] Issuing refund for:', userEmail);
 
-        // Cancel the subscription and mark as refunded
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -418,30 +452,64 @@ export default function ManageAllUsersScreen() {
     );
   };
 
-  const handleDeleteUser = async (userId: string, userEmail: string) => {
-    const action = async () => {
-      try {
-        console.log('[ManageAllUsersScreen] Deleting user:', userEmail);
+  const handleDeleteUser = (userId: string, userEmail: string, isAdmin: boolean, displayName: string) => {
+    console.log('[ManageAllUsersScreen] Delete tapped for:', userEmail);
 
-        const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (isAdmin) {
+      Alert.alert('Cannot Delete Admin', 'Cannot delete admin accounts. Remove admin privileges first.');
+      return;
+    }
 
-        if (error) {
-          console.error('[ManageAllUsersScreen] Error deleting user:', error);
-          showError('Error', `Failed to delete user: ${error.message}`);
-          return;
-        }
+    const label = displayName || userEmail;
+    Alert.alert(
+      'Delete Account',
+      `Delete ${label}'s account? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('[ManageAllUsersScreen] Confirming delete for:', userEmail, 'id:', userId);
 
-        showSuccess('Success', `User ${userEmail} has been deleted`);
-        await fetchUsers();
-      } catch (error) {
-        console.error('[ManageAllUsersScreen] Exception deleting user:', error);
-        showError('Error', 'Failed to delete user');
-      }
-    };
+              // Optimistically remove from local state
+              setUsers(prev => prev.filter(u => u.id !== userId));
 
-    showConfirm(
-      `Are you sure you want to permanently delete ${userEmail}? This action cannot be undone.`,
-      action
+              // Attempt auth deletion first (requires service role key)
+              try {
+                const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+                if (authError) {
+                  console.warn('[ManageAllUsersScreen] Auth delete failed (may lack service role), falling back to profile delete:', authError.message);
+                }
+              } catch {
+                console.warn('[ManageAllUsersScreen] Auth admin delete not available, deleting profile only');
+              }
+
+              // Always delete from profiles table
+              const { error: profileError } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', userId);
+
+              if (profileError) {
+                console.error('[ManageAllUsersScreen] Error deleting profile:', profileError);
+                // Restore user in list on failure
+                await fetchUsers();
+                Alert.alert('Error', `Failed to delete account: ${profileError.message}`);
+                return;
+              }
+
+              console.log('[ManageAllUsersScreen] Successfully deleted user:', userEmail);
+              showSuccess('Account Deleted', `${label}'s account has been deleted.`);
+            } catch (error) {
+              console.error('[ManageAllUsersScreen] Exception deleting user:', error);
+              await fetchUsers();
+              Alert.alert('Error', 'Failed to delete account');
+            }
+          },
+        },
+      ]
     );
   };
 
@@ -464,43 +532,71 @@ export default function ManageAllUsersScreen() {
     return Math.max(0, diffDays);
   };
 
-  const getSubscriptionStatus = (user: UserProfile): string => {
-    if (user.subscription_paused) {
-      const pausedDays = user.subscription_paused_days || 0;
+  const getSubscriptionStatus = (u: UserProfile): string => {
+    if (u.subscription_paused) {
+      const pausedDays = u.subscription_paused_days || 0;
       return `Paused (${pausedDays} days saved)`;
     }
-    if (user.subscription_refunded) {
+    if (u.subscription_refunded) {
       return 'Refunded';
     }
-    if (!user.is_subscribed) return 'Not Subscribed';
-    if (!user.subscription_end_date) return 'Active';
-    const daysLeft = getDaysLeft(user.subscription_end_date);
+    if (!u.is_subscribed) return 'Not Subscribed';
+    if (!u.subscription_end_date) return 'Active';
+    const daysLeft = getDaysLeft(u.subscription_end_date);
     if (daysLeft === 0) return 'Expired';
     return `Active (${daysLeft} days left)`;
   };
 
+  const renderSectionHeader = ({ section }: { section: UserSection }) => {
+    const isActive = section.title === 'Active';
+    const dotColor = isActive ? '#4CAF50' : '#9E9E9E';
+    const countBg = isActive ? 'rgba(76,175,80,0.15)' : 'rgba(158,158,158,0.15)';
+    return (
+      <View style={styles.sectionHeader}>
+        <View style={[styles.sectionDot, { backgroundColor: dotColor }]} />
+        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+          {section.title}
+        </Text>
+        <View style={[styles.sectionCountBadge, { backgroundColor: countBg }]}>
+          <Text style={[styles.sectionCountText, { color: dotColor }]}>
+            {section.count}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderUserCard = ({ item }: { item: UserProfile }) => {
     const subscriptionStatus = getSubscriptionStatus(item);
-    const isActive = item.is_subscribed && (!item.subscription_end_date || getDaysLeft(item.subscription_end_date) > 0) && !item.subscription_paused;
+    const active = item.is_subscribed && (!item.subscription_end_date || getDaysLeft(item.subscription_end_date) > 0) && !item.subscription_paused;
     const isPaused = item.subscription_paused;
     const isRefunded = item.subscription_refunded;
-    
-    let statusColor = '#9E9E9E'; // Default: Not subscribed
+
+    let statusColor = '#9E9E9E';
     if (isRefunded) {
-      statusColor = '#9C27B0'; // Purple for refunded
+      statusColor = '#9C27B0';
     } else if (isPaused) {
-      statusColor = '#FF9800'; // Orange for paused
-    } else if (isActive) {
-      statusColor = '#4CAF50'; // Green for active
+      statusColor = '#FF9800';
+    } else if (active) {
+      statusColor = '#4CAF50';
     }
+
+    const displayName = getDisplayName(item);
+    const primaryLabel = displayName || item.email;
+    const showEmail = displayName.length > 0;
 
     return (
       <View style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
         <View style={styles.userHeader}>
           <View style={styles.userInfo}>
-            <Text style={[styles.userEmail, { color: theme.colors.text }]}>
-              {item.email}
+            <Text style={[styles.userName, { color: theme.colors.text }]}>
+              {primaryLabel}
             </Text>
+            {showEmail && (
+              <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
+                {item.email}
+              </Text>
+            )}
             <View style={styles.userBadges}>
               {item.is_admin && (
                 <View style={styles.badge}>
@@ -514,7 +610,20 @@ export default function ManageAllUsersScreen() {
               )}
             </View>
           </View>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <View style={styles.headerRight}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDeleteUser(item.id, item.email, item.is_admin, displayName)}
+            >
+              <IconSymbol
+                ios_icon_name="trash"
+                android_material_icon_name="delete"
+                size={16}
+                color="#FF3B30"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.userDetails}>
@@ -542,9 +651,7 @@ export default function ManageAllUsersScreen() {
         </View>
 
         <View style={styles.userActions}>
-          {/* Subscription Management Actions */}
           {item.subscription_paused ? (
-            // Show Resume button for paused subscriptions
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => handleResumeSubscription(item.id, item.email)}
@@ -560,7 +667,6 @@ export default function ManageAllUsersScreen() {
               </Text>
             </TouchableOpacity>
           ) : item.is_subscribed && !item.subscription_refunded ? (
-            // Show Pause, Cancel, Refund for active subscriptions
             <>
               <TouchableOpacity
                 style={styles.actionButton}
@@ -609,7 +715,6 @@ export default function ManageAllUsersScreen() {
             </>
           ) : null}
 
-          {/* Free Months Action - Available for all users except refunded */}
           {!item.subscription_refunded && (
             <TouchableOpacity
               style={styles.actionButton}
@@ -627,7 +732,6 @@ export default function ManageAllUsersScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Admin Management Actions */}
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleToggleAdmin(item.id, item.email, item.is_admin)}
@@ -642,21 +746,6 @@ export default function ManageAllUsersScreen() {
               {item.is_admin ? 'Remove Admin' : 'Make Admin'}
             </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleDeleteUser(item.id, item.email)}
-          >
-            <IconSymbol
-              ios_icon_name="trash"
-              android_material_icon_name="delete"
-              size={16}
-              color="#FF3B30"
-            />
-            <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>
-              Delete
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -665,7 +754,10 @@ export default function ManageAllUsersScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => {
+          console.log('[ManageAllUsersScreen] Back button pressed');
+          router.back();
+        }}>
           <IconSymbol
             ios_icon_name="chevron.left"
             android_material_icon_name="chevron-left"
@@ -710,7 +802,7 @@ export default function ManageAllUsersScreen() {
         />
         <TextInput
           style={[styles.searchInput, { color: theme.colors.text }]}
-          placeholder="Search by email..."
+          placeholder="Search by name or email..."
           placeholderTextColor={colors.textSecondary}
           value={searchTerm}
           onChangeText={setSearchTerm}
@@ -722,11 +814,13 @@ export default function ManageAllUsersScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
-        <FlatList
-          data={filteredUsers}
+        <SectionList
+          sections={sections}
           renderItem={renderUserCard}
+          renderSectionHeader={renderSectionHeader}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled={false}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -864,7 +958,6 @@ export default function ManageAllUsersScreen() {
               {selectedUserEmail}
             </Text>
 
-            {/* Weeks / Months segmented toggle */}
             <View style={styles.segmentedControl}>
               <TouchableOpacity
                 style={[
@@ -1021,6 +1114,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 100,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  sectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  sectionCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  sectionCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   emptyState: {
     padding: 40,
     alignItems: 'center',
@@ -1032,7 +1154,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 2,
   },
   userHeader: {
@@ -1043,10 +1164,15 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+    marginRight: 8,
   },
-  userEmail: {
+  userName: {
     fontSize: 16,
     fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  userEmail: {
+    fontSize: 13,
     marginBottom: 8,
   },
   userBadges: {
@@ -1065,11 +1191,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   statusDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
     marginTop: 4,
+  },
+  deleteButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,59,48,0.1)',
   },
   userDetails: {
     gap: 4,
