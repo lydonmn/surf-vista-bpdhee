@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -24,7 +23,6 @@ import {
 } from '@/utils/pushNotifications';
 
 const WAVE_HEIGHT_OPTIONS = [1, 2, 3, 4, 5, 6];
-const VIDEO_NOTIFICATIONS_KEY = 'video_notifications_enabled';
 
 interface Location {
   id: string;
@@ -57,7 +55,7 @@ export default function NotificationPreferencesScreen() {
     console.log('[NotificationPreferences] Loading preferences for user:', user.id);
     setLoading(true);
     try {
-      const [dailyStatus, locationIds, locationsResult, profileResult, storedVideoNotif] =
+      const [dailyStatus, locationIds, locationsResult, profileResult] =
         await Promise.all([
           getDailyReportNotificationStatus(user.id),
           getNotificationLocations(user.id),
@@ -68,10 +66,9 @@ export default function NotificationPreferencesScreen() {
             .order('display_name'),
           supabase
             .from('profiles')
-            .select('min_wave_height')
+            .select('min_wave_height, video_notifications')
             .eq('id', user.id)
             .single(),
-          AsyncStorage.getItem(VIDEO_NOTIFICATIONS_KEY),
         ]);
 
       setDailyReportEnabled(dailyStatus);
@@ -90,14 +87,15 @@ export default function NotificationPreferencesScreen() {
         setMinWaveHeight(3);
       }
 
-      // Default to true if never set
-      setVideoNotificationsEnabled(storedVideoNotif !== 'false');
+      // Default to true if null (column default is true)
+      const videoNotifValue = profileResult.data?.video_notifications ?? true;
+      setVideoNotificationsEnabled(videoNotifValue);
 
       console.log('[NotificationPreferences] Preferences loaded:', {
         dailyReport: dailyStatus,
         swellAlert: savedMinHeight !== null && savedMinHeight !== undefined,
         minWaveHeight: savedMinHeight,
-        videoNotifications: storedVideoNotif !== 'false',
+        videoNotifications: videoNotifValue,
         locationCount: locationsResult.data?.length ?? 0,
       });
     } catch (err) {
@@ -127,14 +125,21 @@ export default function NotificationPreferencesScreen() {
   };
 
   const handleVideoNotificationsToggle = async (value: boolean) => {
+    if (!user?.id) return;
     console.log('[NotificationPreferences] Video notifications toggle pressed:', value);
     setSaving(true);
     try {
-      await AsyncStorage.setItem(VIDEO_NOTIFICATIONS_KEY, value ? 'true' : 'false');
-      setVideoNotificationsEnabled(value);
-      console.log('[NotificationPreferences] Video notifications saved to AsyncStorage:', value);
-      // NOTE: Requires a DB column `video_notifications boolean default true` on profiles
-      // to persist cross-device. Currently stored locally via AsyncStorage.
+      const { error } = await supabase
+        .from('profiles')
+        .update({ video_notifications: value })
+        .eq('id', user.id);
+      if (error) {
+        console.error('[NotificationPreferences] Error saving video notifications:', error);
+        Alert.alert('Error', 'Failed to save video notification preference.');
+      } else {
+        setVideoNotificationsEnabled(value);
+        console.log('[NotificationPreferences] Video notifications saved to Supabase:', value);
+      }
     } catch (err) {
       console.error('[NotificationPreferences] Error saving video notifications:', err);
     } finally {

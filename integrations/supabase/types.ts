@@ -98,6 +98,7 @@ export type Database = {
           push_token: string | null
           notification_preferences: Json | null
           min_wave_height: number | null
+          video_notifications: boolean | null
         }
         Insert: {
           created_at?: string | null
@@ -111,6 +112,7 @@ export type Database = {
           push_token?: string | null
           notification_preferences?: Json | null
           min_wave_height?: number | null
+          video_notifications?: boolean | null
         }
         Update: {
           created_at?: string | null
@@ -124,6 +126,7 @@ export type Database = {
           push_token?: string | null
           notification_preferences?: Json | null
           min_wave_height?: number | null
+          video_notifications?: boolean | null
         }
         Relationships: []
       }
