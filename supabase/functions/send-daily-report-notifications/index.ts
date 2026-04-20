@@ -224,11 +224,14 @@ serve(async (req) => {
       sound: 'default',
       title: notifTitle,
       body: notifBody,
+      subtitle: locationName,
+      badge: 1,
       data: { type: 'daily_report', reportId: report.id, location: locationId, date: reportDate },
       priority: 'high',
       channelId: 'daily-reports',
-      subtitle: locationName,
-      badge: 1,
+      categoryId: 'DAILY_REPORT',
+      mutableContent: true,
+      contentAvailable: true,
     }));
 
     console.log(`[Notifications] Sending daily report to ${dailyMessages.length} users`);

@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Alert, AppState, AppStateStatus, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-// Show notifications as banners even when the app is in the foreground
+// Register notification handler at module level so it fires before any notification arrives
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -23,7 +23,7 @@ import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
-import { setupAndroidNotificationChannels, ensurePushTokenRegistered } from "@/utils/pushNotifications";
+import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
 import { trackAppOpen, trackAppBackground } from "@/utils/usageTracking";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
@@ -258,55 +258,65 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Set up notification listeners at the app root — native only
+  // Shared handler — defined outside effects so both can reference it
+  const handleNotificationResponse = React.useCallback((response: Notifications.NotificationResponse) => {
+    console.log('[RootLayout] Notification response received:', response.notification.request.identifier);
+    console.log('[RootLayout] Action identifier:', response.actionIdentifier);
+    const data = response.notification.request.content.data as any;
+    console.log('[RootLayout] Notification data:', data);
+    if (!data) return;
+    if (data.type === 'daily_report' || data.type === 'swell_alert') {
+      console.log('[RootLayout] Deep linking to home tab for', data.type);
+      router.replace('/(tabs)/(home)');
+    } else if (data.type === 'new_video') {
+      console.log('[RootLayout] Deep linking to videos tab for new_video');
+      router.replace('/(tabs)/videos');
+    }
+  }, [router]);
+
+  // Cold-start handler: notification tapped while app was fully closed
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) {
+        console.log('[RootLayout] Cold-start notification response found, handling...');
+        handleNotificationResponse(response);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Live listener: notification tapped while app is backgrounded or foregrounded
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    // Foreground notification listener
+    // Foreground notification received (display only — no navigation)
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('[RootLayout] Foreground notification received:', notification.request.identifier);
       console.log('[RootLayout] Notification title:', notification.request.content.title);
       console.log('[RootLayout] Notification body:', notification.request.content.body);
     });
 
-    // Notification response listener (user tapped notification) — deep link to correct screen
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[RootLayout] Notification tapped:', response.notification.request.identifier);
-      console.log('[RootLayout] Notification action:', response.actionIdentifier);
-      const data = response.notification.request.content.data;
-      console.log('[RootLayout] Notification data:', data);
-
-      if (data?.type === 'daily_report') {
-        console.log('[RootLayout] Deep linking to home tab for daily_report notification');
-        router.push('/(tabs)/(home)');
-      } else if (data?.type === 'new_video') {
-        console.log('[RootLayout] Deep linking to videos tab for new_video notification');
-        router.push('/(tabs)/videos');
-      } else if (data?.type === 'swell_alert') {
-        console.log('[RootLayout] Deep linking to home tab for swell_alert notification');
-        router.push('/(tabs)/(home)');
-      }
-    });
+    // Response listener (user tapped notification)
+    const responseSub = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
 
     return () => {
       if (notificationListener.current) {
         notificationListener.current.remove();
       }
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
+      responseSub.remove();
     };
-  }, []);
+  }, [handleNotificationResponse]);
 
-  // Register Android notification channels at startup (no-op on iOS/web)
+  // Register Android channels + iOS categories at startup
   useEffect(() => {
     setupAndroidNotificationChannels().catch(() => {});
+    setupNotificationCategories().catch(() => {});
   }, []);
 
   // Increment app open count once on mount

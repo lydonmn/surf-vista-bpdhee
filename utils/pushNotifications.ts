@@ -34,6 +34,26 @@ function safeAlert(title: string, message: string, buttons?: any[]) {
 }
 
 /**
+ * Register iOS notification categories with action buttons.
+ * Safe to call on Android/web (no-op).
+ */
+export async function setupNotificationCategories(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await Notifications.setNotificationCategoryAsync('DAILY_REPORT', [
+      {
+        identifier: 'VIEW_REPORT',
+        buttonTitle: 'View Report',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+    console.log('[Push Notifications] iOS notification category DAILY_REPORT registered');
+  } catch (err) {
+    console.warn('[Push Notifications] Could not register notification categories:', err);
+  }
+}
+
+/**
  * Register Android notification channels at app startup.
  * Must be called unconditionally on Android — not gated behind token registration.
  * Safe to call on iOS/web (no-op).
