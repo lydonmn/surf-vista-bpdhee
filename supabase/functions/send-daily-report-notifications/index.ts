@@ -253,9 +253,14 @@ serve(async (req) => {
       sound: 'default',
       title: '🌊 Swell Alert',
       body: `${waveHeightNum}ft waves at ${locationName} right now!`,
+      subtitle: `${locationName}`,
+      badge: 1,
       data: { type: 'swell_alert', location: locationId, waveHeight: waveHeightNum },
       priority: 'high',
       channelId: 'swell-alerts',
+      categoryId: 'SWELL_ALERT',
+      mutableContent: true,
+      contentAvailable: true,
     }));
 
     console.log(`[Notifications] Swell check: ${waveHeightNum}ft — ${swellAlertUsers.length} users meet threshold`);

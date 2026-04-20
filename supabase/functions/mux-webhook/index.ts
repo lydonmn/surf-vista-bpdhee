@@ -30,6 +30,10 @@ async function sendVideoPushNotifications(supabase: any, videoTitle: string | nu
       const batch = validTokens.slice(i, i + 100).map((p: any) => ({
         to: p.push_token, sound: 'default', title, body,
         data: { type: 'new_video' }, priority: 'high', channelId: 'videos',
+        categoryId: 'NEW_VIDEO',
+        mutableContent: true,
+        contentAvailable: true,
+        badge: 1,
       }));
       try {
         const res = await fetch(EXPO_PUSH_URL_MUX, {

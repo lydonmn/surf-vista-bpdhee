@@ -47,7 +47,21 @@ export async function setupNotificationCategories(): Promise<void> {
         options: { opensAppToForeground: true },
       },
     ]);
-    console.log('[Push Notifications] iOS notification category DAILY_REPORT registered');
+    await Notifications.setNotificationCategoryAsync('SWELL_ALERT', [
+      {
+        identifier: 'VIEW_CONDITIONS',
+        buttonTitle: 'View Conditions',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+    await Notifications.setNotificationCategoryAsync('NEW_VIDEO', [
+      {
+        identifier: 'WATCH_VIDEO',
+        buttonTitle: 'Watch Now',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+    console.log('[Push Notifications] iOS notification categories registered: DAILY_REPORT, SWELL_ALERT, NEW_VIDEO');
   } catch (err) {
     console.warn('[Push Notifications] Could not register notification categories:', err);
   }
