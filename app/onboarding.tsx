@@ -29,7 +29,6 @@ async function getOrCreateDeviceId(): Promise<string> {
   try {
     const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
     if (existing) return existing;
-    // Generate a simple UUID v4
     const uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
       const v = c === "x" ? r : (r & 0x3) | 0x8;
@@ -77,6 +76,7 @@ export default function OnboardingScreen() {
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [showThankYou, setShowThankYou] = useState(false);
   const opacity = useSharedValue(1);
   const isAnimating = useRef(false);
   const inputRef = useRef<TextInput>(null);
@@ -104,6 +104,7 @@ export default function OnboardingScreen() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (showThankYou) return true;
       if (!isFirstStep) {
         goBack();
         return true;
@@ -111,15 +112,16 @@ export default function OnboardingScreen() {
       return false;
     });
     return () => sub.remove();
-  }, [isFirstStep, goBack]);
+  }, [isFirstStep, goBack, showThankYou]);
 
   // Focus input when step changes
   useEffect(() => {
+    if (showThankYou) return;
     const timer = setTimeout(() => {
       inputRef.current?.focus();
     }, 250);
     return () => clearTimeout(timer);
-  }, [currentStep]);
+  }, [currentStep, showThankYou]);
 
   const handleChangeText = (text: string) => {
     setAnswers((prev) => ({ ...prev, [question.id]: text }));
@@ -136,12 +138,14 @@ export default function OnboardingScreen() {
       getOrCreateDeviceId().then((deviceId) => {
         submitSurvey(user?.id ?? null, deviceId, answers);
       });
-      markSurveyShown().catch(() => {});
+      await markSurveyShown().catch(() => {});
 
-      console.log("[Onboarding] Onboarding marked complete, navigating to paywall");
-      router.replace("/paywall");
-      const { openPaywall } = await import("@/utils/paywallHelper");
-      openPaywall().catch(() => {});
+      console.log("[Onboarding] Survey complete, showing thank you screen");
+      opacity.value = withTiming(0, { duration: 200 });
+      setTimeout(() => {
+        setShowThankYou(true);
+        opacity.value = withTiming(1, { duration: 300 });
+      }, 200);
     } else {
       console.log("[Onboarding] Advancing to step", currentStep + 1);
       if (isAnimating.current) return;
@@ -154,6 +158,35 @@ export default function OnboardingScreen() {
       }, 150);
     }
   };
+
+  const handleDone = () => {
+    console.log("[Onboarding] Done pressed, navigating to home tabs");
+    router.replace("/(tabs)");
+  };
+
+  if (showThankYou) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <Animated.View style={[styles.thankYouContainer, animatedStyle]}>
+          <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+            <Ionicons name="checkmark" size={40} color="#FFFFFF" />
+          </View>
+          <Text style={[styles.thankYouTitle, { color: colors.text }]}>
+            Thank You!
+          </Text>
+          <Text style={[styles.thankYouSubtitle, { color: colors.text + "99" }]}>
+            Your feedback helps us improve SurfVista
+          </Text>
+          <Pressable
+            onPress={handleDone}
+            style={[styles.doneButton, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.continueText}>Done</Text>
+          </Pressable>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
 
   if (!question) return null;
 
@@ -298,5 +331,39 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
+  },
+  thankYouContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  checkCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 28,
+  },
+  thankYouTitle: {
+    fontSize: 34,
+    fontWeight: "800",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  thankYouSubtitle: {
+    fontSize: 17,
+    lineHeight: 24,
+    textAlign: "center",
+    marginBottom: 48,
+  },
+  doneButton: {
+    height: 55,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 64,
+    width: "100%",
   },
 });
