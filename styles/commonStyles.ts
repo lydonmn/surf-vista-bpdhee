@@ -10,6 +10,7 @@ export const colors = {
   accent: '#FFA07A',
   card: '#FFFFFF',
   highlight: '#ADD8E6',
+  border: '#D1E4EE',
   reportBackground: '#E8F4F8',
   reportText: '#5A7A8A',
   reportBoldText: '#E8F4F8',

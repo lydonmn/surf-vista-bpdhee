@@ -1,6 +1,5 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import 'react-native-get-random-values';
 
 const TRACK_USAGE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/track-usage';
 

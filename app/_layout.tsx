@@ -114,7 +114,7 @@ const errorStyles = StyleSheet.create({
 
 function SubscriptionRedirect() {
   const { loading } = useSubscription();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);

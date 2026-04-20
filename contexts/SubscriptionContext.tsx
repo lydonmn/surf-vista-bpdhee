@@ -87,7 +87,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const auth = useAuth() as Record<string, unknown> | null;
   const session = auth?.session as Record<string, unknown> | undefined;
   const user = (auth?.user ?? session?.user ?? null) as { id?: string } | null;
-  const authLoading = (auth?.loading ?? false) as boolean;
+  const authLoading = (auth?.isLoading ?? false) as boolean;
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [offerings, setOfferings] = useState<PurchasesOfferings | null>(null);
