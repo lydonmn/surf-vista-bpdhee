@@ -452,13 +452,18 @@ Deno.serve(async (req) => {
 
     let targetLocationId: string | null = null;
     let isManualTrigger = false;
+    let sendNotificationsOverride = false;
     
     try {
       const body = await req.json();
       if (body.location) {
         targetLocationId = body.location;
         isManualTrigger = body.isManualTrigger === true;
+        sendNotificationsOverride = body.sendNotifications === true;
         console.log('[Daily Report] Manual trigger for:', targetLocationId);
+        if (sendNotificationsOverride) {
+          console.log('[Daily Report] 📢 sendNotifications=true override — notifications will be sent despite manual trigger');
+        }
       }
     } catch (e) {
       console.log('[Daily Report] Scheduled mode - processing all locations');
@@ -546,8 +551,8 @@ Deno.serve(async (req) => {
           console.log(`[Daily Report] 📝 Used existing data (forecast update skipped)`);
         }
         
-        // Send push notifications for scheduled runs only
-        if (!isManualTrigger) {
+        // Send push notifications for scheduled runs, or manual triggers with sendNotifications=true
+        if (!isManualTrigger || sendNotificationsOverride) {
           console.log(`[Daily Report] 📢 Sending push notifications...`);
           
           try {

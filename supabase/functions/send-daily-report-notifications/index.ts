@@ -54,19 +54,86 @@ serve(async (req) => {
 
     console.log('[Notifications] Starting for location:', locationId, 'date:', reportDate);
 
-    // Fetch the surf report
-    const { data: report, error: reportError } = await supabase
+    // Fix 3: Test mode — skip report lookup and send a test notification to all eligible users
+    if (body.test === true) {
+      console.log('[Notifications] 🧪 TEST MODE — skipping report lookup');
+
+      const { data: testProfiles, error: testUsersError } = await supabase
+        .from('profiles')
+        .select('id, push_token, email, daily_report_notifications');
+
+      if (testUsersError) {
+        console.error('[Notifications] Test mode: error fetching users:', testUsersError);
+        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch users' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const eligibleTestUsers = (testProfiles || []).filter(u => isValidExpoToken(u.push_token));
+      console.log(`[Notifications] Test mode: sending to ${eligibleTestUsers.length} users with valid tokens`);
+
+      const testMessages = eligibleTestUsers.map(user => ({
+        to: user.push_token,
+        sound: 'default',
+        title: '🧪 Test Notification',
+        body: 'Push notifications are working correctly!',
+        data: { type: 'test' },
+        priority: 'high',
+      }));
+
+      const testResult = testMessages.length > 0
+        ? await sendExpoBatch(testMessages)
+        : { successCount: 0, failureCount: 0 };
+
+      console.log(`[Notifications] Test mode complete: ${testResult.successCount} sent, ${testResult.failureCount} failed`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        test: true,
+        sent: testResult.successCount,
+        failed: testResult.failureCount,
+        eligible: eligibleTestUsers.length,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Fix 1: Resilient report lookup — try by date first, fall back to most recent today
+    let report: any = null;
+
+    // Attempt 1: exact date match
+    const { data: reportByDate, error: reportByDateError } = await supabase
       .from('surf_reports')
       .select('*')
       .eq('date', reportDate)
       .eq('location', locationId)
       .single();
 
-    if (reportError || !report) {
-      console.error('[Notifications] Report not found:', reportError);
-      return new Response(JSON.stringify({ success: false, error: 'Report not found' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (reportByDate) {
+      console.log('[Notifications] ✅ Report found by date match:', reportDate);
+      report = reportByDate;
+    } else {
+      console.warn('[Notifications] ⚠️ Report not found by date:', reportDate, '— error:', reportByDateError?.message);
+      console.log('[Notifications] 🔄 Falling back to most recent report created today...');
+
+      // Attempt 2: most recent report for this location created today (UTC)
+      const todayStartUTC = new Date().toISOString().split('T')[0] + 'T00:00:00.000Z';
+      const { data: reportByCreatedAt, error: reportByCreatedAtError } = await supabase
+        .from('surf_reports')
+        .select('*')
+        .eq('location', locationId)
+        .gte('created_at', todayStartUTC)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (reportByCreatedAt) {
+        console.log('[Notifications] ✅ Report found via created_at fallback (created_at:', reportByCreatedAt.created_at, ')');
+        report = reportByCreatedAt;
+      } else {
+        console.error('[Notifications] ❌ No report found after both attempts. created_at fallback error:', reportByCreatedAtError?.message);
+        return new Response(JSON.stringify({ success: false, error: 'Report not found after date and created_at fallback' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Fetch location display name
