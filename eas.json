@@ -7,14 +7,22 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "config": "ios.yml"
+      },
+      "android": {
+        "config": "android.yml"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "config": "ios.yml"
+      },
+      "android": {
+        "config": "android.yml"
       }
     },
     "production": {
@@ -23,16 +31,19 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": true
+        "autoIncrement": true,
+        "config": "ios.yml"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "config": "android.yml"
       }
     },
     "production-android": {
       "extends": "production",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "config": "android.yml"
       }
     },
     "production-ios": {
@@ -41,7 +52,8 @@
         "simulator": false,
         "buildConfiguration": "Release",
         "autoIncrement": true,
-        "image": "latest"
+        "image": "latest",
+        "config": "ios.yml"
       }
     }
   },
