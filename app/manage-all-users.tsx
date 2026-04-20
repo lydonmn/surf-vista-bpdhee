@@ -34,7 +34,9 @@ interface UserStats {
 type TabKey = 'all' | 'active' | 'expired' | 'never';
 
 function getDisplayName(user: UserProfile): string {
-  return user.full_name?.trim() ?? '';
+  const trimmed = user.full_name?.trim();
+  if (trimmed) return trimmed;
+  return user.email;
 }
 
 function isUserActive(user: UserProfile): boolean {
@@ -578,9 +580,9 @@ export default function ManageAllUsersScreen() {
       statusColor = '#4CAF50';
     }
 
-    const displayName = getDisplayName(item);
-    const primaryLabel = displayName || item.email;
-    const showEmail = displayName.length > 0;
+    const primaryLabel = getDisplayName(item);
+    const hasDistinctName = !!(item.full_name?.trim()) && item.full_name.trim() !== item.email;
+    const showEmail = hasDistinctName;
 
     return (
       <View style={[styles.userCard, { backgroundColor: theme.colors.card }]}>
@@ -611,7 +613,7 @@ export default function ManageAllUsersScreen() {
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
             <TouchableOpacity
               style={styles.deleteButton}
-              onPress={() => handleDeleteUser(item.id, item.email, item.is_admin, displayName)}
+              onPress={() => handleDeleteUser(item.id, item.email, item.is_admin, primaryLabel)}
             >
               <IconSymbol
                 ios_icon_name="trash"
