@@ -19,7 +19,6 @@ import {
   openNotificationSettings,
   getNotificationLocations,
   setNotificationLocations,
-  ensurePushTokenRegistered
 } from '@/utils/pushNotifications';
 import { useAuth } from "@/contexts/AuthContext";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -186,9 +185,6 @@ export default function ProfileScreen() {
         console.warn('[Profile] setDailyReportNotifications returned false — reverting UI');
         setNotificationsEnabled(!value);
         return;
-      }
-      if (value) {
-        await ensurePushTokenRegistered(user.id);
       }
       // Re-check OS permission state after toggle
       const permResult = await checkNotificationPermissions();

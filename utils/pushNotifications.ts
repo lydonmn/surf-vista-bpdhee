@@ -2,7 +2,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert, Linking } from 'react-native';
-import { supabase } from '@/app/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import Constants from 'expo-constants';
 
 // Configure notification handler — skip on web (expo-notifications has no web support)
@@ -30,6 +30,42 @@ function safeAlert(title: string, message: string, buttons?: any[]) {
     }
   } catch (error) {
     console.error('[Push Notifications] Error showing alert:', error);
+  }
+}
+
+/**
+ * Register Android notification channels at app startup.
+ * Must be called unconditionally on Android — not gated behind token registration.
+ * Safe to call on iOS/web (no-op).
+ */
+export async function setupAndroidNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Promise.all([
+      Notifications.setNotificationChannelAsync('daily-reports', {
+        name: 'Daily Surf Reports',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#0EA5E9',
+        description: 'Receive your daily surf report at 6 AM EST',
+      }),
+      Notifications.setNotificationChannelAsync('swell-alerts', {
+        name: 'Swell Alerts',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#0EA5E9',
+        description: 'Get notified when waves reach your preferred size',
+      }),
+      Notifications.setNotificationChannelAsync('videos', {
+        name: 'New Video Alerts',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        lightColor: '#0EA5E9',
+        description: 'Get notified when new surf videos are available',
+      }),
+    ]);
+    console.log('[Push Notifications] Android notification channels registered: daily-reports, swell-alerts, videos');
+  } catch (channelError) {
+    console.warn('[Push Notifications] ⚠️ Could not register Android channels:', channelError);
   }
 }
 
@@ -334,23 +370,6 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         return null;
       }
       
-      // Configure notification channel for Android
-      if (Platform.OS === 'android') {
-        try {
-          await Notifications.setNotificationChannelAsync('daily-reports', {
-            name: 'Daily Surf Reports',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#0EA5E9',
-            description: 'Receive your daily surf report at 6 AM EST',
-          });
-          console.log('[Push Notifications] Android notification channel configured');
-        } catch (channelError) {
-          console.warn('[Push Notifications] ⚠️ Could not configure Android channel:', channelError);
-          // Not critical - continue
-        }
-      }
-
       return tokenData.data;
     } catch (tokenError: any) {
       console.error('[Push Notifications] ===== TOKEN ERROR =====');
@@ -601,10 +620,9 @@ export async function setDailyReportNotifications(userId: string, enabled: boole
     if (enabled && pushToken) {
       updateData.push_token = pushToken;
       console.log('[Push Notifications] ✅ Will save push token to profiles table');
-    } else if (!enabled) {
-      updateData.push_token = null;
-      console.log('[Push Notifications] ℹ️ Will clear push token (notifications disabled)');
     }
+    // NOTE: Do NOT clear push_token when disabling — preserving it means re-enabling
+    // doesn't require a new token fetch from APNs/FCM.
 
     console.log('[Push Notifications] 💾 Updating profiles table...');
 

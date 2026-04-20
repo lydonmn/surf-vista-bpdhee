@@ -11,7 +11,8 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
-import { isOnboardingComplete, incrementAppOpenCount, hasSurveyBeenShown, markSurveyShown } from "@/utils/onboardingStorage";
+import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown } from "@/utils/onboardingStorage";
+import { setupAndroidNotificationChannels } from "@/utils/pushNotifications";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -204,6 +205,11 @@ export default function RootLayout() {
         responseListener.current.remove();
       }
     };
+  }, []);
+
+  // Register Android notification channels at startup (no-op on iOS/web)
+  useEffect(() => {
+    setupAndroidNotificationChannels().catch(() => {});
   }, []);
 
   // Increment app open count once on mount
