@@ -778,6 +778,22 @@ export default function AdminScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#059669' }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Usage Analytics');
+                router.push('/admin-usage');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="chart.line.uptrend.xyaxis"
+                android_material_icon_name="trending_up"
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Usage Analytics</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.accent }]}
               onPress={() => {
                 console.log('[AdminScreen] Navigating to demo paywall for screenshots');

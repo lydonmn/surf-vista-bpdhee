@@ -6,6 +6,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
+import { trackVideoWatch } from '@/utils/usageTracking';
 
 interface OptimizedVideoPlayerProps {
   source: { uri: string };
@@ -16,6 +17,12 @@ interface OptimizedVideoPlayerProps {
   isFullscreen?: boolean;
   showControls?: boolean;
   onToggleFullscreen?: () => void;
+  /** Optional: passed through to usage tracking */
+  videoId?: string;
+  /** Optional: passed through to usage tracking */
+  videoTitle?: string;
+  /** Optional: user id for usage tracking */
+  userId?: string;
 }
 
 export function OptimizedVideoPlayer({
@@ -27,6 +34,9 @@ export function OptimizedVideoPlayer({
   isFullscreen = false,
   showControls = true,
   onToggleFullscreen,
+  videoId,
+  videoTitle,
+  userId,
 }: OptimizedVideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -38,6 +48,8 @@ export function OptimizedVideoPlayer({
   const videoRef = useRef<Video>(null);
   const isSeekingRef = useRef(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Track playback start time for duration calculation
+  const playbackStartTimeRef = useRef<number | null>(null);
   
   // 🚨 CRITICAL FIX: Track audio state to detect when it drops
   const isAudioActiveRef = useRef(true);
@@ -153,11 +165,13 @@ export function OptimizedVideoPlayer({
   }, [resetControlsTimeout]);
 
   const handleLoad = useCallback((data: OnLoadData) => {
-    console.log('[OptimizedVideoPlayer] ✅ Video loaded, duration:', data.duration);
+    console.log('[OptimizedVideoPlayer] ✅ Video loaded, duration:', data.duration, 'video_id:', videoId);
     setDuration(data.duration);
     setIsBuffering(false);
     isAudioActiveRef.current = true;
-  }, []);
+    // Record when playback actually starts
+    playbackStartTimeRef.current = Date.now();
+  }, [videoId]);
 
   const handleProgress = useCallback((data: OnProgressData) => {
     if (!isSeekingRef.current) {
@@ -239,12 +253,31 @@ export function OptimizedVideoPlayer({
   }, [onError]);
 
   const handleEnd = useCallback(() => {
-    console.log('[OptimizedVideoPlayer] Video ended');
+    console.log('[OptimizedVideoPlayer] Video ended — video_id:', videoId, 'title:', videoTitle);
     setIsPlaying(false);
+    const watchedSeconds = playbackStartTimeRef.current
+      ? Math.round((Date.now() - playbackStartTimeRef.current) / 1000)
+      : undefined;
+    console.log('[OptimizedVideoPlayer] Tracking video_watch on end, duration_seconds:', watchedSeconds);
+    trackVideoWatch(userId, videoId, videoTitle, watchedSeconds).catch(() => {});
+    playbackStartTimeRef.current = null;
     if (onEnd) {
       onEnd();
     }
-  }, [onEnd]);
+  }, [onEnd, userId, videoId, videoTitle]);
+
+  // Track video_watch on unmount (e.g. user closes player mid-video)
+  useEffect(() => {
+    return () => {
+      if (playbackStartTimeRef.current !== null) {
+        const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
+        console.log('[OptimizedVideoPlayer] Tracking video_watch on unmount — video_id:', videoId, 'duration_seconds:', watchedSeconds);
+        trackVideoWatch(userId, videoId, videoTitle, watchedSeconds).catch(() => {});
+        playbackStartTimeRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, videoId, videoTitle]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';

@@ -5,14 +5,15 @@ import { useFonts } from 'expo-font';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Alert, AppState, AppStateStatus, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
-import { setupAndroidNotificationChannels } from "@/utils/pushNotifications";
+import { setupAndroidNotificationChannels, ensurePushTokenRegistered } from "@/utils/pushNotifications";
+import { trackAppOpen, trackAppBackground } from "@/utils/usageTracking";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
@@ -203,6 +204,43 @@ function SubscriptionRedirect() {
   return null;
 }
 
+function AppLifecycleTracker() {
+  const { user } = useAuth();
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  // Track initial app open and set up AppState listener
+  useEffect(() => {
+    console.log('[RootLayout] Tracking initial app_open, user:', user?.id ?? 'anonymous');
+    trackAppOpen(user?.id).catch(() => {});
+
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (nextState === 'background' || nextState === 'inactive') {
+        console.log('[RootLayout] AppState -> background/inactive, tracking app_background');
+        trackAppBackground(user?.id).catch(() => {});
+      } else if (nextState === 'active' && (prevState === 'background' || prevState === 'inactive')) {
+        console.log('[RootLayout] AppState -> active (from background), tracking new app_open');
+        trackAppOpen(user?.id).catch(() => {});
+      }
+    });
+
+    return () => subscription.remove();
+  // Re-run only when user identity changes so the correct user_id is captured
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // One-time push token refresh: if user has notifications enabled but token is stale/null
+  useEffect(() => {
+    if (!user?.id) return;
+    console.log('[RootLayout] Running push token refresh check for user:', user.id);
+    ensurePushTokenRegistered(user.id).catch(() => {});
+  }, [user?.id]);
+
+  return null;
+}
+
 export default function RootLayout() {
   console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
 
@@ -213,8 +251,6 @@ export default function RootLayout() {
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-
-
 
   // Set up notification listeners at the app root — native only
   useEffect(() => {
@@ -275,6 +311,7 @@ export default function RootLayout() {
         <AuthProvider>
         <SubscriptionProvider>
           <SubscriptionRedirect />
+          <AppLifecycleTracker />
         <NotificationProvider>
           <LocationProvider>
 
