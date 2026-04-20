@@ -45,11 +45,18 @@
       "favicon": "./assets/images/SurfVista Logo.png"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "devTeam": "BC32GC8XTS"
+        }
+      ],
       "expo-router",
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/85c51089-afb6-4e59-b9b0-fdf28d28e1ff.jpeg",
+          "icon": "./assets/images/IMG_9054.png",
           "color": "#ffffff"
         }
       ],
@@ -60,6 +67,7 @@
     "experiments": {
       "typedRoutes": true
     },
+    "newArchEnabled": true,
     "extra": {
       "router": {
         "origin": false
@@ -68,7 +76,7 @@
       "oneSignalAppId": "b991c245-3c87-4a1b-9676-b23323e73f07",
       "revenueCatApiKeyIos": "appl_uyUNhkTURhBCqiVsRaBqBYbhIda",
       "revenueCatApiKeyAndroid": "goog_HpaeitYCWGXDSXGokGGUQzHxGiA",
-      "revenueCatEntitlementId": "SurfVista",
+      "revenueCatEntitlementId": "pro",
       "nativelyProjectId": "e1ee166c-212b-4eca-a1d7-44183b7be073"
     }
   }
