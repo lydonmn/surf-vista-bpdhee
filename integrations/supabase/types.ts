@@ -100,6 +100,9 @@ export type Database = {
           notification_preferences: Json | null
           min_wave_height: number | null
           video_notifications: boolean | null
+          // NOTE: Run this SQL to add the column:
+          // ALTER TABLE profiles ADD COLUMN IF NOT EXISTS survey_completed boolean DEFAULT false;
+          survey_completed: boolean | null
         }
         Insert: {
           created_at?: string | null
@@ -115,6 +118,7 @@ export type Database = {
           notification_preferences?: Json | null
           min_wave_height?: number | null
           video_notifications?: boolean | null
+          survey_completed?: boolean | null
         }
         Update: {
           created_at?: string | null
@@ -130,6 +134,7 @@ export type Database = {
           notification_preferences?: Json | null
           min_wave_height?: number | null
           video_notifications?: boolean | null
+          survey_completed?: boolean | null
         }
         Relationships: []
       }

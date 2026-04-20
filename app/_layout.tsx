@@ -5,13 +5,13 @@ import { useFonts } from 'expo-font';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Alert, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
-import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown } from "@/utils/onboardingStorage";
+import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
 import { setupAndroidNotificationChannels } from "@/utils/pushNotifications";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
@@ -113,7 +113,7 @@ const errorStyles = StyleSheet.create({
 
 function SubscriptionRedirect() {
   const { loading } = useSubscription();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
@@ -140,27 +140,65 @@ function SubscriptionRedirect() {
         console.log('[SubscriptionRedirect] Onboarding not complete, redirecting to onboarding (first-time user)');
         hasRedirected.current = true;
         router.replace("/onboarding");
-      } else {
-        // Check if we should show the survey (5th+ open, never shown before)
-        const [count, alreadyShown] = await Promise.all([
-          getAppOpenCount(),
-          hasSurveyBeenShown(),
-        ]);
-        console.log('[SubscriptionRedirect] App open count:', count, '| Survey shown:', alreadyShown);
-        if (count >= 5 && !alreadyShown) {
-          console.log('[SubscriptionRedirect] Triggering survey on app open', count);
-          markSurveyShown().catch(() => {});
-          hasRedirected.current = true;
-          router.replace("/onboarding");
-        } else {
-          console.log('[SubscriptionRedirect] Onboarding already complete, skipping redirect');
-          hasRedirected.current = true;
+        return;
+      }
+
+      // --- Survey check (DB-backed + AsyncStorage) ---
+      // Check DB first: if survey_completed is true in profiles, never show again
+      const dbSurveyDone = (profile as any)?.survey_completed === true;
+      const [count, asyncSurveyShown] = await Promise.all([
+        getAppOpenCount(),
+        hasSurveyBeenShown(),
+      ]);
+      const alreadyShown = dbSurveyDone || asyncSurveyShown;
+      console.log('[SubscriptionRedirect] App open count:', count, '| Survey shown (DB):', dbSurveyDone, '| Survey shown (AsyncStorage):', asyncSurveyShown);
+
+      if (count >= 5 && !alreadyShown) {
+        console.log('[SubscriptionRedirect] Triggering survey on app open', count);
+        // Mark in AsyncStorage immediately; DB update happens in onboarding on submit
+        markSurveyShown().catch(() => {});
+        hasRedirected.current = true;
+        router.replace("/onboarding");
+        return;
+      }
+
+      hasRedirected.current = true;
+      console.log('[SubscriptionRedirect] Onboarding already complete, skipping redirect');
+
+      // --- Name prompt check (only if survey was NOT just shown, not admin) ---
+      const isAdmin = (profile as any)?.is_admin === true;
+      const hasName = !!(profile as any)?.full_name;
+      if (!isAdmin && !hasName) {
+        const showPrompt = await shouldShowNamePrompt();
+        console.log('[SubscriptionRedirect] Name prompt check — hasName:', hasName, '| shouldShow:', showPrompt);
+        if (showPrompt) {
+          markNamePromptShown().catch(() => {});
+          Alert.alert(
+            "Add Your Name",
+            "Help us personalize your experience. What's your name?",
+            [
+              {
+                text: "Not Now",
+                style: "cancel",
+                onPress: () => {
+                  console.log('[SubscriptionRedirect] Name prompt dismissed — Not Now');
+                },
+              },
+              {
+                text: "Add Name",
+                onPress: () => {
+                  console.log('[SubscriptionRedirect] Name prompt accepted — navigating to edit-name');
+                  router.push("/edit-name");
+                },
+              },
+            ]
+          );
         }
       }
     }).catch(() => {});
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, authLoading, user]);
+  }, [loading, authLoading, user, profile]);
 
   return null;
 }
@@ -269,6 +307,7 @@ export default function RootLayout() {
               <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
               <Stack.Screen name="notification-preferences" options={{ headerShown: false }} />
+              <Stack.Screen name="edit-name" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
               <Stack.Screen 
                 name="modal" 

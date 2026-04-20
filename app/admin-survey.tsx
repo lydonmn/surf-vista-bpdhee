@@ -11,7 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { supabase } from './integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 
 interface HowFoundItem {
   answer: string;
@@ -19,6 +19,7 @@ interface HowFoundItem {
 }
 
 interface RawResponse {
+  id: string;
   created_at: string;
   how_found: string;
   surf_location: string;
@@ -33,8 +34,6 @@ interface SurveyResults {
   responses: RawResponse[];
 }
 
-const SURVEY_ENDPOINT = 'https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/survey-results';
-
 export default function AdminSurveyScreen() {
   const router = useRouter();
   const [results, setResults] = useState<SurveyResults | null>(null);
@@ -42,30 +41,50 @@ export default function AdminSurveyScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchResults = useCallback(async () => {
-    console.log('[AdminSurvey] Fetching survey results from edge function');
+    console.log('[AdminSurvey] Fetching survey results directly from survey_responses table');
     setIsLoading(true);
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+      const { data, error: queryError } = await supabase
+        .from('survey_responses')
+        .select('id, how_found, surf_location, improvement, created_at')
+        .order('created_at', { ascending: false });
+
+      if (queryError) {
+        console.error('[AdminSurvey] Supabase query error:', queryError);
+        throw new Error(queryError.message || 'Failed to query survey_responses');
       }
 
-      const response = await fetch(SURVEY_ENDPOINT, { headers });
+      const rows = data ?? [];
+      console.log('[AdminSurvey] Survey results loaded — total responses:', rows.length);
 
-      if (!response.ok) {
-        const text = await response.text();
-        console.error('[AdminSurvey] Error response:', response.status, text);
-        throw new Error(`Server returned ${response.status}: ${text.slice(0, 120)}`);
+      // Aggregate how_found counts
+      const howFoundMap: Record<string, number> = {};
+      for (const row of rows) {
+        if (row.how_found) {
+          howFoundMap[row.how_found] = (howFoundMap[row.how_found] ?? 0) + 1;
+        }
       }
+      const how_found: HowFoundItem[] = Object.entries(howFoundMap)
+        .map(([answer, count]) => ({ answer, count }))
+        .sort((a, b) => b.count - a.count);
 
-      const data: SurveyResults = await response.json();
-      console.log('[AdminSurvey] Survey results loaded — total responses:', data.total);
-      setResults(data);
+      const surf_locations = rows
+        .map(r => r.surf_location)
+        .filter((v): v is string => !!v);
+
+      const improvements = rows
+        .map(r => r.improvement)
+        .filter((v): v is string => !!v);
+
+      setResults({
+        total: rows.length,
+        how_found,
+        surf_locations,
+        improvements,
+        responses: rows as RawResponse[],
+      });
     } catch (err: any) {
       console.error('[AdminSurvey] Failed to fetch survey results:', err);
       setError(err.message || 'Failed to load survey results');

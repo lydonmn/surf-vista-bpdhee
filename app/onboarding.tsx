@@ -20,6 +20,7 @@ import { completeOnboarding, markSurveyShown } from "@/utils/onboardingStorage";
 import { ProgressBar } from "@/components/onboarding/ProgressBar";
 import { useOnboardingColors } from "@/hooks/useOnboardingColors";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const SUPABASE_URL = "https://ucbilksfpnmltrkwvzft.supabase.co";
 const DEVICE_ID_KEY = "device_id";
@@ -139,6 +140,21 @@ export default function OnboardingScreen() {
         submitSurvey(user?.id ?? null, deviceId, answers);
       });
       await markSurveyShown().catch(() => {});
+
+      // DB-backed: mark survey_completed = true so it never shows again after reinstall
+      if (user?.id) {
+        supabase
+          .from('profiles')
+          .update({ survey_completed: true })
+          .eq('id', user.id)
+          .then(({ error }) => {
+            if (error) {
+              console.warn("[Onboarding] Failed to set survey_completed in DB:", error.message);
+            } else {
+              console.log("[Onboarding] survey_completed = true saved to profiles DB");
+            }
+          });
+      }
 
       console.log("[Onboarding] Survey complete, showing thank you screen");
       opacity.value = withTiming(0, { duration: 200 });

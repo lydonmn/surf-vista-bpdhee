@@ -83,3 +83,41 @@ export async function hasSurveyBeenShown(): Promise<boolean> {
     return false;
   }
 }
+
+// --- Name prompt ---
+
+const NAME_PROMPT_KEY = "name_prompt_last_shown";
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+export async function shouldShowNamePrompt(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(NAME_PROMPT_KEY);
+    if (!raw) return true;
+    const lastShown = parseInt(raw, 10);
+    if (isNaN(lastShown)) return true;
+    return Date.now() - lastShown > THIRTY_DAYS_MS;
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to check name prompt:", err);
+    return false;
+  }
+}
+
+export async function markNamePromptShown(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(NAME_PROMPT_KEY, String(Date.now()));
+    console.log("[onboardingStorage] Name prompt timestamp saved");
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to mark name prompt shown:", err);
+  }
+}
+
+export async function suppressNamePromptForever(): Promise<void> {
+  try {
+    // Far-future timestamp (year 2099) so it never prompts again
+    const farFuture = new Date("2099-01-01").getTime();
+    await AsyncStorage.setItem(NAME_PROMPT_KEY, String(farFuture));
+    console.log("[onboardingStorage] Name prompt suppressed forever");
+  } catch (err) {
+    console.warn("[onboardingStorage] Failed to suppress name prompt:", err);
+  }
+}
