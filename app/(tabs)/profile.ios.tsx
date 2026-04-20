@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Switch, Modal } from "react-native";
+import { supabase } from "@/integrations/supabase/client";
 import { router } from "expo-router";
 import {
   restorePurchases,
@@ -39,6 +40,15 @@ export default function ProfileScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // New Video Alerts
+  const [videoNotificationsEnabled, setVideoNotificationsEnabled] = useState(true);
+
+  // Swell Alerts
+  const WAVE_HEIGHT_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
+  const WAVE_HEIGHT_LABELS: Record<number, string> = { 1: '1ft', 2: '2ft', 3: '3ft', 4: '4ft', 5: '5ft', 6: '6ft+' };
+  const [swellAlertEnabled, setSwellAlertEnabled] = useState(false);
+  const [selectedWaveHeight, setSelectedWaveHeight] = useState<number | null>(null);
+
   const checkPermissions = useCallback(async () => {
     const result = await checkNotificationPermissions();
     setHasPermission(result.granted);
@@ -72,6 +82,96 @@ export default function ProfileScreen() {
     loadNotificationStatus();
     loadNotificationLocations();
   }, [user?.id, loadNotificationStatus, loadNotificationLocations]);
+
+  const loadExtraNotificationSettings = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      console.log('[Profile] Loading extra notification settings for user:', user.id);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('video_notifications, min_wave_height')
+        .eq('id', user.id)
+        .single();
+      if (error) {
+        console.error('[Profile] Error loading extra notification settings:', error);
+        return;
+      }
+      const videoNotif = data?.video_notifications;
+      setVideoNotificationsEnabled(videoNotif === null || videoNotif === undefined ? true : Boolean(videoNotif));
+      const minWave = data?.min_wave_height;
+      if (minWave !== null && minWave !== undefined) {
+        setSwellAlertEnabled(true);
+        setSelectedWaveHeight(Number(minWave));
+      } else {
+        setSwellAlertEnabled(false);
+        setSelectedWaveHeight(null);
+      }
+    } catch (err) {
+      console.error('[Profile] Unexpected error loading extra notification settings:', err);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadExtraNotificationSettings();
+  }, [loadExtraNotificationSettings]);
+
+  const handleToggleVideoNotifications = async (value: boolean) => {
+    console.log('[Profile] Toggle video notifications:', value);
+    if (!user?.id) return;
+    setVideoNotificationsEnabled(value);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ video_notifications: value })
+        .eq('id', user.id);
+      if (error) {
+        console.error('[Profile] Error updating video_notifications:', error);
+        setVideoNotificationsEnabled(!value);
+      }
+    } catch (err) {
+      console.error('[Profile] Unexpected error toggling video notifications:', err);
+      setVideoNotificationsEnabled(!value);
+    }
+  };
+
+  const handleToggleSwellAlert = async (value: boolean) => {
+    console.log('[Profile] Toggle swell alert:', value);
+    if (!user?.id) return;
+    setSwellAlertEnabled(value);
+    if (!value) {
+      setSelectedWaveHeight(null);
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ min_wave_height: null })
+          .eq('id', user.id);
+        if (error) {
+          console.error('[Profile] Error clearing min_wave_height:', error);
+          setSwellAlertEnabled(true);
+        }
+      } catch (err) {
+        console.error('[Profile] Unexpected error disabling swell alert:', err);
+        setSwellAlertEnabled(true);
+      }
+    }
+  };
+
+  const handleSelectWaveHeight = async (height: number) => {
+    console.log('[Profile] Select wave height chip:', height);
+    if (!user?.id) return;
+    setSelectedWaveHeight(height);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ min_wave_height: height })
+        .eq('id', user.id);
+      if (error) {
+        console.error('[Profile] Error updating min_wave_height:', error);
+      }
+    } catch (err) {
+      console.error('[Profile] Unexpected error selecting wave height:', err);
+    }
+  };
 
   const handleToggleDailyNotifications = async (value: boolean) => {
     console.log('[Profile] Toggle daily notifications:', value);
@@ -390,6 +490,66 @@ export default function ProfileScreen() {
             />
           </View>
 
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: theme.colors.text }]}>
+                New Video Alerts
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+                Get notified when new surf videos are available
+              </Text>
+            </View>
+            <Switch
+              value={videoNotificationsEnabled}
+              onValueChange={handleToggleVideoNotifications}
+              trackColor={{ false: colors.textSecondary, true: '#5B9BD5' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: theme.colors.text }]}>
+                Swell Alerts
+              </Text>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+                Get notified when waves reach your preferred size
+              </Text>
+            </View>
+            <Switch
+              value={swellAlertEnabled}
+              onValueChange={handleToggleSwellAlert}
+              trackColor={{ false: colors.textSecondary, true: '#5B9BD5' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          {swellAlertEnabled && (
+            <View style={styles.waveChipsRow}>
+              {WAVE_HEIGHT_OPTIONS.map((h) => {
+                const isSelected = selectedWaveHeight === h;
+                const chipLabel = WAVE_HEIGHT_LABELS[h];
+                return (
+                  <TouchableOpacity
+                    key={h}
+                    style={[styles.waveChip, isSelected ? styles.waveChipSelected : styles.waveChipUnselected]}
+                    onPress={() => handleSelectWaveHeight(h)}
+                  >
+                    <Text style={[styles.waveChipText, isSelected ? styles.waveChipTextSelected : styles.waveChipTextUnselected]}>
+                      {chipLabel}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.settingDivider} />
+
           {notificationsEnabled && (
             <View style={styles.locationSelectorContainer}>
               <View style={styles.locationHeader}>
@@ -616,6 +776,14 @@ const styles = StyleSheet.create({
   statusIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   statusIndicatorText: { fontSize: 13, fontWeight: '500' },
   permissionText: { fontSize: 13, fontWeight: '500' },
+  settingDivider: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)', marginVertical: 12 },
+  waveChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 8 },
+  waveChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
+  waveChipSelected: { backgroundColor: '#FFFFFF' },
+  waveChipUnselected: { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.35)' },
+  waveChipText: { fontSize: 13, fontWeight: '600' as const },
+  waveChipTextSelected: { color: '#000000' },
+  waveChipTextUnselected: { color: 'rgba(255, 255, 255, 0.7)' },
   locationSelectorContainer: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.1)' },
   locationHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   locationHeaderText: { fontSize: 16, fontWeight: '600' },
