@@ -13,7 +13,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release"
@@ -21,7 +20,6 @@
       "android": {}
     },
     "production": {
-      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "distribution": "store",
       "credentialsSource": "remote",
       "ios": {
@@ -41,7 +39,6 @@
     },
     "production-ios": {
       "extends": "production",
-      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
