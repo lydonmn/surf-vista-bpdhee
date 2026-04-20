@@ -13,6 +13,7 @@ export default function LoginScreen() {
   const { signIn, signUp, user, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showResendEmail, setShowResendEmail] = useState(false);
@@ -148,10 +149,25 @@ export default function LoginScreen() {
 
     try {
       if (isSignUp) {
-        console.log('[LoginScreen] Attempting sign up for:', email);
+        console.log('[LoginScreen] Attempting sign up for:', email, 'name:', fullName || '(none)');
         const result = await signUp(email, password);
         
         if (result.success) {
+          if (fullName.trim()) {
+            const { data: { user: newUser } } = await supabase.auth.getUser();
+            if (newUser) {
+              console.log('[LoginScreen] Updating profile full_name for user:', newUser.id);
+              const { error: profileError } = await supabase
+                .from('profiles')
+                .update({ full_name: fullName.trim() })
+                .eq('id', newUser.id);
+              if (profileError) {
+                console.warn('[LoginScreen] Failed to save full_name:', profileError.message);
+              } else {
+                console.log('[LoginScreen] Profile full_name saved successfully');
+              }
+            }
+          }
           setJustSignedUp(true);
           Alert.alert(
             '✅ Account Created!',
@@ -260,6 +276,7 @@ export default function LoginScreen() {
   const toggleMode = () => {
     setIsSignUp(!isSignUp);
     setPassword('');
+    setFullName('');
     setShowResendEmail(false);
     setShowForgotPassword(false);
     setJustSignedUp(false);
@@ -509,6 +526,27 @@ export default function LoginScreen() {
               {formTitleText}
             </Text>
             
+            {isSignUp && (
+              <View style={styles.inputContainer}>
+                <IconSymbol
+                  ios_icon_name="person.fill"
+                  android_material_icon_name="person"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.input, { color: theme.colors.text }]}
+                  placeholder="Full Name (optional)"
+                  placeholderTextColor={colors.textSecondary}
+                  value={fullName}
+                  onChangeText={setFullName}
+                  autoCapitalize="words"
+                  editable={!isLoading}
+                  autoCorrect={false}
+                />
+              </View>
+            )}
+
             <View style={styles.inputContainer}>
               <IconSymbol
                 ios_icon_name="envelope.fill"

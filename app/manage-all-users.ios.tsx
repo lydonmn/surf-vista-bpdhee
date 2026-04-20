@@ -12,9 +12,6 @@ interface UserProfile {
   id: string;
   email: string;
   full_name?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  name?: string | null;
   is_admin: boolean;
   is_regional_admin: boolean;
   is_subscribed: boolean;
@@ -37,15 +34,7 @@ interface UserStats {
 type TabKey = 'all' | 'active' | 'expired' | 'never';
 
 function getDisplayName(user: UserProfile): string {
-  const full = user.full_name?.trim();
-  if (full) return full;
-  const first = user.first_name?.trim() ?? '';
-  const last = user.last_name?.trim() ?? '';
-  const combined = [first, last].filter(Boolean).join(' ');
-  if (combined) return combined;
-  const nameField = user.name?.trim();
-  if (nameField) return nameField;
-  return '';
+  return user.full_name?.trim() ?? '';
 }
 
 function isUserActive(user: UserProfile): boolean {
@@ -101,7 +90,7 @@ export default function ManageAllUsersScreen() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, full_name, first_name, last_name, name, is_admin, is_regional_admin, is_subscribed, subscription_end_date, created_at, managed_locations, subscription_paused, subscription_paused_days, subscription_paused_at, subscription_refunded, subscription_refunded_at')
+        .select('id, email, full_name, is_admin, is_regional_admin, is_subscribed, subscription_end_date, created_at, managed_locations, subscription_paused, subscription_paused_days, subscription_paused_at, subscription_refunded, subscription_refunded_at')
         .order('created_at', { ascending: false });
 
       if (error) {
