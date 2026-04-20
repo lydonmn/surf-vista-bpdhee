@@ -56,11 +56,13 @@ serve(async (req) => {
 
     // Fix 3: Test mode — skip report lookup and send a test notification to all eligible users
     if (body.test === true) {
-      console.log('[Notifications] 🧪 TEST MODE — skipping report lookup');
+      console.log('[Notifications] 🧪 TEST MODE — skipping report lookup', body.email ? `(filtered to email: ${body.email})` : '(all eligible users)');
 
-      const { data: testProfiles, error: testUsersError } = await supabase
-        .from('profiles')
-        .select('id, push_token, email, daily_report_notifications');
+      let query = supabase.from('profiles').select('push_token, email').not('push_token', 'is', null);
+      if (body.email) {
+        query = query.eq('email', body.email);
+      }
+      const { data: testProfiles, error: testUsersError } = await query;
 
       if (testUsersError) {
         console.error('[Notifications] Test mode: error fetching users:', testUsersError);
