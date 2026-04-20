@@ -7,6 +7,17 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { Alert, AppState, AppStateStatus, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+
+// Show notifications as banners even when the app is in the foreground
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocationProvider } from '@/contexts/LocationContext';
 import { NotificationProvider } from "@/contexts/NotificationContext";
@@ -245,6 +256,7 @@ export default function RootLayout() {
   console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
 
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
@@ -263,12 +275,23 @@ export default function RootLayout() {
       console.log('[RootLayout] Notification body:', notification.request.content.body);
     });
 
-    // Notification response listener (user tapped notification)
+    // Notification response listener (user tapped notification) — deep link to correct screen
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('[RootLayout] Notification tapped:', response.notification.request.identifier);
       console.log('[RootLayout] Notification action:', response.actionIdentifier);
       const data = response.notification.request.content.data;
       console.log('[RootLayout] Notification data:', data);
+
+      if (data?.type === 'daily_report') {
+        console.log('[RootLayout] Deep linking to home tab for daily_report notification');
+        router.push('/(tabs)/(home)');
+      } else if (data?.type === 'new_video') {
+        console.log('[RootLayout] Deep linking to videos tab for new_video notification');
+        router.push('/(tabs)/videos');
+      } else if (data?.type === 'swell_alert') {
+        console.log('[RootLayout] Deep linking to home tab for swell_alert notification');
+        router.push('/(tabs)/(home)');
+      }
     });
 
     return () => {

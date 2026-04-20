@@ -215,7 +215,7 @@ serve(async (req) => {
     const rating = report.rating || 0;
     const ratingEmoji = rating >= 8 ? '🔥' : rating >= 6 ? '👍' : rating >= 4 ? '🌊' : '😐';
     const conditions = report.conditions || "Check the app for today's surf report!";
-    const summary = conditions.length > 100 ? conditions.substring(0, 100) + '...' : conditions;
+    const summary = conditions.length > 300 ? conditions.substring(0, 300) + '...' : conditions;
     const notifTitle = `${ratingEmoji} ${locationName} Surf Report`;
     const notifBody = `${waveHeightRaw} waves • ${rating}/10 rating\n${summary}`;
 
@@ -227,6 +227,8 @@ serve(async (req) => {
       data: { type: 'daily_report', reportId: report.id, location: locationId, date: reportDate },
       priority: 'high',
       channelId: 'daily-reports',
+      subtitle: locationName,
+      badge: 1,
     }));
 
     console.log(`[Notifications] Sending daily report to ${dailyMessages.length} users`);

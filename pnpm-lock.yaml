@@ -7,6 +7,8 @@ settings:
 overrides:
   '@expo/prebuild-config': latest
 
+pnpmfileChecksum: sha256-qsE4NWSJO6XhpzbmNmxSFHknUVFXUYjHie2AXo+xCjc=
+
 importers:
 
   .:
