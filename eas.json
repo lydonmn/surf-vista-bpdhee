@@ -7,53 +7,46 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true,
-        "config": "ios.yml"
+        "simulator": true
       },
-      "android": {
-        "config": "android.yml"
-      }
+      "android": {}
     },
     "preview": {
       "distribution": "internal",
+      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Release",
-        "config": "ios.yml"
+        "buildConfiguration": "Release"
       },
-      "android": {
-        "config": "android.yml"
-      }
+      "android": {}
     },
     "production": {
+      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "distribution": "store",
       "credentialsSource": "remote",
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
-        "autoIncrement": true,
-        "config": "ios.yml"
+        "autoIncrement": true
       },
       "android": {
-        "buildType": "app-bundle",
-        "config": "android.yml"
+        "buildType": "app-bundle"
       }
     },
     "production-android": {
       "extends": "production",
       "android": {
-        "buildType": "app-bundle",
-        "config": "android.yml"
+        "buildType": "app-bundle"
       }
     },
     "production-ios": {
       "extends": "production",
+      "prebuildCommand": "node scripts/setup-onesignal-stub.js",
       "ios": {
         "simulator": false,
         "buildConfiguration": "Release",
         "autoIncrement": true,
-        "image": "latest",
-        "config": "ios.yml"
+        "image": "latest"
       }
     }
   },
