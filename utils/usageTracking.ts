@@ -1,7 +1,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const TRACK_USAGE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/track-usage';
+import { supabase } from '../integrations/supabase/client';
 
 const DEVICE_ID_KEY = 'usage_tracking_device_id';
 const SESSION_ID_KEY = 'usage_tracking_session_id';
@@ -38,27 +37,31 @@ export async function getDeviceId(): Promise<string> {
 }
 
 /**
- * Fire-and-forget POST to the track-usage edge function.
+ * Fire-and-forget direct Supabase insert.
  * Never throws — all errors are swallowed so callers are never blocked.
  */
-function postEvent(payload: Record<string, unknown>): void {
-  console.log('[UsageTracking] Posting event:', payload.event_type, payload);
-  fetch(TRACK_USAGE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-    .then((res) => {
-      if (!res.ok) {
-        res.text().then((text) =>
-          console.warn('[UsageTracking] Non-OK response for', payload.event_type, res.status, text)
-        );
+function insertEvent(payload: {
+  event_type: string;
+  session_id: string;
+  device_id: string;
+  user_id?: string | null;
+  duration_seconds?: number;
+  video_id?: string;
+  video_title?: string;
+}): void {
+  console.log('[UsageTracking] Inserting event:', payload.event_type, payload);
+  supabase
+    .from('app_usage_events')
+    .insert(payload)
+    .then(({ error }) => {
+      if (error) {
+        console.warn('[UsageTracking] Insert error for', payload.event_type, error.message, error.code);
       } else {
-        console.log('[UsageTracking] Event tracked successfully:', payload.event_type);
+        console.log('[UsageTracking] Event inserted successfully:', payload.event_type);
       }
     })
     .catch((err) => {
-      console.warn('[UsageTracking] Network error posting event:', payload.event_type, err);
+      console.warn('[UsageTracking] Unexpected error inserting event:', payload.event_type, err);
     });
 }
 
@@ -88,11 +91,11 @@ export async function trackAppOpen(userId?: string): Promise<string> {
 
   console.log('[UsageTracking] App open — session_id:', sessionId, 'user_id:', userId ?? 'anonymous');
 
-  postEvent({
+  insertEvent({
     event_type: 'app_open',
     session_id: sessionId,
     device_id: deviceId,
-    ...(userId ? { user_id: userId } : {}),
+    user_id: userId ?? null,
   });
 
   return sessionId;
@@ -120,13 +123,17 @@ export async function trackAppBackground(userId?: string): Promise<void> {
       'user_id:', userId ?? 'anonymous'
     );
 
-    postEvent({
+    const payload: Parameters<typeof insertEvent>[0] = {
       event_type: 'app_background',
       session_id: sessionId ?? generateUUID(),
       device_id: deviceId,
-      ...(durationSeconds !== undefined ? { duration_seconds: durationSeconds } : {}),
-      ...(userId ? { user_id: userId } : {}),
-    });
+      user_id: userId ?? null,
+    };
+    if (durationSeconds !== undefined) {
+      payload.duration_seconds = durationSeconds;
+    }
+
+    insertEvent(payload);
   } catch (err) {
     console.warn('[UsageTracking] Error in trackAppBackground:', err);
   }
@@ -155,15 +162,17 @@ export async function trackVideoWatch(
       'user_id:', userId ?? 'anonymous'
     );
 
-    postEvent({
+    const payload: Parameters<typeof insertEvent>[0] = {
       event_type: 'video_watch',
       session_id: sessionId ?? generateUUID(),
       device_id: deviceId,
-      ...(userId ? { user_id: userId } : {}),
-      ...(videoId ? { video_id: videoId } : {}),
-      ...(videoTitle ? { video_title: videoTitle } : {}),
-      ...(durationSeconds !== undefined ? { duration_seconds: durationSeconds } : {}),
-    });
+      user_id: userId ?? null,
+    };
+    if (videoId) payload.video_id = videoId;
+    if (videoTitle) payload.video_title = videoTitle;
+    if (durationSeconds !== undefined) payload.duration_seconds = durationSeconds;
+
+    insertEvent(payload);
   } catch (err) {
     console.warn('[UsageTracking] Error in trackVideoWatch:', err);
   }
