@@ -280,14 +280,21 @@ export default function RootLayout() {
   }, [router]);
 
   // Cold-start handler: notification tapped while app was fully closed
+  // Delay ensures the router is mounted before we attempt navigation
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (response) {
-        console.log('[RootLayout] Cold-start notification response found, handling...');
-        handleNotificationResponse(response);
+    const timer = setTimeout(async () => {
+      try {
+        const response = await Notifications.getLastNotificationResponseAsync();
+        if (response) {
+          console.log('[RootLayout] Cold-start notification response found, handling...');
+          handleNotificationResponse(response);
+        }
+      } catch (err) {
+        console.warn('[RootLayout] Cold-start notification check failed:', err);
       }
-    }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

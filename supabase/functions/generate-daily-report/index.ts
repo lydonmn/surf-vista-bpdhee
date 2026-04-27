@@ -117,7 +117,21 @@ const LOCATION_PERSONALITIES: Record<string, {
     disappointed: ['not much at Jupiter', 'Jupiter is flat', 'Jupiter is quiet'],
     nickname: 'Jupiter Inlet',
     fullName: 'Jupiter Inlet, Florida'
-  }
+  },
+  'virginia-beach-va': {
+    casual: ['Virginia Beach', 'VB', 'the beach'],
+    excited: ['Virginia Beach is firing', 'VB has swell', 'Virginia Beach is pumping'],
+    disappointed: ['not much at Virginia Beach', 'VB is flat', 'Virginia Beach is quiet'],
+    nickname: 'Virginia Beach',
+    fullName: 'Virginia Beach, Virginia'
+  },
+  'virginia-beach': {
+    casual: ['Virginia Beach', 'VB', 'the beach'],
+    excited: ['Virginia Beach is firing', 'VB has swell', 'Virginia Beach is pumping'],
+    disappointed: ['not much at Virginia Beach', 'VB is flat', 'Virginia Beach is quiet'],
+    nickname: 'Virginia Beach',
+    fullName: 'Virginia Beach, Virginia'
+  },
 };
 
 function getLocationPersonality(locationId: string) {
