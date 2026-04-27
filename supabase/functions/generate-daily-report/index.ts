@@ -281,11 +281,14 @@ function generateReportText(
   tideSummary: string, 
   rating: number,
   historicalDate: string | null = null,
-  tideData: any[] = []
+  tideData: any[] = [],
+  explicitLocationId?: string
 ): string {
   try {
-    // 🚨 CRITICAL: Get locationId from surfData and ensure it's used throughout
-    const locationId = surfData.location || 'folly-beach';
+    // 🚨 CRITICAL: Use explicitLocationId first, then surfData.location, then default
+    // explicitLocationId is passed from the request handler to avoid stale surfData.location values
+    const locationId = explicitLocationId || surfData.location || 'folly-beach';
+    console.log('[generateReportText] 🆔 Resolved locationId:', locationId, '(explicit:', explicitLocationId, ', surfData.location:', surfData.location, ')');
     const personality = getLocationPersonality(locationId);
     
     console.log('[generateReportText] 🏖️ Generating report for location:', personality.nickname);
@@ -675,6 +678,7 @@ Deno.serve(async (req) => {
     }
 
     // 🚨 CRITICAL: Force location field to be correct in surfData
+    console.log(`[generate-daily-report] 📍 surfData.location="${surfData.location}", request locationId="${locationId}"`);
     if (!surfData.location || surfData.location !== locationId) {
       console.log(`[${personality.nickname}] ⚠️ Correcting location field from "${surfData.location}" to "${locationId}"`);
       surfData.location = locationId;
@@ -683,7 +687,7 @@ Deno.serve(async (req) => {
     const hasValidWaveData = surfData.wave_height !== 'N/A' || surfData.surf_height !== 'N/A';
     
     if (!hasValidWaveData) {
-      console.log(`[${personality.nickname}] ⚠️ No valid wave data, generating fallback narrative`);
+      console.log(`[${personality.nickname}] ⚠️ No valid wave data, generating fallback narrative for locationId: ${locationId}`);
       const tideSummary = generateTideSummary(tideData);
       const noWaveDataReport = {
         date: today,
@@ -748,7 +752,8 @@ Deno.serve(async (req) => {
 
     const tideSummary = generateTideSummary(tideData);
     const rating = calculateSurfRating(surfData, weatherData);
-    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate, tideData);
+    console.log('[generate-daily-report] 📝 Calling generateReportText with locationId:', locationId);
+    const reportText = generateReportText(surfData, weatherData, tideSummary, rating, historicalDataDate, tideData, locationId);
 
     console.log('[generate-daily-report] ✅ Report text generated');
     console.log('[generate-daily-report] 📏 Length:', reportText.length, 'characters');

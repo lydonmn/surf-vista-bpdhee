@@ -131,13 +131,46 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Fallback tide station IDs for known locations in case the DB row is missing the value
+    const FALLBACK_TIDE_STATIONS: Record<string, string> = {
+      'virginia-beach-va': '8638610',  // Sewells Point, Norfolk VA
+      'virginia-beach': '8638610',
+      'folly-beach': '8665530',        // Charleston, SC
+      'pawleys-island': '8661070',     // Springmaid Pier, SC
+      'holden-beach-nc': '8658163',    // Wrightsville Beach, NC
+      'marshfield-ma': '8443970',      // Boston, MA
+      'cisco-beach-nantucket': '8449130', // Nantucket, MA
+      'jupiter-florida': '8722670',    // Lake Worth Pier, FL
+      'jupiter-inlet': '8722670',
+      'jupiter': '8722670',
+    };
+
+    const tideStationId = locationData.tide_station_id || FALLBACK_TIDE_STATIONS[locationId];
+
     console.log('Using location from database:', {
       id: locationData.id,
       name: locationData.display_name,
       tideStationId: locationData.tide_station_id,
+      resolvedTideStationId: tideStationId,
+      usingFallback: !locationData.tide_station_id,
     });
 
-    console.log(`Fetching tide data from NOAA for ${locationData.display_name}...`);
+    if (!tideStationId) {
+      console.error(`No tide station ID found for location: ${locationId}. Set tide_station_id in the locations table.`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `No tide station configured for location: ${locationId}. Please set tide_station_id in the locations table.`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log(`Fetching tide data from NOAA for ${locationData.display_name} (station: ${tideStationId})...`);
 
     const today = getESTDate(0);
     const endDate = getESTDate(6);
@@ -150,7 +183,9 @@ Deno.serve(async (req) => {
     const tideUrl = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?` +
       `product=predictions&application=SurfVista&` +
       `begin_date=${todayStr}&end_date=${endDateStr}&` +
-      `datum=MLLW&station=${locationData.tide_station_id}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
+      `datum=MLLW&station=${tideStationId}&time_zone=lst_ldt&units=english&interval=hilo&format=json`;
+    
+    console.log('NOAA tide URL:', tideUrl);
 
     console.log('Fetching tide predictions');
 
