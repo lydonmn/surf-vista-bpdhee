@@ -236,8 +236,28 @@ Deno.serve(async (req) => {
     const tideData = await tideResponse.json();
     console.log('Tide data received, predictions count:', tideData.predictions?.length || 0);
 
+    // Check for NOAA API-level errors embedded in a 200 response (NOAA returns errors as JSON with an "error" key)
+    if (tideData.error) {
+      const noaaError = tideData.error.message || JSON.stringify(tideData.error);
+      console.error('NOAA API returned an error in response body:', noaaError);
+      console.error('Full NOAA error response:', JSON.stringify(tideData));
+      // Do NOT delete existing rows — leave them intact so the UI still has data
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `NOAA API error: ${noaaError}`,
+          noaaResponse: tideData,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
     if (!tideData.predictions || tideData.predictions.length === 0) {
-      console.log('No tide predictions available');
+      console.log('No tide predictions available — leaving existing rows intact');
       return new Response(
         JSON.stringify({
           success: true,
@@ -252,6 +272,26 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Build records BEFORE deleting so we never leave the table empty on a mapping error
+    const tideRecords = tideData.predictions.map((prediction: any) => {
+      const [, timePart] = prediction.t.split(' ');
+      const date = getESTDateFromISO(prediction.t);
+      
+      return {
+        date: date,
+        location: locationId,
+        time: timePart,
+        // Store lowercase to match TideCard.tsx which checks tide.type === 'high'
+        type: prediction.type === 'H' ? 'high' : 'low',
+        height: parseFloat(prediction.v),
+        height_unit: 'ft',
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    console.log(`Prepared ${tideRecords.length} tide records — deleting old rows then inserting`);
+
+    // Only delete AFTER we have valid records ready to insert (prevents empty-table race condition)
     const { error: deleteError } = await supabase
       .from('tide_data')
       .delete()
@@ -259,24 +299,8 @@ Deno.serve(async (req) => {
 
     if (deleteError) {
       console.error('Error deleting old tide data:', deleteError);
+      // Non-fatal: attempt insert anyway (may cause duplicates but better than empty table)
     }
-
-    const tideRecords = tideData.predictions.map((prediction: any) => {
-      const [datePart, timePart] = prediction.t.split(' ');
-      const date = getESTDateFromISO(prediction.t);
-      
-      return {
-        date: date,
-        location: locationId,
-        time: timePart,
-        type: prediction.type === 'H' ? 'High' : 'Low',
-        height: parseFloat(prediction.v),
-        height_unit: 'ft',
-        updated_at: new Date().toISOString(),
-      };
-    });
-
-    console.log(`Inserting ${tideRecords.length} tide records`);
 
     const { data: insertData, error: tideError } = await supabase
       .from('tide_data')

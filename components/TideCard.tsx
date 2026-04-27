@@ -85,13 +85,17 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
             hour12: true
           });
 
-          const isHighTide = tide.type === 'high';
+          // Normalise to lowercase so both legacy 'High'/'Low' and new 'high'/'low' values work
+          const tideTypeLower = String(tide.type).toLowerCase();
+          const isHighTide = tideTypeLower === 'high';
           const iosIconName = isHighTide ? 'arrow.up' : 'arrow.down';
           const androidIconName = isHighTide ? 'north' : 'south';
           const iconColor = isHighTide ? '#2196F3' : '#FF9800';
+          const tideTypeLabel = isHighTide ? 'High' : 'Low';
 
           console.log('[TideCard] Tide icon:', { 
             type: tide.type, 
+            tideTypeLower,
             isHighTide, 
             iosIconName, 
             androidIconName 
@@ -109,7 +113,8 @@ export function TideCard({ tides, isLoading = false }: TideCardProps) {
               </View>
               <View style={styles.tideInfo}>
                 <Text style={[styles.tideType, { color: theme.colors.text }]}>
-                  {tide.type.charAt(0).toUpperCase() + tide.type.slice(1)} Tide
+                  {tideTypeLabel}
+                  {' Tide'}
                 </Text>
                 <Text style={[styles.tideTime, { color: colors.textSecondary }]}>
                   {time}
