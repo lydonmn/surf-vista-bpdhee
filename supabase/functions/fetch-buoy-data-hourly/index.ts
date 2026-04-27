@@ -323,49 +323,49 @@ serve(async (req) => {
           continue;
         }
 
-        // Parse header to find WVHT column index
+        // Parse header to find WVHT and WTMP column indices
         const headerLine = lines[0].trim();
         const headerFields = headerLine.split(/\s+/);
         const wvhtIndex = headerFields.indexOf('WVHT');
+        const wtmpIndex = headerFields.indexOf('WTMP');
         
         console.log(`Header fields: ${headerFields.join(', ')}`);
-        console.log(`WVHT column index: ${wvhtIndex}`);
+        console.log(`WVHT column index: ${wvhtIndex}, WTMP column index: ${wtmpIndex}`);
 
-        // Scan lines 2-10 to find first line where WVHT is not "MM"
+        // Scan lines 2-10 to find best data lines for WVHT and WTMP separately
         let dataLine: string[] | null = null;
+        let wtmpDataLine: string[] | null = null;
         let selectedLineIndex = -1;
+        const maxLineToCheck = Math.min(lines.length, 11);
 
-        if (wvhtIndex === -1) {
-          console.warn('⚠️ WVHT column not found in header. Using first data line (line 2).');
+        for (let i = 2; i < maxLineToCheck; i++) {
+          const currentLineFields = lines[i].trim().split(/\s+/);
+          if (currentLineFields.length < 15) continue;
+
+          const wvhtValue = wvhtIndex !== -1 ? currentLineFields[wvhtIndex] : currentLineFields[8];
+          const wtmpValue = wtmpIndex !== -1 ? currentLineFields[wtmpIndex] : currentLineFields[14];
+
+          if (!dataLine && wvhtValue !== 'MM') {
+            dataLine = currentLineFields;
+            selectedLineIndex = i;
+            console.log(`✅ Selected line ${i} for wave data (WVHT=${wvhtValue})`);
+          }
+          if (!wtmpDataLine && wtmpValue !== 'MM') {
+            wtmpDataLine = currentLineFields;
+            console.log(`✅ Selected line ${i} for water temp (WTMP=${wtmpValue})`);
+          }
+          if (dataLine && wtmpDataLine) break;
+        }
+
+        // Fallback to line 2 if nothing found
+        if (!dataLine) {
+          console.warn('⚠️ No valid WVHT found in lines 2-10. Defaulting to line 2.');
           dataLine = lines[2].trim().split(/\s+/);
           selectedLineIndex = 2;
-        } else {
-          // Scan data lines 2 through 10 (0-indexed: lines[2] to lines[10])
-          const maxLineToCheck = Math.min(lines.length, 11); // lines[2] through lines[10]
-          
-          for (let i = 2; i < maxLineToCheck; i++) {
-            const currentLineFields = lines[i].trim().split(/\s+/);
-            
-            if (currentLineFields.length > wvhtIndex) {
-              const wvhtValue = currentLineFields[wvhtIndex];
-              
-              if (wvhtValue !== 'MM') {
-                dataLine = currentLineFields;
-                selectedLineIndex = i;
-                console.log(`✅ Selected line ${i} (0-indexed) with valid WVHT: ${wvhtValue}`);
-                break;
-              } else {
-                console.log(`⏭️ Skipping line ${i} - WVHT is "MM"`);
-              }
-            }
-          }
-
-          // If no valid WVHT found in lines 2-10, default to line 2
-          if (!dataLine) {
-            console.warn('⚠️ No valid WVHT found in lines 2-10. Defaulting to line 2.');
-            dataLine = lines[2].trim().split(/\s+/);
-            selectedLineIndex = 2;
-          }
+        }
+        if (!wtmpDataLine) {
+          console.warn('⚠️ No valid WTMP found in lines 2-10. Using same line as wave data.');
+          wtmpDataLine = dataLine;
         }
 
         if (!dataLine) {
@@ -422,13 +422,15 @@ serve(async (req) => {
           continue;
         }
         
-        // Parse buoy data fields
-        const waveHeight = parseFloat(dataLine[8]);
+        // Parse buoy data fields — use dynamic column indices where available
+        const waveHeight = parseFloat(wvhtIndex !== -1 ? dataLine[wvhtIndex] : dataLine[8]);
         const dominantPeriod = parseFloat(dataLine[9]);
         const meanWaveDirection = parseFloat(dataLine[11]);
         const windDirection = parseFloat(dataLine[5]);
         const windSpeed = parseFloat(dataLine[6]);
-        const waterTemp = parseFloat(dataLine[14]);
+        // Use dedicated WTMP line — may differ from wave data line
+        const waterTemp = parseFloat(wtmpIndex !== -1 ? wtmpDataLine[wtmpIndex] : wtmpDataLine[14]);
+        console.log(`[buoy] WTMP raw value: ${wtmpIndex !== -1 ? wtmpDataLine[wtmpIndex] : wtmpDataLine[14]} → parsed: ${waterTemp}°C`);
         
         console.log('Parsed values:', {
           waveHeight,

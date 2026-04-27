@@ -132,18 +132,52 @@ const LOCATION_PERSONALITIES: Record<string, {
     nickname: 'Virginia Beach',
     fullName: 'Virginia Beach, Virginia'
   },
+  'virginia-beach-pier-va': {
+    casual: ['Virginia Beach', 'VB', 'the pier'],
+    excited: ['Virginia Beach is firing', 'VB has swell', 'Virginia Beach is pumping'],
+    disappointed: ['not much at Virginia Beach', 'VB is flat', 'Virginia Beach is quiet'],
+    nickname: 'Virginia Beach',
+    fullName: 'Virginia Beach, Virginia'
+  },
+  'virginia-beach-pier': {
+    casual: ['Virginia Beach', 'VB', 'the pier'],
+    excited: ['Virginia Beach is firing', 'VB has swell', 'Virginia Beach is pumping'],
+    disappointed: ['not much at Virginia Beach', 'VB is flat', 'Virginia Beach is quiet'],
+    nickname: 'Virginia Beach',
+    fullName: 'Virginia Beach, Virginia'
+  },
 };
+
+function toTitleCase(str: string): string {
+  return str.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 function getLocationPersonality(locationId: string) {
   console.log('[getLocationPersonality] Looking up personality for:', locationId);
-  const personality = LOCATION_PERSONALITIES[locationId] || {
-    casual: [locationId.replace(/-/g, ' ')],
-    excited: [`${locationId.replace(/-/g, ' ')} is firing`],
-    disappointed: [`not much at ${locationId.replace(/-/g, ' ')}`],
-    nickname: locationId.replace(/-/g, ' '),
-    fullName: locationId.replace(/-/g, ' ')
+
+  // Try exact match first
+  if (LOCATION_PERSONALITIES[locationId]) {
+    const personality = LOCATION_PERSONALITIES[locationId];
+    console.log('[getLocationPersonality] Exact match found:', personality.nickname);
+    return personality;
+  }
+
+  // Broad match: if location ID contains 'virginia', use Virginia Beach personality
+  if (locationId.toLowerCase().includes('virginia')) {
+    console.log('[getLocationPersonality] Broad Virginia Beach match for:', locationId);
+    return LOCATION_PERSONALITIES['virginia-beach-va'];
+  }
+
+  // Generic fallback with proper title case
+  const displayName = toTitleCase(locationId);
+  const personality = {
+    casual: [displayName],
+    excited: [`${displayName} is firing`],
+    disappointed: [`not much at ${displayName}`],
+    nickname: displayName,
+    fullName: displayName
   };
-  console.log('[getLocationPersonality] Using personality for:', personality.nickname);
+  console.log('[getLocationPersonality] Using generic fallback for:', personality.nickname);
   return personality;
 }
 

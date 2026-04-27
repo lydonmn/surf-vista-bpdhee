@@ -370,7 +370,53 @@ Deno.serve(async (req) => {
       );
     }
 
-    const dataLine = lines[2].trim().split(/\s+/);
+    // Parse header to find column indices dynamically
+    const headerLine = lines[0].trim();
+    const headerFields = headerLine.split(/\s+/);
+    const wvhtIndex = headerFields.indexOf('WVHT');
+    const wtmpIndex = headerFields.indexOf('WTMP');
+    console.log(`Header fields: ${headerFields.join(', ')}`);
+    console.log(`WVHT column index: ${wvhtIndex}, WTMP column index: ${wtmpIndex}`);
+
+    // Scan lines 2-10 to find best data line: prefer one with valid WVHT AND WTMP
+    let dataLine: string[] | null = null;
+    let wtmpDataLine: string[] | null = null; // separate line for WTMP if needed
+    const maxLineToCheck = Math.min(lines.length, 11);
+
+    for (let i = 2; i < maxLineToCheck; i++) {
+      const fields = lines[i].trim().split(/\s+/);
+      if (fields.length < 15) continue;
+
+      const wvhtVal = wvhtIndex !== -1 ? fields[wvhtIndex] : fields[8];
+      const wtmpVal = wtmpIndex !== -1 ? fields[wtmpIndex] : fields[14];
+
+      const wvhtValid = wvhtVal && wvhtVal !== 'MM';
+      const wtmpValid = wtmpVal && wtmpVal !== 'MM';
+
+      // Pick the first line with valid WVHT as primary data line
+      if (!dataLine && wvhtValid) {
+        dataLine = fields;
+        console.log(`✅ Selected line ${i} for wave data (WVHT=${wvhtVal})`);
+      }
+      // Pick the first line with valid WTMP as water temp source
+      if (!wtmpDataLine && wtmpValid) {
+        wtmpDataLine = fields;
+        console.log(`✅ Selected line ${i} for water temp (WTMP=${wtmpVal})`);
+      }
+      // If we have both, stop scanning
+      if (dataLine && wtmpDataLine) break;
+    }
+
+    // Fallback to line 2 if nothing found
+    if (!dataLine) {
+      console.warn('⚠️ No valid WVHT found in lines 2-10. Defaulting to line 2.');
+      dataLine = lines[2].trim().split(/\s+/);
+    }
+    if (!wtmpDataLine) {
+      console.warn('⚠️ No valid WTMP found in lines 2-10. Using same line as wave data.');
+      wtmpDataLine = dataLine;
+    }
+
     console.log('Data line field count:', dataLine.length);
     
     if (dataLine.length < 15) {
@@ -412,13 +458,15 @@ Deno.serve(async (req) => {
       );
     }
     
-    // Parse buoy data fields
-    const waveHeight = parseFloat(dataLine[8]);      // WVHT - Wave Height (meters)
+    // Parse buoy data fields — use dynamic column indices where available
+    const waveHeight = parseFloat(wvhtIndex !== -1 ? dataLine[wvhtIndex] : dataLine[8]);      // WVHT - Wave Height (meters)
     const dominantPeriod = parseFloat(dataLine[9]);  // DPD - Dominant Wave Period (seconds)
     const meanWaveDirection = parseFloat(dataLine[11]); // MWD - Mean Wave Direction (degrees)
     const windDirection = parseFloat(dataLine[5]);   // WDIR - Wind Direction (degrees)
     const windSpeed = parseFloat(dataLine[6]);       // WSPD - Wind Speed (m/s)
-    const waterTemp = parseFloat(dataLine[14]);      // WTMP - Water Temperature (Celsius)
+    // Use dedicated WTMP line for water temp — may differ from wave data line
+    const waterTemp = parseFloat(wtmpIndex !== -1 ? wtmpDataLine[wtmpIndex] : wtmpDataLine[14]); // WTMP - Water Temperature (Celsius)
+    console.log(`[buoy] WTMP raw value: ${wtmpIndex !== -1 ? wtmpDataLine[wtmpIndex] : wtmpDataLine[14]} → parsed: ${waterTemp}°C`);
     
     console.log('Parsed raw values from buoy:', {
       waveHeight,

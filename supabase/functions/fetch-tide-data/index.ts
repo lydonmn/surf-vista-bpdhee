@@ -133,26 +133,34 @@ Deno.serve(async (req) => {
 
     // Fallback tide station IDs for known locations in case the DB row is missing the value
     const FALLBACK_TIDE_STATIONS: Record<string, string> = {
-      'virginia-beach-va': '8638610',  // Sewells Point, Norfolk VA
+      'virginia-beach-va': '8638610',       // Sewells Point, Norfolk VA
       'virginia-beach': '8638610',
-      'folly-beach': '8665530',        // Charleston, SC
-      'pawleys-island': '8661070',     // Springmaid Pier, SC
-      'holden-beach-nc': '8658163',    // Wrightsville Beach, NC
-      'marshfield-ma': '8443970',      // Boston, MA
-      'cisco-beach-nantucket': '8449130', // Nantucket, MA
-      'jupiter-florida': '8722670',    // Lake Worth Pier, FL
+      'virginia-beach-pier-va': '8638610',  // Virginia Beach Pier — Sewells Point, Norfolk VA
+      'virginia-beach-pier': '8638610',
+      'folly-beach': '8665530',             // Charleston, SC
+      'pawleys-island': '8661070',          // Springmaid Pier, SC
+      'holden-beach-nc': '8658163',         // Wrightsville Beach, NC
+      'marshfield-ma': '8443970',           // Boston, MA
+      'cisco-beach-nantucket': '8449130',   // Nantucket, MA
+      'jupiter-florida': '8722670',         // Lake Worth Pier, FL
       'jupiter-inlet': '8722670',
       'jupiter': '8722670',
     };
 
-    const tideStationId = locationData.tide_station_id || FALLBACK_TIDE_STATIONS[locationId];
+    // Check if location ID contains "virginia" as a broader fallback
+    const isVirginiaBeach = locationId.toLowerCase().includes('virginia');
+    const tideStationId = locationData.tide_station_id
+      || FALLBACK_TIDE_STATIONS[locationId]
+      || (isVirginiaBeach ? '8638610' : undefined);
 
+    console.log('[tide] Virginia Beach station ID:', tideStationId);
     console.log('Using location from database:', {
       id: locationData.id,
       name: locationData.display_name,
       tideStationId: locationData.tide_station_id,
       resolvedTideStationId: tideStationId,
       usingFallback: !locationData.tide_station_id,
+      fallbackKey: FALLBACK_TIDE_STATIONS[locationId] ? locationId : (isVirginiaBeach ? 'virginia-beach-broad-match' : 'none'),
     });
 
     if (!tideStationId) {
