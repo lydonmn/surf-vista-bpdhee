@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { openPaywall } from '@/utils/paywallHelper';
+import Purchases, { PurchasesPackage } from 'react-native-purchases';
 
 const FEATURES = [
   {
@@ -39,6 +40,7 @@ export default function PaywallScreen() {
   const router = useRouter();
   const { isSubscribed, loading, packages, isWeb, restorePurchases } = useSubscription();
   const { user } = useAuth();
+  const [rcPackages, setRcPackages] = useState<PurchasesPackage[]>([]);
 
   // If already subscribed, go back to the app
   useEffect(() => {
@@ -47,6 +49,23 @@ export default function PaywallScreen() {
       router.replace('/(tabs)');
     }
   }, [isSubscribed, loading]);
+
+  // Fetch real pricing from RevenueCat
+  useEffect(() => {
+    if (isWeb) return;
+    console.log('[Paywall] Fetching offerings from RevenueCat');
+    Purchases.getOfferings()
+      .then(offerings => {
+        console.log('[Paywall] Offerings received:', offerings.current?.identifier);
+        if (offerings.current?.availablePackages) {
+          setRcPackages(offerings.current.availablePackages);
+          console.log('[Paywall] Available packages:', offerings.current.availablePackages.map(p => p.identifier));
+        }
+      })
+      .catch(err => {
+        console.log('[Paywall] Failed to fetch offerings:', err);
+      });
+  }, [isWeb]);
 
   const handleSubscribe = async () => {
     console.log('[Paywall] Subscribe button pressed');
@@ -71,6 +90,22 @@ export default function PaywallScreen() {
       // handled inside restorePurchases
     }
   };
+
+  const handleTermsPress = () => {
+    console.log('[Paywall] Terms of Service link pressed');
+    router.push('/terms-of-service');
+  };
+
+  const handlePrivacyPress = () => {
+    console.log('[Paywall] Privacy Policy link pressed');
+    router.push('/privacy-policy');
+  };
+
+  // Derive price display from RevenueCat packages or context packages
+  const displayPackages = rcPackages.length > 0 ? rcPackages : packages;
+  const priceLabel = displayPackages.length > 0
+    ? displayPackages[0].product.priceString + ' / ' + (displayPackages[0].packageType === 'ANNUAL' ? 'year' : 'month')
+    : null;
 
   if (loading) {
     return (
@@ -129,6 +164,19 @@ export default function PaywallScreen() {
           ))}
         </View>
 
+        {/* Pricing from RevenueCat */}
+        {priceLabel && (
+          <View style={styles.pricingContainer}>
+            {displayPackages.map(pkg => (
+              <Text key={pkg.identifier} style={styles.pricingText}>
+                {pkg.product.title}
+                {' — '}
+                {pkg.product.priceString}
+              </Text>
+            ))}
+          </View>
+        )}
+
         {/* CTA */}
         <TouchableOpacity
           style={styles.subscribeButton}
@@ -153,6 +201,17 @@ export default function PaywallScreen() {
         <Text style={styles.termsText}>
           Subscription automatically renews unless cancelled at least 24 hours before the end of the current period.
         </Text>
+
+        {/* Legal links — required for App Store compliance */}
+        <View style={styles.legalLinks}>
+          <TouchableOpacity onPress={handleTermsPress} activeOpacity={0.7}>
+            <Text style={styles.legalLinkText}>Terms of Service</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalSeparator}>{'  •  '}</Text>
+          <TouchableOpacity onPress={handlePrivacyPress} activeOpacity={0.7}>
+            <Text style={styles.legalLinkText}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -237,6 +296,16 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     lineHeight: 18,
   },
+  pricingContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pricingText: {
+    fontSize: 15,
+    color: '#CBD5E1',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   subscribeButton: {
     backgroundColor: colors.primary,
     height: 56,
@@ -266,5 +335,20 @@ const styles = StyleSheet.create({
     color: '#475569',
     textAlign: 'center',
     lineHeight: 16,
+    marginBottom: 16,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legalLinkText: {
+    fontSize: 11,
+    color: '#64748B',
+    textDecorationLine: 'underline',
+  },
+  legalSeparator: {
+    fontSize: 11,
+    color: '#475569',
   },
 });
