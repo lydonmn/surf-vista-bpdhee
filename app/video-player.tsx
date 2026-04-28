@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useAuth } from "@/contexts/AuthContext";
 import { openPaywall } from "@/utils/paywallHelper";
+import { trackVideoWatch } from "@/utils/usageTracking";
 
 interface Video {
   id: string;
@@ -70,6 +71,12 @@ export default function VideoPlayerScreen() {
   const lastPlaybackActivityRef = useRef<number>(Date.now());
   const connectionRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
+  // Usage tracking: record when playback starts so we can compute watch duration
+  const playbackStartTimeRef = useRef<number | null>(null);
+  // Prevent double-counting if both onEnd and unmount fire
+  const videoWatchTrackedRef = useRef(false);
+  // Keep a ref to the video title so it's accessible in cleanup/listener closures
+  const videoTitleRef = useRef<string | undefined>(undefined);
 
   const videoOrientation = useMemo(() => {
     if (!video?.resolution_width || !video?.resolution_height) {
@@ -88,6 +95,19 @@ export default function VideoPlayerScreen() {
       console.log('[VideoPlayer] Component unmounting - cleaning up');
       isMountedRef.current = false;
       
+      // Track video watch on unmount if playback started and not already tracked
+      if (playbackStartTimeRef.current !== null && !videoWatchTrackedRef.current) {
+        const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
+        if (watchedSeconds >= 5) {
+          console.log('[VideoPlayer] Tracking video_watch on unmount — duration_seconds:', watchedSeconds, 'title:', videoTitleRef.current);
+          videoWatchTrackedRef.current = true;
+          trackVideoWatch(user?.id, String(videoId ?? ''), videoTitleRef.current, watchedSeconds).catch(() => {});
+        } else {
+          console.log('[VideoPlayer] Skipping video_watch on unmount — watched only', watchedSeconds, 'seconds (< 5s threshold)');
+        }
+        playbackStartTimeRef.current = null;
+      }
+      
       // Clear all timeouts
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
@@ -102,6 +122,7 @@ export default function VideoPlayerScreen() {
         connectionRefreshTimeoutRef.current = null;
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearControlsTimeout = useCallback(() => {
@@ -278,6 +299,7 @@ export default function VideoPlayerScreen() {
         }
 
         setVideo(data);
+        videoTitleRef.current = data.title;
 
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
           setVideoUrl(data.video_url);
@@ -446,6 +468,11 @@ export default function VideoPlayerScreen() {
       setIsPlaying(newIsPlaying);
       
       if (newIsPlaying) {
+        // Record start time on first play (don't overwrite if already set)
+        if (playbackStartTimeRef.current === null) {
+          playbackStartTimeRef.current = Date.now();
+          console.log('[VideoPlayer] Playback started — recording start time for usage tracking');
+        }
         setIsBuffering(false);
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
@@ -485,17 +512,30 @@ export default function VideoPlayerScreen() {
       }
     });
 
+    // Track when video plays to end
+    const playToEndListener = player.addListener('playToEnd', () => {
+      if (!isMountedRef.current) return;
+      if (!videoWatchTrackedRef.current && playbackStartTimeRef.current !== null) {
+        const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
+        console.log('[VideoPlayer] Video played to end — tracking video_watch, duration_seconds:', watchedSeconds, 'title:', videoTitleRef.current);
+        videoWatchTrackedRef.current = true;
+        playbackStartTimeRef.current = null;
+        trackVideoWatch(user?.id, String(videoId ?? ''), videoTitleRef.current, watchedSeconds).catch(() => {});
+      }
+    });
+
     return () => {
       statusListener.remove();
       playingListener.remove();
       timeUpdateListener.remove();
+      playToEndListener.remove();
       
       if (bufferingTimeoutRef.current) {
         clearTimeout(bufferingTimeoutRef.current);
         bufferingTimeoutRef.current = null;
       }
     };
-  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl, safePlay]);
+  }, [player, videoUrl, isPlaying, retryCount, preloadedUrl, safePlay, user?.id, videoId]);
 
   useEffect(() => {
     if (videoUrl && player && isMountedRef.current) {

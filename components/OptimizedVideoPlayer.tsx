@@ -267,12 +267,17 @@ export function OptimizedVideoPlayer({
   }, [onEnd, userId, videoId, videoTitle]);
 
   // Track video_watch on unmount (e.g. user closes player mid-video)
+  // Only fires if the video was not already tracked via onEnd AND at least 5s were watched
   useEffect(() => {
     return () => {
       if (playbackStartTimeRef.current !== null) {
         const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
-        console.log('[OptimizedVideoPlayer] Tracking video_watch on unmount — video_id:', videoId, 'duration_seconds:', watchedSeconds);
-        trackVideoWatch(userId, videoId, videoTitle, watchedSeconds).catch(() => {});
+        if (watchedSeconds >= 5) {
+          console.log('[OptimizedVideoPlayer] Tracking video_watch on unmount — video_id:', videoId, 'duration_seconds:', watchedSeconds);
+          trackVideoWatch(userId, videoId, videoTitle, watchedSeconds).catch(() => {});
+        } else {
+          console.log('[OptimizedVideoPlayer] Skipping video_watch on unmount — watched only', watchedSeconds, 'seconds (< 5s threshold)');
+        }
         playbackStartTimeRef.current = null;
       }
     };

@@ -13,7 +13,7 @@ import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
 import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
-import { trackAppOpen, trackAppBackground } from "@/utils/usageTracking";
+import { trackAppOpen, trackAppBackground, linkSessionToUser } from "@/utils/usageTracking";
 
 // Register notification handler at module level so it fires before any notification arrives
 if (Platform.OS !== 'web') {
@@ -216,21 +216,32 @@ function SubscriptionRedirect() {
 }
 
 function AppLifecycleTracker() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   // Keep a ref to the latest user id so AppState listeners always read the current value
   // even if they were registered before the user logged in.
   const userIdRef = useRef<string | undefined>(user?.id);
+  // Track whether the initial app_open has been fired (wait for auth to resolve first)
+  const initialOpenTrackedRef = useRef(false);
+  // Track the previous user id to detect login transitions (null → user)
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     userIdRef.current = user?.id;
   }, [user?.id]);
 
-  // Track initial app open and set up AppState listener.
-  // This effect runs once on mount; the AppState callback always reads userIdRef
-  // so it captures the correct user_id even after login/logout mid-session.
+  // Track initial app open AFTER auth has resolved (not on raw mount).
+  // This ensures user_id is available if the user was already logged in.
   useEffect(() => {
-    console.log('[RootLayout] Tracking initial app_open, user:', userIdRef.current ?? 'anonymous');
-    trackAppOpen(userIdRef.current).catch(() => {});
+    if (authLoading) return; // wait until auth state is known
+    if (initialOpenTrackedRef.current) return; // only fire once
+    initialOpenTrackedRef.current = true;
+
+    console.log('[RootLayout] Auth resolved — tracking initial app_open, user:', user?.id ?? 'anonymous');
+    trackAppOpen(user?.id).catch(() => {});
+
+    // Record the user id at the time of the initial open
+    prevUserIdRef.current = user?.id;
 
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       const prevState = appStateRef.current;
@@ -246,9 +257,23 @@ function AppLifecycleTracker() {
     });
 
     return () => subscription.remove();
-  // Intentionally empty deps: listener is registered once; user_id is read via ref
+  // Re-run only when authLoading changes (goes from true → false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading]);
+
+  // When a user logs in after an anonymous session, link the existing session to their user_id
+  useEffect(() => {
+    if (authLoading) return;
+    const prevId = prevUserIdRef.current;
+    const currentId = user?.id;
+    if (!prevId && currentId) {
+      // Transition from anonymous → logged-in
+      console.log('[RootLayout] User logged in after anonymous session — linking session to user:', currentId);
+      linkSessionToUser(currentId).catch(() => {});
+    }
+    prevUserIdRef.current = currentId;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, authLoading]);
 
   // One-time push token refresh: if user has notifications enabled but token is stale/null
   useEffect(() => {

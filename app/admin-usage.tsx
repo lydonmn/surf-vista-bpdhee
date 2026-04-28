@@ -211,6 +211,15 @@ export default function AdminUsageScreen() {
       setDailyActivity(days);
 
       // --- Per-user breakdown ---
+      // Step 1: Build a map from device_id → authenticated user_id (if any event for that device has a user_id)
+      const deviceToUserId = new Map<string, string>();
+      for (const e of events) {
+        if (e.device_id && e.user_id) {
+          deviceToUserId.set(e.device_id, e.user_id);
+        }
+      }
+
+      // Step 2: Aggregate events, merging anonymous device sessions under the authenticated user
       const userMap = new Map<string, {
         sessions: number;
         bgDurations: number[];
@@ -219,7 +228,19 @@ export default function AdminUsageScreen() {
       }>();
 
       for (const e of events) {
-        const uid = e.user_id ?? `device:${e.device_id ?? 'unknown'}`;
+        // Resolve the canonical identity key:
+        // - If event has a user_id, use it directly
+        // - If event is anonymous but the device has authenticated elsewhere, merge under that user_id
+        // - Otherwise fall back to device:xxx
+        let uid: string;
+        if (e.user_id) {
+          uid = e.user_id;
+        } else if (e.device_id && deviceToUserId.has(e.device_id)) {
+          uid = deviceToUserId.get(e.device_id)!;
+        } else {
+          uid = `device:${e.device_id ?? 'unknown'}`;
+        }
+
         if (!userMap.has(uid)) {
           userMap.set(uid, { sessions: 0, bgDurations: [], videos: 0, lastSeen: e.created_at });
         }
@@ -234,8 +255,10 @@ export default function AdminUsageScreen() {
 
       const userStatsList: UserStat[] = [];
       for (const [uid, data] of userMap.entries()) {
-        const profile = uid.startsWith('device:') ? null : profileMap.get(uid);
-        const name = profile?.full_name || profile?.email || (uid.startsWith('device:') ? uid : `User ${uid.slice(0, 8)}`);
+        const isDevice = uid.startsWith('device:');
+        const profile = isDevice ? null : profileMap.get(uid);
+        // Prefer full_name → email → device:xxx
+        const name = profile?.full_name || profile?.email || (isDevice ? uid : `User ${uid.slice(0, 8)}`);
         const totalTime = data.bgDurations.reduce((a, b) => a + b, 0);
         userStatsList.push({
           userId: uid,
@@ -249,6 +272,7 @@ export default function AdminUsageScreen() {
 
       userStatsList.sort((a, b) => (b.lastSeen > a.lastSeen ? 1 : -1));
       setUserStats(userStatsList);
+      console.log('[AdminUsage] Device→user merge complete. deviceToUserId entries:', deviceToUserId.size);
 
       console.log('[AdminUsage] Analytics computed — users:', userStatsList.length);
     } catch (err: any) {

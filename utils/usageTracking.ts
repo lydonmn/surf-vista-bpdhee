@@ -140,6 +140,25 @@ export async function trackAppBackground(userId?: string): Promise<void> {
 }
 
 /**
+ * Links an existing anonymous session to a user after login.
+ * Updates app_usage_events rows where session_id matches and user_id is null.
+ */
+export async function linkSessionToUser(userId: string): Promise<void> {
+  try {
+    const sessionId = await AsyncStorage.getItem(SESSION_ID_KEY);
+    if (!sessionId) return;
+    console.log('[UsageTracking] Linking session', sessionId, 'to user', userId);
+    await supabase
+      .from('app_usage_events')
+      .update({ user_id: userId })
+      .eq('session_id', sessionId)
+      .is('user_id', null);
+  } catch (e) {
+    console.warn('[UsageTracking] Error linking session to user:', e);
+  }
+}
+
+/**
  * Call when a video finishes or is dismissed.
  * Fires event_type: 'video_watch'.
  */
