@@ -218,29 +218,37 @@ function SubscriptionRedirect() {
 function AppLifecycleTracker() {
   const { user } = useAuth();
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-
-  // Track initial app open and set up AppState listener
+  // Keep a ref to the latest user id so AppState listeners always read the current value
+  // even if they were registered before the user logged in.
+  const userIdRef = useRef<string | undefined>(user?.id);
   useEffect(() => {
-    console.log('[RootLayout] Tracking initial app_open, user:', user?.id ?? 'anonymous');
-    trackAppOpen(user?.id).catch(() => {});
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+
+  // Track initial app open and set up AppState listener.
+  // This effect runs once on mount; the AppState callback always reads userIdRef
+  // so it captures the correct user_id even after login/logout mid-session.
+  useEffect(() => {
+    console.log('[RootLayout] Tracking initial app_open, user:', userIdRef.current ?? 'anonymous');
+    trackAppOpen(userIdRef.current).catch(() => {});
 
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       const prevState = appStateRef.current;
       appStateRef.current = nextState;
 
       if (nextState === 'background' || nextState === 'inactive') {
-        console.log('[RootLayout] AppState -> background/inactive, tracking app_background');
-        trackAppBackground(user?.id).catch(() => {});
+        console.log('[RootLayout] AppState -> background/inactive, tracking app_background, user:', userIdRef.current ?? 'anonymous');
+        trackAppBackground(userIdRef.current).catch(() => {});
       } else if (nextState === 'active' && (prevState === 'background' || prevState === 'inactive')) {
-        console.log('[RootLayout] AppState -> active (from background), tracking new app_open');
-        trackAppOpen(user?.id).catch(() => {});
+        console.log('[RootLayout] AppState -> active (from background), tracking new app_open, user:', userIdRef.current ?? 'anonymous');
+        trackAppOpen(userIdRef.current).catch(() => {});
       }
     });
 
     return () => subscription.remove();
-  // Re-run only when user identity changes so the correct user_id is captured
+  // Intentionally empty deps: listener is registered once; user_id is read via ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, []);
 
   // One-time push token refresh: if user has notifications enabled but token is stale/null
   useEffect(() => {

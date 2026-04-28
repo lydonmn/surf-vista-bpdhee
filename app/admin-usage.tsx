@@ -150,12 +150,14 @@ export default function AdminUsageScreen() {
 
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const recentUserIds = new Set(
+      // Count distinct identities (user_id when available, otherwise device_id) active in last 7 days
+      const recentIdentities = new Set(
         events
-          .filter(e => e.user_id && new Date(e.created_at) >= sevenDaysAgo)
-          .map(e => e.user_id as string)
+          .filter(e => new Date(e.created_at) >= sevenDaysAgo)
+          .map(e => e.user_id ?? (e.device_id ? `device:${e.device_id}` : null))
+          .filter((id): id is string => id !== null)
       );
-      const activeUsers = recentUserIds.size;
+      const activeUsers = recentIdentities.size;
 
       const cards: StatCard[] = [
         {
@@ -386,13 +388,14 @@ export default function AdminUsageScreen() {
               </View>
             ) : (
               dailyActivity.map((day, i) => {
-                const barPct = maxDayCount > 0 ? (day.count / maxDayCount) * 100 : 0;
-                const barWidth = `${Math.max(barPct, day.count > 0 ? 2 : 0)}%` as `${number}%`;
+                const barFlex = maxDayCount > 0 ? day.count / maxDayCount : 0;
+                const clampedFlex = day.count > 0 ? Math.max(barFlex, 0.02) : 0;
                 return (
                   <View key={i} style={styles.dayRow}>
                     <Text style={styles.dayLabel}>{day.label}</Text>
                     <View style={styles.dayBarTrack}>
-                      <View style={[styles.dayBarFill, { width: barWidth }]} />
+                      <View style={[styles.dayBarFill, { flex: clampedFlex }]} />
+                      <View style={{ flex: 1 - clampedFlex }} />
                     </View>
                     <Text style={styles.dayCount}>{day.count}</Text>
                   </View>
@@ -614,12 +617,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f1f1f',
     borderRadius: 5,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   dayBarFill: {
     height: '100%',
     backgroundColor: colors.primary,
     borderRadius: 5,
-    minWidth: 0,
   },
   dayCount: {
     fontSize: 13,
