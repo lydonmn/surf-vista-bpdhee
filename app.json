@@ -22,7 +22,8 @@
         "NSMicrophoneUsageDescription": "This app uses the microphone to record audio for surf report videos.",
         "UIBackgroundModes": [
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "config": {
         "usesNonExemptEncryption": false
