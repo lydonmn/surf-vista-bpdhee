@@ -7,6 +7,13 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { Alert, AppState, AppStateStatus, useColorScheme, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { LocationProvider } from '@/contexts/LocationContext';
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
+import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
+import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
+import { trackAppOpen, trackAppBackground } from "@/utils/usageTracking";
 
 // Register notification handler at module level so it fires before any notification arrives
 if (Platform.OS !== 'web') {
@@ -18,13 +25,6 @@ if (Platform.OS !== 'web') {
     }),
   });
 }
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { LocationProvider } from '@/contexts/LocationContext';
-import { NotificationProvider } from "@/contexts/NotificationContext";
-import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
-import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
-import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
-import { trackAppOpen, trackAppBackground } from "@/utils/usageTracking";
 
 // Only prevent splash screen auto-hide on native — SplashScreen throws on web
 if (Platform.OS !== 'web') {
