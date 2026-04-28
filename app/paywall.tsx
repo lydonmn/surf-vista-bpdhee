@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,9 +38,10 @@ const FEATURES = [
 
 export default function PaywallScreen() {
   const router = useRouter();
-  const { isSubscribed, loading, packages, isWeb, restorePurchases } = useSubscription();
+  const { isSubscribed, loading, packages, isWeb } = useSubscription();
   const { user } = useAuth();
   const [rcPackages, setRcPackages] = useState<PurchasesPackage[]>([]);
+  const [restoring, setRestoring] = useState(false);
 
   // If already subscribed, go back to the app
   useEffect(() => {
@@ -85,9 +86,19 @@ export default function PaywallScreen() {
   const handleRestore = async () => {
     console.log('[Paywall] Restore purchases pressed');
     try {
-      await restorePurchases();
-    } catch {
-      // handled inside restorePurchases
+      setRestoring(true);
+      const restore = await Purchases.restorePurchases();
+      console.log('[Paywall] Restore result — active entitlements:', Object.keys(restore.entitlements.active));
+      if (Object.keys(restore.entitlements.active).length > 0) {
+        Alert.alert('Purchases Restored', 'Your subscription has been restored successfully.');
+      } else {
+        Alert.alert('No Purchases Found', 'We could not find any previous purchases to restore.');
+      }
+    } catch (error: any) {
+      console.log('[Paywall] Restore failed:', error?.message);
+      Alert.alert('Restore Failed', error?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -193,8 +204,13 @@ export default function PaywallScreen() {
             style={styles.restoreButton}
             onPress={handleRestore}
             activeOpacity={0.7}
+            disabled={restoring}
           >
-            <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+            {restoring ? (
+              <ActivityIndicator size="small" color="#888" />
+            ) : (
+              <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+            )}
           </TouchableOpacity>
         )}
 
