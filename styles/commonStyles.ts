@@ -12,7 +12,7 @@ export const colors = {
   highlight: '#ADD8E6',
   border: '#D1E4EE',
   reportBackground: '#E8F4F8',
-  reportText: '#5A7A8A',
+  reportText: '#FFFFFF',
   reportBoldText: '#E8F4F8',
   reportLabel: '#B8D4E0',
   errorBackground: '#FF6B6B',

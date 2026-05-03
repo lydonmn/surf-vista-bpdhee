@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
   paragraph: {
     fontSize: 16,
     lineHeight: 24,
-    color: colors.text,
+    color: colors.reportText,
     marginBottom: 16,
   },
 });
