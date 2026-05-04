@@ -22,7 +22,6 @@ import { useOnboardingColors } from "@/hooks/useOnboardingColors";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-const SUPABASE_URL = "https://ucbilksfpnmltrkwvzft.supabase.co";
 const DEVICE_ID_KEY = "device_id";
 const TOTAL_STEPS = onboardingQuestions.length;
 
@@ -47,25 +46,20 @@ async function submitSurvey(
   deviceId: string,
   answers: Record<string, string>
 ): Promise<void> {
-  const body = {
+  const payload = {
     user_id: userId,
     device_id: deviceId,
     how_found: answers["how_found"] ?? "",
     surf_location: answers["surf_location"] ?? "",
     improvement: answers["improvement"] ?? "",
   };
-  console.log("[Onboarding] Submitting survey to backend:", body);
+  console.log("[Onboarding] Submitting survey directly to survey_responses table:", payload);
   try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/survey`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      console.warn("[Onboarding] Survey submission failed:", response.status, text);
+    const { error } = await supabase.from("survey_responses").insert(payload);
+    if (error) {
+      console.warn("[Onboarding] Survey insert failed:", error.message, error.details);
     } else {
-      console.log("[Onboarding] Survey submitted successfully");
+      console.log("[Onboarding] Survey inserted successfully into survey_responses");
     }
   } catch (err) {
     console.warn("[Onboarding] Survey submission error:", err);

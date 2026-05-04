@@ -16,6 +16,7 @@ interface UserProfile {
   is_regional_admin: boolean;
   is_subscribed: boolean;
   subscription_end_date: string | null;
+  subscription_source?: string | null;
   created_at: string;
   managed_locations?: string[];
   subscription_paused?: boolean;
@@ -31,7 +32,7 @@ interface UserStats {
   admins: number;
 }
 
-type TabKey = 'all' | 'active' | 'expired' | 'never';
+type TabKey = 'all' | 'active' | 'paid' | 'expired' | 'never';
 
 function getDisplayName(user: UserProfile): string {
   const trimmed = user.full_name?.trim();
@@ -92,7 +93,7 @@ export default function ManageAllUsersScreen() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, full_name, is_admin, is_regional_admin, is_subscribed, subscription_end_date, created_at, managed_locations, subscription_paused, subscription_paused_days, subscription_paused_at, subscription_refunded, subscription_refunded_at')
+        .select('id, email, full_name, is_admin, is_regional_admin, is_subscribed, subscription_end_date, subscription_source, created_at, managed_locations, subscription_paused, subscription_paused_days, subscription_paused_at, subscription_refunded, subscription_refunded_at')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -149,6 +150,10 @@ export default function ManageAllUsersScreen() {
     () => [...searchFiltered].filter(isUserActive).sort(sortByName),
     [searchFiltered]
   );
+  const paidUsers = useMemo(
+    () => [...searchFiltered].filter(u => u.subscription_source === 'revenuecat' && u.is_subscribed).sort(sortByName),
+    [searchFiltered]
+  );
   const expiredUsers = useMemo(
     () => [...searchFiltered].filter(isUserExpired).sort(sortByName),
     [searchFiltered]
@@ -161,6 +166,7 @@ export default function ManageAllUsersScreen() {
   const tabData: Record<TabKey, UserProfile[]> = {
     all: allUsers,
     active: activeUsers,
+    paid: paidUsers,
     expired: expiredUsers,
     never: neverSubscribedUsers,
   };
@@ -170,6 +176,7 @@ export default function ManageAllUsersScreen() {
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: allUsers.length },
     { key: 'active', label: 'Active', count: activeUsers.length },
+    { key: 'paid', label: 'Paid', count: paidUsers.length },
     { key: 'expired', label: 'Expired', count: expiredUsers.length },
     { key: 'never', label: 'Never Subscribed', count: neverSubscribedUsers.length },
   ];

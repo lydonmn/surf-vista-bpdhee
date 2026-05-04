@@ -30,6 +30,7 @@ import Purchases, {
 import { configureRevenueCat } from "@/utils/revenueCatInit";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
+import { supabase } from "@/app/integrations/supabase/client";
 
 // Import auth hook for user syncing (validated at setup time)
 import { useAuth } from "./AuthContext";
@@ -260,18 +261,36 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     }
   };
 
+  const markRevenueCatSubscription = async (userId: string | undefined) => {
+    if (!userId) return;
+    try {
+      console.log("[RevenueCat] Marking subscription_source=revenuecat for user:", userId);
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_subscribed: true, subscription_source: 'revenuecat' })
+        .eq('id', userId);
+      if (error) {
+        console.error("[RevenueCat] Failed to update subscription_source:", error);
+      }
+    } catch (err) {
+      console.error("[RevenueCat] Exception updating subscription_source:", err);
+    }
+  };
+
   const purchasePackage = async (pkg: PurchasesPackage): Promise<boolean> => {
     if (isWeb) {
       console.warn("[RevenueCat] Purchases not available on web");
       return false;
     }
     try {
+      console.log("[RevenueCat] Purchasing package:", pkg.identifier);
       const { customerInfo } = await Purchases.purchasePackage(pkg);
       const hasEntitlement =
         typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== "undefined";
       setIsSubscribed(hasEntitlement);
       if (hasEntitlement) {
         await SecureStore.setItemAsync(NATIVE_PURCHASE_KEY, "true").catch(() => {});
+        await markRevenueCatSubscription(user?.id);
       }
       return hasEntitlement;
     } catch (error: any) {
@@ -290,6 +309,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       return false;
     }
     try {
+      console.log("[RevenueCat] Restoring purchases for user:", user?.id);
       const customerInfo = await Purchases.restorePurchases();
       const hasEntitlement =
         typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== "undefined";
@@ -297,6 +317,9 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       // In __DEV__: don't clear the cache on restore failure (test store purchases are ephemeral)
       if (hasEntitlement || !__DEV__) {
         await SecureStore.setItemAsync(NATIVE_PURCHASE_KEY, hasEntitlement ? "true" : "false").catch(() => {});
+      }
+      if (hasEntitlement) {
+        await markRevenueCatSubscription(user?.id);
       }
       return hasEntitlement;
     } catch (error) {
