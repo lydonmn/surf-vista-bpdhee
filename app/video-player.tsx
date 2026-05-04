@@ -999,6 +999,9 @@ export default function VideoPlayerScreen() {
   const durationLabel = "Duration";
   const orientationLabel = "Orientation";
   const orientationText = videoOrientation === 'portrait' ? 'Portrait (9:16)' : 'Landscape (16:9)';
+  const uploadedLabel = "Uploaded";
+  const uploadedText = new Date(video.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  console.log('[VideoPlayer] Rendering metadata — uploaded:', uploadedText, 'video_id:', video.id);
   
   return (
     <View style={[styles.container, { backgroundColor: '#000000' }]}>
@@ -1150,6 +1153,11 @@ export default function VideoPlayerScreen() {
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>{durationLabel}</Text>
               <Text style={styles.metaValue}>{durationText}</Text>
+            </View>
+            
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>{uploadedLabel}</Text>
+              <Text style={styles.metaValue}>{uploadedText}</Text>
             </View>
           </View>
         </View>
