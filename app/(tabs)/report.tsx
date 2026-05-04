@@ -1079,23 +1079,33 @@ export default function ReportScreen() {
           </View>
         </View>
 
-        <View style={[styles.conditionsBox, { backgroundColor: colors.reportBackground }]}>
+        <View style={[
+          styles.conditionsBox,
+          {
+            backgroundColor: isDarkMode ? '#111827' : '#E8F4F8',
+            borderWidth: 1,
+            borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#D1E4EE',
+          }
+        ]}>
           <View style={styles.conditionsHeader}>
-            <Text style={[styles.conditionsTitle, { color: colors.reportText }]}>
+            <Text style={[styles.conditionsTitle, { color: isDarkMode ? '#FFFFFF' : colors.text }]}>
               Surf Conditions
             </Text>
             {profile?.is_admin && (
               <TouchableOpacity
                 style={styles.editButton}
-                onPress={handleEditReport}
+                onPress={() => {
+                  console.log('[ReportScreen] Edit button pressed');
+                  handleEditReport();
+                }}
               >
                 <IconSymbol
                   ios_icon_name="pencil"
                   android_material_icon_name="edit"
                   size={16}
-                  color={colors.primary}
+                  color={isDarkMode ? '#60A5FA' : colors.primary}
                 />
-                <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                <Text style={[styles.editButtonText, { color: isDarkMode ? '#60A5FA' : colors.primary }]}>
                   Edit
                 </Text>
               </TouchableOpacity>
@@ -1106,15 +1116,16 @@ export default function ReportScreen() {
               <ReportTextDisplay 
                 text={narrativeText}
                 isCustom={isCustomReport}
+                textColor={isDarkMode ? '#F0F0F0' : colors.text}
               />
               {report.report_text && report.edited_at && (
-                <Text style={[styles.editedNote, { color: colors.textSecondary }]}>
+                <Text style={[styles.editedNote, { color: isDarkMode ? '#9CA3AF' : colors.textSecondary }]}>
                   Edited {new Date(report.edited_at).toLocaleDateString()}
                 </Text>
               )}
             </>
           ) : (
-            <Text style={[styles.conditionsText, { color: colors.reportText }]}>
+            <Text style={[styles.conditionsText, { color: isDarkMode ? '#F0F0F0' : colors.text }]}>
               No surf conditions narrative available for {locationData.displayName}.
             </Text>
           )}

@@ -6,9 +6,11 @@ import { colors } from '@/styles/commonStyles';
 interface ReportTextDisplayProps {
   text: string;
   style?: any;
+  isCustom?: boolean;
+  textColor?: string;
 }
 
-export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
+export function ReportTextDisplay({ text, style, textColor }: ReportTextDisplayProps) {
   // Split by double newlines to create paragraphs
   // The backend now generates narratives with actual \n\n characters
   const paragraphs = text
@@ -66,7 +68,7 @@ export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
       return (
         <View style={[styles.container, style]}>
           {sections.map((section, index) => (
-            <Text key={index} style={styles.paragraph}>
+            <Text key={index} style={[styles.paragraph, textColor ? { color: textColor } : undefined]}>
               {section}
             </Text>
           ))}
@@ -79,7 +81,7 @@ export function ReportTextDisplay({ text, style }: ReportTextDisplayProps) {
     <View style={[styles.container, style]}>
       {paragraphs.map((paragraph, index) => {
         return (
-          <Text key={index} style={styles.paragraph}>
+          <Text key={index} style={[styles.paragraph, textColor ? { color: textColor } : undefined]}>
             {paragraph}
           </Text>
         );
