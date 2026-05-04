@@ -5,7 +5,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
-import { supabase } from '@/app/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPreloader } from '@/hooks/useVideoPreloader';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Video as VideoType } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { trackVideoWatch } from '@/utils/usageTracking';
 
 
 const CONTROLS_HIDE_DELAY = 3000;
@@ -21,6 +23,7 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 export default function VideoPlayerV2Screen() {
   const insets = useSafeAreaInsets();
   const { videoId, locationId } = useLocalSearchParams();
+  const { user } = useAuth();
   
   const [video, setVideo] = useState<VideoType | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -42,6 +45,28 @@ export default function VideoPlayerV2Screen() {
   const hasLoadedRef = useRef(false);
   const lastProgressUpdateRef = useRef(0);
   const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Usage tracking refs
+  const playbackStartTimeRef = useRef<number | null>(null);
+  const videoWatchTrackedRef = useRef(false);
+  const videoTitleRef = useRef<string | undefined>(undefined);
+
+  // Track video_watch on unmount (user closes player mid-video, 5s minimum)
+  useEffect(() => {
+    return () => {
+      if (playbackStartTimeRef.current !== null && !videoWatchTrackedRef.current) {
+        const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
+        if (watchedSeconds >= 5) {
+          console.log('[VideoPlayerV2] Tracking video_watch on unmount — video_id:', videoId, 'duration_seconds:', watchedSeconds, 'title:', videoTitleRef.current);
+          videoWatchTrackedRef.current = true;
+          trackVideoWatch(user?.id, String(videoId ?? ''), videoTitleRef.current, watchedSeconds).catch(() => {});
+        } else {
+          console.log('[VideoPlayerV2] Skipping video_watch on unmount — watched only', watchedSeconds, 'seconds (< 5s threshold)');
+        }
+        playbackStartTimeRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load video queue for this location
   const locationIdStr = typeof locationId === 'string' ? locationId : '';
@@ -131,6 +156,7 @@ export default function VideoPlayerV2Screen() {
         console.log('[VideoPlayerV2] Video loaded:', data.title);
         console.log('[VideoPlayerV2] 🎬 Video URL:', data.video_url);
         setVideo(data);
+        videoTitleRef.current = data.title;
 
         // 🎬 CRITICAL FIX: Check if this is a Mux HLS URL - if so, use it directly without signing
         if (data.video_url.startsWith(MUX_HLS_PREFIX)) {
@@ -283,12 +309,27 @@ export default function VideoPlayerV2Screen() {
       setIsPlaying(newIsPlaying);
       
       if (newIsPlaying) {
+        // Record start time on first play only
+        if (playbackStartTimeRef.current === null) {
+          playbackStartTimeRef.current = Date.now();
+          console.log('[VideoPlayerV2] Playback started — recording start time for usage tracking');
+        }
         console.log('[VideoPlayerV2] ✅ Video playing - clearing buffering');
         setIsBuffering(false);
         if (bufferingTimeoutRef.current) {
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
+      }
+    });
+
+    const playToEndListener = player.addListener('playToEnd', () => {
+      if (!videoWatchTrackedRef.current && playbackStartTimeRef.current !== null) {
+        const watchedSeconds = Math.round((Date.now() - playbackStartTimeRef.current) / 1000);
+        console.log('[VideoPlayerV2] Video played to end — tracking video_watch, duration_seconds:', watchedSeconds, 'title:', videoTitleRef.current);
+        videoWatchTrackedRef.current = true;
+        playbackStartTimeRef.current = null;
+        trackVideoWatch(user?.id, String(videoId ?? ''), videoTitleRef.current, watchedSeconds).catch(() => {});
       }
     });
 
@@ -326,13 +367,14 @@ export default function VideoPlayerV2Screen() {
       statusListener.remove();
       playingListener.remove();
       timeUpdateListener.remove();
+      playToEndListener.remove();
       
       if (bufferingTimeoutRef.current) {
         clearTimeout(bufferingTimeoutRef.current);
         bufferingTimeoutRef.current = null;
       }
     };
-  }, [player, videoUrl, isPlaying]);
+  }, [player, videoUrl, isPlaying, user?.id, videoId]);
 
   // Load video source
   useEffect(() => {

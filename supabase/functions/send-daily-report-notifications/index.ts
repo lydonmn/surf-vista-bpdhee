@@ -215,16 +215,47 @@ serve(async (req) => {
     const rating = report.rating || 0;
     const ratingEmoji = rating >= 8 ? '🔥' : rating >= 6 ? '👍' : rating >= 4 ? '🌊' : '😐';
     const conditions = report.conditions || "Check the app for today's surf report!";
-    const summary = conditions.length > 300 ? conditions.substring(0, 300) + '...' : conditions;
-    const notifTitle = `${ratingEmoji} ${locationName} Surf Report`;
-    const notifBody = `${waveHeightRaw} waves • ${rating}/10 rating\n${summary}`;
+
+    // Subtitle: first sentence of conditions, max 80 chars
+    const firstSentence = conditions.split(/[.!?]/)[0].trim();
+    const notifSubtitle = firstSentence.length > 80 ? firstSentence.substring(0, 77) + '...' : firstSentence;
+
+    // Structured body lines
+    const waveInfo = `🌊 Surf: ${waveHeightRaw || 'N/A'}`;
+    const stokeInfo = `⭐ Stoke: ${rating}/10`;
+    const weatherInfo = `🌤 Weather: ${report.weather || report.conditions_summary || conditions.substring(0, 60)}`;
+
+    // Fetch next tide events for this location/date
+    const tideDate = report.date || reportDate;
+    const { data: tides } = await supabase
+      .from('tide_data')
+      .select('time, type, height')
+      .eq('location', locationId)
+      .eq('date', tideDate)
+      .order('time', { ascending: true })
+      .limit(3);
+
+    console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
+
+    const tideLines = tides && tides.length > 0
+      ? tides.map((t: any) => {
+          const isHigh = String(t.type).toLowerCase() === 'high';
+          const emoji = isHigh ? '📈' : '📉';
+          return `${emoji} ${t.type} Tide: ${t.time} (${t.height}ft)`;
+        }).join('\n')
+      : '';
+
+    const bodyParts = [waveInfo, stokeInfo, weatherInfo, tideLines].filter(Boolean);
+    const notifBody = bodyParts.join('\n');
+
+    const notifTitle = `${ratingEmoji} ${locationName} — Today's Surf Report`;
 
     const dailyMessages = dailyReportUsers.map(user => ({
       to: user.push_token,
       sound: 'default',
       title: notifTitle,
+      subtitle: notifSubtitle,
       body: notifBody,
-      subtitle: locationName,
       badge: 1,
       data: { type: 'daily_report', reportId: report.id, location: locationId, date: reportDate },
       priority: 'high',
