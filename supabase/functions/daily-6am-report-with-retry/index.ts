@@ -50,6 +50,18 @@ const LOCATION_PERSONALITIES: Record<string, {
   'jupiter': {
     nickname: 'Jupiter Inlet',
     fullName: 'Jupiter Inlet, Florida'
+  },
+  'virginia-beach-va': {
+    nickname: 'Virginia Beach Pier',
+    fullName: 'Virginia Beach Pier, Virginia'
+  },
+  'virginia-beach-pier-va': {
+    nickname: 'Virginia Beach Pier',
+    fullName: 'Virginia Beach Pier, Virginia'
+  },
+  'stuart-rocks-florida': {
+    nickname: 'The Rocks',
+    fullName: 'The Rocks, Stuart, Florida'
   }
 };
 

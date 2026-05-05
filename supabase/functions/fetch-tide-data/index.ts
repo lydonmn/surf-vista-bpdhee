@@ -133,10 +133,13 @@ Deno.serve(async (req) => {
 
     // Fallback tide station IDs for known locations in case the DB row is missing the value
     const FALLBACK_TIDE_STATIONS: Record<string, string> = {
-      'virginia-beach-va': '8638610',       // Sewells Point, Norfolk VA
-      'virginia-beach': '8638610',
-      'virginia-beach-pier-va': '8638610',  // Virginia Beach Pier — Sewells Point, Norfolk VA
-      'virginia-beach-pier': '8638610',
+      'virginia-beach-va': '8639168',       // Virginia Beach Fishing Pier, VA (NOAA 8639168)
+      'virginia-beach': '8639168',
+      'virginia-beach-pier-va': '8639168',  // Virginia Beach Pier — NOAA 8639168
+      'virginia-beach-pier': '8639168',
+      'stuart-rocks-florida': '8722366',    // St. Lucie Inlet, FL (NOAA 8722366)
+      'stuart-rocks': '8722366',
+      'the-rocks-fla': '8722366',
       'folly-beach': '8665530',             // Charleston, SC
       'pawleys-island': '8661070',          // Springmaid Pier, SC
       'holden-beach-nc': '8658163',         // Wrightsville Beach, NC
@@ -149,9 +152,12 @@ Deno.serve(async (req) => {
 
     // Check if location ID contains "virginia" as a broader fallback
     const isVirginiaBeach = locationId.toLowerCase().includes('virginia');
+    // Check if location ID contains "stuart" or "rocks" as a broader fallback for Stuart/The Rocks FL
+    const isStuartRocks = locationId.toLowerCase().includes('stuart') || locationId.toLowerCase().includes('rocks');
     const tideStationId = locationData.tide_station_id
       || FALLBACK_TIDE_STATIONS[locationId]
-      || (isVirginiaBeach ? '8638610' : undefined);
+      || (isVirginiaBeach ? '8639168' : undefined)
+      || (isStuartRocks ? '8722366' : undefined);
 
     console.log('[tide] Virginia Beach station ID:', tideStationId);
     console.log('Using location from database:', {

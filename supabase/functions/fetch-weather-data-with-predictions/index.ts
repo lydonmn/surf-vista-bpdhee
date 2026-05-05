@@ -7,11 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Folly Beach coordinates
-const FOLLY_BEACH_LAT = 32.6552;
-const FOLLY_BEACH_LON = -79.9403;
 const FETCH_TIMEOUT = 15000;
-const BUOY_ID = '41004';
 
 function getESTDate(): string {
   const now = new Date();
@@ -84,9 +80,9 @@ function calculateSurfHeight(waveHeightMeters: number, periodSeconds: number): {
   };
 }
 
-async function fetchBuoyData(timeout: number = FETCH_TIMEOUT): Promise<{ waveHeight: number, period: number } | null> {
+async function fetchBuoyData(buoyId: string, timeout: number = FETCH_TIMEOUT): Promise<{ waveHeight: number, period: number } | null> {
   try {
-    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${BUOY_ID}.txt`;
+    const buoyUrl = `https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`;
     console.log('Fetching buoy data:', buoyUrl);
 
     const controller = new AbortController();
@@ -163,14 +159,58 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Parse location parameter from request body
+    let locationId = 'folly-beach';
+    try {
+      const body = await req.json();
+      if (body.location) {
+        locationId = body.location;
+        console.log('Location parameter received:', locationId);
+      }
+    } catch (e) {
+      console.log('No location parameter in request body, using default: folly-beach');
+    }
+
+    // Fetch location configuration from database dynamically
+    console.log('Fetching location configuration from database for:', locationId);
+    const { data: locationData, error: locationError } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('id', locationId)
+      .single();
+
+    if (locationError || !locationData) {
+      console.error('Location not found in database:', locationId, locationError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Location not found: ${locationId}`,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log('Using location from database:', {
+      id: locationData.id,
+      name: locationData.display_name,
+      lat: locationData.latitude,
+      lon: locationData.longitude,
+      buoyId: locationData.buoy_id,
+    });
+
     const today = getESTDate();
     console.log('Current EST date:', today);
 
-    // Fetch current surf conditions
+    // Fetch current surf conditions for this location
     const { data: currentSurfConditions, error: surfCondError } = await supabase
       .from('surf_conditions')
       .select('surf_height, wave_height, wave_period')
       .eq('date', today)
+      .eq('location', locationId)
       .maybeSingle();
 
     if (surfCondError) {
@@ -179,10 +219,11 @@ serve(async (req) => {
 
     console.log('Current surf conditions:', currentSurfConditions);
 
-    // Fetch AI predictions
+    // Fetch AI predictions for this location
     const { data: predictions, error: predError } = await supabase
       .from('surf_predictions')
       .select('*')
+      .eq('location', locationId)
       .gte('date', today)
       .order('date', { ascending: true })
       .limit(7);
@@ -211,7 +252,7 @@ serve(async (req) => {
       console.log('✅ Using ACTUAL surf height from database for today:', currentSwellRange);
     }
 
-    const buoyData = await fetchBuoyData();
+    const buoyData = await fetchBuoyData(locationData.buoy_id);
     
     if (buoyData) {
       const surfCalc = calculateSurfHeight(buoyData.waveHeight, buoyData.period);
@@ -228,8 +269,8 @@ serve(async (req) => {
       'Accept': 'application/geo+json'
     };
 
-    // Fetch NOAA weather data
-    const pointsUrl = `https://api.weather.gov/points/${FOLLY_BEACH_LAT},${FOLLY_BEACH_LON}`;
+    // Fetch NOAA weather data using dynamic coordinates
+    const pointsUrl = `https://api.weather.gov/points/${locationData.latitude},${locationData.longitude}`;
     console.log('Fetching grid point:', pointsUrl);
     
     const pointsResponse = await fetchWithTimeout(pointsUrl, requestHeaders);
@@ -254,11 +295,12 @@ serve(async (req) => {
 
     console.log(`Received ${periods.length} forecast periods`);
 
-    // Store current weather data
+    // Store current weather data with location
     const currentPeriod = periods[0];
     
     const weatherData = {
       date: today,
+      location: locationId,
       temperature: currentPeriod.temperature.toString(),
       feels_like: currentPeriod.temperature.toString(),
       humidity: 0,
@@ -275,11 +317,11 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log('Upserting current weather data');
+    console.log('Upserting current weather data for location:', locationId);
 
     const { error: weatherError } = await supabase
       .from('weather_data')
-      .upsert(weatherData, { onConflict: 'date' });
+      .upsert(weatherData, { onConflict: 'date,location' });
 
     if (weatherError) {
       console.error('Error storing weather data:', weatherError);
@@ -319,7 +361,6 @@ serve(async (req) => {
         }
         // Fallback to buoy-based estimation
         else if (buoyData) {
-          const dayOffset = i / 2;
           const variation = (Math.random() - 0.5) * 1.0;
           const adjustedWaveHeight = buoyData.waveHeight + (variation * 0.3048);
           const surfCalc = calculateSurfHeight(Math.max(0.5, adjustedWaveHeight), buoyData.period);
@@ -339,6 +380,7 @@ serve(async (req) => {
         
         dailyForecasts.set(formattedDate, {
           date: formattedDate,
+          location: locationId,
           day_name: dayName,
           high_temp: null,
           low_temp: null,
@@ -392,11 +434,15 @@ serve(async (req) => {
 
     console.log(`Prepared ${forecastRecords.length} daily forecast records with AI predictions`);
 
-    // Delete old forecasts
-    await supabase
+    // Delete old forecasts scoped to this location only
+    const { error: deleteError } = await supabase
       .from('weather_forecast')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+      .eq('location', locationId);
+
+    if (deleteError) {
+      console.error('Error deleting old forecasts for location:', locationId, deleteError);
+    }
 
     // Insert new forecasts
     const { data: forecastInsertData, error: forecastError } = await supabase
@@ -415,8 +461,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Weather data with AI predictions updated successfully',
-        location: 'Folly Beach, SC',
+        message: `Weather data with AI predictions updated successfully for ${locationData.display_name}`,
+        location: locationData.display_name,
+        locationId: locationId,
         current: weatherData,
         forecast_periods: forecastRecords.length,
         ai_predictions_used: predictions?.length || 0,

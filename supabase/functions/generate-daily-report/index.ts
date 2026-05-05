@@ -146,6 +146,20 @@ const LOCATION_PERSONALITIES: Record<string, {
     nickname: 'Virginia Beach',
     fullName: 'Virginia Beach, Virginia'
   },
+  'stuart-rocks-florida': {
+    casual: ['The Rocks', 'Stuart Rocks', 'the break'],
+    excited: ['The Rocks is firing', 'Stuart Rocks has swell', 'The Rocks is pumping'],
+    disappointed: ['not much at The Rocks', 'Stuart Rocks is flat', 'The Rocks is quiet'],
+    nickname: 'The Rocks',
+    fullName: 'The Rocks, Stuart FL'
+  },
+  'stuart-rocks': {
+    casual: ['The Rocks', 'Stuart Rocks', 'the break'],
+    excited: ['The Rocks is firing', 'Stuart Rocks has swell', 'The Rocks is pumping'],
+    disappointed: ['not much at The Rocks', 'Stuart Rocks is flat', 'The Rocks is quiet'],
+    nickname: 'The Rocks',
+    fullName: 'The Rocks, Stuart FL'
+  },
 };
 
 function toTitleCase(str: string): string {
