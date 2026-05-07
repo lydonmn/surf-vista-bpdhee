@@ -13,6 +13,10 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/integrations/supabase/client';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface UsageEvent {
   user_id: string | null;
   device_id: string | null;
@@ -28,6 +32,9 @@ interface Profile {
   id: string;
   email: string | null;
   full_name: string | null;
+  daily_report_notifications: boolean | null;
+  video_notifications: boolean | null;
+  min_wave_height: number | null;
 }
 
 interface StatCard {
@@ -38,9 +45,29 @@ interface StatCard {
   accent: string;
 }
 
-interface DayActivity {
-  date: string;
+interface HourBucket {
+  hour: number;
   label: string;
+  count: number;
+  isPeak: boolean;
+}
+
+interface VideoStat {
+  title: string;
+  watchCount: number;
+  totalSeconds: number;
+  avgSeconds: number;
+}
+
+interface VideoWatchEvent {
+  videoTitle: string;
+  userName: string;
+  durationSeconds: number;
+  createdAt: string;
+}
+
+interface ForecastDay {
+  date: string;
   count: number;
 }
 
@@ -52,6 +79,10 @@ interface UserStat {
   videosWatched: number;
   lastSeen: string;
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -82,17 +113,95 @@ function formatShortDate(iso: string): string {
   }
 }
 
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function pct(num: number, denom: number): string {
+  if (denom === 0) return '0%';
+  return `${Math.round((num / denom) * 100)}%`;
+}
+
+// ---------------------------------------------------------------------------
+// Section header component
+// ---------------------------------------------------------------------------
+
+function SectionHeader({
+  icon_ios,
+  icon_android,
+  title,
+  badge,
+}: {
+  icon_ios: string;
+  icon_android: string;
+  title: string;
+  badge?: string | number;
+}) {
+  const badgeText = badge !== undefined ? String(badge) : undefined;
+  return (
+    <View style={styles.sectionHeader}>
+      <IconSymbol
+        ios_icon_name={icon_ios}
+        android_material_icon_name={icon_android}
+        size={18}
+        color={colors.primary}
+      />
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {badgeText !== undefined && (
+        <Text style={styles.sectionCount}>{badgeText}</Text>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
 export default function AdminUsageScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Section 1 — Summary cards
   const [statCards, setStatCards] = useState<StatCard[]>([]);
-  const [dailyActivity, setDailyActivity] = useState<DayActivity[]>([]);
+
+  // Section 2 — Hourly heatmap
+  const [hourBuckets, setHourBuckets] = useState<HourBucket[]>([]);
+
+  // Section 3 — Most watched videos
+  const [videoStats, setVideoStats] = useState<VideoStat[]>([]);
+
+  // Section 4 — Individual video watch events
+  const [videoWatchEvents, setVideoWatchEvents] = useState<VideoWatchEvent[]>([]);
+
+  // Section 5 — Notification stats
+  const [notifStats, setNotifStats] = useState<{
+    totalUsers: number;
+    dailyReportOptIn: number;
+    videoAlertsOptIn: number;
+    swellAlertsOptIn: number;
+    notificationOpens: number;
+  } | null>(null);
+
+  // Section 6 — Forecast usage (last 14 days)
+  const [forecastDays, setForecastDays] = useState<ForecastDay[]>([]);
+
+  // Section 7 — Per-user breakdown
   const [userStats, setUserStats] = useState<UserStat[]>([]);
 
   const fetchData = useCallback(async () => {
-    console.log('[AdminUsage] Fetching usage analytics data');
+    console.log('[AdminUsage] Fetching full analytics data');
     setIsLoading(true);
     setError(null);
 
@@ -104,7 +213,7 @@ export default function AdminUsageScreen() {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, email, full_name'),
+          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height'),
       ]);
 
       if (eventsResult.error) {
@@ -121,11 +230,11 @@ export default function AdminUsageScreen() {
       console.log('[AdminUsage] Loaded events:', events.length, 'profiles:', profiles.length);
 
       const profileMap = new Map<string, Profile>();
-      for (const p of profiles) {
-        profileMap.set(p.id, p);
-      }
+      for (const p of profiles) profileMap.set(p.id, p);
 
-      // --- Summary stats ---
+      // -----------------------------------------------------------------------
+      // Section 1 — Summary cards
+      // -----------------------------------------------------------------------
       const appOpenEvents = events.filter(e => e.event_type === 'app_open');
       const appBgEvents = events.filter(e => e.event_type === 'app_background');
       const videoEvents = events.filter(e => e.event_type === 'video_watch');
@@ -141,16 +250,8 @@ export default function AdminUsageScreen() {
 
       const totalVideos = videoEvents.length;
 
-      const videoDurations = videoEvents
-        .map(e => Number(e.duration_seconds))
-        .filter(d => !isNaN(d) && d > 0);
-      const avgVideoSecs = videoDurations.length > 0
-        ? videoDurations.reduce((a, b) => a + b, 0) / videoDurations.length
-        : 0;
-
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      // Count distinct identities (user_id when available, otherwise device_id) active in last 7 days
       const recentIdentities = new Set(
         events
           .filter(e => new Date(e.created_at) >= sevenDaysAgo)
@@ -158,6 +259,12 @@ export default function AdminUsageScreen() {
           .filter((id): id is string => id !== null)
       );
       const activeUsers = recentIdentities.size;
+
+      const totalUsersCount = profiles.length;
+      const dailyReportOptInCount = profiles.filter(p => p.daily_report_notifications === true).length;
+      const notifOptInRate = totalUsersCount > 0
+        ? `${Math.round((dailyReportOptInCount / totalUsersCount) * 100)}%`
+        : '0%';
 
       const cards: StatCard[] = [
         {
@@ -175,6 +282,13 @@ export default function AdminUsageScreen() {
           accent: '#10B981',
         },
         {
+          label: 'Active Users (7d)',
+          value: String(activeUsers),
+          icon_ios: 'person.2.fill',
+          icon_android: 'group',
+          accent: '#EF4444',
+        },
+        {
           label: 'Videos Watched',
           value: String(totalVideos),
           icon_ios: 'play.rectangle.fill',
@@ -182,44 +296,113 @@ export default function AdminUsageScreen() {
           accent: '#F59E0B',
         },
         {
-          label: 'Avg Video',
-          value: avgVideoSecs > 0 ? formatDuration(avgVideoSecs) : '—',
-          icon_ios: 'film.fill',
-          icon_android: 'movie',
+          label: 'Notif Opt-in',
+          value: notifOptInRate,
+          icon_ios: 'bell.fill',
+          icon_android: 'notifications',
           accent: '#8B5CF6',
-        },
-        {
-          label: 'Active Users (7d)',
-          value: String(activeUsers),
-          icon_ios: 'person.2.fill',
-          icon_android: 'group',
-          accent: '#EF4444',
         },
       ];
       setStatCards(cards);
 
-      // --- Daily activity (last 14 days) ---
-      const days: DayActivity[] = [];
+      // -----------------------------------------------------------------------
+      // Section 2 — Hourly heatmap (app_open events by hour of day)
+      // -----------------------------------------------------------------------
+      const hourCounts = new Array(24).fill(0) as number[];
+      for (const e of appOpenEvents) {
+        const hour = new Date(e.created_at).getHours();
+        hourCounts[hour] += 1;
+      }
+      // Find top 3 peak hours
+      const sortedHours = hourCounts
+        .map((count, hour) => ({ hour, count }))
+        .sort((a, b) => b.count - a.count);
+      const peakHours = new Set(sortedHours.slice(0, 3).map(h => h.hour));
+
+      const buckets: HourBucket[] = hourCounts.map((count, hour) => {
+        const ampm = hour < 12 ? 'am' : 'pm';
+        const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+        return {
+          hour,
+          label: `${displayHour}${ampm}`,
+          count,
+          isPeak: peakHours.has(hour),
+        };
+      });
+      setHourBuckets(buckets);
+
+      // -----------------------------------------------------------------------
+      // Section 3 — Most watched videos (top 10)
+      // -----------------------------------------------------------------------
+      const videoMap = new Map<string, { count: number; totalSecs: number }>();
+      for (const e of videoEvents) {
+        const title = e.video_title || e.video_id || 'Unknown';
+        const existing = videoMap.get(title) ?? { count: 0, totalSecs: 0 };
+        existing.count += 1;
+        const dur = Number(e.duration_seconds);
+        if (!isNaN(dur) && dur > 0) existing.totalSecs += dur;
+        videoMap.set(title, existing);
+      }
+      const videoStatsList: VideoStat[] = Array.from(videoMap.entries())
+        .map(([title, data]) => ({
+          title,
+          watchCount: data.count,
+          totalSeconds: data.totalSecs,
+          avgSeconds: data.count > 0 ? data.totalSecs / data.count : 0,
+        }))
+        .sort((a, b) => b.watchCount - a.watchCount)
+        .slice(0, 10);
+      setVideoStats(videoStatsList);
+
+      // -----------------------------------------------------------------------
+      // Section 4 — Individual video watch events (sorted by created_at desc)
+      // -----------------------------------------------------------------------
+      const watchEventsList: VideoWatchEvent[] = videoEvents.slice(0, 50).map(e => {
+        const profile = e.user_id ? profileMap.get(e.user_id) : null;
+        const userName = profile?.full_name || profile?.email || (e.user_id ? `User ${e.user_id.slice(0, 8)}` : `Device ${(e.device_id ?? 'unknown').slice(0, 8)}`);
+        return {
+          videoTitle: e.video_title || e.video_id || 'Unknown',
+          userName,
+          durationSeconds: Number(e.duration_seconds) || 0,
+          createdAt: e.created_at,
+        };
+      });
+      setVideoWatchEvents(watchEventsList);
+
+      // -----------------------------------------------------------------------
+      // Section 5 — Notification stats
+      // -----------------------------------------------------------------------
+      const notifOpenCount = events.filter(e => e.event_type === 'notification_open').length;
+      setNotifStats({
+        totalUsers: totalUsersCount,
+        dailyReportOptIn: dailyReportOptInCount,
+        videoAlertsOptIn: profiles.filter(p => p.video_notifications === true).length,
+        swellAlertsOptIn: profiles.filter(p => p.min_wave_height !== null && p.min_wave_height !== undefined).length,
+        notificationOpens: notifOpenCount,
+      });
+
+      // -----------------------------------------------------------------------
+      // Section 6 — Forecast usage (last 14 days)
+      // -----------------------------------------------------------------------
+      const forecastEvents = events.filter(e => e.event_type === 'forecast_view');
+      const forecastDaysList: ForecastDay[] = [];
       for (let i = 0; i < 14; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().slice(0, 10);
-        const label = formatShortDate(d.toISOString());
-        const count = appOpenEvents.filter(e => e.created_at.slice(0, 10) === dateStr).length;
-        days.push({ date: dateStr, label, count });
+        const count = forecastEvents.filter(e => e.created_at.slice(0, 10) === dateStr).length;
+        forecastDaysList.push({ date: formatShortDate(d.toISOString()), count });
       }
-      setDailyActivity(days);
+      setForecastDays(forecastDaysList);
 
-      // --- Per-user breakdown ---
-      // Step 1: Build a map from device_id → authenticated user_id (if any event for that device has a user_id)
+      // -----------------------------------------------------------------------
+      // Section 7 — Per-user breakdown
+      // -----------------------------------------------------------------------
       const deviceToUserId = new Map<string, string>();
       for (const e of events) {
-        if (e.device_id && e.user_id) {
-          deviceToUserId.set(e.device_id, e.user_id);
-        }
+        if (e.device_id && e.user_id) deviceToUserId.set(e.device_id, e.user_id);
       }
 
-      // Step 2: Aggregate events, merging anonymous device sessions under the authenticated user
       const userMap = new Map<string, {
         sessions: number;
         bgDurations: number[];
@@ -228,10 +411,6 @@ export default function AdminUsageScreen() {
       }>();
 
       for (const e of events) {
-        // Resolve the canonical identity key:
-        // - If event has a user_id, use it directly
-        // - If event is anonymous but the device has authenticated elsewhere, merge under that user_id
-        // - Otherwise fall back to device:xxx
         let uid: string;
         if (e.user_id) {
           uid = e.user_id;
@@ -257,7 +436,6 @@ export default function AdminUsageScreen() {
       for (const [uid, data] of userMap.entries()) {
         const isDevice = uid.startsWith('device:');
         const profile = isDevice ? null : profileMap.get(uid);
-        // Prefer full_name → email → device:xxx
         const name = profile?.full_name || profile?.email || (isDevice ? uid : `User ${uid.slice(0, 8)}`);
         const totalTime = data.bgDurations.reduce((a, b) => a + b, 0);
         userStatsList.push({
@@ -269,12 +447,10 @@ export default function AdminUsageScreen() {
           lastSeen: data.lastSeen,
         });
       }
-
       userStatsList.sort((a, b) => (b.lastSeen > a.lastSeen ? 1 : -1));
       setUserStats(userStatsList);
-      console.log('[AdminUsage] Device→user merge complete. deviceToUserId entries:', deviceToUserId.size);
 
-      console.log('[AdminUsage] Analytics computed — users:', userStatsList.length);
+      console.log('[AdminUsage] Analytics computed — users:', userStatsList.length, 'video titles:', videoStatsList.length);
     } catch (err: any) {
       console.error('[AdminUsage] Failed to load analytics:', err);
       setError(err.message || 'Failed to load usage analytics');
@@ -287,9 +463,7 @@ export default function AdminUsageScreen() {
     fetchData();
   }, [fetchData]);
 
-  const maxDayCount = dailyActivity.length > 0
-    ? Math.max(...dailyActivity.map(d => d.count), 1)
-    : 1;
+  const maxHourCount = hourBuckets.length > 0 ? Math.max(...hourBuckets.map(h => h.count), 1) : 1;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -362,17 +536,15 @@ export default function AdminUsageScreen() {
 
       {!isLoading && !error && (
         <>
-          {/* Summary Cards */}
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 1 — Summary Cards                                        */}
+          {/* ---------------------------------------------------------------- */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <IconSymbol
-                ios_icon_name="chart.bar.fill"
-                android_material_icon_name="bar_chart"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.sectionTitle}>Summary</Text>
-            </View>
+            <SectionHeader
+              icon_ios="chart.bar.fill"
+              icon_android="bar_chart"
+              title="Summary"
+            />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -395,51 +567,204 @@ export default function AdminUsageScreen() {
             </ScrollView>
           </View>
 
-          {/* Daily Activity */}
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 2 — Peak Usage Heatmap                                   */}
+          {/* ---------------------------------------------------------------- */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <IconSymbol
-                ios_icon_name="calendar"
-                android_material_icon_name="calendar_today"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.sectionTitle}>Daily Sessions (Last 14 Days)</Text>
-            </View>
-            {dailyActivity.every(d => d.count === 0) ? (
+            <SectionHeader
+              icon_ios="clock.fill"
+              icon_android="schedule"
+              title="Peak Usage (by Hour)"
+            />
+            {hourBuckets.every(h => h.count === 0) ? (
               <View style={styles.emptyInline}>
                 <Text style={styles.emptyText}>No session data yet</Text>
               </View>
             ) : (
-              dailyActivity.map((day, i) => {
-                const barFlex = maxDayCount > 0 ? day.count / maxDayCount : 0;
-                const clampedFlex = day.count > 0 ? Math.max(barFlex, 0.02) : 0;
+              hourBuckets.map((bucket) => {
+                const barFlex = bucket.count > 0 ? Math.max(bucket.count / maxHourCount, 0.02) : 0;
+                const barColor = bucket.isPeak ? '#F59E0B' : colors.primary;
                 return (
-                  <View key={i} style={styles.dayRow}>
-                    <Text style={styles.dayLabel}>{day.label}</Text>
+                  <View key={bucket.hour} style={styles.dayRow}>
+                    <Text style={[styles.dayLabel, bucket.isPeak && styles.peakLabel]}>{bucket.label}</Text>
                     <View style={styles.dayBarTrack}>
-                      <View style={[styles.dayBarFill, { flex: clampedFlex }]} />
-                      <View style={{ flex: 1 - clampedFlex }} />
+                      <View style={[styles.dayBarFill, { flex: barFlex, backgroundColor: barColor }]} />
+                      <View style={{ flex: 1 - barFlex }} />
                     </View>
-                    <Text style={styles.dayCount}>{day.count}</Text>
+                    <Text style={[styles.dayCount, bucket.isPeak && { color: '#F59E0B' }]}>{bucket.count}</Text>
+                    {bucket.isPeak && (
+                      <Text style={styles.peakBadge}>★</Text>
+                    )}
                   </View>
                 );
               })
             )}
           </View>
 
-          {/* Per-User Breakdown */}
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 3 — Most Watched Videos                                  */}
+          {/* ---------------------------------------------------------------- */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <IconSymbol
-                ios_icon_name="person.3.fill"
-                android_material_icon_name="group"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.sectionTitle}>Per-User Breakdown</Text>
-              <Text style={styles.sectionCount}>{userStats.length}</Text>
-            </View>
+            <SectionHeader
+              icon_ios="play.rectangle.fill"
+              icon_android="play_circle"
+              title="Most Watched Videos"
+              badge={videoStats.length}
+            />
+            {videoStats.length === 0 ? (
+              <View style={styles.emptyInline}>
+                <Text style={styles.emptyText}>No video watch data yet</Text>
+              </View>
+            ) : (
+              videoStats.map((v, i) => {
+                const totalTimeText = v.totalSeconds > 0 ? formatDuration(v.totalSeconds) : '—';
+                const avgTimeText = v.avgSeconds > 0 ? formatDuration(v.avgSeconds) : '—';
+                return (
+                  <View key={i} style={styles.videoCard}>
+                    <View style={styles.videoCardTop}>
+                      <View style={styles.videoRankCircle}>
+                        <Text style={styles.videoRankText}>{i + 1}</Text>
+                      </View>
+                      <Text style={styles.videoTitle} numberOfLines={2}>{v.title}</Text>
+                    </View>
+                    <View style={styles.videoStatsRow}>
+                      <View style={styles.videoStat}>
+                        <Text style={styles.videoStatValue}>{v.watchCount}</Text>
+                        <Text style={styles.videoStatLabel}>Views</Text>
+                      </View>
+                      <View style={styles.videoStatDivider} />
+                      <View style={styles.videoStat}>
+                        <Text style={styles.videoStatValue}>{totalTimeText}</Text>
+                        <Text style={styles.videoStatLabel}>Total Time</Text>
+                      </View>
+                      <View style={styles.videoStatDivider} />
+                      <View style={styles.videoStat}>
+                        <Text style={styles.videoStatValue}>{avgTimeText}</Text>
+                        <Text style={styles.videoStatLabel}>Avg/View</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 4 — Individual Video Watch Events                        */}
+          {/* ---------------------------------------------------------------- */}
+          <View style={styles.section}>
+            <SectionHeader
+              icon_ios="film.fill"
+              icon_android="movie"
+              title="Video Watch Log"
+              badge={videoWatchEvents.length}
+            />
+            {videoWatchEvents.length === 0 ? (
+              <View style={styles.emptyInline}>
+                <Text style={styles.emptyText}>No video watch events yet</Text>
+              </View>
+            ) : (
+              videoWatchEvents.map((e, i) => {
+                const durText = e.durationSeconds > 0 ? formatDuration(e.durationSeconds) : '—';
+                const dtText = formatDateTime(e.createdAt);
+                return (
+                  <View key={i} style={styles.watchEventRow}>
+                    <View style={styles.watchEventLeft}>
+                      <Text style={styles.watchEventTitle} numberOfLines={1}>{e.videoTitle}</Text>
+                      <Text style={styles.watchEventUser} numberOfLines={1}>{e.userName}</Text>
+                    </View>
+                    <View style={styles.watchEventRight}>
+                      <Text style={styles.watchEventDuration}>{durText}</Text>
+                      <Text style={styles.watchEventDate}>{dtText}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 5 — Notification Stats                                   */}
+          {/* ---------------------------------------------------------------- */}
+          <View style={styles.section}>
+            <SectionHeader
+              icon_ios="bell.fill"
+              icon_android="notifications"
+              title="Notification Stats"
+            />
+            {notifStats === null ? (
+              <View style={styles.emptyInline}>
+                <Text style={styles.emptyText}>No data</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.notifRow}>
+                  <Text style={styles.notifLabel}>Total Users</Text>
+                  <Text style={styles.notifValue}>{notifStats.totalUsers}</Text>
+                </View>
+                <View style={styles.notifRow}>
+                  <Text style={styles.notifLabel}>Daily Reports Opt-in</Text>
+                  <View style={styles.notifValueRow}>
+                    <Text style={styles.notifValue}>{notifStats.dailyReportOptIn}</Text>
+                    <Text style={styles.notifPct}>{pct(notifStats.dailyReportOptIn, notifStats.totalUsers)}</Text>
+                  </View>
+                </View>
+                <View style={styles.notifRow}>
+                  <Text style={styles.notifLabel}>Video Alerts Opt-in</Text>
+                  <View style={styles.notifValueRow}>
+                    <Text style={styles.notifValue}>{notifStats.videoAlertsOptIn}</Text>
+                    <Text style={styles.notifPct}>{pct(notifStats.videoAlertsOptIn, notifStats.totalUsers)}</Text>
+                  </View>
+                </View>
+                <View style={styles.notifRow}>
+                  <Text style={styles.notifLabel}>Swell Alerts Opt-in</Text>
+                  <View style={styles.notifValueRow}>
+                    <Text style={styles.notifValue}>{notifStats.swellAlertsOptIn}</Text>
+                    <Text style={styles.notifPct}>{pct(notifStats.swellAlertsOptIn, notifStats.totalUsers)}</Text>
+                  </View>
+                </View>
+                <View style={[styles.notifRow, styles.notifRowLast]}>
+                  <Text style={styles.notifLabel}>Notification Opens</Text>
+                  <Text style={[styles.notifValue, { color: colors.primary }]}>{notifStats.notificationOpens}</Text>
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 6 — Forecast Usage (last 14 days)                        */}
+          {/* ---------------------------------------------------------------- */}
+          <View style={styles.section}>
+            <SectionHeader
+              icon_ios="calendar"
+              icon_android="calendar_today"
+              title="Forecast Views (Last 14 Days)"
+            />
+            {forecastDays.every(d => d.count === 0) ? (
+              <View style={styles.emptyInline}>
+                <Text style={styles.emptyText}>No forecast view data yet</Text>
+              </View>
+            ) : (
+              forecastDays.map((day, i) => (
+                <View key={i} style={styles.forecastRow}>
+                  <Text style={styles.forecastDate}>{day.date}</Text>
+                  <Text style={styles.forecastCount}>{day.count}</Text>
+                  <Text style={styles.forecastUnit}>views</Text>
+                </View>
+              ))
+            )}
+          </View>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 7 — Per-User Breakdown                                   */}
+          {/* ---------------------------------------------------------------- */}
+          <View style={styles.section}>
+            <SectionHeader
+              icon_ios="person.3.fill"
+              icon_android="group"
+              title="Per-User Breakdown"
+              badge={userStats.length}
+            />
             {userStats.length === 0 ? (
               <View style={styles.emptyInline}>
                 <Text style={styles.emptyText}>
@@ -452,13 +777,12 @@ export default function AdminUsageScreen() {
                 const totalTimeDisplay = u.totalTimeSeconds > 0
                   ? formatDuration(u.totalTimeSeconds)
                   : '—';
+                const avatarLetter = (u.name[0] ?? '?').toUpperCase();
                 return (
                   <View key={i} style={styles.userCard}>
                     <View style={styles.userCardTop}>
                       <View style={styles.userAvatarCircle}>
-                        <Text style={styles.userAvatarLetter}>
-                          {(u.name[0] ?? '?').toUpperCase()}
-                        </Text>
+                        <Text style={styles.userAvatarLetter}>{avatarLetter}</Text>
                       </View>
                       <View style={styles.userCardInfo}>
                         <Text style={styles.userName} numberOfLines={1}>{u.name}</Text>
@@ -491,6 +815,10 @@ export default function AdminUsageScreen() {
     </ScrollView>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   container: {
@@ -623,17 +951,22 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
   },
-  // Daily activity
+  // Hourly heatmap / daily bars
   dayRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    gap: 10,
+    marginBottom: 8,
+    gap: 8,
   },
   dayLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#9CA3AF',
-    width: 56,
+    width: 40,
+    textAlign: 'right',
+  },
+  peakLabel: {
+    color: '#F59E0B',
+    fontWeight: '700',
   },
   dayBarTrack: {
     flex: 1,
@@ -645,15 +978,174 @@ const styles = StyleSheet.create({
   },
   dayBarFill: {
     height: '100%',
-    backgroundColor: colors.primary,
     borderRadius: 5,
   },
   dayCount: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
-    width: 28,
+    width: 24,
     textAlign: 'right',
+  },
+  peakBadge: {
+    fontSize: 10,
+    color: '#F59E0B',
+    width: 14,
+  },
+  // Video cards
+  videoCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  videoCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+  },
+  videoRankCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary + '33',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  videoRankText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  videoTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    lineHeight: 20,
+  },
+  videoStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    borderRadius: 8,
+    paddingVertical: 8,
+  },
+  videoStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  videoStatValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  videoStatLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  videoStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#2a2a2a',
+  },
+  // Watch event log
+  watchEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f1f1f',
+    gap: 10,
+  },
+  watchEventLeft: {
+    flex: 1,
+  },
+  watchEventTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  watchEventUser: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  watchEventRight: {
+    alignItems: 'flex-end',
+  },
+  watchEventDuration: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  watchEventDate: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  // Notification stats
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f1f1f',
+  },
+  notifRowLast: {
+    borderBottomWidth: 0,
+  },
+  notifLabel: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    flex: 1,
+  },
+  notifValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notifValue: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  notifPct: {
+    fontSize: 13,
+    color: '#6B7280',
+    backgroundColor: '#1f1f1f',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  // Forecast rows
+  forecastRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f1f1f',
+    gap: 10,
+  },
+  forecastDate: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    width: 64,
+  },
+  forecastCount: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  forecastUnit: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   // Empty state
   emptyInline: {

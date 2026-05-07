@@ -212,18 +212,21 @@ serve(async (req) => {
       return false;
     });
 
-    const rating = report.rating || 0;
+    const rating = Number(report.rating) || 0;
     const ratingEmoji = rating >= 8 ? '🔥' : rating >= 6 ? '👍' : rating >= 4 ? '🌊' : '😐';
-    const conditions = report.conditions || "Check the app for today's surf report!";
+    const conditions = String(report.conditions || "Check the app for today's surf report!");
 
-    // Subtitle: first sentence of conditions, max 80 chars
-    const firstSentence = conditions.split(/[.!?]/)[0].trim();
-    const notifSubtitle = firstSentence.length > 80 ? firstSentence.substring(0, 77) + '...' : firstSentence;
+    // Subtitle: location name
+    const notifSubtitle = locationName;
 
-    // Structured body lines
-    const waveInfo = `🌊 Surf: ${waveHeightRaw || 'N/A'}`;
-    const stokeInfo = `⭐ Stoke: ${rating}/10`;
-    const weatherInfo = `🌤 Weather: ${report.weather || report.conditions_summary || conditions.substring(0, 60)}`;
+    // Line 1: wave height + rating
+    const waveInfo = `🌊 ${waveHeightRaw || 'N/A'} • ⭐ ${rating}/10`;
+
+    // Line 2: weather/conditions summary (first 60 chars of weather field or conditions)
+    const weatherSummary = String(report.weather || report.conditions_summary || '').trim();
+    const weatherLine = weatherSummary.length > 0
+      ? `🌤 ${weatherSummary.substring(0, 60)}`
+      : '';
 
     // Fetch next tide events for this location/date
     const tideDate = report.date || reportDate;
@@ -233,22 +236,32 @@ serve(async (req) => {
       .eq('location', locationId)
       .eq('date', tideDate)
       .order('time', { ascending: true })
-      .limit(3);
+      .limit(4);
 
     console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
 
-    const tideLines = tides && tides.length > 0
-      ? tides.map((t: any) => {
-          const isHigh = String(t.type).toLowerCase() === 'high';
-          const emoji = isHigh ? '📈' : '📉';
-          return `${emoji} ${t.type} Tide: ${t.time} (${t.height}ft)`;
-        }).join('\n')
-      : '';
+    // Line 3: high and low tide on one line
+    let tideLine = '';
+    if (tides && tides.length > 0) {
+      const highTide = tides.find((t: any) => String(t.type).toLowerCase() === 'high');
+      const lowTide = tides.find((t: any) => String(t.type).toLowerCase() === 'low');
+      const parts: string[] = [];
+      if (highTide) parts.push(`📈 High: ${highTide.time} (${highTide.height}ft)`);
+      if (lowTide) parts.push(`📉 Low: ${lowTide.time} (${lowTide.height}ft)`);
+      tideLine = parts.join(' • ');
+    }
 
-    const bodyParts = [waveInfo, stokeInfo, weatherInfo, tideLines].filter(Boolean);
+    // Line 4: first 150 chars of conditions narrative
+    const narrativeSnippet = conditions.length > 150
+      ? conditions.substring(0, 147) + '...'
+      : conditions;
+
+    const bodyParts = [waveInfo, weatherLine, tideLine, narrativeSnippet].filter(s => s.length > 0);
     const notifBody = bodyParts.join('\n');
 
     const notifTitle = `${ratingEmoji} ${locationName} — Today's Surf Report`;
+
+    console.log(`[Notifications] Notification body (${notifBody.length} chars):`, notifBody.substring(0, 100));
 
     const dailyMessages = dailyReportUsers.map(user => ({
       to: user.push_token,

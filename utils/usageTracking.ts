@@ -159,6 +159,60 @@ export async function linkSessionToUser(userId: string): Promise<void> {
 }
 
 /**
+ * Call when the forecast/conditions tab is viewed.
+ * Fires event_type: 'forecast_view'.
+ */
+export async function trackForecastView(userId?: string): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log('[UsageTracking] Forecast view — user_id:', userId ?? 'anonymous');
+
+    insertEvent({
+      event_type: 'forecast_view',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+    });
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackForecastView:', err);
+  }
+}
+
+/**
+ * Call when the app is opened via a notification tap.
+ * Fires event_type: 'notification_open'. notificationType stored in video_title field.
+ */
+export async function trackNotificationOpen(userId?: string, notificationType?: string): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log(
+      '[UsageTracking] Notification open — type:', notificationType ?? 'unknown',
+      'user_id:', userId ?? 'anonymous'
+    );
+
+    const payload: Parameters<typeof insertEvent>[0] = {
+      event_type: 'notification_open',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+    };
+    if (notificationType) payload.video_title = notificationType;
+
+    insertEvent(payload);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackNotificationOpen:', err);
+  }
+}
+
+/**
  * Call when a video finishes or is dismissed.
  * Fires event_type: 'video_watch'.
  */

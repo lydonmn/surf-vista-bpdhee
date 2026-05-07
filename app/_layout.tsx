@@ -13,7 +13,7 @@ import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
 import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
-import { trackAppOpen, trackAppBackground, linkSessionToUser } from "@/utils/usageTracking";
+import { trackAppOpen, trackAppBackground, linkSessionToUser, trackNotificationOpen } from "@/utils/usageTracking";
 
 // Register notification handler at module level so it fires before any notification arrives
 if (Platform.OS !== 'web') {
@@ -303,6 +303,12 @@ export default function RootLayout() {
     const data = response.notification.request.content.data as any;
     console.log('[RootLayout] Notification data:', data);
     if (!data) return;
+
+    // Track notification open event
+    const notifType: string | undefined = data.type;
+    console.log('[RootLayout] Tracking notification_open for type:', notifType ?? 'unknown');
+    trackNotificationOpen(undefined, notifType).catch(() => {});
+
     if (data.type === 'daily_report' || data.type === 'swell_alert') {
       console.log('[RootLayout] Deep linking to home tab for', data.type);
       router.replace('/(tabs)/(home)');

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,7 @@ import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
+import { trackForecastView } from '@/utils/usageTracking';
 
 interface DayForecast {
   date: string;
@@ -115,11 +116,17 @@ function calculateSurfRating(surfData: any): number {
 
 export default function ForecastScreen() {
   const theme = useTheme();
-  const { isLoading: authLoading, isInitialized } = useAuth();
+  const { isLoading: authLoading, isInitialized, user } = useAuth();
   const { currentLocation, locationData } = useLocation();
   const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('[ForecastScreen] Forecast tab mounted — tracking forecast_view, user:', user?.id ?? 'anonymous');
+    trackForecastView(user?.id).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     console.log('[ForecastScreen] 🔄 Manual refresh triggered for location:', currentLocation);
