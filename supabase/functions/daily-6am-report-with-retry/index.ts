@@ -341,10 +341,11 @@ async function processLocation(
     }
     
     // Fetch latest surf conditions from database
+    console.log(`[${locationName}] Querying surf_conditions for location:`, locationId);
     const { data: surfData, error: surfError } = await supabase
       .from('surf_conditions')
       .select('*')
-      .eq('location_id', locationId)
+      .eq('location', locationId)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -357,10 +358,11 @@ async function processLocation(
     console.log(`[${locationName}] Found surf data from:`, surfData.date);
     
     // Fetch latest weather data from database
+    console.log(`[${locationName}] Querying weather_data for location:`, locationId);
     const { data: weatherData, error: weatherError } = await supabase
       .from('weather_data')
       .select('*')
-      .eq('location_id', locationId)
+      .eq('location', locationId)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();

@@ -293,6 +293,8 @@ export default function HomeScreen() {
     return true;
   };
   
+  console.log('[HomeScreen] weatherData for location', currentLocation, ':', weatherData ? { conditions: weatherData.conditions, wind_speed: weatherData.wind_speed, wind_direction: weatherData.wind_direction } : 'NULL — no weather_data row found for this location/date');
+
   const windSpeedValue = isValidValue(weatherData?.wind_speed) 
     ? weatherData.wind_speed 
     : isValidValue(surfConditions?.wind_speed)
