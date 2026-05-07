@@ -240,23 +240,30 @@ serve(async (req) => {
 
     console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
 
-    // Line 3: high and low tide on one line
-    let tideLine = '';
+    // Lines 3–4: up to 2 individual tide entries on separate lines (more text = expandable)
+    const tideLines: string[] = [];
     if (tides && tides.length > 0) {
-      const highTide = tides.find((t: any) => String(t.type).toLowerCase() === 'high');
-      const lowTide = tides.find((t: any) => String(t.type).toLowerCase() === 'low');
-      const parts: string[] = [];
-      if (highTide) parts.push(`📈 High: ${highTide.time} (${highTide.height}ft)`);
-      if (lowTide) parts.push(`📉 Low: ${lowTide.time} (${lowTide.height}ft)`);
-      tideLine = parts.join(' • ');
+      for (const t of tides.slice(0, 2)) {
+        const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High tide' : '📉 Low tide';
+        tideLines.push(`${typeLabel}: ${t.time} (${t.height}ft)`);
+      }
     }
 
-    // Line 4: first 150 chars of conditions narrative
-    const narrativeSnippet = conditions.length > 150
-      ? conditions.substring(0, 147) + '...'
-      : conditions;
+    // Conditions summary — at least 100 chars to trigger iOS expand handle
+    const rawConditions = String(report.conditions || report.detailed_forecast || '').trim();
+    const conditionsSummary = rawConditions.length > 0
+      ? rawConditions.substring(0, 200)
+      : "Open the app for the full surf report and forecast details.";
 
-    const bodyParts = [waveInfo, weatherLine, tideLine, narrativeSnippet].filter(s => s.length > 0);
+    // Build a rich multi-line body so iOS shows the expand chevron
+    const bodyParts: string[] = [
+      waveInfo,
+      weatherLine,
+      ...tideLines,
+      '',
+      conditionsSummary,
+    ].filter(s => s !== undefined && (s === '' || s.length > 0));
+
     const notifBody = bodyParts.join('\n');
 
     const notifTitle = `${ratingEmoji} ${locationName} — Today's Surf Report`;

@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -73,6 +74,7 @@ interface ForecastDay {
 
 interface UserStat {
   userId: string;
+  deviceId: string | null;
   name: string;
   sessions: number;
   totalTimeSeconds: number;
@@ -199,6 +201,7 @@ export default function AdminUsageScreen() {
 
   // Section 7 — Per-user breakdown
   const [userStats, setUserStats] = useState<UserStat[]>([]);
+  const [userSearch, setUserSearch] = useState('');
 
   const fetchData = useCallback(async () => {
     console.log('[AdminUsage] Fetching full analytics data');
@@ -438,8 +441,11 @@ export default function AdminUsageScreen() {
         const profile = isDevice ? null : profileMap.get(uid);
         const name = profile?.full_name || profile?.email || (isDevice ? uid : `User ${uid.slice(0, 8)}`);
         const totalTime = data.bgDurations.reduce((a, b) => a + b, 0);
+        // Resolve the raw device_id for this entry (strip 'device:' prefix if anonymous)
+        const rawDeviceId = isDevice ? uid.replace('device:', '') : null;
         userStatsList.push({
           userId: uid,
+          deviceId: rawDeviceId,
           name,
           sessions: data.sessions,
           totalTimeSeconds: totalTime,
@@ -464,6 +470,11 @@ export default function AdminUsageScreen() {
   }, [fetchData]);
 
   const maxHourCount = hourBuckets.length > 0 ? Math.max(...hourBuckets.map(h => h.count), 1) : 1;
+
+  const userSearchLower = userSearch.toLowerCase();
+  const filteredUserStats = userSearchLower.length === 0
+    ? userStats
+    : userStats.filter(u => u.name.toLowerCase().includes(userSearchLower));
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -765,21 +776,58 @@ export default function AdminUsageScreen() {
               title="Per-User Breakdown"
               badge={userStats.length}
             />
+            {/* Search bar */}
+            <View style={styles.searchBar}>
+              <IconSymbol
+                ios_icon_name="magnifyingglass"
+                android_material_icon_name="search"
+                size={16}
+                color="#6B7280"
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by name or email…"
+                placeholderTextColor="#4B5563"
+                value={userSearch}
+                onChangeText={(text) => {
+                  console.log('[AdminUsage] User search changed:', text);
+                  setUserSearch(text);
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+            </View>
             {userStats.length === 0 ? (
               <View style={styles.emptyInline}>
                 <Text style={styles.emptyText}>
                   No usage data yet — data will appear after users open the app
                 </Text>
               </View>
+            ) : filteredUserStats.length === 0 ? (
+              <View style={styles.emptyInline}>
+                <Text style={styles.emptyText}>No users match "{userSearch}"</Text>
+              </View>
             ) : (
-              userStats.map((u, i) => {
+              filteredUserStats.map((u, i) => {
                 const lastSeenDisplay = formatDate(u.lastSeen);
                 const totalTimeDisplay = u.totalTimeSeconds > 0
                   ? formatDuration(u.totalTimeSeconds)
                   : '—';
                 const avatarLetter = (u.name[0] ?? '?').toUpperCase();
                 return (
-                  <View key={i} style={styles.userCard}>
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.userCard}
+                    onPress={() => {
+                      console.log('[AdminUsage] User row tapped — userId:', u.userId, 'deviceId:', u.deviceId, 'name:', u.name);
+                      router.push({
+                        pathname: '/admin-user-detail',
+                        params: { userId: u.userId, deviceId: u.deviceId ?? '' },
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
                     <View style={styles.userCardTop}>
                       <View style={styles.userAvatarCircle}>
                         <Text style={styles.userAvatarLetter}>{avatarLetter}</Text>
@@ -788,6 +836,12 @@ export default function AdminUsageScreen() {
                         <Text style={styles.userName} numberOfLines={1}>{u.name}</Text>
                         <Text style={styles.userLastSeen}>Last seen {lastSeenDisplay}</Text>
                       </View>
+                      <IconSymbol
+                        ios_icon_name="chevron.right"
+                        android_material_icon_name="chevron_right"
+                        size={16}
+                        color="#4B5563"
+                      />
                     </View>
                     <View style={styles.userStatsRow}>
                       <View style={styles.userStat}>
@@ -805,7 +859,7 @@ export default function AdminUsageScreen() {
                         <Text style={styles.userStatLabel}>Videos</Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -1157,6 +1211,25 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // Search bar
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    marginBottom: 14,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#FFFFFF',
+    padding: 0,
   },
   // User cards
   userCard: {

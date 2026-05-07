@@ -340,21 +340,42 @@ async function processLocation(
       console.log(`[${locationName}] 📝 Continuing with existing data...`);
     }
     
-    // Fetch latest surf conditions from database
-    console.log(`[${locationName}] Querying surf_conditions for location:`, locationId);
-    const { data: surfData, error: surfError } = await supabase
+    // Fetch surf conditions — try today's date first, fall back to most recent row
+    console.log(`[${locationName}] Querying surf_conditions for location:`, locationId, 'date:', dateStr);
+
+    // Fix 1: Try today first
+    let { data: surfData } = await supabase
       .from('surf_conditions')
       .select('*')
       .eq('location', locationId)
-      .order('updated_at', { ascending: false })
-      .limit(1)
+      .eq('date', dateStr)
       .maybeSingle();
-    
-    if (surfError || !surfData) {
-      console.error(`[${locationName}] Error fetching surf conditions:`, surfError?.message);
-      throw new Error(`No surf data available for ${locationName}. Please update data first.`);
+
+    let usedTodayData = false;
+    if (surfData) {
+      usedTodayData = true;
+      console.log(`[${locationName}] ✅ Found surf_conditions row for today (${dateStr})`);
+    } else {
+      console.warn(`[${locationName}] ⚠️ No surf_conditions row for today (${dateStr}) — falling back to most recent row`);
+      // Fall back to most recent if today not available yet
+      const { data: recentData } = await supabase
+        .from('surf_conditions')
+        .select('*')
+        .eq('location', locationId)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      surfData = recentData;
+      if (surfData) {
+        console.log(`[${locationName}] 📅 Using fallback surf_conditions row from:`, surfData.date);
+      }
     }
-    
+
+    if (!surfData) {
+      console.error(`[${locationName}] No surf_conditions rows found at all`);
+      throw new Error(`No surf data available for ${locationName}`);
+    }
+
     console.log(`[${locationName}] Found surf data from:`, surfData.date);
     
     // Fetch latest weather data from database
@@ -435,6 +456,7 @@ async function processLocation(
       rating: rating,
       narrativeLength: narrative.length,
       forecastUpdated: forecastUpdateSuccess,
+      usedTodayData: usedTodayData,
     };
     
   } catch (error: any) {
@@ -564,30 +586,6 @@ Deno.serve(async (req) => {
         } else {
           console.log(`[Daily Report] 📝 Used existing data (forecast update skipped)`);
         }
-        
-        // Send push notifications for scheduled runs, or manual triggers with sendNotifications=true
-        if (!isManualTrigger || sendNotificationsOverride) {
-          console.log(`[Daily Report] 📢 Sending push notifications...`);
-          
-          try {
-            const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
-              body: { 
-                location: location.id,
-                date: dateStr,
-              },
-            });
-
-            if (notificationResult.data?.success) {
-              console.log(`[Daily Report] ✅ Notifications sent: ${notificationResult.data.notificationsSent}`);
-            } else {
-              console.warn(`[Daily Report] ⚠️ Notification send failed`);
-            }
-          } catch (notifError: any) {
-            console.error(`[Daily Report] ❌ Notification error:`, notifError.message);
-            // 🚨 CRITICAL: Don't fail the entire process if notifications fail
-            console.log(`[Daily Report] 📝 Continuing despite notification failure...`);
-          }
-        }
       } else {
         console.log(`[Daily Report] ❌ ${location.display_name}: FAILED - ${result.error}`);
         console.log(`[Daily Report] 📝 Continuing with next location...`);
@@ -598,6 +596,63 @@ Deno.serve(async (req) => {
     const someSucceeded = results.some(r => r.success);
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
+
+    // Fix 3: Log surf_conditions coverage
+    const locationsWithTodayData = results.filter(r => r.usedTodayData).length;
+    const locationsWithFallbackData = results.filter(r => r.success && !r.usedTodayData).length;
+    console.log(`[Daily Report] 📅 surf_conditions today: ${locationsWithTodayData}/${locationsData.length} locations had today's row`);
+    if (locationsWithFallbackData > 0) {
+      console.log(`[Daily Report] 📅 Fallback (yesterday's data): ${locationsWithFallbackData} location(s)`);
+    }
+    console.log(`[Daily Report] 📝 surf_reports generated: ${successCount}/${locationsData.length}`);
+
+    // Fix 2: Send notifications in a separate pass, decoupled from report generation success.
+    // Notifications fire for all locations as long as a surf_report row exists for today,
+    // regardless of whether the report generation step had issues.
+    if (!isManualTrigger || sendNotificationsOverride) {
+      console.log(`\n[Daily Report] ═══════════════════════════════════════`);
+      console.log(`[Daily Report] 📢 NOTIFICATION PASS — attempting all ${locationsData.length} location(s)`);
+      let notifAttempted = 0;
+      let notifSucceeded = 0;
+
+      for (const location of locationsData) {
+        // Check whether a surf_report row exists for today before sending
+        const { data: reportRow } = await supabase
+          .from('surf_reports')
+          .select('id')
+          .eq('location', location.id)
+          .eq('date', dateStr)
+          .maybeSingle();
+
+        if (!reportRow) {
+          console.warn(`[Daily Report] ⚠️ ${location.display_name}: no surf_report row for ${dateStr}, skipping notification`);
+          continue;
+        }
+
+        notifAttempted++;
+        console.log(`[Daily Report] 📢 Sending notification for ${location.display_name}...`);
+        try {
+          const notificationResult = await supabase.functions.invoke('send-daily-report-notifications', {
+            body: { location: location.id, date: dateStr },
+          });
+
+          if (notificationResult.data?.success) {
+            notifSucceeded++;
+            console.log(`[Daily Report] ✅ ${location.display_name}: notifications sent (${notificationResult.data.notificationsSent ?? 'unknown'} recipients)`);
+          } else {
+            console.warn(`[Daily Report] ⚠️ ${location.display_name}: notification function returned unsuccessful`);
+          }
+        } catch (notifError: any) {
+          console.error(`[Daily Report] ❌ ${location.display_name}: notification send failed:`, notifError.message);
+          // Don't fail the overall process if notifications fail
+        }
+      }
+
+      // Fix 3: Log notification summary
+      console.log(`[Daily Report] 📢 Notifications attempted: ${notifAttempted}, succeeded: ${notifSucceeded}`);
+    } else {
+      console.log(`[Daily Report] 📢 Notifications skipped (manual trigger without sendNotifications=true)`);
+    }
 
     console.log('\n[Daily Report] ═══════════════════════════════════════');
     console.log('[Daily Report] 📊 FINAL RESULTS:');
