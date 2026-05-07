@@ -295,22 +295,14 @@ Deno.serve(async (req) => {
       };
     });
 
-    console.log(`Prepared ${tideRecords.length} tide records — deleting old rows then inserting`);
-
-    // Only delete AFTER we have valid records ready to insert (prevents empty-table race condition)
-    const { error: deleteError } = await supabase
-      .from('tide_data')
-      .delete()
-      .eq('location', locationId);
-
-    if (deleteError) {
-      console.error('Error deleting old tide data:', deleteError);
-      // Non-fatal: attempt insert anyway (may cause duplicates but better than empty table)
-    }
+    console.log(`Prepared ${tideRecords.length} tide records — upserting`);
 
     const { data: insertData, error: tideError } = await supabase
       .from('tide_data')
-      .insert(tideRecords)
+      .upsert(tideRecords, {
+        onConflict: 'location,date,time,type',
+        ignoreDuplicates: false,
+      })
       .select();
 
     if (tideError) {
