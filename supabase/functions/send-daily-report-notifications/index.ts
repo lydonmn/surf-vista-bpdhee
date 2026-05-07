@@ -147,7 +147,7 @@ serve(async (req) => {
     const locationName = locationRow?.display_name || locationId;
 
     // Parse wave height as a number for swell alert comparisons
-    const waveHeightRaw: string = report.wave_height || '0';
+    const waveHeightRaw: string = report.wave_height ? String(report.wave_height) : '';
     const waveHeightNum = parseFloat(waveHeightRaw.replace(/[^0-9.]/g, '')) || 0;
 
     // Fetch ALL profiles
@@ -220,7 +220,9 @@ serve(async (req) => {
     const notifSubtitle = locationName;
 
     // Line 1: wave height + rating
-    const waveInfo = `🌊 ${waveHeightRaw || 'N/A'} • ⭐ ${rating}/10`;
+    const waveDisplay = waveHeightRaw.length > 0 ? waveHeightRaw : 'N/A';
+    const ratingDisplay = rating > 0 ? `${rating}/10` : 'N/A';
+    const waveInfo = `🌊 ${waveDisplay} • ⭐ ${ratingDisplay}`;
 
     // Line 2: weather/conditions summary (first 60 chars of weather field or conditions)
     const weatherSummary = String(report.weather || report.conditions_summary || '').trim();
@@ -228,25 +230,34 @@ serve(async (req) => {
       ? `🌤 ${weatherSummary.substring(0, 60)}`
       : '';
 
-    // Fetch next tide events for this location/date
+    // Fetch next tide events for this location/date — wrapped so failure never blocks notifications
     const tideDate = report.date || reportDate;
-    const { data: tides } = await supabase
-      .from('tide_data')
-      .select('time, type, height')
-      .eq('location', locationId)
-      .eq('date', tideDate)
-      .order('time', { ascending: true })
-      .limit(4);
-
-    console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
-
-    // Lines 3–4: up to 2 individual tide entries on separate lines (more text = expandable)
     const tideLines: string[] = [];
-    if (tides && tides.length > 0) {
-      for (const t of tides.slice(0, 2)) {
-        const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High tide' : '📉 Low tide';
-        tideLines.push(`${typeLabel}: ${t.time} (${t.height}ft)`);
+    try {
+      const { data: tides, error: tideError } = await supabase
+        .from('tide_data')
+        .select('time, type, height')
+        .eq('location', locationId)
+        .eq('date', tideDate)
+        .order('time', { ascending: true })
+        .limit(4);
+
+      if (tideError) {
+        console.warn('[Notifications] Tide fetch query error (non-fatal):', tideError.message);
+      } else {
+        console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
+        // Lines 3–4: up to 2 individual tide entries on separate lines (more text = expandable)
+        if (tides && tides.length > 0) {
+          for (const t of tides.slice(0, 2)) {
+            const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High tide' : '📉 Low tide';
+            const heightStr = t.height != null ? `${t.height}ft` : 'N/A';
+            const timeStr = t.time ? String(t.time) : 'N/A';
+            tideLines.push(`${typeLabel}: ${timeStr} (${heightStr})`);
+          }
+        }
       }
+    } catch (tideErr) {
+      console.warn('[Notifications] Tide fetch threw (non-fatal), continuing without tide lines:', tideErr);
     }
 
     // Conditions summary — at least 100 chars to trigger iOS expand handle
