@@ -420,6 +420,7 @@ export default function RootLayout() {
               <Stack.Screen name="admin-video-cache" options={{ headerShown: false }} />
               <Stack.Screen name="admin-survey" options={{ headerShown: false }} />
               <Stack.Screen name="admin-usage" options={{ headerShown: false }} />
+              <Stack.Screen name="admin-notifications" options={{ headerShown: false }} />
               <Stack.Screen name="admin-user-detail" options={{ headerShown: false }} />
               <Stack.Screen name="paywall" options={{ headerShown: false }} />
               <Stack.Screen name="demo-paywall" options={{ headerShown: false }} />

@@ -590,6 +590,28 @@ export default function AdminScreen() {
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Super Admin Actions</Text>
             
             <TouchableOpacity
+              style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#F59E0B' }]}
+              onPress={() => {
+                console.log('[AdminScreen] Navigating to Send Notification');
+                router.push('/admin-notifications');
+              }}
+            >
+              <IconSymbol
+                ios_icon_name="megaphone.fill"
+                android_material_icon_name="campaign"
+                size={22}
+                color="#FFFFFF"
+              />
+              <Text style={styles.actionButtonText}>Send Notification</Text>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.actionButton, styles.primaryActionButton, { backgroundColor: '#9C27B0' }]}
               onPress={async () => {
                 console.log('[AdminScreen] Syncing videos with Mux...');
