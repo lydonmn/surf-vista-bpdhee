@@ -1,8 +1,6 @@
 
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useTheme } from '@react-navigation/native';
-import { useAuth } from '@/contexts/AuthContext';
-import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { WeatherCard } from '@/components/WeatherCard';
@@ -13,61 +11,16 @@ import { useState } from 'react';
 
 export default function WeatherScreen() {
   const theme = useTheme();
-  const { user, checkSubscription, isLoading: authLoading, isInitialized } = useAuth();
-  const isSubscribed = checkSubscription();
   const { currentLocation } = useLocation();
   const { weatherData, tideData, isLoading, error, refreshData } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
+    console.log('[WeatherScreen] Pull-to-refresh triggered');
     setIsRefreshing(true);
     await refreshData();
     setIsRefreshing(false);
   };
-
-  // ✅ V6.0.2 FIX: Show loading only during initial auth check
-  if (!isInitialized || authLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading...
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // ✅ V6.0.2 FIX: Check subscription status
-  if (!user || !isSubscribed) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <View style={styles.centerContent}>
-          <IconSymbol
-            ios_icon_name="lock.fill"
-            android_material_icon_name="lock"
-            size={64}
-            color={colors.textSecondary}
-          />
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            Subscriber Only Content
-          </Text>
-          <Text style={[styles.text, { color: colors.textSecondary }]}>
-            Subscribe to access detailed weather and tide information
-          </Text>
-          <TouchableOpacity
-            style={[styles.subscribeButton, { backgroundColor: colors.accent }]}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.subscribeButtonText}>
-              {user ? 'Subscribe Now' : 'Sign In / Subscribe'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <ScrollView
