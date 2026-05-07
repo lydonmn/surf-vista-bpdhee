@@ -101,37 +101,29 @@ function formatSwellDirection(direction: string | null | undefined): string {
   return directionMap[normalized] || cleaned || 'mixed';
 }
 
-// Generate 300-400 character surf narrative from existing data
-function generateSurfNarrative(
+// Build template-based narrative (used as fallback when AI is unavailable)
+function buildTemplateNarrative(
   surfConditions: any,
   weatherData: any,
   locationId: string
 ): string {
-  console.log('[generateSurfNarrative] Starting narrative generation for:', locationId);
-  
   const personality = getLocationPersonality(locationId);
   const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height;
-  
-  // Check if wave sensors are offline
+
   if (!surfHeightStr || surfHeightStr === 'N/A' || surfHeightStr === '') {
-    console.log('[generateSurfNarrative] Wave sensors offline, generating fallback narrative');
-    
     const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
     const windDir = (surfConditions.wind_direction || 'variable').replace(/feet/gi, '').trim();
     const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
     const conditions = weatherData?.conditions || weatherData?.short_forecast || 'conditions unknown';
-    
     const windText = windSpeed > 0 ? `${windSpeed.toFixed(0)} mph ${windDir}` : 'calm';
     const waterText = waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : 'unknown temp';
-    
     return `Wave sensors are offline at ${personality.nickname} today. Buoy is still reporting wind at ${windText}, water temp at ${waterText}, and ${conditions.toLowerCase()} skies. Check the beach cam or scout it in person for current wave conditions.`;
   }
-  
-  // Parse wave height
+
   let waveHeight = 0;
   let waveHeightLow = 0;
   let waveHeightHigh = 0;
-  
+
   if (surfHeightStr.includes('-')) {
     const parts = surfHeightStr.split('-');
     waveHeightLow = parseNumericValue(parts[0], 0);
@@ -142,35 +134,20 @@ function generateSurfNarrative(
     waveHeightLow = waveHeight;
     waveHeightHigh = waveHeight;
   }
-  
+
   if (waveHeight <= 0 || isNaN(waveHeight)) {
-    console.error('[generateSurfNarrative] Invalid wave height:', waveHeight);
     return `Unable to generate surf report for ${personality.nickname}. Wave data is unavailable.`;
   }
-  
-  // Parse other conditions
+
   const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
   const windDir = (surfConditions.wind_direction || 'variable').replace(/feet/gi, '').trim();
   const swellDir = formatSwellDirection(surfConditions.swell_direction);
   const period = parseNumericValue(surfConditions.wave_period, 0);
   const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
-  
   const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
-  
-  console.log('[generateSurfNarrative] Parsed data:', {
-    waveHeight,
-    windSpeed,
-    windDir,
-    swellDir,
-    period,
-    waterTemp,
-    isOffshore
-  });
-  
-  // Build narrative in sections
+
   let narrative = '';
-  
-  // Opening: Wave size description
+
   if (waveHeight >= 8) {
     narrative += `${personality.nickname} is firing with overhead sets`;
   } else if (waveHeight >= 5) {
@@ -182,15 +159,13 @@ function generateSurfNarrative(
   } else {
     narrative += `${personality.nickname} is pretty flat with minimal surf`;
   }
-  
-  // Wave details
+
   if (waveHeightLow !== waveHeightHigh) {
     narrative += ` running ${waveHeightLow.toFixed(1)}-${waveHeightHigh.toFixed(1)} feet`;
   } else {
     narrative += ` around ${waveHeight.toFixed(1)} feet`;
   }
-  
-  // Period and swell
+
   if (period >= 10) {
     narrative += `. ${period.toFixed(0)}-second period from the ${swellDir} brings quality groundswell`;
   } else if (period >= 8) {
@@ -198,14 +173,13 @@ function generateSurfNarrative(
   } else if (period > 0) {
     narrative += `. Short ${period.toFixed(0)}-second period indicates choppy wind swell from the ${swellDir}`;
   }
-  
-  // Wind conditions
+
   if (windSpeed > 0) {
     if (isOffshore) {
       if (windSpeed < 10) {
         narrative += `. ${windSpeed.toFixed(0)} mph ${windDir} offshore wind is grooming the faces`;
       } else {
-        narrative += `. Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore is holding up the waves`;
+        narrative += `. Strong ${windSpeed.toFixed(0)} mph ${windDir} offshore wind is cleaning up the faces nicely`;
       }
     } else {
       if (windSpeed < 10) {
@@ -215,11 +189,9 @@ function generateSurfNarrative(
       }
     }
   }
-  
-  // Water temp
+
   if (waterTemp > 0) {
     narrative += `. Water is ${waterTemp.toFixed(0)}°F`;
-    
     if (waterTemp >= 75) {
       narrative += ` - boardshorts weather`;
     } else if (waterTemp >= 68) {
@@ -232,8 +204,7 @@ function generateSurfNarrative(
       narrative += ` - 5/4mm with hood and gloves`;
     }
   }
-  
-  // Final recommendation
+
   if (waveHeight >= 5 && isOffshore) {
     narrative += `. Don't miss this one - premium conditions`;
   } else if (waveHeight >= 3) {
@@ -243,13 +214,134 @@ function generateSurfNarrative(
   } else {
     narrative += `. Save your energy for a better swell`;
   }
-  
+
   narrative += '.';
-  
-  console.log('[generateSurfNarrative] Generated narrative:', narrative.length, 'characters');
-  console.log('[generateSurfNarrative] Preview:', narrative.substring(0, 100));
-  
   return narrative;
+}
+
+// Generate surf narrative using AI with style learning from narrative_edits, falling back to template
+async function generateSurfNarrative(
+  surfConditions: any,
+  weatherData: any,
+  locationId: string,
+  supabase: any
+): Promise<string> {
+  console.log('[generateSurfNarrative] Starting narrative generation for:', locationId);
+
+  const personality = getLocationPersonality(locationId);
+  const surfHeightStr = surfConditions.surf_height || surfConditions.wave_height;
+
+  const windSpeed = parseNumericValue(surfConditions.wind_speed, 0);
+  const windDir = (surfConditions.wind_direction || 'variable').replace(/feet/gi, '').trim();
+  const swellDir = formatSwellDirection(surfConditions.swell_direction);
+  const period = parseNumericValue(surfConditions.wave_period, 0);
+  const waterTemp = parseNumericValue(surfConditions.water_temp, 0);
+  const isOffshore = windDir.toLowerCase().includes('w') || windDir.toLowerCase().includes('n');
+
+  let waveHeight = 0;
+  let waveHeightLow = 0;
+  let waveHeightHigh = 0;
+  if (surfHeightStr && surfHeightStr !== 'N/A' && surfHeightStr !== '') {
+    if (surfHeightStr.includes('-')) {
+      const parts = surfHeightStr.split('-');
+      waveHeightLow = parseNumericValue(parts[0], 0);
+      waveHeightHigh = parseNumericValue(parts[1], 0);
+      waveHeight = (waveHeightLow + waveHeightHigh) / 2;
+    } else {
+      waveHeight = parseNumericValue(surfHeightStr, 0);
+      waveHeightLow = waveHeight;
+      waveHeightHigh = waveHeight;
+    }
+  }
+
+  const surfHeightDisplay = waveHeightLow !== waveHeightHigh
+    ? `${waveHeightLow.toFixed(1)}-${waveHeightHigh.toFixed(1)}`
+    : waveHeight.toFixed(1);
+
+  const waveQualityDescription = waveHeight >= 5 && isOffshore
+    ? 'excellent — solid surf with clean offshore conditions'
+    : waveHeight >= 3 && isOffshore
+    ? 'good — fun waves with light offshore grooming'
+    : waveHeight >= 3
+    ? 'decent — rideable but a bit textured'
+    : waveHeight >= 1.5
+    ? 'small but fun for beginners and longboarders'
+    : 'very small, minimal surf';
+
+  const aiKey = Deno.env.get('SPECULAR_AI_KEY');
+  if (!aiKey) {
+    console.log('[generateSurfNarrative] SPECULAR_AI_KEY not set — using template fallback');
+    return buildTemplateNarrative(surfConditions, weatherData, locationId);
+  }
+
+  try {
+    const { data: edits, error: editsError } = await supabase
+      .from('narrative_edits')
+      .select('original_narrative, edited_narrative, surf_conditions')
+      .eq('location_id', locationId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (editsError) {
+      console.warn('[generateSurfNarrative] Could not fetch narrative_edits:', editsError.message);
+    }
+
+    let fewShotBlock = '';
+    if (edits && edits.length > 0) {
+      const examples = edits.map((edit: any, i: number) => {
+        const condSummary = edit.surf_conditions
+          ? JSON.stringify(edit.surf_conditions).substring(0, 200)
+          : 'conditions not recorded';
+        return `Example ${i + 1}:\nConditions: ${condSummary}\nReport: ${edit.edited_narrative}`;
+      }).join('\n\n');
+      fewShotBlock = `Here are examples of how the admin prefers reports to be written — match this style closely:\n\n${examples}`;
+    }
+
+    const systemPrompt = `You are a surf report writer for ${personality.fullName}. Write a concise, vivid surf conditions narrative in 2-4 sentences (200-350 characters). Be direct and informative — describe wave size, quality, wind effect, and water temp. Use surfer terminology naturally but don't be cheesy.\n\n${fewShotBlock ? fewShotBlock + '\n\n' : ''}IMPORTANT: Never use the phrase "holding up the waves". For strong offshore wind, say things like "cleaning up the faces", "grooming the lineup", "pitching the lips", or "creating glassy conditions".`;
+
+    const userPrompt = `Write a surf report for ${personality.nickname} with these conditions:\n- Wave height: ${surfHeightDisplay} ft\n- Wave period: ${period > 0 ? `${period.toFixed(0)}s from the ${swellDir}` : 'unknown'}\n- Wind: ${windSpeed > 0 ? `${windSpeed.toFixed(0)} mph ${windDir} (${isOffshore ? 'offshore' : 'onshore'})` : 'calm'}\n- Water temp: ${waterTemp > 0 ? `${waterTemp.toFixed(0)}°F` : 'unknown'}\n- Overall feel: ${waveQualityDescription}`;
+
+    console.log('[generateSurfNarrative] Calling AI gateway (few-shot examples:', edits?.length ?? 0, ')');
+
+    const aiResponse = await fetch('https://ai.specular.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${aiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      console.warn('[generateSurfNarrative] AI gateway error:', aiResponse.status, errText);
+      throw new Error(`AI gateway returned ${aiResponse.status}`);
+    }
+
+    const aiJson = await aiResponse.json();
+    const aiNarrative = aiJson?.choices?.[0]?.message?.content?.trim();
+
+    if (!aiNarrative) {
+      console.warn('[generateSurfNarrative] AI returned empty content — falling back to template');
+      throw new Error('AI returned empty narrative');
+    }
+
+    console.log('[generateSurfNarrative] ✅ AI narrative generated:', aiNarrative.length, 'chars');
+    console.log('[generateSurfNarrative] Preview:', aiNarrative.substring(0, 100));
+    return aiNarrative;
+
+  } catch (aiError: any) {
+    console.warn('[generateSurfNarrative] AI failed, using template fallback:', aiError.message);
+    return buildTemplateNarrative(surfConditions, weatherData, locationId);
+  }
 }
 
 const MAX_RETRIES = 3;
@@ -391,7 +483,7 @@ async function processLocation(
     
     // Generate narrative from existing data
     console.log(`[${locationName}] Generating narrative...`);
-    const narrative = generateSurfNarrative(surfData, weatherData, locationId);
+    const narrative = await generateSurfNarrative(surfData, weatherData, locationId, supabase);
     
     console.log(`[${locationName}] Narrative generated: ${narrative.length} characters`);
     console.log(`[${locationName}] Preview: ${narrative.substring(0, 100)}...`);
