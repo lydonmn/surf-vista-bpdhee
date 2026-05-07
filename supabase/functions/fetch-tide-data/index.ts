@@ -297,13 +297,9 @@ Deno.serve(async (req) => {
 
     console.log(`Prepared ${tideRecords.length} tide records — upserting`);
 
-    const { data: insertData, error: tideError } = await supabase
-      .from('tide_data')
-      .upsert(tideRecords, {
-        onConflict: 'location,date,time,type',
-        ignoreDuplicates: false,
-      })
-      .select();
+    const { error: tideError } = await supabase.from('tide_data').upsert(tideRecords, {
+      onConflict: 'location,date,time,type'
+    });
 
     if (tideError) {
       console.error('Error storing tide data:', tideError);
