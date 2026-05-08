@@ -48,6 +48,61 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function calculateProjectedStokeRating(day: DayForecast): number | null {
+  if (day.surfReport) {
+    return calculateSurfRating(day.surfReport);
+  }
+  if (day.weatherForecast) {
+    const wf = day.weatherForecast;
+    const swellStr = wf.swell_height_range || '';
+    const windSpeedStr = String(wf.wind_speed || '0');
+    const windDirStr = wf.wind_direction || '';
+
+    const parseValue = (str: string): number => {
+      const cleaned = String(str).replace(/[^0-9.-]/g, '');
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    let surfHeight = 0;
+    if (swellStr.includes('-')) {
+      const parts = swellStr.split('-');
+      surfHeight = (parseValue(parts[0]) + parseValue(parts[1])) / 2;
+    } else {
+      surfHeight = parseValue(swellStr);
+    }
+
+    if (surfHeight <= 0) return null;
+
+    const windSpeed = parseValue(windSpeedStr);
+    const windDir = windDirStr.toLowerCase();
+    const isOffshore = windDir.includes('w') || windDir.includes('n');
+
+    let rating = 3;
+    if (surfHeight >= 6) rating += 5;
+    else if (surfHeight >= 4) rating += 4;
+    else if (surfHeight >= 3) rating += 3;
+    else if (surfHeight >= 2) rating += 2;
+    else if (surfHeight >= 1.5) rating += 1;
+    else if (surfHeight >= 1) rating += 0;
+    else rating -= 1;
+
+    if (isOffshore) {
+      if (windSpeed < 10) rating += 1;
+      else if (windSpeed < 15) rating += 0;
+      else rating -= 1;
+    } else {
+      if (windSpeed < 5) rating += 0;
+      else if (windSpeed < 10) rating -= 1;
+      else if (windSpeed < 15) rating -= 2;
+      else rating -= 3;
+    }
+
+    return Math.max(1, Math.min(10, Math.round(rating)));
+  }
+  return null;
+}
+
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
   
@@ -395,8 +450,9 @@ export default function ForecastScreen() {
             });
             
             const hasSurfData = displayHeight !== 'N/A';
-            const dayRating = day.surfReport ? calculateSurfRating(day.surfReport) : null;
+            const dayRating = calculateProjectedStokeRating(day);
             const ratingColor = getStokeColor(dayRating);
+            console.log(`[ForecastScreen] Projected stoke for ${day.date}:`, { dayRating, ratingColor });
             
             const confidenceValue = day.weatherForecast?.prediction_confidence;
             const confidenceColor = getConfidenceColor(confidenceValue);
@@ -418,6 +474,12 @@ export default function ForecastScreen() {
                       <View style={styles.surfBadge}>
                         <IconSymbol ios_icon_name="water.waves" android_material_icon_name="waves" size={14} color={colors.primary} />
                         <Text style={[styles.surfBadgeText, { color: colors.primary }]}>{displayHeight}</Text>
+                      </View>
+                    )}
+                    {dayRating !== null && (
+                      <View style={[styles.stokeBadge, { backgroundColor: `${ratingColor}22` }]}>
+                        <Text style={[styles.stokeBadgeLabel, { color: ratingColor }]}>🔥</Text>
+                        <Text style={[styles.stokeBadgeValue, { color: ratingColor }]}>{dayRating}</Text>
                       </View>
                     )}
                     <View style={styles.tempContainer}>
@@ -497,6 +559,19 @@ export default function ForecastScreen() {
                             <Text style={[styles.conditionsText, { color: theme.dark ? '#FFFFFF' : '#1A1A1A' }]}>{day.weatherForecast.conditions}</Text>
                           </View>
                         )}
+                      </View>
+                    )}
+
+                    {!day.surfReport && dayRating !== null && (
+                      <View style={styles.detailRow}>
+                        <View style={styles.detailItem}>
+                          <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>PROJECTED STOKE</Text>
+                          <View style={styles.ratingContainer}>
+                            <Text style={[styles.detailValue, { color: ratingColor }]}>{dayRating}</Text>
+                            <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>/10</Text>
+                          </View>
+                        </View>
+                        <View style={styles.detailItem} />
                       </View>
                     )}
 
@@ -814,5 +889,20 @@ const styles = StyleSheet.create({
   tideUnit: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  stokeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  stokeBadgeLabel: {
+    fontSize: 12,
+  },
+  stokeBadgeValue: {
+    fontSize: 14,
+    fontWeight: '800',
   },
 });
