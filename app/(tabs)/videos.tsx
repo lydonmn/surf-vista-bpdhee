@@ -1,6 +1,6 @@
 
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, Image, TextInput } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
@@ -29,6 +29,10 @@ export default function VideosScreen() {
   const hasAccess = isSubscribed || dbSubscribed || rcLoading || authLoading || !isInitialized || !profileLoaded;
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [deletingVideoId, setDeletingVideoId] = React.useState<string | null>(null);
+  const [editingVideoId, setEditingVideoId] = React.useState<string | null>(null);
+  const [editTitle, setEditTitle] = React.useState('');
+  const [editDescription, setEditDescription] = React.useState('');
+  const [savingEdit, setSavingEdit] = React.useState(false);
 
   useEffect(() => {
     console.log('VideosScreen - Auth state:', {
@@ -115,6 +119,30 @@ export default function VideosScreen() {
         }
       ]
     );
+  };
+
+  const handleSaveEdit = async (videoId: string) => {
+    if (!editTitle.trim()) {
+      Alert.alert('Error', 'Title cannot be empty');
+      return;
+    }
+    try {
+      setSavingEdit(true);
+      console.log('[VideosScreen] Saving edit for video:', videoId, { title: editTitle.trim(), description: editDescription.trim() || null });
+      const { error } = await supabase
+        .from('videos')
+        .update({ title: editTitle.trim(), description: editDescription.trim() || null })
+        .eq('id', videoId);
+      if (error) throw error;
+      console.log('[VideosScreen] Video edit saved successfully');
+      await refreshVideos();
+      setEditingVideoId(null);
+    } catch (err: any) {
+      console.error('[VideosScreen] Error saving video edit:', err);
+      Alert.alert('Error', `Failed to save: ${err.message}`);
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleVideoPress = React.useCallback(async (videoId: string, preloadedUrl?: string, videoStatus?: string) => {
@@ -365,6 +393,24 @@ export default function VideosScreen() {
                   {profile?.is_admin && (
                     <View style={styles.adminActions}>
                       <TouchableOpacity
+                        style={[styles.editButton, { backgroundColor: colors.primary }]}
+                        onPress={() => {
+                          console.log('[VideosScreen] Edit button pressed for video:', video.id);
+                          setEditingVideoId(video.id);
+                          setEditTitle(video.title);
+                          setEditDescription(video.description || '');
+                        }}
+                        disabled={isDeleting}
+                      >
+                        <IconSymbol
+                          ios_icon_name="pencil"
+                          android_material_icon_name="edit"
+                          size={16}
+                          color="#FFFFFF"
+                        />
+                        <Text style={styles.editButtonText}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
                         style={[styles.deleteButton, { backgroundColor: '#FF6B6B' }]}
                         onPress={() => handleDeleteVideo(video.id, video.title, video.video_url)}
                         disabled={isDeleting}
@@ -383,6 +429,52 @@ export default function VideosScreen() {
                           </React.Fragment>
                         )}
                       </TouchableOpacity>
+                    </View>
+                  )}
+                  {editingVideoId === video.id && (
+                    <View style={[styles.editForm, { backgroundColor: theme.colors.background }]}>
+                      <Text style={[styles.editFormLabel, { color: colors.textSecondary }]}>Title</Text>
+                      <TextInput
+                        style={[styles.editInput, { color: theme.colors.text, borderColor: colors.primary }]}
+                        value={editTitle}
+                        onChangeText={setEditTitle}
+                        placeholder="Video title"
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                      <Text style={[styles.editFormLabel, { color: colors.textSecondary }]}>Description</Text>
+                      <TextInput
+                        style={[styles.editInput, styles.editInputMultiline, { color: theme.colors.text, borderColor: colors.textSecondary }]}
+                        value={editDescription}
+                        onChangeText={setEditDescription}
+                        placeholder="Add a description..."
+                        placeholderTextColor={colors.textSecondary}
+                        multiline
+                        numberOfLines={3}
+                        textAlignVertical="top"
+                      />
+                      <View style={styles.editFormActions}>
+                        <TouchableOpacity
+                          style={[styles.editFormButton, { backgroundColor: colors.textSecondary }]}
+                          onPress={() => {
+                            console.log('[VideosScreen] Edit cancelled for video:', video.id);
+                            setEditingVideoId(null);
+                          }}
+                          disabled={savingEdit}
+                        >
+                          <Text style={styles.editFormButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.editFormButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleSaveEdit(video.id)}
+                          disabled={savingEdit}
+                        >
+                          {savingEdit ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.editFormButtonText}>Save</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -668,6 +760,60 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    flex: 1,
+  },
+  editButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editForm: {
+    padding: 12,
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.15)',
+  },
+  editFormLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+  },
+  editInputMultiline: {
+    minHeight: 72,
+  },
+  editFormActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  editFormButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editFormButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   lockBadge: {
     position: 'absolute',
