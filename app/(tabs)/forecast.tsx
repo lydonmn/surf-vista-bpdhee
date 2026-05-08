@@ -11,6 +11,7 @@ import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFo
 import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
 import { trackForecastView } from '@/utils/usageTracking';
+import StokeSpeedometer from '@/components/StokeSpeedometer';
 
 interface DayForecast {
   date: string;
@@ -81,10 +82,9 @@ function calculateProjectedStokeRating(day: DayForecast): number | null {
     if (surfHeight >= 6) rating += 5;
     else if (surfHeight >= 4) rating += 4;
     else if (surfHeight >= 3) rating += 3;
-    else if (surfHeight >= 2) rating += 2;
-    else if (surfHeight >= 1.5) rating += 1;
-    else if (surfHeight >= 1) rating += 0;
-    else rating -= 1;
+    else if (surfHeight >= 2) rating += 1;
+    else if (surfHeight >= 1) rating -= 1;
+    else rating -= 2;
 
     if (isOffshore) {
       if (windSpeed < 10) rating += 1;
@@ -142,10 +142,9 @@ function calculateSurfRating(surfData: any): number {
   if (surfHeight >= 6) rating += 5;
   else if (surfHeight >= 4) rating += 4;
   else if (surfHeight >= 3) rating += 3;
-  else if (surfHeight >= 2) rating += 2;
-  else if (surfHeight >= 1.5) rating += 1;
-  else if (surfHeight >= 1) rating += 0;
-  else rating -= 1;
+  else if (surfHeight >= 2) rating += 1;
+  else if (surfHeight >= 1) rating -= 1;
+  else rating -= 2;
 
   if (period >= 12) rating += 2;
   else if (period >= 10) rating += 1;
@@ -504,10 +503,7 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     {dayRating !== null && (
-                      <View style={[styles.stokeBadge, { backgroundColor: `${ratingColor}22` }]}>
-                        <Text style={[styles.stokeBadgeLabel, { color: ratingColor }]}>🔥</Text>
-                        <Text style={[styles.stokeBadgeValue, { color: ratingColor }]}>{dayRating}</Text>
-                      </View>
+                      <StokeSpeedometer rating={dayRating} size={44} />
                     )}
                     <View style={styles.tempContainer}>
                       <Text style={[styles.highTemp, { color: theme.colors.text }]}>{highTempText}</Text>
@@ -546,10 +542,7 @@ export default function ForecastScreen() {
                           {dayRating && (
                             <View style={styles.detailItem}>
                               <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>STOKE</Text>
-                              <View style={styles.ratingContainer}>
-                                <Text style={[styles.detailValue, { color: ratingColor }]}>{dayRating}</Text>
-                                <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>/10</Text>
-                              </View>
+                              <StokeSpeedometer rating={dayRating} size={52} />
                             </View>
                           )}
                         </View>
@@ -593,10 +586,7 @@ export default function ForecastScreen() {
                       <View style={styles.detailRow}>
                         <View style={styles.detailItem}>
                           <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>PROJECTED STOKE</Text>
-                          <View style={styles.ratingContainer}>
-                            <Text style={[styles.detailValue, { color: ratingColor }]}>{dayRating}</Text>
-                            <Text style={[styles.ratingOutOf, { color: colors.textSecondary }]}>/10</Text>
-                          </View>
+                          <StokeSpeedometer rating={dayRating} size={52} />
                         </View>
                         <View style={styles.detailItem} />
                       </View>
@@ -916,20 +906,5 @@ const styles = StyleSheet.create({
   tideUnit: {
     fontSize: 12,
     fontWeight: '500',
-  },
-  stokeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  stokeBadgeLabel: {
-    fontSize: 12,
-  },
-  stokeBadgeValue: {
-    fontSize: 14,
-    fontWeight: '800',
   },
 });
