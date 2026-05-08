@@ -1,6 +1,9 @@
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useTheme } from '@react-navigation/native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
@@ -78,6 +81,19 @@ export default function EditReportScreen() {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
+
+  // Tide data state
+  const [tideData, setTideData] = useState<{ time: string; type: string; height: number | null }[]>([]);
+  const [tideLoading, setTideLoading] = useState(false);
+
+  // Video upload state
+  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoTitle, setVideoTitle] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [_uploadComplete, setUploadComplete] = useState(false);
+  const [showVideoUpload, setShowVideoUpload] = useState(false);
 
   const loadReport = useCallback(async () => {
     try {
@@ -185,7 +201,8 @@ export default function EditReportScreen() {
       console.log('[EditReportScreen] Current rating:', reportToEdit.rating);
 
       setReport(reportToEdit);
-      
+      fetchTideData(reportToEdit.location, reportToEdit.date);
+
       const textToEdit = reportToEdit.report_text || reportToEdit.conditions || '';
       console.log('[EditReportScreen] Setting text to edit:', {
         length: textToEdit.length,
@@ -211,6 +228,181 @@ export default function EditReportScreen() {
       setLoading(false);
     }
   }, [reportId, currentLocation, locationData.displayName]);
+
+  const fetchTideData = async (locationId: string, date: string) => {
+    setTideLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('tide_data')
+        .select('time, type, height')
+        .eq('location', locationId)
+        .eq('date', date)
+        .order('time', { ascending: true })
+        .limit(6);
+      if (!error && data) {
+        setTideData(data);
+        console.log('[EditReportScreen] Tide data loaded:', data.length, 'entries');
+      } else {
+        console.warn('[EditReportScreen] Tide fetch error:', error?.message);
+        setTideData([]);
+      }
+    } catch (e) {
+      console.warn('[EditReportScreen] Tide fetch exception:', e);
+      setTideData([]);
+    } finally {
+      setTideLoading(false);
+    }
+  };
+
+  const handlePickVideo = async () => {
+    console.log('[EditReportScreen] Pick video button pressed');
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        quality: 1,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        setVideoUri(asset.uri);
+        setVideoTitle(`Surf Report - ${locationData.displayName} - ${new Date().toLocaleDateString()}`);
+        console.log('[EditReportScreen] Video selected:', asset.uri);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', `Failed to select video: ${err.message}`);
+    }
+  };
+
+  const handleUploadVideo = async () => {
+    if (!videoUri || !videoTitle.trim() || !user) return;
+    console.log('[EditReportScreen] Upload video button pressed, title:', videoTitle.trim());
+
+    try {
+      setIsUploading(true);
+      setUploadProgress(0);
+      setUploadStatus('Preparing...');
+
+      let uploadUri = videoUri;
+      if (!videoUri.startsWith('file://')) {
+        const fileName = videoUri.split('/').pop() || `video_${Date.now()}.mp4`;
+        const localUri = `${FileSystem.cacheDirectory}${fileName}`;
+        await FileSystem.copyAsync({ from: videoUri, to: localUri });
+        uploadUri = localUri;
+      }
+
+      const fileInfo = await FileSystem.getInfoAsync(uploadUri);
+      if (!fileInfo.exists) throw new Error('Video file not found');
+
+      const timestamp = Date.now();
+      const fileName = `video_${timestamp}.mp4`;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      setUploadProgress(5);
+      setUploadStatus('Creating upload URL...');
+      console.log('[EditReportScreen] Requesting Mux upload URL for file:', fileName);
+
+      const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
+      const createUploadResponse = await fetch(`${SUPABASE_URL}/functions/v1/mux-create-upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ filename: fileName, corsOrigin: '*' }),
+      });
+
+      if (!createUploadResponse.ok) {
+        const errText = await createUploadResponse.text();
+        throw new Error(`Failed to create Mux upload: ${errText}`);
+      }
+
+      const { id: uploadId, url: muxUploadUrl } = await createUploadResponse.json();
+      if (!uploadId || !muxUploadUrl) throw new Error('Invalid Mux upload response');
+      console.log('[EditReportScreen] Mux upload URL obtained, uploadId:', uploadId);
+
+      setUploadProgress(10);
+      setUploadStatus('Uploading to Mux...');
+
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => prev < 90 ? prev + 3 : prev);
+      }, 2000);
+
+      try {
+        const uploadResult = await FileSystem.uploadAsync(muxUploadUrl, uploadUri, {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          mimeType: 'video/quicktime',
+          headers: { 'Content-Type': 'video/quicktime' },
+        });
+        clearInterval(progressInterval);
+        if (uploadResult.status < 200 || uploadResult.status >= 300) {
+          throw new Error(`Mux upload failed with status ${uploadResult.status}`);
+        }
+        console.log('[EditReportScreen] Mux upload complete, status:', uploadResult.status);
+      } catch (uploadErr) {
+        clearInterval(progressInterval);
+        throw uploadErr;
+      }
+
+      setUploadProgress(95);
+      setUploadStatus('Generating thumbnail...');
+
+      let thumbnailUrl: string | null = null;
+      try {
+        const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(uploadUri, { time: 1000, quality: 0.8 });
+        const thumbFileName = `thumbnail_${timestamp}.jpg`;
+        const thumbBase64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: FileSystem.EncodingType.Base64 });
+        const thumbBlob = await fetch(`data:image/jpeg;base64,${thumbBase64}`).then(r => r.blob());
+        const { error: thumbErr } = await supabase.storage.from('videos').upload(thumbFileName, thumbBlob, { contentType: 'image/jpeg', upsert: false });
+        if (!thumbErr) {
+          const { data: thumbData } = supabase.storage.from('videos').getPublicUrl(thumbFileName);
+          thumbnailUrl = thumbData?.publicUrl ?? null;
+        }
+      } catch (thumbEx) {
+        console.warn('[EditReportScreen] Thumbnail generation failed (non-fatal):', thumbEx);
+      }
+
+      setUploadStatus('Saving to database...');
+      console.log('[EditReportScreen] Saving video record to database');
+      const { error: dbErr } = await supabase.from('videos').insert({
+        title: videoTitle.trim(),
+        video_url: `https://stream.mux.com/${uploadId}.m3u8`,
+        mux_upload_id: uploadId,
+        status: 'processing',
+        location: report?.location ?? currentLocation,
+        thumbnail_url: thumbnailUrl,
+        uploaded_by: user.id,
+        created_at: new Date().toISOString(),
+      });
+
+      if (dbErr) throw new Error(`Database error: ${dbErr.message}`);
+
+      setUploadProgress(100);
+      setUploadStatus('Upload complete!');
+      setUploadComplete(true);
+      setIsUploading(false);
+      console.log('[EditReportScreen] Video upload flow complete');
+
+      Alert.alert('Video Uploaded', `"${videoTitle.trim()}" has been uploaded and is being processed by Mux. It will appear in the video library shortly.`, [
+        { text: 'OK', onPress: () => {
+          setShowVideoUpload(false);
+          setVideoUri(null);
+          setVideoTitle('');
+          setUploadProgress(0);
+          setUploadStatus('');
+          setUploadComplete(false);
+        }},
+      ]);
+    } catch (err: any) {
+      console.error('[EditReportScreen] Upload error:', err);
+      setIsUploading(false);
+      setUploadProgress(0);
+      setUploadStatus('');
+      Alert.alert('Upload Failed', err.message || 'An error occurred during upload');
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -639,7 +831,100 @@ export default function EditReportScreen() {
                 {report.water_temp}
               </Text>
             </View>
+
+            {/* Tide Data */}
+            <View style={[styles.dataRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border ?? 'rgba(128,128,128,0.15)', paddingTop: 10 }]}>
+              <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>Tides:</Text>
+              {tideLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : tideData.length === 0 ? (
+                <Text style={[styles.dataValue, { color: colors.textSecondary }]}>No tide data</Text>
+              ) : (
+                <View style={{ flex: 1, gap: 4 }}>
+                  {tideData.map((t, i) => {
+                    const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High' : '📉 Low';
+                    const heightStr = t.height != null ? ` ${t.height}ft` : '';
+                    const timeStr = t.time ? String(t.time).substring(0, 5) : 'N/A';
+                    return (
+                      <Text key={i} style={[styles.dataValue, { color: theme.colors.text, fontSize: 13 }]}>
+                        {typeLabel}: {timeStr}{heightStr}
+                      </Text>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </View>
+        </View>
+
+        {/* Video Upload Card */}
+        <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: showVideoUpload ? 16 : 0 }}>
+            <Text style={[styles.cardTitle, { color: theme.colors.text, marginBottom: 0 }]}>Upload Video</Text>
+            <TouchableOpacity
+              onPress={() => {
+                console.log('[EditReportScreen] Toggle video upload panel:', !showVideoUpload);
+                setShowVideoUpload(v => !v);
+              }}
+              style={[styles.button, { backgroundColor: colors.primary, paddingVertical: 8, paddingHorizontal: 14, flexDirection: 'row', gap: 6, alignItems: 'center' }]}
+            >
+              <IconSymbol ios_icon_name={showVideoUpload ? 'chevron.up' : 'video.badge.plus'} android_material_icon_name={showVideoUpload ? 'expand-less' : 'video-call'} size={16} color="#FFFFFF" />
+              <Text style={[styles.buttonText, { fontSize: 13 }]}>{showVideoUpload ? 'Hide' : 'Add Video'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showVideoUpload && (
+            <>
+              {!videoUri ? (
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: theme.colors.card, borderWidth: 2, borderColor: colors.primary, borderStyle: 'dashed', paddingVertical: 24, alignItems: 'center', gap: 8 }]}
+                  onPress={handlePickVideo}
+                >
+                  <IconSymbol ios_icon_name="video.fill" android_material_icon_name="videocam" size={32} color={colors.primary} />
+                  <Text style={[styles.buttonText, { color: colors.primary }]}>Select Video from Library</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <View style={[styles.dataRow, { backgroundColor: colors.primary + '15', borderRadius: 8, padding: 10, marginBottom: 12 }]}>
+                    <IconSymbol ios_icon_name="checkmark.circle.fill" android_material_icon_name="check-circle" size={18} color={colors.primary} />
+                    <Text style={[styles.dataValue, { color: theme.colors.text, flex: 1 }]} numberOfLines={1}>
+                      {videoUri.split('/').pop()}
+                    </Text>
+                    <TouchableOpacity onPress={() => { setVideoUri(null); setVideoTitle(''); }}>
+                      <IconSymbol ios_icon_name="xmark.circle.fill" android_material_icon_name="cancel" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[styles.dataLabel, { color: colors.textSecondary, marginBottom: 6 }]}>Video Title</Text>
+                  <TextInput
+                    style={[styles.videoTitleInput, { color: theme.colors.text, borderColor: colors.primary }]}
+                    value={videoTitle}
+                    onChangeText={setVideoTitle}
+                    placeholder="Enter video title..."
+                    placeholderTextColor={colors.textSecondary}
+                  />
+
+                  {isUploading ? (
+                    <View style={{ gap: 10 }}>
+                      <View style={{ height: 8, backgroundColor: theme.colors.border ?? '#2a2a2a', borderRadius: 4, overflow: 'hidden' }}>
+                        <View style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: colors.primary, borderRadius: 4 }} />
+                      </View>
+                      <Text style={[styles.helperText, { color: colors.textSecondary, textAlign: 'center' }]}>{uploadStatus} ({uploadProgress}%)</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.button, { backgroundColor: colors.primary, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', opacity: !videoTitle.trim() ? 0.5 : 1 }]}
+                      onPress={handleUploadVideo}
+                      disabled={!videoTitle.trim()}
+                    >
+                      <IconSymbol ios_icon_name="arrow.up.circle.fill" android_material_icon_name="upload" size={20} color="#FFFFFF" />
+                      <Text style={styles.buttonText}>Upload Video</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
@@ -1272,6 +1557,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+  },
+  videoTitleInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    backgroundColor: 'transparent',
+    marginBottom: 16,
   },
   buttonDisabled: {
     opacity: 0.6,
