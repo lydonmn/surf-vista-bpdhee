@@ -82,6 +82,8 @@ interface UserStat {
   lastSeen: string;
 }
 
+type TabId = 'overview' | 'videos' | 'notifications' | 'users';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -167,11 +169,32 @@ function SectionHeader({
 }
 
 // ---------------------------------------------------------------------------
+// Tab config
+// ---------------------------------------------------------------------------
+
+const TAB_LABELS: Record<TabId, string> = {
+  overview: 'Overview',
+  videos: 'Videos',
+  notifications: 'Notifs',
+  users: 'Users',
+};
+
+const TAB_ICONS: Record<TabId, { ios: string; android: string }> = {
+  overview: { ios: 'chart.bar.fill', android: 'bar_chart' },
+  videos: { ios: 'play.rectangle.fill', android: 'play_circle' },
+  notifications: { ios: 'bell.fill', android: 'notifications' },
+  users: { ios: 'person.3.fill', android: 'group' },
+};
+
+const ALL_TABS: TabId[] = ['overview', 'videos', 'notifications', 'users'];
+
+// ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
 
 export default function AdminUsageScreen() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -477,8 +500,8 @@ export default function AdminUsageScreen() {
     : userStats.filter(u => u.name.toLowerCase().includes(userSearchLower));
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
+    <View style={styles.container}>
+      {/* Header — stays fixed at top */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => {
@@ -515,6 +538,33 @@ export default function AdminUsageScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Tab bar — sticky below header */}
+      <View style={styles.tabBar}>
+        {ALL_TABS.map(tab => {
+          const isActive = activeTab === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tabItem, isActive && styles.tabItemActive]}
+              onPress={() => {
+                console.log('[AdminUsage] Tab pressed:', tab);
+                setActiveTab(tab);
+              }}
+            >
+              <IconSymbol
+                ios_icon_name={TAB_ICONS[tab].ios}
+                android_material_icon_name={TAB_ICONS[tab].android}
+                size={16}
+                color={isActive ? colors.primary : '#6B7280'}
+              />
+              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                {TAB_LABELS[tab]}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* Loading */}
       {isLoading && (
         <View style={styles.centerState}>
@@ -545,328 +595,347 @@ export default function AdminUsageScreen() {
         </View>
       )}
 
+      {/* Tab content — each tab gets its own ScrollView */}
       {!isLoading && !error && (
-        <>
+        <ScrollView
+          key={activeTab}
+          style={styles.tabContent}
+          contentContainerStyle={styles.tabContentContainer}
+        >
           {/* ---------------------------------------------------------------- */}
-          {/* Section 1 — Summary Cards                                        */}
+          {/* Overview tab — Section 1 & 2                                     */}
           {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="chart.bar.fill"
-              icon_android="bar_chart"
-              title="Summary"
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.cardsRow}
-            >
-              {statCards.map((card, i) => (
-                <View key={i} style={styles.statCard}>
-                  <View style={[styles.statIconCircle, { backgroundColor: card.accent + '22' }]}>
-                    <IconSymbol
-                      ios_icon_name={card.icon_ios}
-                      android_material_icon_name={card.icon_android}
-                      size={20}
-                      color={card.accent}
-                    />
-                  </View>
-                  <Text style={styles.statValue}>{card.value}</Text>
-                  <Text style={styles.statLabel}>{card.label}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Section 2 — Peak Usage Heatmap                                   */}
-          {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="clock.fill"
-              icon_android="schedule"
-              title="Peak Usage (by Hour)"
-            />
-            {hourBuckets.every(h => h.count === 0) ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No session data yet</Text>
-              </View>
-            ) : (
-              hourBuckets.map((bucket) => {
-                const barFlex = bucket.count > 0 ? Math.max(bucket.count / maxHourCount, 0.02) : 0;
-                const barColor = bucket.isPeak ? '#F59E0B' : colors.primary;
-                return (
-                  <View key={bucket.hour} style={styles.dayRow}>
-                    <Text style={[styles.dayLabel, bucket.isPeak && styles.peakLabel]}>{bucket.label}</Text>
-                    <View style={styles.dayBarTrack}>
-                      <View style={[styles.dayBarFill, { flex: barFlex, backgroundColor: barColor }]} />
-                      <View style={{ flex: 1 - barFlex }} />
-                    </View>
-                    <Text style={[styles.dayCount, bucket.isPeak && { color: '#F59E0B' }]}>{bucket.count}</Text>
-                    {bucket.isPeak && (
-                      <Text style={styles.peakBadge}>★</Text>
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </View>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Section 3 — Most Watched Videos                                  */}
-          {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="play.rectangle.fill"
-              icon_android="play_circle"
-              title="Most Watched Videos"
-              badge={videoStats.length}
-            />
-            {videoStats.length === 0 ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No video watch data yet</Text>
-              </View>
-            ) : (
-              videoStats.map((v, i) => {
-                const totalTimeText = v.totalSeconds > 0 ? formatDuration(v.totalSeconds) : '—';
-                const avgTimeText = v.avgSeconds > 0 ? formatDuration(v.avgSeconds) : '—';
-                return (
-                  <View key={i} style={styles.videoCard}>
-                    <View style={styles.videoCardTop}>
-                      <View style={styles.videoRankCircle}>
-                        <Text style={styles.videoRankText}>{i + 1}</Text>
+          {activeTab === 'overview' && (
+            <>
+              {/* Section 1 — Summary Cards */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="chart.bar.fill"
+                  icon_android="bar_chart"
+                  title="Summary"
+                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.cardsRow}
+                >
+                  {statCards.map((card, i) => (
+                    <View key={i} style={styles.statCard}>
+                      <View style={[styles.statIconCircle, { backgroundColor: card.accent + '22' }]}>
+                        <IconSymbol
+                          ios_icon_name={card.icon_ios}
+                          android_material_icon_name={card.icon_android}
+                          size={20}
+                          color={card.accent}
+                        />
                       </View>
-                      <Text style={styles.videoTitle} numberOfLines={2}>{v.title}</Text>
+                      <Text style={styles.statValue}>{card.value}</Text>
+                      <Text style={styles.statLabel}>{card.label}</Text>
                     </View>
-                    <View style={styles.videoStatsRow}>
-                      <View style={styles.videoStat}>
-                        <Text style={styles.videoStatValue}>{v.watchCount}</Text>
-                        <Text style={styles.videoStatLabel}>Views</Text>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Section 2 — Peak Usage Heatmap */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="clock.fill"
+                  icon_android="schedule"
+                  title="Peak Usage (by Hour)"
+                />
+                {hourBuckets.every(h => h.count === 0) ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No session data yet</Text>
+                  </View>
+                ) : (
+                  hourBuckets.map((bucket) => {
+                    const barFlex = bucket.count > 0 ? Math.max(bucket.count / maxHourCount, 0.02) : 0;
+                    const barColor = bucket.isPeak ? '#F59E0B' : colors.primary;
+                    return (
+                      <View key={bucket.hour} style={styles.dayRow}>
+                        <Text style={[styles.dayLabel, bucket.isPeak && styles.peakLabel]}>{bucket.label}</Text>
+                        <View style={styles.dayBarTrack}>
+                          <View style={[styles.dayBarFill, { flex: barFlex, backgroundColor: barColor }]} />
+                          <View style={{ flex: 1 - barFlex }} />
+                        </View>
+                        <Text style={[styles.dayCount, bucket.isPeak && { color: '#F59E0B' }]}>{bucket.count}</Text>
+                        {bucket.isPeak && (
+                          <Text style={styles.peakBadge}>★</Text>
+                        )}
                       </View>
-                      <View style={styles.videoStatDivider} />
-                      <View style={styles.videoStat}>
-                        <Text style={styles.videoStatValue}>{totalTimeText}</Text>
-                        <Text style={styles.videoStatLabel}>Total Time</Text>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Videos tab — Section 3 & 4                                       */}
+          {/* ---------------------------------------------------------------- */}
+          {activeTab === 'videos' && (
+            <>
+              {/* Section 3 — Most Watched Videos */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="play.rectangle.fill"
+                  icon_android="play_circle"
+                  title="Most Watched Videos"
+                  badge={videoStats.length}
+                />
+                {videoStats.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No video watch data yet</Text>
+                  </View>
+                ) : (
+                  videoStats.map((v, i) => {
+                    const totalTimeText = v.totalSeconds > 0 ? formatDuration(v.totalSeconds) : '—';
+                    const avgTimeText = v.avgSeconds > 0 ? formatDuration(v.avgSeconds) : '—';
+                    return (
+                      <View key={i} style={styles.videoCard}>
+                        <View style={styles.videoCardTop}>
+                          <View style={styles.videoRankCircle}>
+                            <Text style={styles.videoRankText}>{i + 1}</Text>
+                          </View>
+                          <Text style={styles.videoTitle} numberOfLines={2}>{v.title}</Text>
+                        </View>
+                        <View style={styles.videoStatsRow}>
+                          <View style={styles.videoStat}>
+                            <Text style={styles.videoStatValue}>{v.watchCount}</Text>
+                            <Text style={styles.videoStatLabel}>Views</Text>
+                          </View>
+                          <View style={styles.videoStatDivider} />
+                          <View style={styles.videoStat}>
+                            <Text style={styles.videoStatValue}>{totalTimeText}</Text>
+                            <Text style={styles.videoStatLabel}>Total Time</Text>
+                          </View>
+                          <View style={styles.videoStatDivider} />
+                          <View style={styles.videoStat}>
+                            <Text style={styles.videoStatValue}>{avgTimeText}</Text>
+                            <Text style={styles.videoStatLabel}>Avg/View</Text>
+                          </View>
+                        </View>
                       </View>
-                      <View style={styles.videoStatDivider} />
-                      <View style={styles.videoStat}>
-                        <Text style={styles.videoStatValue}>{avgTimeText}</Text>
-                        <Text style={styles.videoStatLabel}>Avg/View</Text>
+                    );
+                  })
+                )}
+              </View>
+
+              {/* Section 4 — Video Watch Log */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="film.fill"
+                  icon_android="movie"
+                  title="Video Watch Log"
+                  badge={videoWatchEvents.length}
+                />
+                {videoWatchEvents.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No video watch events yet</Text>
+                  </View>
+                ) : (
+                  videoWatchEvents.map((e, i) => {
+                    const durText = e.durationSeconds > 0 ? formatDuration(e.durationSeconds) : '—';
+                    const dtText = formatDateTime(e.createdAt);
+                    return (
+                      <View key={i} style={styles.watchEventRow}>
+                        <View style={styles.watchEventLeft}>
+                          <Text style={styles.watchEventTitle} numberOfLines={1}>{e.videoTitle}</Text>
+                          <Text style={styles.watchEventUser} numberOfLines={1}>{e.userName}</Text>
+                        </View>
+                        <View style={styles.watchEventRight}>
+                          <Text style={styles.watchEventDuration}>{durText}</Text>
+                          <Text style={styles.watchEventDate}>{dtText}</Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Notifications tab — Section 5 & 6                                */}
+          {/* ---------------------------------------------------------------- */}
+          {activeTab === 'notifications' && (
+            <>
+              {/* Section 5 — Notification Stats */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="bell.fill"
+                  icon_android="notifications"
+                  title="Notification Stats"
+                />
+                {notifStats === null ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No data</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.notifRow}>
+                      <Text style={styles.notifLabel}>Total Users</Text>
+                      <Text style={styles.notifValue}>{notifStats.totalUsers}</Text>
+                    </View>
+                    <View style={styles.notifRow}>
+                      <Text style={styles.notifLabel}>Daily Reports Opt-in</Text>
+                      <View style={styles.notifValueRow}>
+                        <Text style={styles.notifValue}>{notifStats.dailyReportOptIn}</Text>
+                        <Text style={styles.notifPct}>{pct(notifStats.dailyReportOptIn, notifStats.totalUsers)}</Text>
                       </View>
                     </View>
-                  </View>
-                );
-              })
-            )}
-          </View>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Section 4 — Individual Video Watch Events                        */}
-          {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="film.fill"
-              icon_android="movie"
-              title="Video Watch Log"
-              badge={videoWatchEvents.length}
-            />
-            {videoWatchEvents.length === 0 ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No video watch events yet</Text>
-              </View>
-            ) : (
-              videoWatchEvents.map((e, i) => {
-                const durText = e.durationSeconds > 0 ? formatDuration(e.durationSeconds) : '—';
-                const dtText = formatDateTime(e.createdAt);
-                return (
-                  <View key={i} style={styles.watchEventRow}>
-                    <View style={styles.watchEventLeft}>
-                      <Text style={styles.watchEventTitle} numberOfLines={1}>{e.videoTitle}</Text>
-                      <Text style={styles.watchEventUser} numberOfLines={1}>{e.userName}</Text>
+                    <View style={styles.notifRow}>
+                      <Text style={styles.notifLabel}>Video Alerts Opt-in</Text>
+                      <View style={styles.notifValueRow}>
+                        <Text style={styles.notifValue}>{notifStats.videoAlertsOptIn}</Text>
+                        <Text style={styles.notifPct}>{pct(notifStats.videoAlertsOptIn, notifStats.totalUsers)}</Text>
+                      </View>
                     </View>
-                    <View style={styles.watchEventRight}>
-                      <Text style={styles.watchEventDuration}>{durText}</Text>
-                      <Text style={styles.watchEventDate}>{dtText}</Text>
+                    <View style={styles.notifRow}>
+                      <Text style={styles.notifLabel}>Swell Alerts Opt-in</Text>
+                      <View style={styles.notifValueRow}>
+                        <Text style={styles.notifValue}>{notifStats.swellAlertsOptIn}</Text>
+                        <Text style={styles.notifPct}>{pct(notifStats.swellAlertsOptIn, notifStats.totalUsers)}</Text>
+                      </View>
                     </View>
+                    <View style={[styles.notifRow, styles.notifRowLast]}>
+                      <Text style={styles.notifLabel}>Notification Opens</Text>
+                      <Text style={[styles.notifValue, { color: colors.primary }]}>{notifStats.notificationOpens}</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+
+              {/* Section 6 — Forecast Views (Last 14 Days) */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="calendar"
+                  icon_android="calendar_today"
+                  title="Forecast Views (Last 14 Days)"
+                />
+                {forecastDays.every(d => d.count === 0) ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No forecast view data yet</Text>
                   </View>
-                );
-              })
-            )}
-          </View>
+                ) : (
+                  forecastDays.map((day, i) => (
+                    <View key={i} style={styles.forecastRow}>
+                      <Text style={styles.forecastDate}>{day.date}</Text>
+                      <Text style={styles.forecastCount}>{day.count}</Text>
+                      <Text style={styles.forecastUnit}>views</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            </>
+          )}
 
           {/* ---------------------------------------------------------------- */}
-          {/* Section 5 — Notification Stats                                   */}
+          {/* Users tab — Section 7                                            */}
           {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="bell.fill"
-              icon_android="notifications"
-              title="Notification Stats"
-            />
-            {notifStats === null ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No data</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.notifRow}>
-                  <Text style={styles.notifLabel}>Total Users</Text>
-                  <Text style={styles.notifValue}>{notifStats.totalUsers}</Text>
-                </View>
-                <View style={styles.notifRow}>
-                  <Text style={styles.notifLabel}>Daily Reports Opt-in</Text>
-                  <View style={styles.notifValueRow}>
-                    <Text style={styles.notifValue}>{notifStats.dailyReportOptIn}</Text>
-                    <Text style={styles.notifPct}>{pct(notifStats.dailyReportOptIn, notifStats.totalUsers)}</Text>
-                  </View>
-                </View>
-                <View style={styles.notifRow}>
-                  <Text style={styles.notifLabel}>Video Alerts Opt-in</Text>
-                  <View style={styles.notifValueRow}>
-                    <Text style={styles.notifValue}>{notifStats.videoAlertsOptIn}</Text>
-                    <Text style={styles.notifPct}>{pct(notifStats.videoAlertsOptIn, notifStats.totalUsers)}</Text>
-                  </View>
-                </View>
-                <View style={styles.notifRow}>
-                  <Text style={styles.notifLabel}>Swell Alerts Opt-in</Text>
-                  <View style={styles.notifValueRow}>
-                    <Text style={styles.notifValue}>{notifStats.swellAlertsOptIn}</Text>
-                    <Text style={styles.notifPct}>{pct(notifStats.swellAlertsOptIn, notifStats.totalUsers)}</Text>
-                  </View>
-                </View>
-                <View style={[styles.notifRow, styles.notifRowLast]}>
-                  <Text style={styles.notifLabel}>Notification Opens</Text>
-                  <Text style={[styles.notifValue, { color: colors.primary }]}>{notifStats.notificationOpens}</Text>
-                </View>
-              </>
-            )}
-          </View>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Section 6 — Forecast Usage (last 14 days)                        */}
-          {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="calendar"
-              icon_android="calendar_today"
-              title="Forecast Views (Last 14 Days)"
-            />
-            {forecastDays.every(d => d.count === 0) ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No forecast view data yet</Text>
-              </View>
-            ) : (
-              forecastDays.map((day, i) => (
-                <View key={i} style={styles.forecastRow}>
-                  <Text style={styles.forecastDate}>{day.date}</Text>
-                  <Text style={styles.forecastCount}>{day.count}</Text>
-                  <Text style={styles.forecastUnit}>views</Text>
-                </View>
-              ))
-            )}
-          </View>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* Section 7 — Per-User Breakdown                                   */}
-          {/* ---------------------------------------------------------------- */}
-          <View style={styles.section}>
-            <SectionHeader
-              icon_ios="person.3.fill"
-              icon_android="group"
-              title="Per-User Breakdown"
-              badge={userStats.length}
-            />
-            {/* Search bar */}
-            <View style={styles.searchBar}>
-              <IconSymbol
-                ios_icon_name="magnifyingglass"
-                android_material_icon_name="search"
-                size={16}
-                color="#6B7280"
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by name or email…"
-                placeholderTextColor="#4B5563"
-                value={userSearch}
-                onChangeText={(text) => {
-                  console.log('[AdminUsage] User search changed:', text);
-                  setUserSearch(text);
-                }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-            </View>
-            {userStats.length === 0 ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>
-                  No usage data yet — data will appear after users open the app
-                </Text>
-              </View>
-            ) : filteredUserStats.length === 0 ? (
-              <View style={styles.emptyInline}>
-                <Text style={styles.emptyText}>No users match "{userSearch}"</Text>
-              </View>
-            ) : (
-              filteredUserStats.map((u, i) => {
-                const lastSeenDisplay = formatDate(u.lastSeen);
-                const totalTimeDisplay = u.totalTimeSeconds > 0
-                  ? formatDuration(u.totalTimeSeconds)
-                  : '—';
-                const avatarLetter = (u.name[0] ?? '?').toUpperCase();
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.userCard}
-                    onPress={() => {
-                      console.log('[AdminUsage] User row tapped — userId:', u.userId, 'deviceId:', u.deviceId, 'name:', u.name);
-                      router.push({
-                        pathname: '/admin-user-detail',
-                        params: { userId: u.userId, deviceId: u.deviceId ?? '' },
-                      });
+          {activeTab === 'users' && (
+            <>
+              {/* Section 7 — Per-User Breakdown */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="person.3.fill"
+                  icon_android="group"
+                  title="Per-User Breakdown"
+                  badge={userStats.length}
+                />
+                {/* Search bar */}
+                <View style={styles.searchBar}>
+                  <IconSymbol
+                    ios_icon_name="magnifyingglass"
+                    android_material_icon_name="search"
+                    size={16}
+                    color="#6B7280"
+                  />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by name or email…"
+                    placeholderTextColor="#4B5563"
+                    value={userSearch}
+                    onChangeText={(text) => {
+                      console.log('[AdminUsage] User search changed:', text);
+                      setUserSearch(text);
                     }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.userCardTop}>
-                      <View style={styles.userAvatarCircle}>
-                        <Text style={styles.userAvatarLetter}>{avatarLetter}</Text>
-                      </View>
-                      <View style={styles.userCardInfo}>
-                        <Text style={styles.userName} numberOfLines={1}>{u.name}</Text>
-                        <Text style={styles.userLastSeen}>Last seen {lastSeenDisplay}</Text>
-                      </View>
-                      <IconSymbol
-                        ios_icon_name="chevron.right"
-                        android_material_icon_name="chevron_right"
-                        size={16}
-                        color="#4B5563"
-                      />
-                    </View>
-                    <View style={styles.userStatsRow}>
-                      <View style={styles.userStat}>
-                        <Text style={styles.userStatValue}>{u.sessions}</Text>
-                        <Text style={styles.userStatLabel}>Sessions</Text>
-                      </View>
-                      <View style={styles.userStatDivider} />
-                      <View style={styles.userStat}>
-                        <Text style={styles.userStatValue}>{totalTimeDisplay}</Text>
-                        <Text style={styles.userStatLabel}>Time in App</Text>
-                      </View>
-                      <View style={styles.userStatDivider} />
-                      <View style={styles.userStat}>
-                        <Text style={styles.userStatValue}>{u.videosWatched}</Text>
-                        <Text style={styles.userStatLabel}>Videos</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </View>
-        </>
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                  />
+                </View>
+                {userStats.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>
+                      No usage data yet — data will appear after users open the app
+                    </Text>
+                  </View>
+                ) : filteredUserStats.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>No users match "{userSearch}"</Text>
+                  </View>
+                ) : (
+                  filteredUserStats.map((u, i) => {
+                    const lastSeenDisplay = formatDate(u.lastSeen);
+                    const totalTimeDisplay = u.totalTimeSeconds > 0
+                      ? formatDuration(u.totalTimeSeconds)
+                      : '—';
+                    const avatarLetter = (u.name[0] ?? '?').toUpperCase();
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.userCard}
+                        onPress={() => {
+                          console.log('[AdminUsage] User row tapped — userId:', u.userId, 'deviceId:', u.deviceId, 'name:', u.name);
+                          router.push({
+                            pathname: '/admin-user-detail',
+                            params: { userId: u.userId, deviceId: u.deviceId ?? '' },
+                          });
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.userCardTop}>
+                          <View style={styles.userAvatarCircle}>
+                            <Text style={styles.userAvatarLetter}>{avatarLetter}</Text>
+                          </View>
+                          <View style={styles.userCardInfo}>
+                            <Text style={styles.userName} numberOfLines={1}>{u.name}</Text>
+                            <Text style={styles.userLastSeen}>Last seen {lastSeenDisplay}</Text>
+                          </View>
+                          <IconSymbol
+                            ios_icon_name="chevron.right"
+                            android_material_icon_name="chevron_right"
+                            size={16}
+                            color="#4B5563"
+                          />
+                        </View>
+                        <View style={styles.userStatsRow}>
+                          <View style={styles.userStat}>
+                            <Text style={styles.userStatValue}>{u.sessions}</Text>
+                            <Text style={styles.userStatLabel}>Sessions</Text>
+                          </View>
+                          <View style={styles.userStatDivider} />
+                          <View style={styles.userStat}>
+                            <Text style={styles.userStatValue}>{totalTimeDisplay}</Text>
+                            <Text style={styles.userStatLabel}>Time in App</Text>
+                          </View>
+                          <View style={styles.userStatDivider} />
+                          <View style={styles.userStat}>
+                            <Text style={styles.userStatValue}>{u.videosWatched}</Text>
+                            <Text style={styles.userStatLabel}>Videos</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          )}
+        </ScrollView>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -878,9 +947,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0a0a0a',
-  },
-  contentContainer: {
-    paddingBottom: 60,
   },
   header: {
     flexDirection: 'row',
@@ -912,6 +978,43 @@ const styles = StyleSheet.create({
   refreshButton: {
     padding: 8,
   },
+  // Tab bar
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#111111',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f1f1f',
+    paddingHorizontal: 8,
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: colors.primary,
+  },
+  tabLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  tabLabelActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  tabContent: {
+    flex: 1,
+  },
+  tabContentContainer: {
+    paddingBottom: 60,
+  },
+  // Loading / error states
   centerState: {
     alignItems: 'center',
     justifyContent: 'center',
