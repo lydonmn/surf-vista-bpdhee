@@ -295,7 +295,19 @@ Deno.serve(async (req) => {
       'Accept': 'application/geo+json'
     };
 
-    const pointsUrl = `https://api.weather.gov/points/${locationData.latitude},${locationData.longitude}`;
+    // NOAA weather.gov/points only works for land-based coordinates.
+    // Coastal/ocean coordinates return 404. Use inland overrides for affected locations.
+    const INLAND_COORD_OVERRIDES: Record<string, { lat: number; lon: number }> = {
+      'stuart-rocks': { lat: 27.1975, lon: -80.2528 },   // Stuart, FL (inland)
+      'virginia-beach': { lat: 36.8529, lon: -75.9780 },  // Virginia Beach city center (inland)
+    };
+
+    const weatherLat = INLAND_COORD_OVERRIDES[locationId]?.lat ?? locationData.latitude;
+    const weatherLon = INLAND_COORD_OVERRIDES[locationId]?.lon ?? locationData.longitude;
+
+    console.log(`Using weather coordinates for ${locationId}:`, { weatherLat, weatherLon, overridden: !!INLAND_COORD_OVERRIDES[locationId] });
+
+    const pointsUrl = `https://api.weather.gov/points/${weatherLat},${weatherLon}`;
     console.log('Fetching grid point:', pointsUrl);
     
     let pointsResponse;

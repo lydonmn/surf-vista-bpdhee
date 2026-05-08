@@ -15,10 +15,7 @@ import { supabase } from '@/app/integrations/supabase/client';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useAuth } from '@/contexts/AuthContext';
 
-const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
-const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjYmlsa3NmcG5tbHRya3d6ZnQiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc2NTg0MzYyNywiZXhwIjoyMDgxNDE5NjI3fQ.pQkSbD0JzvRV4_lj0rAmeaQFZqK1QVW0EkVlhYM-KA8';
-const EDGE_FN_URL = `${SUPABASE_URL}/functions/v1/send-custom-notification`;
+
 
 type Audience = 'all' | 'subscribers' | 'specific';
 
@@ -121,61 +118,97 @@ export default function AdminNotificationsScreen() {
       return;
     }
 
-    console.log('[AdminNotifications] Sending notification — title:', notifTitle, '| audience:', audience, '| recipientCount:', recipientCount);
+    console.log('[AdminNotifications] Sending notification — title:', notifTitle, '| audience:', audience);
     setSending(true);
 
     try {
-      const payload: Record<string, unknown> = {
-        title: notifTitle.trim(),
-        body: notifBody.trim(),
-        audience,
-      };
-      if (audience === 'specific') {
-        payload.userIds = userIdsArray;
+      // Fetch push tokens directly from Supabase
+      let query = supabase
+        .from('profiles')
+        .select('id, push_token')
+        .like('push_token', 'ExponentPushToken[%');
+
+      if (audience === 'subscribers') {
+        query = (query as any).eq('is_subscribed', true);
+      } else if (audience === 'specific') {
+        query = (query as any).in('id', userIdsArray);
       }
 
-      console.log('[AdminNotifications] POST', EDGE_FN_URL, JSON.stringify(payload));
+      const { data: profiles, error: profilesError } = await query;
+      if (profilesError) throw new Error(`Failed to fetch users: ${profilesError.message}`);
 
-      const response = await fetch(EDGE_FN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const validTokens = (profiles ?? [])
+        .map((p: any) => p.push_token as string)
+        .filter((t: string) => t && t.startsWith('ExponentPushToken['));
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('[AdminNotifications] Edge function error:', response.status, errText);
-        throw new Error(`Server error ${response.status}: ${errText}`);
+      console.log('[AdminNotifications] Eligible recipients with tokens:', validTokens.length);
+
+      if (validTokens.length === 0) {
+        Alert.alert('No Recipients', 'No users in this audience have push notifications enabled.');
+        return;
       }
 
-      const result = await response.json();
-      console.log('[AdminNotifications] Send result:', JSON.stringify(result));
+      // Send in batches of 100 directly to Expo Push API
+      const BATCH_SIZE = 100;
+      let totalSent = 0;
+      let totalFailed = 0;
 
-      if (result.success) {
-        Alert.alert(
-          'Notification Sent',
-          `Successfully sent to ${result.sent} user${result.sent !== 1 ? 's' : ''}!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                console.log('[AdminNotifications] Clearing form after successful send');
-                setNotifTitle('');
-                setNotifBody('');
-                setAudience('all');
-                setSelectedUserIds(new Set());
-                setUserSearch('');
-              },
-            },
-          ]
-        );
-      } else {
-        throw new Error(result.error ?? 'Unknown error from edge function');
+      for (let i = 0; i < validTokens.length; i += BATCH_SIZE) {
+        const batch = validTokens.slice(i, i + BATCH_SIZE);
+        const messages = batch.map((token: string) => ({
+          to: token,
+          title: notifTitle.trim(),
+          body: notifBody.trim(),
+          sound: 'default',
+          priority: 'high',
+          mutableContent: true,
+          categoryId: 'CUSTOM_NOTIFICATION',
+          data: { type: 'custom_notification' },
+        }));
+
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messages),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error('[AdminNotifications] Expo API error:', response.status, errText);
+          totalFailed += batch.length;
+          continue;
+        }
+
+        const result = await response.json();
+        if (result.data && Array.isArray(result.data)) {
+          for (const ticket of result.data) {
+            if (ticket.status === 'ok') totalSent++;
+            else { totalFailed++; console.warn('[AdminNotifications] Ticket error:', ticket.message); }
+          }
+        } else {
+          totalSent += batch.length;
+        }
       }
+
+      console.log('[AdminNotifications] Done — sent:', totalSent, 'failed:', totalFailed);
+
+      Alert.alert(
+        'Notification Sent',
+        `Successfully sent to ${totalSent} user${totalSent !== 1 ? 's' : ''}!${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`,
+        [{
+          text: 'OK',
+          onPress: () => {
+            setNotifTitle('');
+            setNotifBody('');
+            setAudience('all');
+            setSelectedUserIds(new Set());
+            setUserSearch('');
+          },
+        }]
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[AdminNotifications] Send failed:', message);
