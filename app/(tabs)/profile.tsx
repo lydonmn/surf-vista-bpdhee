@@ -362,7 +362,7 @@ export default function ProfileScreen() {
               <Text style={styles.badgeText}>Admin</Text>
             </View>
           )}
-          {profile?.is_regional_admin && (
+          {(profile as any)?.is_regional_admin && (
             <View style={[styles.badge, { backgroundColor: colors.secondary }]}>
               <Text style={styles.badgeText}>Regional Admin</Text>
             </View>
@@ -614,7 +614,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {(profile?.is_admin || profile?.is_regional_admin) && (
+        {(profile?.is_admin || (profile as any)?.is_regional_admin) && (
           <TouchableOpacity
             style={[styles.section, styles.adminSection, { backgroundColor: theme.colors.card }]}
             onPress={() => router.push('/admin')}

@@ -357,7 +357,7 @@ export default function AdminLocationsScreen() {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('locations')
+        .from('locations' as any)
         .select('*')
         .order('name');
 
@@ -368,7 +368,7 @@ export default function AdminLocationsScreen() {
       }
 
       console.log('AdminLocationsScreen: Loaded locations:', data);
-      setLocations(data || []);
+      setLocations((data as any) || []);
     } catch (err) {
       console.error('AdminLocationsScreen: Unexpected error:', err);
       Alert.alert('Error', 'An unexpected error occurred');
@@ -483,14 +483,14 @@ export default function AdminLocationsScreen() {
       if (editingLocation) {
         console.log('AdminLocationsScreen: Updating location:', locationData);
         const { error: updateError } = await supabase
-          .from('locations')
+          .from('locations' as any)
           .update(locationData)
           .eq('id', editingLocation.id);
         error = updateError;
       } else {
         console.log('AdminLocationsScreen: Inserting new location:', locationData);
         const { error: insertError } = await supabase
-          .from('locations')
+          .from('locations' as any)
           .insert(locationData);
         error = insertError;
       }
@@ -526,7 +526,7 @@ export default function AdminLocationsScreen() {
     try {
       setLoading(true);
       const { error } = await supabase
-        .from('locations')
+        .from('locations' as any)
         .update({ is_active: !location.is_active })
         .eq('id', location.id);
 
@@ -650,7 +650,7 @@ export default function AdminLocationsScreen() {
             try {
               setLoading(true);
               const { error } = await supabase
-                .from('locations')
+                .from('locations' as any)
                 .delete()
                 .eq('id', location.id);
 

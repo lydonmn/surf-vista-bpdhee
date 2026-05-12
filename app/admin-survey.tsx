@@ -212,7 +212,7 @@ export default function AdminSurveyScreen() {
             <View style={styles.sectionHeader}>
               <IconSymbol
                 ios_icon_name="chart.bar.fill"
-                android_material_icon_name="bar_chart"
+                android_material_icon_name="bar-chart"
                 size={20}
                 color={colors.primary}
               />
@@ -300,7 +300,7 @@ export default function AdminSurveyScreen() {
             <View style={styles.sectionHeader}>
               <IconSymbol
                 ios_icon_name="list.bullet.rectangle"
-                android_material_icon_name="list_alt"
+                android_material_icon_name="list-alt"
                 size={20}
                 color="#6B7280"
               />

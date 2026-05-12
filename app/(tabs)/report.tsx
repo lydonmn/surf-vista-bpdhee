@@ -238,7 +238,7 @@ export default function ReportScreen() {
       foundValid: !!validReport,
       validReportDate: validReport?.date,
       validReportLocation: validReport?.location,
-      validReportSurfHeight: validReport?.surf_height,
+      validReportSurfHeight: (validReport as any)?.surf_height,
       validReportWaveHeight: validReport?.wave_height
     });
     
@@ -367,7 +367,7 @@ export default function ReportScreen() {
         console.log('[ReportScreen] Video fetch error:', videoError.message);
       } else if (videoData) {
         console.log('[ReportScreen] Video loaded:', videoData.title, 'for location:', videoData.location, locationData.displayName);
-        setLatestVideo(videoData);
+        setLatestVideo(videoData as any);
         hasLoadedVideoRef.current = true;
       } else {
         console.log('[ReportScreen] No videos found for location:', currentLocation, locationData.displayName);
@@ -579,9 +579,9 @@ export default function ReportScreen() {
     // 🚨 CRITICAL FIX: Wind data - prioritize weatherData (most accurate), then surfConditions, then forecast
     // weatherData comes from NOAA weather service and is more reliable for wind than buoy data
     const windSpeedValue = isValidValue(weatherData?.wind_speed)
-      ? weatherData.wind_speed
+      ? weatherData?.wind_speed
       : isValidValue(surfConditions?.wind_speed)
-        ? surfConditions.wind_speed
+        ? surfConditions?.wind_speed
         : isValidValue(displayData.wind_speed)
           ? displayData.wind_speed
           : todaysWeatherForecast?.wind_speed;
@@ -594,9 +594,9 @@ export default function ReportScreen() {
       : 'N/A';
     
     const windDirectionValue = isValidValue(weatherData?.wind_direction)
-      ? weatherData.wind_direction
+      ? weatherData?.wind_direction
       : isValidValue(surfConditions?.wind_direction)
-        ? surfConditions.wind_direction
+        ? surfConditions?.wind_direction
         : isValidValue(displayData.wind_direction)
           ? displayData.wind_direction
           : todaysWeatherForecast?.wind_direction;
@@ -953,7 +953,7 @@ export default function ReportScreen() {
             <View style={styles.conditionItem}>
               <IconSymbol
                 ios_icon_name={swellIcon.ios}
-                android_material_icon_name={swellIcon.android}
+                android_material_icon_name={swellIcon.android as any}
                 size={24}
                 color={colors.primary}
               />
@@ -1327,7 +1327,7 @@ export default function ReportScreen() {
                 </Text>
               )}
               <Text style={[styles.videoDate, { color: colors.textSecondary }]}>
-                {new Date(latestVideo.created_at).toLocaleDateString()}
+                {new Date(latestVideo.created_at ?? Date.now()).toLocaleDateString()}
               </Text>
             </View>
           </TouchableOpacity>

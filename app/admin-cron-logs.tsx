@@ -4,6 +4,7 @@ import { colors } from '@/styles/commonStyles';
 import { useAuth } from '@/contexts/AuthContext';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
+const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 import { IconSymbol } from '@/components/IconSymbol';
 import { router } from 'expo-router';
 
@@ -177,7 +178,7 @@ export default function AdminCronLogsScreen() {
       }
 
       const hasNarrative = reportData?.conditions && reportData.conditions.length > 50;
-      const hasValidWaveData = reportData?.wave_height && reportData.wave_height !== 'N/A';
+      const hasValidWaveData = !!(reportData?.wave_height && reportData.wave_height !== 'N/A');
 
       setReportStatus({
         todayDate: today,
@@ -203,7 +204,7 @@ export default function AdminCronLogsScreen() {
       setBuoyStatus({
         latestDate: buoyData?.date || null,
         waveHeight: buoyData?.wave_height || null,
-        surfHeight: buoyData?.surf_height || null,
+        surfHeight: (buoyData as any)?.surf_height || null,
         windSpeed: buoyData?.wind_speed || null,
         waterTemp: buoyData?.water_temp || null,
         lastUpdated: buoyData?.updated_at || null,
@@ -247,7 +248,7 @@ export default function AdminCronLogsScreen() {
       }
 
       const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/daily-5am-report-with-retry`,
+        `${SUPABASE_URL}/functions/v1/daily-5am-report-with-retry`,
         {
           method: 'POST',
           headers: {
@@ -294,7 +295,7 @@ export default function AdminCronLogsScreen() {
       }
 
       const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/update-buoy-data-15min`,
+        `${SUPABASE_URL}/functions/v1/update-buoy-data-15min`,
         {
           method: 'POST',
           headers: {
@@ -375,8 +376,8 @@ export default function AdminCronLogsScreen() {
   const hasReportText = reportStatus?.hasReport ? 'Yes' : 'No';
   const hasNarrativeText = reportStatus?.hasNarrative ? 'Yes' : 'No';
   const narrativeLengthText = `${reportStatus?.narrativeLength || 0} characters`;
-  const reportTimeText = formatTime(reportStatus?.reportCreatedAt);
-  const reportAgoText = getTimeSince(reportStatus?.reportCreatedAt);
+  const reportTimeText = formatTime(reportStatus?.reportCreatedAt ?? null);
+  const reportAgoText = getTimeSince(reportStatus?.reportCreatedAt ?? null);
   const waveHeightText = reportStatus?.waveHeight || 'N/A';
   const hasValidWaveText = reportStatus?.hasValidWaveData ? 'Yes' : 'No';
 
@@ -385,8 +386,8 @@ export default function AdminCronLogsScreen() {
   const buoySurfText = buoyStatus?.surfHeight || 'N/A';
   const buoyWindText = buoyStatus?.windSpeed || 'N/A';
   const buoyTempText = buoyStatus?.waterTemp || 'N/A';
-  const buoyTimeText = formatTime(buoyStatus?.lastUpdated);
-  const buoyAgoText = getTimeSince(buoyStatus?.lastUpdated);
+  const buoyTimeText = formatTime(buoyStatus?.lastUpdated ?? null);
+  const buoyAgoText = getTimeSince(buoyStatus?.lastUpdated ?? null);
 
   const reportStatusStyle = reportStatus?.hasReport && reportStatus?.hasNarrative ? styles.statusGood : styles.statusBad;
   const narrativeStatusStyle = reportStatus?.hasNarrative ? styles.statusGood : styles.statusBad;

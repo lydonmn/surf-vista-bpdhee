@@ -43,7 +43,7 @@ export default function AdminPredictionsScreen() {
       if (error) {
         console.error('Error loading predictions:', error);
       } else {
-        setPredictions(data || []);
+        setPredictions((data as any) || []);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -93,7 +93,7 @@ export default function AdminPredictionsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <IconSymbol
             ios_icon_name="chevron.left"
-            android_material_icon_name="arrow_back"
+            android_material_icon_name="arrow-back"
             size={24}
             color={colors.primary}
           />
@@ -109,7 +109,7 @@ export default function AdminPredictionsScreen() {
           <View style={styles.cardHeader}>
             <IconSymbol
               ios_icon_name="chart.bar.fill"
-              android_material_icon_name="bar_chart"
+              android_material_icon_name="bar-chart"
               size={24}
               color={colors.accent}
             />

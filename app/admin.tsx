@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useVideos } from '@/hooks/useVideos';
+const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 import { router } from 'expo-router';
 
 interface VideoMetadata {
@@ -59,12 +60,12 @@ export default function AdminScreen() {
       if (profile.is_admin) {
         console.log('[AdminScreen] Super admin - all locations available');
         setAvailableLocations(locations);
-      } else if (profile.is_regional_admin && profile.managed_locations) {
-        console.log('[AdminScreen] Regional admin - filtering to managed locations:', profile.managed_locations);
-        const managedLocs = locations.filter(loc => profile.managed_locations?.includes(loc.id));
+      } else if ((profile as any)?.is_regional_admin && (profile as any)?.managed_locations) {
+        console.log('[AdminScreen] Regional admin - filtering to managed locations:', (profile as any)?.managed_locations);
+        const managedLocs = locations.filter(loc => (profile as any)?.managed_locations?.includes(loc.id));
         setAvailableLocations(managedLocs);
         
-        if (managedLocs.length > 0 && !profile.managed_locations.includes(selectedLocation)) {
+        if (managedLocs.length > 0 && !(profile as any)?.managed_locations.includes(selectedLocation)) {
           setSelectedLocation(managedLocs[0].id);
         }
       } else {
@@ -236,8 +237,8 @@ export default function AdminScreen() {
       return;
     }
 
-    if (profile?.is_regional_admin && !profile.is_admin) {
-      if (!profile.managed_locations?.includes(selectedLocation)) {
+    if ((profile as any)?.is_regional_admin && !profile.is_admin) {
+      if (!(profile as any)?.managed_locations?.includes(selectedLocation)) {
         Alert.alert('Access Denied', 'You can only upload videos to your assigned locations');
         return;
       }
@@ -302,7 +303,7 @@ export default function AdminScreen() {
       setUploadProgress(5);
       setUploadStatus('Creating upload URL...');
       
-      const createUploadResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/mux-create-upload`, {
+      const createUploadResponse = await fetch(`${SUPABASE_URL}/functions/v1/mux-create-upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -561,7 +562,7 @@ export default function AdminScreen() {
     };
   }, [isUploading]);
 
-  if (!profile?.is_admin && !profile?.is_regional_admin) {
+  if (!profile?.is_admin && !(profile as any)?.is_regional_admin) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.centerContent}>
@@ -574,11 +575,11 @@ export default function AdminScreen() {
     );
   }
 
-  const locationInfoText = profile?.is_regional_admin && !profile.is_admin
+  const locationInfoText = (profile as any)?.is_regional_admin && !profile.is_admin
     ? `You can upload videos to your assigned locations. Videos are automatically tagged and will appear on the homepage when users select that location.`
     : `Videos are automatically tagged to locations. When users select a location on the homepage, they'll see the latest video for that location in the large video card.`;
 
-  const titleText = profile?.is_regional_admin && !profile.is_admin ? 'Regional Admin Panel' : 'Super Admin Panel';
+  const titleText = (profile as any)?.is_regional_admin && !profile.is_admin ? 'Regional Admin Panel' : 'Super Admin Panel';
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -629,7 +630,7 @@ export default function AdminScreen() {
                   );
 
                   const response = await fetch(
-                    `${supabase.supabaseUrl}/functions/v1/mux-sync-videos`,
+                    `${SUPABASE_URL}/functions/v1/mux-sync-videos`,
                     {
                       method: 'POST',
                       headers: {
@@ -919,7 +920,7 @@ export default function AdminScreen() {
             <Text style={[styles.label, { color: theme.colors.text }]}>
               📍 Select Location for This Video:
             </Text>
-            {profile?.is_regional_admin && !profile.is_admin && (
+            {(profile as any)?.is_regional_admin && !profile.is_admin && (
               <Text style={styles.helperText}>
                 You can only upload to your assigned locations
               </Text>
@@ -1017,7 +1018,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
-        {profile?.is_regional_admin && !profile.is_admin && (
+        {(profile as any)?.is_regional_admin && !profile.is_admin && (
           <View style={[styles.section, { backgroundColor: theme.colors.card }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Regional Admin Actions</Text>
             

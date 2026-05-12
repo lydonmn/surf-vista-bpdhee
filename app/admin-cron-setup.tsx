@@ -34,7 +34,7 @@ export default function AdminCronSetupScreen() {
         console.error('Error loading cron jobs:', error);
         Alert.alert('Error', 'Failed to load cron jobs. Make sure pg_cron extension is enabled.');
       } else {
-        setCronJobs(data || []);
+        setCronJobs((data as any) || []);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -68,7 +68,7 @@ export default function AdminCronSetupScreen() {
         );
       `;
 
-      const { error: error1 } = await supabase.rpc('exec_sql', { sql: backgroundJobSQL });
+      const { error: error1 } = await (supabase as any).rpc('exec_sql', { sql: backgroundJobSQL });
       
       if (error1) {
         console.error('Error creating background job:', error1);
@@ -93,7 +93,7 @@ export default function AdminCronSetupScreen() {
         );
       `;
 
-      const { error: error2 } = await supabase.rpc('exec_sql', { sql: reportJobSQL });
+      const { error: error2 } = await (supabase as any).rpc('exec_sql', { sql: reportJobSQL });
       
       if (error2) {
         console.error('Error creating report job:', error2);
@@ -124,7 +124,7 @@ export default function AdminCronSetupScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              const { error } = await supabase.rpc('exec_sql', {
+              const { error } = await (supabase as any).rpc('exec_sql', {
                 sql: `SELECT cron.unschedule('${jobName}');`
               });
 
@@ -203,7 +203,7 @@ export default function AdminCronSetupScreen() {
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
             3. Click "Create Cron Jobs" to schedule automated tasks
           </Text>
-          <Text style={[styles.warningText, { color: colors.warning }]}>
+          <Text style={[styles.warningText, { color: '#FF9800' }]}>
             ⚠️ The service role key is sensitive. Never share it or commit it to git.
           </Text>
         </View>

@@ -4,23 +4,28 @@ export interface SurfReport {
   date: string;
   location: string;
   wave_height: string;
-  surf_height?: string;
-  wave_period?: string;
-  swell_direction?: string;
+  surf_height?: string | null;
+  wave_period?: string | null;
+  swell_direction?: string | null;
   wind_speed: string;
   wind_direction: string;
   tide: string;
   water_temp: string;
-  conditions: string; // Auto-generated narrative
-  rating?: number;
-  created_at?: string;
-  updated_at?: string;
-  air_temp?: string;
-  weather_conditions?: string;
+  conditions: string;
+  rating?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  air_temp?: string | null;
+  weather_conditions?: string | null;
   tide_times?: any;
-  report_text?: string; // Custom edited narrative (takes priority over conditions)
-  edited_by?: string;
-  edited_at?: string;
+  report_text?: string | null;
+  edited_by?: string | null;
+  edited_at?: string | null;
+  created_by?: string | null;
+  detailed_forecast?: string | null;
+  conditions_summary?: string | null;
+  weather?: string | null;
+  min_wave_height?: number | null;
 }
 
 export interface WeatherData {
@@ -28,42 +33,43 @@ export interface WeatherData {
   date: string;
   location: string;
   temperature: string;
-  feels_like?: string;
-  humidity?: number;
+  feels_like?: string | null;
+  humidity?: number | null;
   wind_speed: string;
   wind_direction: string;
-  wind_gust?: string;
-  pressure?: string;
-  visibility?: string;
+  wind_gust?: string | null;
+  pressure?: string | null;
+  visibility?: string | null;
   conditions: string;
-  forecast?: string;
+  forecast?: string | null;
   raw_data?: any;
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  short_forecast?: string | null;
 }
 
 export interface WeatherForecast {
   id: string;
   date: string;
   location: string;
-  day_name?: string;
-  temperature?: number;
+  day_name?: string | null;
+  temperature?: number | null;
   high_temp: number | null;
   low_temp: number | null;
-  conditions?: string;
-  short_forecast?: string;
-  icon?: string;
-  wind_speed?: number;
-  wind_direction?: string;
+  conditions?: string | null;
+  short_forecast?: string | null;
+  icon?: string | null;
+  wind_speed?: number | null;
+  wind_direction?: string | null;
   precipitation_chance?: number | null;
-  humidity?: number;
-  swell_height_min?: number;
-  swell_height_max?: number;
+  humidity?: number | null;
+  swell_height_min?: number | null;
+  swell_height_max?: number | null;
   swell_height_range?: string | null;
   prediction_confidence?: number | null;
   prediction_source?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface TideData {
@@ -71,11 +77,11 @@ export interface TideData {
   date: string;
   location: string;
   time: string;
-  type: 'High' | 'Low';
+  type: 'High' | 'Low' | string;
   height: number;
-  height_unit?: string;
-  created_at?: string;
-  updated_at?: string;
+  height_unit?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface SurfPrediction {
@@ -96,26 +102,26 @@ export interface SurfPrediction {
     seasonalFactor: number;
     uncertaintyFactor: number;
   };
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Video {
   id: string;
   title: string;
   location: string;
-  description?: string;
+  description?: string | null;
   video_url: string;
-  thumbnail_url?: string;
-  duration?: string;
-  duration_seconds?: number;
-  resolution_width?: number;
-  resolution_height?: number;
-  file_size_bytes?: number;
-  uploaded_by?: string;
-  created_at?: string;
-  updated_at?: string;
-  mux_upload_id?: string;
-  mux_asset_id?: string;
-  status?: 'active' | 'processing' | 'errored'; // 🚨 NEW: Video processing status
+  thumbnail_url?: string | null;
+  duration?: string | null;
+  duration_seconds?: number | null;
+  resolution_width?: number | null;
+  resolution_height?: number | null;
+  file_size_bytes?: number | null;
+  uploaded_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  mux_upload_id?: string | null;
+  mux_asset_id?: string | null;
+  status?: 'active' | 'processing' | 'errored' | null;
 }

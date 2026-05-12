@@ -51,10 +51,10 @@ export default function RegionalAdminScreen() {
 
   // Load managed locations for this regional admin
   useEffect(() => {
-    if (profile && profile.is_regional_admin && profile.managed_locations) {
-      console.log('[RegionalAdminScreen] Managed locations:', profile.managed_locations);
-      setManagedLocations(profile.managed_locations);
-    } else if (profile && !profile.is_regional_admin) {
+    if (profile && (profile as any)?.is_regional_admin && (profile as any)?.managed_locations) {
+      console.log('[RegionalAdminScreen] Managed locations:', (profile as any)?.managed_locations);
+      setManagedLocations((profile as any)?.managed_locations);
+    } else if (profile && !(profile as any)?.is_regional_admin) {
       console.log('[RegionalAdminScreen] User is not a regional admin, redirecting...');
       showErrorModal('Access Denied', 'You do not have regional admin privileges');
       router.back();
@@ -95,7 +95,7 @@ export default function RegionalAdminScreen() {
           .eq('location', loc.id)
           .maybeSingle();
 
-        const waveSensorsOnline = report?.wave_height && report.wave_height !== 'N/A' && report.wave_height !== '';
+        const waveSensorsOnline = !!(report?.wave_height && report.wave_height !== 'N/A' && report.wave_height !== '');
 
         reports.push({
           location: loc.displayName,
@@ -107,7 +107,7 @@ export default function RegionalAdminScreen() {
           waveHeight: report?.wave_height || 'N/A',
           waveSensorsOnline: waveSensorsOnline,
           lastUpdated: report?.updated_at || 'Never',
-          buoyId: locConfig?.buoy_id || 'Unknown',
+          buoyId: (locConfig as any)?.buoy_id || 'Unknown',
         });
       }
 
@@ -266,7 +266,7 @@ export default function RegionalAdminScreen() {
     }
   };
 
-  if (!profile?.is_regional_admin) {
+  if (!(profile as any)?.is_regional_admin) {
     return (
       <View style={styles.container}>
         <View style={styles.centerContent}>

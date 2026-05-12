@@ -242,7 +242,7 @@ export default function HomeScreen() {
     }
 
     // Check access: RevenueCat subscription OR DB subscription OR admin/superadmin
-    const dbAccess = !!profile?.is_subscribed || !!profile?.is_admin || !!profile?.is_superadmin;
+    const dbAccess = !!profile?.is_subscribed || !!profile?.is_admin || !!(profile as any)?.is_superadmin;
     const hasAccess = isSubscribed || dbAccess;
 
     if (!hasAccess) {
@@ -267,7 +267,7 @@ export default function HomeScreen() {
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
-  const surfHeightValue = surfConditions?.surf_height || (todaysReport as any)?.surf_height;
+  const surfHeightValue = (surfConditions as any)?.surf_height ?? surfConditions?.wave_height || (todaysReport as any)?.surf_height;
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
@@ -290,19 +290,19 @@ export default function HomeScreen() {
   console.log('[HomeScreen] weatherData for location', currentLocation, ':', weatherData ? { conditions: weatherData.conditions, wind_speed: weatherData.wind_speed, wind_direction: weatherData.wind_direction } : 'NULL — no weather_data row found for this location/date');
 
   const windSpeedValue = isValidValue(weatherData?.wind_speed) 
-    ? weatherData.wind_speed 
+    ? weatherData?.wind_speed 
     : isValidValue(surfConditions?.wind_speed)
-      ? surfConditions.wind_speed
+      ? surfConditions?.wind_speed
       : isValidValue(todaysReport?.wind_speed)
-        ? todaysReport.wind_speed
+        ? todaysReport?.wind_speed
         : null;
   
   const windDirValue = isValidValue(weatherData?.wind_direction)
-    ? weatherData.wind_direction
+    ? weatherData?.wind_direction
     : isValidValue(surfConditions?.wind_direction)
-      ? surfConditions.wind_direction
+      ? surfConditions?.wind_direction
       : isValidValue(todaysReport?.wind_direction)
-        ? todaysReport.wind_direction
+        ? todaysReport?.wind_direction
         : null;
   
   const windSpeedFormatted = windSpeedValue 

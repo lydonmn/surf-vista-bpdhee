@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useTheme } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useSurfData } from '@/hooks/useSurfData';
@@ -477,7 +478,7 @@ export default function ForecastScreen() {
             
             const hasSurfData = displayHeight !== 'N/A';
             const dayRating = calculateProjectedStokeRating(day);
-            const ratingColor = getStokeColor(dayRating);
+            const ratingColor = getStokeColor(dayRating ?? null);
             console.log(`[ForecastScreen] Projected stoke for ${day.date}:`, { dayRating, ratingColor });
             
             const confidenceValue = day.weatherForecast?.prediction_confidence;
@@ -600,7 +601,7 @@ export default function ForecastScreen() {
                         </View>
                         <View style={styles.tidesGrid}>
                           {day.tides.map((tide, tideIndex) => {
-                            const isHighTide = tide.type === 'high' || tide.type === 'High';
+                            const isHighTide = String(tide.type).toLowerCase() === 'high';
                             const iconColor = isHighTide ? '#2196F3' : '#FF9800';
                             const tideTypeText = isHighTide ? 'High' : 'Low';
                             const tideHeightText = Number(tide.height).toFixed(1);

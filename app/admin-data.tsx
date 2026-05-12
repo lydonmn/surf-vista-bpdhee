@@ -132,7 +132,7 @@ export default function AdminDataScreen() {
         const hasReport = !!reportData;
         const hasNarrative = !!(reportData?.conditions || reportData?.report_text);
         const narrativeText = reportData?.report_text || reportData?.conditions || '';
-        const waveHeight = surfData?.surf_height || surfData?.wave_height || 'N/A';
+        const waveHeight = (surfData as any)?.surf_height || surfData?.wave_height || 'N/A';
         const waveSensorsOnline = waveHeight !== 'N/A' && waveHeight !== '' && waveHeight !== 'null';
 
         reports.push({

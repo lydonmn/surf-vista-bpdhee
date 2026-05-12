@@ -277,7 +277,7 @@ export default function VideosScreen() {
             >
               <IconSymbol
                 ios_icon_name="plus.circle.fill"
-                android_material_icon_name="add_circle"
+                android_material_icon_name="add-circle"
                 size={20}
                 color="#FFFFFF"
               />
@@ -291,7 +291,7 @@ export default function VideosScreen() {
             const isDeleting = deletingVideoId === video.id;
             const videoSource = getVideoPreviewSource(video);
             const isProcessing = video.status === 'processing';
-            const uploadDate = new Date(video.created_at);
+            const uploadDate = new Date(video.created_at ?? Date.now());
             const uploadTimestamp = `Uploaded: ${uploadDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} at ${uploadDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
             
             return (
@@ -312,7 +312,7 @@ export default function VideosScreen() {
                               {hasAccess || rcLoading ? (
                                 <IconSymbol
                                   ios_icon_name="play.circle.fill"
-                                  android_material_icon_name="play_circle"
+                                  android_material_icon_name="play-circle"
                                   size={64}
                                   color="rgba(255, 255, 255, 0.9)"
                                 />
@@ -491,7 +491,7 @@ export default function VideosScreen() {
         >
           <IconSymbol
             ios_icon_name="plus.circle.fill"
-            android_material_icon_name="add_circle"
+            android_material_icon_name="add-circle"
             size={20}
             color="#FFFFFF"
           />
