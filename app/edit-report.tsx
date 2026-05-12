@@ -92,7 +92,7 @@ export default function EditReportScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
-  const [_uploadComplete, setUploadComplete] = useState(false);
+  const [, setUploadComplete] = useState(false);
   const [showVideoUpload, setShowVideoUpload] = useState(false);
 
   const loadReport = useCallback(async () => {

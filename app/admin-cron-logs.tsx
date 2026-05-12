@@ -4,9 +4,10 @@ import { colors } from '@/styles/commonStyles';
 import { useAuth } from '@/contexts/AuthContext';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/integrations/supabase/client';
-const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 import { IconSymbol } from '@/components/IconSymbol';
 import { router } from 'expo-router';
+
+const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 
 const styles = StyleSheet.create({
   container: {

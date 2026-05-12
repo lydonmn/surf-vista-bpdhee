@@ -49,7 +49,7 @@ export default function PaywallScreen() {
       console.log('[Paywall] User is already subscribed, redirecting to tabs');
       router.replace('/(tabs)');
     }
-  }, [isSubscribed, loading]);
+  }, [isSubscribed, loading, router]);
 
   // Fetch real pricing from RevenueCat
   useEffect(() => {

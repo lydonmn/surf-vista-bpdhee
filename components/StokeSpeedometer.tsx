@@ -6,26 +6,10 @@ import Animated, {
   withSpring,
   interpolate,
 } from 'react-native-reanimated';
-import Svg, { Path, Circle } from 'react-native-svg';
 
 interface StokeSpeedometerProps {
   rating: number; // 1–10
-  size?: number;  // diameter in px, default 44
-}
-
-function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return {
-    x: cx + r * Math.cos(rad),
-    y: cy + r * Math.sin(rad),
-  };
-}
-
-function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-  const start = polarToCartesian(cx, cy, r, endAngle);
-  const end = polarToCartesian(cx, cy, r, startAngle);
-  const largeArc = endAngle - startAngle <= 180 ? '0' : '1';
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
+  size?: number;
 }
 
 function getRatingColor(rating: number): string {
@@ -38,9 +22,11 @@ function getRatingColor(rating: number): string {
 
 export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometerProps) {
   const clampedRating = Math.max(1, Math.min(10, rating));
-  const needleRotation = useSharedValue(-120);
+  const color = getRatingColor(clampedRating);
+  const needleRotation = useSharedValue(-90);
 
-  const targetAngle = interpolate(clampedRating, [1, 10], [-120, 120]);
+  // Map rating 1–10 to -90°..+90° (180° sweep)
+  const targetAngle = interpolate(clampedRating, [1, 10], [-90, 90]);
 
   useEffect(() => {
     needleRotation.value = withSpring(targetAngle, {
@@ -48,80 +34,105 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
       stiffness: 90,
       mass: 0.8,
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clampedRating]);
 
   const needleStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${needleRotation.value}deg` }],
   }));
 
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = size * 0.38;
-  const strokeW = size * 0.09;
-  const color = getRatingColor(clampedRating);
+  const halfSize = size / 2;
+  const needleLength = halfSize * 0.72;
+  const dotSize = size * 0.18;
 
-  const trackPath = arcPath(cx, cy, r, 210, 330);
-  const fillEndAngle = interpolate(clampedRating, [1, 10], [210, 330]);
-  const fillPath = arcPath(cx, cy, r, 210, fillEndAngle);
+  // Build tick marks for the arc (9 ticks across 180°)
+  const ticks = Array.from({ length: 9 }, (_, i) => {
+    const angle = -90 + i * 22.5; // -90° to +90° in 22.5° steps
+    const rad = (angle * Math.PI) / 180;
+    const midR = halfSize * 0.80;
+    const tickLen = size * 0.16;
+    const tickWidth = size * 0.045;
+    const cx = halfSize + midR * Math.cos(rad) - tickWidth / 2;
+    const cy = halfSize + midR * Math.sin(rad) - tickLen / 2;
+    const tickRating = Math.round(interpolate(i, [0, 8], [1, 10]));
+    const tickColor = getRatingColor(tickRating);
+    const isActive = tickRating <= clampedRating;
+    return { cx, cy, tickColor, isActive, angle, tickLen, tickWidth };
+  });
 
-  const needleLength = r * 0.85;
-
+  const needleLeft = halfSize - size * 0.025;
+  const needleTop = halfSize - needleLength;
+  const needleWidth = size * 0.05;
+  const needleBorderRadius = size * 0.025;
+  const needleOriginX = size * 0.025;
+  const dotLeft = halfSize - dotSize / 2;
+  const dotTop = halfSize - dotSize / 2;
   const ratingFontSize = size * 0.22;
+  const ratingBottom = size * 0.04;
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {/* Track (grey arc) */}
-        <Path
-          d={trackPath}
-          stroke="rgba(128,128,128,0.25)"
-          strokeWidth={strokeW}
-          fill="none"
-          strokeLinecap="round"
+      {/* Arc ticks rendered as thin rotated lines */}
+      {ticks.map((tick, i) => (
+        <View
+          key={i}
+          style={{
+            position: 'absolute',
+            left: tick.cx,
+            top: tick.cy,
+            width: tick.tickWidth,
+            height: tick.tickLen,
+            borderRadius: tick.tickWidth / 2,
+            backgroundColor: tick.isActive ? tick.tickColor : 'rgba(128,128,128,0.25)',
+            transform: [{ rotate: `${tick.angle + 90}deg` }],
+          }}
         />
-        {/* Filled arc (colored) */}
-        <Path
-          d={fillPath}
-          stroke={color}
-          strokeWidth={strokeW}
-          fill="none"
-          strokeLinecap="round"
-          opacity={0.85}
-        />
-        {/* Center dot */}
-        <Circle cx={cx} cy={cy} r={strokeW * 0.45} fill={color} />
-      </Svg>
+      ))}
 
-      {/* Animated needle overlay */}
+      {/* Needle — rotates from center */}
       <Animated.View
         style={[
-          styles.needleWrapper,
-          { width: size, height: size },
+          {
+            position: 'absolute',
+            left: needleLeft,
+            top: needleTop,
+            width: needleWidth,
+            height: needleLength,
+            borderRadius: needleBorderRadius,
+            backgroundColor: color,
+            // @ts-expect-error — transformOrigin is valid in RN 0.73+ / Reanimated
+            transformOrigin: `${needleOriginX}px ${needleLength}px`,
+          },
           needleStyle,
         ]}
-      >
-        <Svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          style={StyleSheet.absoluteFill}
-        >
-          <Path
-            d={`M ${cx} ${cy} L ${cx} ${cy - needleLength}`}
-            stroke={color}
-            strokeWidth={strokeW * 0.35}
-            strokeLinecap="round"
-          />
-        </Svg>
-      </Animated.View>
+      />
 
-      {/* Rating number below center */}
-      <View style={[styles.labelWrapper, { bottom: size * 0.06 }]}>
-        <Text style={[styles.ratingText, { color, fontSize: ratingFontSize }]}>
-          {clampedRating}
-        </Text>
-      </View>
+      {/* Center dot */}
+      <View
+        style={{
+          position: 'absolute',
+          left: dotLeft,
+          top: dotTop,
+          width: dotSize,
+          height: dotSize,
+          borderRadius: dotSize / 2,
+          backgroundColor: color,
+        }}
+      />
+
+      {/* Rating number */}
+      <Text
+        style={{
+          position: 'absolute',
+          bottom: ratingBottom,
+          alignSelf: 'center',
+          color,
+          fontSize: ratingFontSize,
+          fontWeight: '800',
+        }}
+      >
+        {clampedRating}
+      </Text>
     </View>
   );
 }
@@ -131,20 +142,5 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  needleWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  labelWrapper: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ratingText: {
-    fontWeight: '800',
   },
 });

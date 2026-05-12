@@ -12,8 +12,9 @@ import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/app/integrations/supabase/client';
 import { useVideos } from '@/hooks/useVideos';
-const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 import { router } from 'expo-router';
+
+const SUPABASE_URL = 'https://ucbilksfpnmltrkwvzft.supabase.co';
 
 interface VideoMetadata {
   width: number;
