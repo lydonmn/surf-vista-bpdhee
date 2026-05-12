@@ -309,12 +309,34 @@ export default function RootLayout() {
     console.log('[RootLayout] Tracking notification_open for type:', notifType ?? 'unknown');
     trackNotificationOpen(undefined, notifType).catch(() => {});
 
-    if (data.type === 'daily_report' || data.type === 'swell_alert') {
-      console.log('[RootLayout] Deep linking to home tab for', data.type);
+    const actionId = response.actionIdentifier;
+
+    if (data.type === 'daily_report') {
+      if (actionId === 'VIEW_REPORT' && data.fullReport) {
+        // Show full report in an Alert (expandable inline)
+        const title = data.locationName ? `${data.locationName} — Full Report` : 'Full Surf Report';
+        Alert.alert(
+          title,
+          data.fullReport,
+          [
+            { text: 'Open App', onPress: () => router.replace('/(tabs)/(home)') },
+            { text: 'Close', style: 'cancel' },
+          ]
+        );
+      } else {
+        // Regular tap — go to home tab (location report is shown there)
+        console.log('[RootLayout] Deep linking to home tab for daily_report');
+        router.replace('/(tabs)/(home)');
+      }
+    } else if (data.type === 'swell_alert') {
+      console.log('[RootLayout] Deep linking to home tab for swell_alert');
       router.replace('/(tabs)/(home)');
     } else if (data.type === 'new_video') {
       console.log('[RootLayout] Deep linking to videos tab for new_video');
       router.replace('/(tabs)/videos');
+    } else if (data.type === 'custom_notification') {
+      console.log('[RootLayout] Deep linking to home tab for custom_notification');
+      router.replace('/(tabs)/(home)');
     }
   }, [router]);
 

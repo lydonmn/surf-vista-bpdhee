@@ -214,27 +214,20 @@ serve(async (req) => {
 
     const rating = Number(report.rating) || 0;
     const ratingEmoji = rating >= 8 ? '🔥' : rating >= 6 ? '👍' : rating >= 4 ? '🌊' : '😐';
-    const conditions = String(report.conditions || "Check the app for today's surf report!");
 
-    // Subtitle: location name
-    const notifSubtitle = locationName;
+    // Title — short, fits on one line
+    const notifTitle = `${ratingEmoji} ${locationName} Surf Report`;
 
-    // Line 1: wave height + rating
-    const waveDisplay = waveHeightRaw.length > 0 ? waveHeightRaw : 'N/A';
-    const ratingDisplay = rating > 0 ? `${rating}/10` : 'N/A';
-    const waveInfo = `🌊 ${waveDisplay} • ⭐ ${ratingDisplay}`;
-
-    // Line 2: weather/conditions summary (first 60 chars of weather field or conditions)
-    const weatherSummary = String(report.weather || report.conditions_summary || '').trim();
-    const weatherLine = weatherSummary.length > 0
-      ? `🌤 ${weatherSummary.substring(0, 60)}`
-      : '';
+    // Subtitle — wave height + stoke rating, always visible
+    const waveDisplay = waveHeightRaw.length > 0 ? `${waveHeightRaw} ft waves` : 'Waves: N/A';
+    const ratingDisplay = rating > 0 ? `${rating}/10 stoke` : '';
+    const notifSubtitle = [waveDisplay, ratingDisplay].filter(Boolean).join(' · ');
 
     // Fetch next tide events for this location/date — wrapped so failure never blocks notifications
     const tideDate = report.date || reportDate;
-    const tideLines: string[] = [];
+    let tides: any[] = [];
     try {
-      const { data: tides, error: tideError } = await supabase
+      const { data: tidesData, error: tideError } = await supabase
         .from('tide_data')
         .select('time, type, height')
         .eq('location', locationId)
@@ -245,39 +238,34 @@ serve(async (req) => {
       if (tideError) {
         console.warn('[Notifications] Tide fetch query error (non-fatal):', tideError.message);
       } else {
-        console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tides ? tides.length : 0, 'entries');
-        // Lines 3–4: up to 2 individual tide entries on separate lines (more text = expandable)
-        if (tides && tides.length > 0) {
-          for (const t of tides.slice(0, 2)) {
-            const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High tide' : '📉 Low tide';
-            const heightStr = t.height != null ? `${t.height}ft` : 'N/A';
-            const timeStr = t.time ? String(t.time) : 'N/A';
-            tideLines.push(`${typeLabel}: ${timeStr} (${heightStr})`);
-          }
-        }
+        console.log(`[Notifications] Tide data for ${locationId} on ${tideDate}:`, tidesData ? tidesData.length : 0, 'entries');
+        tides = tidesData || [];
       }
     } catch (tideErr) {
-      console.warn('[Notifications] Tide fetch threw (non-fatal), continuing without tide lines:', tideErr);
+      console.warn('[Notifications] Tide fetch threw (non-fatal), continuing without tides:', tideErr);
     }
 
-    // Conditions summary — at least 100 chars to trigger iOS expand handle
-    const rawConditions = String(report.conditions || report.detailed_forecast || '').trim();
-    const conditionsSummary = rawConditions.length > 0
-      ? rawConditions.substring(0, 200)
-      : "Open the app for the full surf report and forecast details.";
+    // Body — compact summary: first sentence of narrative + tide line
+    const rawNarrative = String(report.conditions || report.detailed_forecast || '').trim();
+    const firstSentence = rawNarrative.split(/[.!?]/)[0]?.trim() ?? '';
+    const narrativeLine = firstSentence.length > 0
+      ? (firstSentence.length > 120 ? firstSentence.substring(0, 117) + '...' : firstSentence + '.')
+      : '';
 
-    // Build a rich multi-line body so iOS shows the expand chevron
-    const bodyParts: string[] = [
-      waveInfo,
-      weatherLine,
-      ...tideLines,
-      '',
-      conditionsSummary,
-    ].filter(s => s !== undefined && (s === '' || s.length > 0));
+    const tideSummaryParts: string[] = [];
+    for (const t of tides.slice(0, 2)) {
+      const typeLabel = String(t.type).toLowerCase() === 'high' ? '📈 High' : '📉 Low';
+      const heightStr = t.height != null ? ` (${t.height}ft)` : '';
+      const timeStr = t.time ? String(t.time).substring(0, 5) : '';
+      tideSummaryParts.push(`${typeLabel} ${timeStr}${heightStr}`);
+    }
+    const tideLine = tideSummaryParts.length > 0 ? tideSummaryParts.join(' · ') : '';
 
+    const bodyParts = [narrativeLine, tideLine].filter(Boolean);
     const notifBody = bodyParts.join('\n');
 
-    const notifTitle = `${ratingEmoji} ${locationName} — Today's Surf Report`;
+    // Full report for data payload (used by "Full Report" action button)
+    const fullReport = rawNarrative.length > 0 ? rawNarrative.substring(0, 500) : 'Open the app for the full report.';
 
     console.log(`[Notifications] Notification body (${notifBody.length} chars):`, notifBody.substring(0, 100));
 
@@ -288,7 +276,16 @@ serve(async (req) => {
       subtitle: notifSubtitle,
       body: notifBody,
       badge: 1,
-      data: { type: 'daily_report', reportId: report.id, location: locationId, date: reportDate },
+      data: {
+        type: 'daily_report',
+        reportId: report.id,
+        location: locationId,
+        locationName: locationName,
+        date: reportDate,
+        fullReport: fullReport,
+        waveHeight: waveDisplay,
+        rating: rating,
+      },
       priority: 'high',
       channelId: 'daily-reports',
       categoryId: 'DAILY_REPORT',

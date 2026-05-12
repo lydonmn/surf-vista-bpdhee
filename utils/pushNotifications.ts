@@ -43,13 +43,18 @@ export async function setupNotificationCategories(): Promise<void> {
     await Notifications.setNotificationCategoryAsync('DAILY_REPORT', [
       {
         identifier: 'VIEW_REPORT',
-        buttonTitle: 'View Report',
+        buttonTitle: 'Full Report',
         options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'DISMISS',
+        buttonTitle: 'Dismiss',
+        options: { opensAppToForeground: false, isDestructive: false },
       },
     ]);
     await Notifications.setNotificationCategoryAsync('SWELL_ALERT', [
       {
-        identifier: 'VIEW_CONDITIONS',
+        identifier: 'VIEW_REPORT',
         buttonTitle: 'View Conditions',
         options: { opensAppToForeground: true },
       },
