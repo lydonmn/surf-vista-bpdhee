@@ -245,12 +245,8 @@ serve(async (req) => {
       console.warn('[Notifications] Tide fetch threw (non-fatal), continuing without tides:', tideErr);
     }
 
-    // Body — compact summary: first sentence of narrative + tide line
+    // Body — tide line + first sentence always visible; full narrative behind Force Touch
     const rawNarrative = String(report.conditions || report.detailed_forecast || '').trim();
-    const firstSentence = rawNarrative.split(/[.!?]/)[0]?.trim() ?? '';
-    const narrativeLine = firstSentence.length > 0
-      ? (firstSentence.length > 120 ? firstSentence.substring(0, 117) + '...' : firstSentence + '.')
-      : '';
 
     const tideSummaryParts: string[] = [];
     for (const t of tides.slice(0, 2)) {
@@ -259,29 +255,25 @@ serve(async (req) => {
       const timeStr = t.time ? String(t.time).substring(0, 5) : '';
       tideSummaryParts.push(`${typeLabel} ${timeStr}${heightStr}`);
     }
+
+    // Tide compact line — always shown
     const tideLine = tideSummaryParts.length > 0 ? tideSummaryParts.join(' · ') : '';
 
-    // Compact summary line (always visible in collapsed state)
-    const summaryLine = narrativeLine.length > 0 ? narrativeLine : 'Tap to see today\'s surf conditions.';
+    // First sentence for the body summary
+    const firstSentence = rawNarrative.split(/(?<=[.!?])\s/)[0]?.trim() ?? '';
+    const summaryLine = firstSentence.length > 0
+      ? (firstSentence.endsWith('.') || firstSentence.endsWith('!') || firstSentence.endsWith('?') ? firstSentence : firstSentence + '.')
+      : '';
 
-    // Full expanded content (revealed on Force Touch / long press)
-    const expandedParts: string[] = [];
+    // Body = tide line + summary sentence (always visible)
+    // Then full narrative appended after — iOS hides the overflow and shows expand chevron on Force Touch
+    const bodyVisible = [tideLine, summaryLine].filter(Boolean).join('\n');
 
-    // Tide line
-    if (tideLine.length > 0) expandedParts.push(tideLine);
-
-    // Full narrative (not truncated)
+    // Full narrative for Force Touch expansion (append after visible content)
     const fullNarrative = rawNarrative.length > 0 ? rawNarrative : '';
-    if (fullNarrative.length > 0 && fullNarrative !== summaryLine.replace(/\.$/, '')) {
-      expandedParts.push(fullNarrative);
-    }
-
-    // Build body: summary first, then a blank line, then the full expanded content
-    // iOS shows the expand chevron when body exceeds ~200 chars
-    const expandedContent = expandedParts.join('\n\n');
-    const notifBody = expandedContent.length > 0
-      ? `${summaryLine}\n\n${expandedContent}`
-      : summaryLine;
+    const notifBody = fullNarrative.length > summaryLine.length + 20
+      ? `${bodyVisible}\n\n${fullNarrative}`
+      : bodyVisible;
 
     // Full report for data payload (used by "Full Report" action button)
     const fullReport = rawNarrative.length > 0 ? rawNarrative.substring(0, 500) : 'Open the app for the full report.';
