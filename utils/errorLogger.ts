@@ -80,7 +80,7 @@ const getLogServerUrl = (): string | null => {
         }
       }
     }
-  } catch {
+  } catch (e) {
     // Silently fail
   }
 
@@ -121,7 +121,7 @@ const flushLogs = async () => {
           }
         }
       });
-    } catch {
+    } catch (e) {
       // Silently ignore sync errors
     }
   }
@@ -176,7 +176,7 @@ const sendErrorToParent = (level: string, message: string, data: any) => {
         source: 'expo-template'
       }, '*');
     }
-  } catch {
+  } catch (error) {
     // Silently fail
   }
 };

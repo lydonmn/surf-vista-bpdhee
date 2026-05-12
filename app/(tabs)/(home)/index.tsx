@@ -273,7 +273,7 @@ export default function HomeScreen() {
   
   const displayName = locData?.displayName || 'Folly Beach, SC';
 
-  const surfHeightValue = (surfConditions as any)?.surf_height ?? surfConditions?.wave_height || (todaysReport as any)?.surf_height;
+  const surfHeightValue = (surfConditions as any)?.surf_height ?? (surfConditions?.wave_height || (todaysReport as any)?.surf_height);
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 

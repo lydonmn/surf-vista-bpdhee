@@ -267,7 +267,7 @@ export default function HomeScreen() {
   const isCustomReport = todaysReport ? isCustomNarrative(todaysReport) : false;
   const isReportFromToday = todaysReport ? todaysReport.date.split('T')[0] === todayDate : false;
 
-  const surfHeightValue = (surfConditions as any)?.surf_height ?? surfConditions?.wave_height || (todaysReport as any)?.surf_height;
+  const surfHeightValue = (surfConditions as any)?.surf_height ?? (surfConditions?.wave_height || (todaysReport as any)?.surf_height);
   const waveHeightValue = surfConditions?.wave_height || todaysReport?.wave_height;
   
   const surfHeightDisplay = (surfHeightValue && surfHeightValue !== 'N/A' && surfHeightValue !== null) 
