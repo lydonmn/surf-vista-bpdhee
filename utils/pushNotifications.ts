@@ -40,25 +40,8 @@ function safeAlert(title: string, message: string, buttons?: any[]) {
 export async function setupNotificationCategories(): Promise<void> {
   if (Platform.OS !== 'ios') return;
   try {
-    await Notifications.setNotificationCategoryAsync('DAILY_REPORT', [
-      {
-        identifier: 'VIEW_REPORT',
-        buttonTitle: 'Full Report',
-        options: { opensAppToForeground: true },
-      },
-      {
-        identifier: 'DISMISS',
-        buttonTitle: 'Dismiss',
-        options: { opensAppToForeground: false, isDestructive: false },
-      },
-    ]);
-    await Notifications.setNotificationCategoryAsync('SWELL_ALERT', [
-      {
-        identifier: 'VIEW_REPORT',
-        buttonTitle: 'View Conditions',
-        options: { opensAppToForeground: true },
-      },
-    ]);
+    await Notifications.setNotificationCategoryAsync('DAILY_REPORT', []);
+    await Notifications.setNotificationCategoryAsync('SWELL_ALERT', []);
     await Notifications.setNotificationCategoryAsync('NEW_VIDEO', [
       {
         identifier: 'WATCH_VIDEO',
