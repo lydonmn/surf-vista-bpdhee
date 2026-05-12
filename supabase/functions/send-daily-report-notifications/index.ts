@@ -261,8 +261,27 @@ serve(async (req) => {
     }
     const tideLine = tideSummaryParts.length > 0 ? tideSummaryParts.join(' · ') : '';
 
-    const bodyParts = [narrativeLine, tideLine].filter(Boolean);
-    const notifBody = bodyParts.join('\n');
+    // Compact summary line (always visible in collapsed state)
+    const summaryLine = narrativeLine.length > 0 ? narrativeLine : 'Tap to see today\'s surf conditions.';
+
+    // Full expanded content (revealed on Force Touch / long press)
+    const expandedParts: string[] = [];
+
+    // Tide line
+    if (tideLine.length > 0) expandedParts.push(tideLine);
+
+    // Full narrative (not truncated)
+    const fullNarrative = rawNarrative.length > 0 ? rawNarrative : '';
+    if (fullNarrative.length > 0 && fullNarrative !== summaryLine.replace(/\.$/, '')) {
+      expandedParts.push(fullNarrative);
+    }
+
+    // Build body: summary first, then a blank line, then the full expanded content
+    // iOS shows the expand chevron when body exceeds ~200 chars
+    const expandedContent = expandedParts.join('\n\n');
+    const notifBody = expandedContent.length > 0
+      ? `${summaryLine}\n\n${expandedContent}`
+      : summaryLine;
 
     // Full report for data payload (used by "Full Report" action button)
     const fullReport = rawNarrative.length > 0 ? rawNarrative.substring(0, 500) : 'Open the app for the full report.';
