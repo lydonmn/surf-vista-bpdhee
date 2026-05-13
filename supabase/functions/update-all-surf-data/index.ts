@@ -59,6 +59,7 @@ async function processLocation(
   locationId: string,
   displayName: string,
   supabaseUrl: string,
+  supabaseKey: string,
   requestHeaders: Record<string, string>
 ): Promise<{ location: string; displayName: string; success: boolean; errors: string[]; results: Record<string, any> }> {
   console.log(`\n--- Processing location: ${locationId} (${displayName}) ---`);
@@ -170,6 +171,40 @@ async function processLocation(
     errors.push(`Surf Forecast: ${errorMsg}`);
     console.error(`[${locationId}] Surf forecast fetch error:`, error);
     results.surfForecast = { success: false, error: errorMsg };
+  }
+
+  // Step 4b: Trigger swell alert check after successful surf fetch
+  if (results.surf?.success) {
+    try {
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      const surfReportRes = await supabase
+        .from('surf_conditions')
+        .select('surf_height, wave_height')
+        .eq('location', locationId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const waveHeight = surfReportRes.data?.surf_height || surfReportRes.data?.wave_height || '';
+      if (waveHeight) {
+        const swellCheckUrl = `${supabaseUrl}/functions/v1/check-swell-alerts`;
+        await fetch(swellCheckUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({ location: locationId, wave_height: waveHeight }),
+        });
+        console.log(`[UpdateAllSurfData] Swell alert check triggered for ${locationId} — wave: ${waveHeight}`);
+      } else {
+        console.log(`[UpdateAllSurfData] No wave height found in surf_conditions for ${locationId} — skipping swell alert check`);
+      }
+    } catch (swellErr: any) {
+      console.warn(`[UpdateAllSurfData] Swell alert check failed for ${locationId} (non-fatal):`, swellErr.message);
+    }
   }
 
   // Step 5: Daily report (only if weather + surf succeeded)
@@ -315,7 +350,7 @@ Deno.serve(async (req) => {
     // Process each location sequentially to avoid hammering downstream APIs
     const locationResults = [];
     for (const loc of locationsToProcess) {
-      const result = await processLocation(loc.id, loc.display_name, supabaseUrl, requestHeaders);
+      const result = await processLocation(loc.id, loc.display_name, supabaseUrl, supabaseServiceKey, requestHeaders);
       locationResults.push(result);
     }
 

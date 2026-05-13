@@ -321,39 +321,9 @@ serve(async (req) => {
       ? await sendExpoBatch(dailyMessages)
       : { successCount: 0, failureCount: 0 };
 
-    // Swell alert notifications
-    const swellAlertUsers = allUsers.filter(user => {
-      if (user.min_wave_height === null || user.min_wave_height === undefined || waveHeightNum === 0) return false;
-      if (!isValidExpoToken(user.push_token)) return false;
-      const meets = waveHeightNum >= user.min_wave_height;
-      if (meets) console.log(`[Notifications] ${user.email}: swell alert (${waveHeightNum}ft >= ${user.min_wave_height}ft threshold)`);
-      return meets;
-    });
-
-    const swellMessages = swellAlertUsers.map(user => ({
-      to: user.push_token,
-      sound: 'default',
-      title: '🌊 Swell Alert',
-      body: `${waveHeightRaw.length > 0 ? waveHeightRaw + 'ft' : waveHeightNum + 'ft'} waves at ${locationName} — your swell threshold has been met!`,
-      subtitle: `${locationName}`,
-      badge: 1,
-      data: { type: 'swell_alert', location: locationId, waveHeight: waveHeightNum },
-      priority: 'high',
-      channelId: 'swell-alerts',
-      categoryId: 'SWELL_ALERT',
-      mutableContent: true,
-      contentAvailable: true,
-    }));
-
-    console.log(`[Notifications] Swell check: ${waveHeightNum}ft — ${swellAlertUsers.length} users meet threshold`);
-    const swellResult = swellMessages.length > 0
-      ? await sendExpoBatch(swellMessages)
-      : { successCount: 0, failureCount: 0 };
-
     return new Response(JSON.stringify({
       success: true,
       dailyReport: { sent: dailyResult.successCount, failed: dailyResult.failureCount, eligible: dailyReportUsers.length },
-      swellAlerts: { sent: swellResult.successCount, failed: swellResult.failureCount, eligible: swellAlertUsers.length, waveHeight: waveHeightNum },
       totalProfiles: allUsers.length,
       totalOptedIn: allUsers.filter(u => u.daily_report_notifications).length,
       location: locationName,
