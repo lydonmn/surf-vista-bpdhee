@@ -146,9 +146,21 @@ serve(async (req) => {
       .single();
     const locationName = locationRow?.display_name || locationId;
 
-    // Parse wave height as a number for swell alert comparisons
-    const waveHeightRaw: string = report.wave_height ? String(report.wave_height) : '';
-    const waveHeightNum = parseFloat(waveHeightRaw.replace(/[^0-9.]/g, '')) || 0;
+    // Read wave height from surf_height OR wave_height (whichever is populated)
+    const rawHeightField = report.surf_height || report.wave_height || '';
+    const waveHeightRaw: string = rawHeightField ? String(rawHeightField).trim() : '';
+
+    // Parse wave height — handle ranges like "3-4" by using the HIGH end for swell alert comparison
+    let waveHeightNum = 0;
+    if (waveHeightRaw.includes('-')) {
+      const parts = waveHeightRaw.split('-');
+      const high = parseFloat(parts[parts.length - 1].replace(/[^0-9.]/g, ''));
+      waveHeightNum = isNaN(high) ? 0 : high;
+    } else {
+      waveHeightNum = parseFloat(waveHeightRaw.replace(/[^0-9.]/g, '')) || 0;
+    }
+
+    console.log(`[Notifications] Wave height raw: "${waveHeightRaw}" → parsed high: ${waveHeightNum}ft`);
 
     // Fetch ALL profiles
     const { data: allProfiles, error: usersError } = await supabase
@@ -311,7 +323,7 @@ serve(async (req) => {
 
     // Swell alert notifications
     const swellAlertUsers = allUsers.filter(user => {
-      if (user.min_wave_height === null || user.min_wave_height === undefined) return false;
+      if (user.min_wave_height === null || user.min_wave_height === undefined || waveHeightNum === 0) return false;
       if (!isValidExpoToken(user.push_token)) return false;
       const meets = waveHeightNum >= user.min_wave_height;
       if (meets) console.log(`[Notifications] ${user.email}: swell alert (${waveHeightNum}ft >= ${user.min_wave_height}ft threshold)`);
@@ -322,7 +334,7 @@ serve(async (req) => {
       to: user.push_token,
       sound: 'default',
       title: '🌊 Swell Alert',
-      body: `${waveHeightNum}ft waves at ${locationName} right now!`,
+      body: `${waveHeightRaw.length > 0 ? waveHeightRaw + 'ft' : waveHeightNum + 'ft'} waves at ${locationName} — your swell threshold has been met!`,
       subtitle: `${locationName}`,
       badge: 1,
       data: { type: 'swell_alert', location: locationId, waveHeight: waveHeightNum },
