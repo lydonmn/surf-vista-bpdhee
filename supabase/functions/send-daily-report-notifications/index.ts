@@ -298,7 +298,6 @@ serve(async (req) => {
       title: notifTitle,
       subtitle: notifSubtitle,
       body: notifBody,
-      badge: 1,
       data: {
         type: 'daily_report',
         reportId: report.id,
