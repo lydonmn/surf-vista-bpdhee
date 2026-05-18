@@ -239,6 +239,8 @@ function AppLifecycleTracker() {
 
     console.log('[RootLayout] Auth resolved — tracking initial app_open, user:', user?.id ?? 'anonymous');
     trackAppOpen(user?.id).catch(() => {});
+    console.log('[RootLayout] Clearing badge count on initial app open');
+    Notifications.setBadgeCountAsync(0).catch(() => {});
 
     // Record the user id at the time of the initial open
     prevUserIdRef.current = user?.id;
@@ -253,6 +255,8 @@ function AppLifecycleTracker() {
       } else if (nextState === 'active' && (prevState === 'background' || prevState === 'inactive')) {
         console.log('[RootLayout] AppState -> active (from background), tracking new app_open, user:', userIdRef.current ?? 'anonymous');
         trackAppOpen(userIdRef.current).catch(() => {});
+        console.log('[RootLayout] AppState -> active, clearing badge count');
+        Notifications.setBadgeCountAsync(0).catch(() => {});
       }
     });
 
