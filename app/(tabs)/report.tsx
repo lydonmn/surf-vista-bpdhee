@@ -1005,78 +1005,215 @@ export default function ReportScreen() {
             </View>
           </View>
 
-          <View style={styles.tideContainer}>
-            <View style={styles.tideHeader}>
-              <IconSymbol
-                ios_icon_name="arrow.up.arrow.down"
-                android_material_icon_name="swap-vert"
-                size={20}
-                color={colors.primary}
-              />
-              <Text style={[styles.conditionLabel, { color: labelColor }]}>
-                Tide Schedule
-              </Text>
-            </View>
-            {reportTides.length > 0 ? (
-              <>
-                <View style={styles.tideTimesContainer}>
-                  {reportTides.map((tide, tideIndex) => {
-                    const isHighTide = tide.type === 'high' || tide.type === 'High';
-                    const tideIconColor = isHighTide ? '#2196F3' : '#FF9800';
-                    const tideTime = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    });
-                    const tideTypeText = isHighTide ? 'High' : 'Low';
-                    const tideHeightText = `${Number(tide.height).toFixed(1)} ft`;
-                    
-                    return (
-                      <View key={tideIndex} style={styles.tideTimeItem}>
-                        <IconSymbol
-                          ios_icon_name={isHighTide ? 'arrow.up' : 'arrow.down'}
-                          android_material_icon_name={isHighTide ? 'north' : 'south'}
-                          size={16}
-                          color={tideIconColor}
-                        />
-                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                          {tideTypeText}
+          {(() => {
+            // --- Tide schedule computed values ---
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+            // Parse each tide's time into minutes-since-midnight
+            const tideParsed = reportTides.map((tide) => {
+              const timeParts = tide.time ? tide.time.split(':') : ['0', '0'];
+              const h = parseInt(timeParts[0] || '0', 10);
+              const m = parseInt(timeParts[1] || '0', 10);
+              return { ...tide, tideMinutes: h * 60 + m, tideH: h, tideM: m };
+            });
+
+            // Find index of next upcoming tide (first whose tideMinutes > currentMinutes)
+            const nextTideIndex = tideParsed.findIndex((t) => t.tideMinutes > currentMinutes);
+            // If all tides are in the past, nextTideIndex = -1 → no "Next" label shown
+            const hasNextTide = nextTideIndex !== -1;
+
+            // Trend pill: based on next tide type
+            let trendLabel = '';
+            let trendColor = '#2196F3';
+            if (hasNextTide) {
+              const nextTide = tideParsed[nextTideIndex];
+              const isNextHigh = nextTide.type === 'high' || nextTide.type === 'High';
+              trendLabel = isNextHigh ? '🔼 Rising' : '🔽 Falling';
+              trendColor = isNextHigh ? '#2196F3' : '#FF9800';
+            }
+
+            // Time-until for next tide
+            let timeUntilText = '';
+            if (hasNextTide) {
+              const nextTide = tideParsed[nextTideIndex];
+              // Build a Date for today at the tide's time
+              const tideDate = new Date(now);
+              tideDate.setHours(nextTide.tideH, nextTide.tideM, 0, 0);
+              // If tide time is earlier than now (shouldn't happen since nextTideIndex > currentMinutes, but guard)
+              let diffMs = tideDate.getTime() - now.getTime();
+              if (diffMs < 0) diffMs = 0;
+              const diffMins = Math.floor(diffMs / 60000);
+              if (diffMins < 60) {
+                timeUntilText = `${diffMins} min`;
+              } else {
+                const hrs = Math.floor(diffMins / 60);
+                const mins = diffMins % 60;
+                timeUntilText = mins > 0 ? `${hrs} hr ${mins} min` : `${hrs} hr`;
+              }
+            }
+
+            // Range footer
+            let rangeText = '';
+            if (reportTides.length >= 2) {
+              const heights = reportTides.map((t) => Number(t.height));
+              const maxH = Math.max(...heights);
+              const minH = Math.min(...heights);
+              const swing = (maxH - minH).toFixed(1);
+              rangeText = `${swing} ft swing`;
+            }
+
+            return (
+              <View style={styles.tideContainer}>
+                {/* Header */}
+                <View style={styles.tideHeader}>
+                  <View style={styles.tideHeaderLeft}>
+                    <IconSymbol
+                      ios_icon_name="arrow.up.arrow.down"
+                      android_material_icon_name="swap-vert"
+                      size={20}
+                      color={colors.primary}
+                    />
+                    <Text style={[styles.tideHeaderTitle, { color: valueColor }]}>
+                      Tide Schedule
+                    </Text>
+                  </View>
+                  {hasNextTide && trendLabel !== '' && (
+                    <View style={[styles.tideTrendPill, { backgroundColor: trendColor + '26' }]}>
+                      <Text style={[styles.tideTrendPillText, { color: trendColor }]}>
+                        {trendLabel}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {reportTides.length > 0 ? (
+                  <>
+                    <View style={styles.tideTimesContainer}>
+                      {tideParsed.map((tide, tideIndex) => {
+                        const isHighTide = tide.type === 'high' || tide.type === 'High';
+                        const tideColor = isHighTide ? '#2196F3' : '#FF9800';
+                        const isNext = hasNextTide && tideIndex === nextTideIndex;
+                        const rowBg = isNext
+                          ? (isHighTide ? 'rgba(33,150,243,0.08)' : 'rgba(255,152,0,0.08)')
+                          : 'transparent';
+
+                        const tideTimeFormatted = new Date(`2000-01-01T${tide.time}`).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true,
+                        });
+                        const tideTypeLabel = isHighTide ? 'High Tide' : 'Low Tide';
+                        const tideSubLabel = isHighTide ? 'rising peak' : 'outgoing low';
+                        const heightNum = Number(tide.height);
+                        const heightDisplay = `${heightNum.toFixed(1)} ft`;
+                        const heightSublabel = isHighTide ? 'above MLLW' : (heightNum < 0 ? 'below MLLW' : '');
+
+                        return (
+                          <View
+                            key={tideIndex}
+                            style={[
+                              styles.tideTimeItem,
+                              { backgroundColor: rowBg },
+                            ]}
+                          >
+                            {/* Left accent bar for next tide */}
+                            {isNext && (
+                              <View style={[styles.tideAccentBar, { backgroundColor: tideColor }]} />
+                            )}
+
+                            {/* Left: time + time-until */}
+                            <View style={styles.tideLeftCol}>
+                              {isNext && (
+                                <Text style={[styles.tideNextLabel, { color: tideColor }]}>
+                                  NEXT
+                                </Text>
+                              )}
+                              <Text style={[styles.tideTimeMain, { color: valueColor }]}>
+                                {tideTimeFormatted}
+                              </Text>
+                              {isNext && timeUntilText !== '' && (
+                                <Text style={[styles.tideTimeUntil, { color: colors.textSecondary }]}>
+                                  {timeUntilText}
+                                </Text>
+                              )}
+                            </View>
+
+                            {/* Center: type label + sublabel */}
+                            <View style={styles.tideCenterCol}>
+                              <Text style={[
+                                styles.tideCenterType,
+                                { color: tideColor, opacity: isNext ? 1 : 0.7 },
+                              ]}>
+                                {tideTypeLabel}
+                              </Text>
+                              <Text style={[styles.tideCenterSub, { color: colors.textSecondary }]}>
+                                {tideSubLabel}
+                              </Text>
+                            </View>
+
+                            {/* Right: height + sublabel */}
+                            <View style={styles.tideRightCol}>
+                              <Text style={[styles.tideHeightMain, { color: valueColor }]}>
+                                {heightDisplay}
+                              </Text>
+                              {heightSublabel !== '' && (
+                                <Text style={[styles.tideHeightSub, { color: colors.textSecondary }]}>
+                                  {heightSublabel}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Range footer */}
+                    {reportTides.length >= 2 && (
+                      <View style={styles.tideRangeFooter}>
+                        <Text style={[styles.tideRangeLabel, { color: colors.textSecondary }]}>
+                          RANGE
                         </Text>
-                        <Text style={[styles.tideTimeText, { color: valueColor }]}>
-                          {tideTime}
-                        </Text>
-                        <Text style={[styles.tideHeightText, { color: colors.textSecondary }]}>
-                          {tideHeightText}
+                        <Text style={[styles.tideRangeValue, { color: colors.primary }]}>
+                          {rangeText}
                         </Text>
                       </View>
-                    );
-                  })}
-                </View>
-                {reportTides.length < 4 && (
-                  <View style={[styles.tideWarning, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                    )}
+
+                    {/* Incomplete warning */}
+                    {reportTides.length < 4 && (
+                      <View style={[styles.tideWarning, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                        <IconSymbol
+                          ios_icon_name="info.circle"
+                          android_material_icon_name="info"
+                          size={12}
+                          color="#FF9800"
+                        />
+                        <Text style={[styles.tideWarningText, { color: '#FF9800' }]}>
+                          Incomplete schedule ({reportTides.length}/4 tides). Pull down to refresh or tap &quot;Update Data&quot; for complete tide information.
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.noTideDataContainer}>
                     <IconSymbol
-                      ios_icon_name="info.circle"
-                      android_material_icon_name="info"
-                      size={14}
-                      color="#FF9800"
+                      ios_icon_name="arrow.up.arrow.down"
+                      android_material_icon_name="swap-vert"
+                      size={32}
+                      color={colors.textSecondary}
                     />
-                    <Text style={[styles.tideWarningText, { color: '#FF9800' }]}>
-                      Incomplete schedule ({reportTides.length}/4 tides). Pull down to refresh or tap &quot;Update Data&quot; for complete tide information.
+                    <Text style={[styles.noTideDataText, { color: valueColor }]}>
+                      No tide data available for {locationData.displayName}
+                    </Text>
+                    <Text style={[styles.noTideDataHint, { color: colors.textSecondary }]}>
+                      Tide data may be outdated. Tap &quot;Update Data&quot; above to fetch the latest tide schedule from NOAA.
                     </Text>
                   </View>
                 )}
-              </>
-            ) : (
-              <View style={styles.noTideDataContainer}>
-                <Text style={[styles.noTideDataText, { color: valueColor }]}>
-                  No tide data available for {locationData.displayName}
-                </Text>
-                <Text style={[styles.noTideDataHint, { color: colors.textSecondary }]}>
-                  Tide data may be outdated. Tap &quot;Update Data&quot; above to fetch the latest tide schedule from NOAA.
-                </Text>
               </View>
-            )}
-          </View>
+            );
+          })()}
         </View>
 
         <View style={[
@@ -1633,8 +1770,26 @@ const styles = StyleSheet.create({
   tideHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  tideHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tideHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  tideTrendPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  tideTrendPillText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   tideTimesContainer: {
     gap: 8,
@@ -1642,16 +1797,77 @@ const styles = StyleSheet.create({
   tideTimeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
-  tideTimeText: {
-    fontSize: 14,
+  tideAccentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    borderRadius: 2,
+  },
+  tideLeftCol: {
+    width: 72,
+    paddingLeft: 4,
+  },
+  tideNextLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  tideTimeMain: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  tideTimeUntil: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  tideCenterCol: {
+    flex: 1,
+    paddingHorizontal: 8,
+  },
+  tideCenterType: {
+    fontSize: 15,
     fontWeight: '600',
   },
-  tideHeightText: {
+  tideCenterSub: {
     fontSize: 12,
-    marginLeft: 'auto',
+    marginTop: 2,
+  },
+  tideRightCol: {
+    alignItems: 'flex-end',
+  },
+  tideHeightMain: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  tideHeightSub: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  tideRangeFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.15)',
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  tideRangeLabel: {
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tideRangeValue: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   tideWarning: {
     flexDirection: 'row',
@@ -1663,22 +1879,25 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   tideWarningText: {
-    fontSize: 11,
+    fontSize: 10,
     flex: 1,
-    lineHeight: 16,
+    lineHeight: 15,
   },
   noTideDataContainer: {
-    paddingVertical: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
     gap: 8,
   },
   noTideDataText: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   noTideDataHint: {
     fontSize: 12,
     lineHeight: 18,
     fontStyle: 'italic',
+    textAlign: 'center',
   },
   conditionsBox: {
     padding: 16,
