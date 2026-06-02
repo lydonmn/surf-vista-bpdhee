@@ -69,3 +69,30 @@ coverage/
 
 expo-env.d.ts
 # @end expo-cli
+.git/
+.next/
+.turbo/
+.vercel/
+.cache/
+.natively/
+android/
+ios/
+bun.lock
+bun.lockb
+yarn.lock
+next-env.d.ts
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.pem
+.env*.local
+*.tsbuildinfo
+pnpm-lock.yaml
+package-lock.json
