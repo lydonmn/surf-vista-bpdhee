@@ -54,6 +54,14 @@ const DEFAULT_LOCATIONS: LocationData[] = [
     coordinates: { lat: 33.9140, lon: -78.3070 },
     buoyId: '41013',
     tideStationId: '8659414'
+  },
+  {
+    id: 'lindamar-pacifica-ca',
+    name: 'Lindamar',
+    displayName: 'Lindamar, Pacifica CA',
+    coordinates: { lat: 37.5985, lon: -122.5052 },
+    buoyId: '46026',
+    tideStationId: '9414296'
   }
 ];
 

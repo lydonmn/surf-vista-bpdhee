@@ -68,6 +68,7 @@ export interface WeatherForecast {
   swell_height_range?: string | null;
   prediction_confidence?: number | null;
   prediction_source?: string | null;
+  daily_narrative?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
