@@ -2,7 +2,7 @@
   "expo": {
     "name": "SurfVista",
     "slug": "surfvista",
-    "version": "13.0.9",
+    "version": "13.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/IMG_9054.png",
     "scheme": "surfvista",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "38",
+      "buildNumber": "39",
       "bundleIdentifier": "Therealfollysurfreport.SurfVista",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to upload surf report videos.",
@@ -38,7 +38,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.lukestageberg.SurfVista",
-      "versionCode": 35,
+      "versionCode": 36,
       "permissions": [
         "READ_MEDIA_IMAGES",
         "READ_EXTERNAL_STORAGE",
