@@ -476,7 +476,7 @@ export function useVideos() {
     }, REFRESH_INTERVAL);
 
     const subscription = supabase
-      .channel(`videos_changes_${currentLocation}`)
+      .channel(`videos_changes_${currentLocation}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
       .on(
         'postgres_changes',
         {

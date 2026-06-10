@@ -23,10 +23,10 @@ function getRatingColor(rating: number): string {
 export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometerProps) {
   const clampedRating = Math.max(1, Math.min(10, rating));
   const color = getRatingColor(clampedRating);
-  const needleRotation = useSharedValue(-90);
+  const needleRotation = useSharedValue(-180);
 
-  // Map rating 1–10 to -90°..+90° (180° sweep)
-  const targetAngle = interpolate(clampedRating, [1, 10], [-90, 90]);
+  // Map rating 1–10 to -180°..0° (top-half sweep: 9 o'clock → 12 o'clock → 3 o'clock)
+  const targetAngle = interpolate(clampedRating, [1, 10], [-180, 0]);
 
   useEffect(() => {
     needleRotation.value = withSpring(targetAngle, {
@@ -45,9 +45,9 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
   const needleLength = halfSize * 0.72;
   const dotSize = size * 0.18;
 
-  // Build tick marks for the arc (9 ticks across 180°)
+  // Build tick marks for the arc (9 ticks across top half: 9 o'clock → 12 → 3 o'clock)
   const ticks = Array.from({ length: 9 }, (_, i) => {
-    const angle = -90 + i * 22.5; // -90° to +90° in 22.5° steps
+    const angle = -180 + i * 22.5; // -180° to 0° in 22.5° steps
     const rad = (angle * Math.PI) / 180;
     const midR = halfSize * 0.80;
     const tickLen = size * 0.16;

@@ -492,6 +492,14 @@ export default function ForecastScreen() {
                   </View>
                 </TouchableOpacity>
 
+                {day.weatherForecast?.daily_narrative ? (
+                  <View style={styles.narrativeBlock}>
+                    <Text style={[styles.narrativeText, { color: theme.colors.text }]}>
+                      {day.weatherForecast.daily_narrative}
+                    </Text>
+                  </View>
+                ) : null}
+
                 {isExpanded && (
                   <View style={styles.dayDetails}>
                     {hasSurfData && day.surfReport && (
@@ -822,6 +830,19 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     marginLeft: 'auto',
+  },
+  narrativeBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.15)',
+    marginTop: 8,
+  },
+  narrativeText: {
+    fontSize: 14,
+    lineHeight: 20,
+    opacity: 0.9,
   },
   conditionsBox: {
     padding: 14,
