@@ -77,8 +77,6 @@ expo-env.d.ts
 .natively/
 android/
 ios/
-bun.lock
-bun.lockb
 yarn.lock
 next-env.d.ts
 *.orig.*
@@ -94,5 +92,4 @@ yarn-error.*
 *.pem
 .env*.local
 *.tsbuildinfo
-pnpm-lock.yaml
 package-lock.json
