@@ -4,7 +4,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  interpolate,
 } from 'react-native-reanimated';
 
 interface StokeSpeedometerProps {
@@ -20,59 +19,67 @@ function getRatingColor(rating: number): string {
   return '#EF4444';
 }
 
+// Tighter sweep: 10 o'clock → 12 → 2 o'clock (140° span).
+// Keeps all ticks well above the rating number, no extreme horizontal ticks.
+const ARC_START = -160; // degrees (just past 10 o'clock)
+const ARC_END = -20;    // degrees (just past 2 o'clock)
+const TICK_COUNT = 8;
+const ARC_SPAN = ARC_END - ARC_START; // 140°
+
 export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometerProps) {
   const clampedRating = Math.max(1, Math.min(10, rating));
   const color = getRatingColor(clampedRating);
-  const needleRotation = useSharedValue(-180);
 
-  // Map rating 1–10 to -180°..0° (top-half sweep: 9 o'clock → 12 o'clock → 3 o'clock)
-  const targetAngle = interpolate(clampedRating, [1, 10], [-180, 0]);
+  // Map rating 1–10 to ARC_START..ARC_END
+  const targetAngle = ARC_START + ((clampedRating - 1) / 9) * ARC_SPAN;
+  const needleRotation = useSharedValue(ARC_START);
 
   useEffect(() => {
     needleRotation.value = withSpring(targetAngle, {
-      damping: 12,
-      stiffness: 90,
-      mass: 0.8,
+      damping: 14,
+      stiffness: 110,
+      mass: 0.7,
     });
+    console.log('[StokeSpeedometer] rating changed', { rating: clampedRating, targetAngle });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clampedRating]);
 
+  const halfSize = size / 2;
+  const needleLength = halfSize * 0.62;
+  const needleWidth = size * 0.06;
+  const dotSize = size * 0.16;
+  const arcRadius = halfSize * 0.78;
+  const tickLen = size * 0.14;
+  const tickWidth = size * 0.04;
+
+  // Rotate around the gauge center using a translateY trick:
+  // the Animated.View is a 0-size pivot at the exact center,
+  // and the inner needle bar translates up by half its length BEFORE rotation.
   const needleStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${needleRotation.value}deg` }],
+    transform: [
+      { rotate: `${needleRotation.value}deg` },
+      { translateY: -needleLength / 2 },
+    ],
   }));
 
-  const halfSize = size / 2;
-  const needleLength = halfSize * 0.72;
-  const dotSize = size * 0.18;
-
-  // Build tick marks for the arc (9 ticks across top half: 9 o'clock → 12 → 3 o'clock)
-  const ticks = Array.from({ length: 9 }, (_, i) => {
-    const angle = -180 + i * 22.5; // -180° to 0° in 22.5° steps
+  // Build tick marks
+  const ticks = Array.from({ length: TICK_COUNT }, (_, i) => {
+    const t = i / (TICK_COUNT - 1); // 0..1
+    const angle = ARC_START + t * ARC_SPAN;
     const rad = (angle * Math.PI) / 180;
-    const midR = halfSize * 0.80;
-    const tickLen = size * 0.16;
-    const tickWidth = size * 0.045;
-    const cx = halfSize + midR * Math.cos(rad) - tickWidth / 2;
-    const cy = halfSize + midR * Math.sin(rad) - tickLen / 2;
-    const tickRating = Math.round(interpolate(i, [0, 8], [1, 10]));
-    const tickColor = getRatingColor(tickRating);
-    const isActive = tickRating <= clampedRating;
-    return { cx, cy, tickColor, isActive, angle, tickLen, tickWidth };
+    const cx = halfSize + arcRadius * Math.cos(rad) - tickWidth / 2;
+    const cy = halfSize + arcRadius * Math.sin(rad) - tickLen / 2;
+    const tickRating = 1 + t * 9; // 1..10
+    const tickColor = getRatingColor(Math.round(tickRating));
+    const isActive = tickRating <= clampedRating + 0.5;
+    return { cx, cy, tickColor, isActive, angle };
   });
 
-  const needleLeft = halfSize - size * 0.025;
-  const needleTop = halfSize - needleLength;
-  const needleWidth = size * 0.05;
-  const needleBorderRadius = size * 0.025;
-  const needleOriginX = size * 0.025;
-  const dotLeft = halfSize - dotSize / 2;
-  const dotTop = halfSize - dotSize / 2;
-  const ratingFontSize = size * 0.22;
-  const ratingBottom = size * 0.04;
+  const ratingFontSize = size * 0.26;
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      {/* Arc ticks rendered as thin rotated lines */}
+      {/* Tick marks across the top arc */}
       {ticks.map((tick, i) => (
         <View
           key={i}
@@ -80,39 +87,49 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
             position: 'absolute',
             left: tick.cx,
             top: tick.cy,
-            width: tick.tickWidth,
-            height: tick.tickLen,
-            borderRadius: tick.tickWidth / 2,
-            backgroundColor: tick.isActive ? tick.tickColor : 'rgba(128,128,128,0.25)',
+            width: tickWidth,
+            height: tickLen,
+            borderRadius: tickWidth / 2,
+            backgroundColor: tick.isActive ? tick.tickColor : 'rgba(128,128,128,0.22)',
             transform: [{ rotate: `${tick.angle + 90}deg` }],
           }}
         />
       ))}
 
-      {/* Needle — rotates from center */}
+      {/* Needle pivot — a small anchor at the exact center.
+          The needle bar is a child that translates up by half its length BEFORE rotation,
+          so rotation happens around the pivot (= gauge center). */}
       <Animated.View
         style={[
           {
             position: 'absolute',
-            left: needleLeft,
-            top: needleTop,
+            left: halfSize - needleWidth / 2,
+            top: halfSize - needleWidth / 2,
             width: needleWidth,
-            height: needleLength,
-            borderRadius: needleBorderRadius,
-            backgroundColor: color,
-            // @ts-expect-error — transformOrigin is valid in RN 0.73+ / Reanimated
-            transformOrigin: `${needleOriginX}px ${needleLength}px`,
+            height: needleWidth,
           },
           needleStyle,
         ]}
-      />
+      >
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: -needleLength / 2 + needleWidth / 2,
+            width: needleWidth,
+            height: needleLength,
+            borderRadius: needleWidth / 2,
+            backgroundColor: color,
+          }}
+        />
+      </Animated.View>
 
-      {/* Center dot */}
+      {/* Center dot — sits on top of the needle base */}
       <View
         style={{
           position: 'absolute',
-          left: dotLeft,
-          top: dotTop,
+          left: halfSize - dotSize / 2,
+          top: halfSize - dotSize / 2,
           width: dotSize,
           height: dotSize,
           borderRadius: dotSize / 2,
@@ -120,11 +137,11 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
         }}
       />
 
-      {/* Rating number */}
+      {/* Rating number — anchored well below center, outside the arc footprint */}
       <Text
         style={{
           position: 'absolute',
-          bottom: ratingBottom,
+          bottom: -size * 0.04,
           alignSelf: 'center',
           color,
           fontSize: ratingFontSize,
@@ -142,5 +159,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
 });
