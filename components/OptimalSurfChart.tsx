@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { colors } from '@/styles/commonStyles';
 
 interface TideEntry {
@@ -19,8 +19,10 @@ interface OptimalSurfChartProps {
 
 const HOURS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const BAR_AREA_HEIGHT = 56;
-const GAP = 3;
+const BAR_WIDTH = 32;
+const GAP = 6;
 const NUM_BARS = 16;
+const TOTAL_CHART_WIDTH = NUM_BARS * BAR_WIDTH + (NUM_BARS - 1) * GAP; // 602px
 
 const HOUR_LABELS = ['5a', '6a', '7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p'];
 
@@ -145,13 +147,6 @@ export default function OptimalSurfChart({
   tides,
   isDarkMode = false,
 }: OptimalSurfChartProps) {
-  const { width: screenWidth } = useWindowDimensions();
-
-  const barWidth = useMemo(() => {
-    const available = screenWidth - 32 - 28 - NUM_BARS * GAP;
-    return Math.max(8, available / NUM_BARS);
-  }, [screenWidth]);
-
   const scores = useMemo(
     () => computeScores(waveHeight, wavePeriod, windSpeed, windDirection, tides),
     [waveHeight, wavePeriod, windSpeed, windDirection, tides]
@@ -177,12 +172,8 @@ export default function OptimalSurfChart({
   const baselineColor = isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
 
   // Best window pill position
-  const bestWindowLeft = useMemo(() => {
-    return bestWindowStart * (barWidth + GAP);
-  }, [bestWindowStart, barWidth]);
-  const bestWindowWidth = useMemo(() => {
-    return 3 * barWidth + 2 * GAP;
-  }, [barWidth]);
+  const bestWindowLeft = bestWindowStart * (BAR_WIDTH + GAP);
+  const bestWindowWidth = 3 * BAR_WIDTH + 2 * GAP;
 
   const legendItems = [
     { color: '#22C55E', label: 'PRIME' },
@@ -195,105 +186,116 @@ export default function OptimalSurfChart({
     <View style={[styles.container, { backgroundColor: containerBg }]}>
       <Text style={[styles.title, { color: textSecondary }]}>BEST TIME TO SURF</Text>
 
-      {/* Chart area */}
-      <View style={styles.chartArea}>
-        {/* Best window pill */}
-        <View
-          style={[
-            styles.bestWindowPill,
-            {
-              left: bestWindowLeft,
-              width: bestWindowWidth,
-              backgroundColor: isDarkMode ? 'rgba(34,197,94,0.18)' : 'rgba(34,197,94,0.12)',
-              borderColor: '#22C55E',
-            },
-          ]}
-        >
-          <Text style={styles.bestWindowText}>⭐ Best Window</Text>
-        </View>
+      {/* Horizontally scrollable chart area */}
+      <ScrollView
+        horizontal={true}
+        showsHorizontalScrollIndicator={false}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        onScrollBeginDrag={() => console.log('[OptimalSurfChart] User started scrolling chart')}
+      >
+        <View style={{ width: TOTAL_CHART_WIDTH }}>
+          {/* Chart area */}
+          <View style={styles.chartArea}>
+            {/* Best window pill */}
+            <View
+              style={[
+                styles.bestWindowPill,
+                {
+                  left: bestWindowLeft,
+                  width: bestWindowWidth,
+                  backgroundColor: isDarkMode ? 'rgba(34,197,94,0.18)' : 'rgba(34,197,94,0.12)',
+                  borderColor: '#22C55E',
+                },
+              ]}
+            >
+              <Text style={styles.bestWindowText}>⭐ Best Window</Text>
+            </View>
 
-        {/* NOW indicator */}
-        {nowBarIndex >= 0 && (
-          <View
-            style={[
-              styles.nowIndicator,
-              { left: nowBarIndex * (barWidth + GAP) + barWidth / 2 },
-            ]}
-          >
-            <Text style={[styles.nowLabel, { color: isDarkMode ? '#FFFFFF' : colors.primary }]}>NOW</Text>
-            <View style={[styles.nowLine, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.7)' : colors.primary }]} />
-          </View>
-        )}
-
-        {/* Bars */}
-        <View style={styles.barsRow}>
-          {scores.map((score, idx) => {
-            const barColor = getBarColor(score);
-            const heightPct = 0.2 + (score / 10) * 0.8;
-            const barH = BAR_AREA_HEIGHT * heightPct;
-            const isNow = idx === nowBarIndex;
-
-            return (
+            {/* NOW indicator */}
+            {nowBarIndex >= 0 && (
               <View
-                key={idx}
                 style={[
-                  styles.barWrapper,
-                  { width: barWidth, marginRight: idx < NUM_BARS - 1 ? GAP : 0 },
+                  styles.nowIndicator,
+                  { left: nowBarIndex * (BAR_WIDTH + GAP) + BAR_WIDTH / 2 },
                 ]}
               >
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: barH,
-                      backgroundColor: barColor,
-                      opacity: isNow ? 1 : 0.82,
-                      borderTopLeftRadius: 3,
-                      borderTopRightRadius: 3,
-                      shadowColor: isNow ? barColor : 'transparent',
-                      shadowOpacity: isNow ? 0.5 : 0,
-                      shadowRadius: isNow ? 4 : 0,
-                      elevation: isNow ? 3 : 0,
-                    },
-                  ]}
-                />
+                <Text style={[styles.nowLabel, { color: isDarkMode ? '#FFFFFF' : colors.primary }]}>NOW</Text>
+                <View style={[styles.nowLine, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.7)' : colors.primary }]} />
               </View>
-            );
-          })}
-        </View>
+            )}
 
-        {/* Tide dot overlay */}
-        <View style={styles.tideDotsRow} pointerEvents="none">
-          {tideHeightsForDots.map((norm, idx) => {
-            const dotBottom = 4 + norm * 14;
-            return (
-              <View
-                key={idx}
-                style={[
-                  styles.tideDot,
-                  {
-                    width: barWidth,
-                    marginRight: idx < NUM_BARS - 1 ? GAP : 0,
-                    bottom: dotBottom,
-                  },
-                ]}
-              />
-            );
-          })}
-        </View>
+            {/* Bars */}
+            <View style={styles.barsRow}>
+              {scores.map((score, idx) => {
+                const barColor = getBarColor(score);
+                const heightPct = 0.2 + (score / 10) * 0.8;
+                const barH = BAR_AREA_HEIGHT * heightPct;
+                const isNow = idx === nowBarIndex;
 
-        {/* Baseline */}
-        <View style={[styles.baseline, { backgroundColor: baselineColor }]} />
-      </View>
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.barWrapper,
+                      { width: BAR_WIDTH, marginRight: idx < NUM_BARS - 1 ? GAP : 0 },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.bar,
+                        {
+                          height: barH,
+                          backgroundColor: barColor,
+                          opacity: isNow ? 1 : 0.82,
+                          borderTopLeftRadius: 3,
+                          borderTopRightRadius: 3,
+                          shadowColor: isNow ? barColor : 'transparent',
+                          shadowOpacity: isNow ? 0.5 : 0,
+                          shadowRadius: isNow ? 4 : 0,
+                          elevation: isNow ? 3 : 0,
+                        },
+                      ]}
+                    />
+                  </View>
+                );
+              })}
+            </View>
 
-      {/* Time labels */}
-      <View style={styles.labelsRow}>
-        {HOUR_LABELS.map((label, idx) => (
-          <View key={idx} style={[styles.labelWrapper, { width: barWidth, marginRight: idx < NUM_BARS - 1 ? GAP : 0 }]}>
-            <Text style={[styles.hourLabel, { color: textSecondary }]}>{label}</Text>
+            {/* Tide dot overlay */}
+            <View style={styles.tideDotsRow} pointerEvents="none">
+              {tideHeightsForDots.map((norm, idx) => {
+                const dotBottom = 4 + norm * 14;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.tideDot,
+                      {
+                        width: BAR_WIDTH,
+                        marginRight: idx < NUM_BARS - 1 ? GAP : 0,
+                        bottom: dotBottom,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+
+            {/* Baseline */}
+            <View style={[styles.baseline, { backgroundColor: baselineColor }]} />
           </View>
-        ))}
-      </View>
+
+          {/* Time labels */}
+          <View style={styles.labelsRow}>
+            {HOUR_LABELS.map((label, idx) => (
+              <View key={idx} style={[styles.labelWrapper, { width: BAR_WIDTH, marginRight: idx < NUM_BARS - 1 ? GAP : 0 }]}>
+                <Text style={[styles.hourLabel, { color: textSecondary }]}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
 
       {/* Legend */}
       <View style={styles.legend}>
@@ -304,6 +306,9 @@ export default function OptimalSurfChart({
           </View>
         ))}
       </View>
+
+      {/* Scroll hint */}
+      <Text style={[styles.scrollHint, { color: textSecondary }]}>{'← swipe to see full day →'}</Text>
     </View>
   );
 }
@@ -320,6 +325,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
+  },
+  scrollView: {
+    marginHorizontal: -14,
+  },
+  scrollContent: {
+    paddingHorizontal: 14,
   },
   chartArea: {
     height: BAR_AREA_HEIGHT + 24,
@@ -429,5 +440,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 0.3,
+  },
+  scrollHint: {
+    fontSize: 10,
+    opacity: 0.6,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
