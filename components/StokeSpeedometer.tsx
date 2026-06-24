@@ -52,11 +52,14 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
   const tickLen = size * 0.14;
   const tickWidth = size * 0.04;
 
-  // Rotate around the gauge center using a translateY trick:
-  // the Animated.View is a 0-size pivot at the exact center,
-  // and the inner needle bar translates up by half its length BEFORE rotation.
+  // The needle is a bar whose BOTTOM sits at the gauge center.
+  // Rotate around its bottom edge using the translateY sandwich trick:
+  //   1. translate up by needleLength/2 (moves rotation origin to bottom of bar)
+  //   2. rotate
+  //   3. translate back down by needleLength/2
   const needleStyle = useAnimatedStyle(() => ({
     transform: [
+      { translateY: needleLength / 2 },
       { rotate: `${needleRotation.value}deg` },
       { translateY: -needleLength / 2 },
     ],
@@ -96,33 +99,21 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
         />
       ))}
 
-      {/* Needle pivot — a small anchor at the exact center.
-          The needle bar is a child that translates up by half its length BEFORE rotation,
-          so rotation happens around the pivot (= gauge center). */}
+      {/* Needle bar — bottom edge sits at gauge center, rotates around that point */}
       <Animated.View
         style={[
           {
             position: 'absolute',
             left: halfSize - needleWidth / 2,
-            top: halfSize - needleWidth / 2,
-            width: needleWidth,
-            height: needleWidth,
-          },
-          needleStyle,
-        ]}
-      >
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: -needleLength / 2 + needleWidth / 2,
+            top: halfSize - needleLength,
             width: needleWidth,
             height: needleLength,
             borderRadius: needleWidth / 2,
             backgroundColor: color,
-          }}
-        />
-      </Animated.View>
+          },
+          needleStyle,
+        ]}
+      />
 
       {/* Center dot — sits on top of the needle base */}
       <View
