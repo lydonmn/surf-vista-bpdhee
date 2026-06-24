@@ -13,6 +13,7 @@ import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
 import { trackForecastView } from '@/utils/usageTracking';
 import StokeSpeedometer from '@/components/StokeSpeedometer';
+import OptimalSurfChart from '@/components/OptimalSurfChart';
 
 interface DayForecast {
   date: string;
@@ -530,6 +531,35 @@ export default function ForecastScreen() {
 
                 {isExpanded && (
                   <View style={styles.dayDetails}>
+                    {hasSurfData && (() => {
+                      const parseAvg = (str: string): number => {
+                        const s = String(str || '').trim();
+                        if (!s || s === 'N/A') return 0;
+                        if (s.includes('-')) {
+                          const parts = s.split('-');
+                          const lo = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
+                          const hi = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
+                          return isNaN(lo) || isNaN(hi) ? 0 : (lo + hi) / 2;
+                        }
+                        const v = parseFloat(s.replace(/[^0-9.]/g, ''));
+                        return isNaN(v) ? 0 : v;
+                      };
+                      const chartWaveHeight = parseAvg(displayHeight);
+                      const chartWavePeriod = parseFloat(String(day.surfReport?.wave_period || '')) || 8;
+                      const chartWindSpeed = Number(day.weatherForecast?.wind_speed) || parseAvg(String(day.surfReport?.wind_speed || '')) || 5;
+                      const chartWindDir = day.weatherForecast?.wind_direction || day.surfReport?.wind_direction || 'N';
+                      console.log('[ForecastScreen] OptimalSurfChart rendered for', day.date, ':', { chartWaveHeight, chartWavePeriod, chartWindSpeed, chartWindDir });
+                      return (
+                        <OptimalSurfChart
+                          waveHeight={chartWaveHeight}
+                          wavePeriod={chartWavePeriod}
+                          windSpeed={chartWindSpeed}
+                          windDirection={chartWindDir}
+                          tides={day.tides}
+                          isDarkMode={theme.dark}
+                        />
+                      );
+                    })()}
                     {hasSurfData && day.surfReport && (
                       <View style={styles.detailSection}>
                         <View style={styles.detailRow}>
