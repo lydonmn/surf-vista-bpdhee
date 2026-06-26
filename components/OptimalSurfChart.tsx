@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import { colors } from '@/styles/commonStyles';
 
 interface TideEntry {
@@ -23,6 +24,8 @@ const BAR_WIDTH = 32;
 const GAP = 6;
 const NUM_BARS = 16;
 const TOTAL_CHART_WIDTH = NUM_BARS * BAR_WIDTH + (NUM_BARS - 1) * GAP; // 602px
+const CHART_HEIGHT = BAR_AREA_HEIGHT + 24;
+const TIDE_PADDING = 8;
 
 const HOUR_LABELS = ['5a', '6a', '7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p'];
 
@@ -46,9 +49,7 @@ function interpolateTideHeight(hour: number, tides: TideEntry[]): number | null 
 
   if (parsed.length === 1) return parsed[0].height;
 
-  // Before first tide
   if (hour <= parsed[0].decHour) return parsed[0].height;
-  // After last tide
   if (hour >= parsed[parsed.length - 1].decHour) return parsed[parsed.length - 1].height;
 
   for (let i = 0; i < parsed.length - 1; i++) {
@@ -69,7 +70,6 @@ function getBarColor(score: number): string {
   return '#6B7280';
 }
 
-
 function computeScores(
   waveHeight: number,
   wavePeriod: number,
@@ -79,7 +79,6 @@ function computeScores(
 ): number[] {
   const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
 
-  // Compute tide range for normalization
   let tideMin = Infinity;
   let tideMax = -Infinity;
   const tideHeights = HOURS.map((h) => interpolateTideHeight(h, tides));
@@ -92,10 +91,8 @@ function computeScores(
   const tideRange = tideMax - tideMin;
 
   return HOURS.map((H, idx) => {
-    // 1. Base score
     const base = clamp(waveHeight * 1.5 + (wavePeriod - 6) * 0.3, 1, 8);
 
-    // 2. Wind penalty
     let windPenalty = 0;
     if (isOffshore) {
       if (windSpeed < 10) windPenalty = 0;
@@ -108,10 +105,8 @@ function computeScores(
       else windPenalty = -3;
     }
 
-    // Morning bonus
     const morningBonus = H <= 9 ? 0.5 : 0;
 
-    // 3. Tide bonus
     let tideBonus = 0;
     const tideH = tideHeights[idx];
     if (tideH !== null && tideRange > 0) {
@@ -120,7 +115,6 @@ function computeScores(
       tideBonus = tideScore * 1.5;
     }
 
-    // 4. Final
     return clamp(base + windPenalty + morningBonus + tideBonus, 1, 10);
   });
 }
@@ -137,6 +131,33 @@ function findBestWindow(scores: number[]): number {
     }
   }
   return bestStart;
+}
+
+interface TidePoint {
+  x: number;
+  y: number;
+}
+
+interface TideTurningPoint {
+  x: number;
+  y: number;
+  type: string;
+  height: number;
+}
+
+function buildTideCurvePath(points: TidePoint[]): string {
+  if (points.length < 2) return '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpx1 = prev.x + (curr.x - prev.x) / 3;
+    const cpy1 = prev.y;
+    const cpx2 = curr.x - (curr.x - prev.x) / 3;
+    const cpy2 = curr.y;
+    d += ` C ${cpx1} ${cpy1} ${cpx2} ${cpy2} ${curr.x} ${curr.y}`;
+  }
+  return d;
 }
 
 export default function OptimalSurfChart({
@@ -157,21 +178,47 @@ export default function OptimalSurfChart({
   const currentHour = new Date().getHours();
   const nowBarIndex = currentHour >= 5 && currentHour <= 20 ? currentHour - 5 : -1;
 
-  // Tide dots for overlay
-  const tideHeightsForDots = useMemo(() => {
+  // Compute tide curve points
+  const { tidePoints, tideMin, tideMax } = useMemo(() => {
     const heights = HOURS.map((h) => interpolateTideHeight(h, tides));
     const vals = heights.filter((v) => v !== null) as number[];
     const min = vals.length > 0 ? Math.min(...vals) : 0;
     const max = vals.length > 0 ? Math.max(...vals) : 1;
     const range = max - min || 1;
-    return heights.map((h) => (h !== null ? (h - min) / range : 0.5));
+
+    const points: TidePoint[] = heights.map((h, i) => {
+      const norm = h !== null ? (h - min) / range : 0.5;
+      const x = i * (BAR_WIDTH + GAP) + BAR_WIDTH / 2;
+      const y = CHART_HEIGHT - TIDE_PADDING - norm * (CHART_HEIGHT - TIDE_PADDING * 2);
+      return { x, y };
+    });
+
+    return { tidePoints: points, tideMin: min, tideMax: max };
   }, [tides]);
+
+  // Find turning points (highs and lows) within 5am–8pm window
+  const turningPoints = useMemo((): TideTurningPoint[] => {
+    if (!tides || tides.length === 0) return [];
+    const range = tideMax - tideMin || 1;
+    return tides
+      .map((entry) => {
+        const decHour = tideTimeToDecimalHour(entry.time);
+        if (decHour < 5 || decHour > 20) return null;
+        const barIndex = decHour - 5; // fractional index into HOURS array
+        const x = barIndex * (BAR_WIDTH + GAP) + BAR_WIDTH / 2;
+        const norm = (Number(entry.height) - tideMin) / range;
+        const y = CHART_HEIGHT - TIDE_PADDING - norm * (CHART_HEIGHT - TIDE_PADDING * 2);
+        return { x, y, type: entry.type, height: Number(entry.height) };
+      })
+      .filter((p): p is TideTurningPoint => p !== null);
+  }, [tides, tideMin, tideMax]);
+
+  const tidePath = useMemo(() => buildTideCurvePath(tidePoints), [tidePoints]);
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
   const textSecondary = colors.textSecondary;
   const baselineColor = isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
 
-  // Best window pill position
   const bestWindowLeft = bestWindowStart * (BAR_WIDTH + GAP);
   const bestWindowWidth = 3 * BAR_WIDTH + 2 * GAP;
 
@@ -262,25 +309,64 @@ export default function OptimalSurfChart({
               })}
             </View>
 
-            {/* Tide dot overlay */}
-            <View style={styles.tideDotsRow} pointerEvents="none">
-              {tideHeightsForDots.map((norm, idx) => {
-                const dotBottom = 4 + norm * 14;
-                return (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.tideDot,
-                      {
-                        width: BAR_WIDTH,
-                        marginRight: idx < NUM_BARS - 1 ? GAP : 0,
-                        bottom: dotBottom,
-                      },
-                    ]}
-                  />
-                );
-              })}
-            </View>
+            {/* SVG tide curve overlay */}
+            {tidePoints.length > 1 && (
+              <Svg
+                width={TOTAL_CHART_WIDTH}
+                height={CHART_HEIGHT}
+                style={styles.tideSvg}
+                pointerEvents="none"
+              >
+                {/* Smooth tide curve */}
+                <Path
+                  d={tidePath}
+                  stroke="#60A5FA"
+                  strokeWidth={2}
+                  fill="none"
+                  opacity={0.7}
+                />
+
+                {/* Turning point markers */}
+                {turningPoints.map((pt, i) => {
+                  const isHigh = pt.type.toLowerCase().includes('high');
+                  const label = isHigh ? 'H' : 'L';
+                  const labelY = isHigh ? pt.y - 8 : pt.y + 14;
+                  const heightStr = `${pt.height.toFixed(1)}ft`;
+                  return (
+                    <React.Fragment key={i}>
+                      <Circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={3}
+                        fill="white"
+                        stroke="#60A5FA"
+                        strokeWidth={1.5}
+                      />
+                      <SvgText
+                        x={pt.x}
+                        y={labelY}
+                        textAnchor="middle"
+                        fontSize={8}
+                        fontWeight="700"
+                        fill="#60A5FA"
+                      >
+                        {label}
+                      </SvgText>
+                      <SvgText
+                        x={pt.x}
+                        y={labelY + 8}
+                        textAnchor="middle"
+                        fontSize={7}
+                        fill="#60A5FA"
+                        opacity={0.8}
+                      >
+                        {heightStr}
+                      </SvgText>
+                    </React.Fragment>
+                  );
+                })}
+              </Svg>
+            )}
 
             {/* Baseline */}
             <View style={[styles.baseline, { backgroundColor: baselineColor }]} />
@@ -333,7 +419,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   chartArea: {
-    height: BAR_AREA_HEIGHT + 24,
+    height: CHART_HEIGHT,
     position: 'relative',
   },
   bestWindowPill: {
@@ -388,19 +474,10 @@ const styles = StyleSheet.create({
   bar: {
     width: '100%',
   },
-  tideDotsRow: {
+  tideSvg: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
-    right: 0,
-    flexDirection: 'row',
-    height: 20,
-  },
-  tideDot: {
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: 'rgba(33, 150, 243, 0.4)',
-    position: 'absolute',
   },
   baseline: {
     position: 'absolute',

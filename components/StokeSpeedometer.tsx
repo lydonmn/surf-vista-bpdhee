@@ -19,10 +19,11 @@ function getRatingColor(rating: number): string {
   return '#EF4444';
 }
 
-// Tighter sweep: 10 o'clock → 12 → 2 o'clock (140° span).
-// Keeps all ticks well above the rating number, no extreme horizontal ticks.
-const ARC_START = -160; // degrees (just past 10 o'clock)
-const ARC_END = -20;    // degrees (just past 2 o'clock)
+// Needle convention: bar is vertical, top points UP (12 o'clock) at 0deg.
+// ARC_START = -70deg → 10 o'clock (left of up)
+// ARC_END   = +70deg → 2 o'clock  (right of up)
+const ARC_START = -70;
+const ARC_END = 70;
 const TICK_COUNT = 8;
 const ARC_SPAN = ARC_END - ARC_START; // 140°
 
@@ -52,30 +53,27 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
   const tickLen = size * 0.14;
   const tickWidth = size * 0.04;
 
-  // The needle is a bar whose BOTTOM sits at the gauge center.
-  // Rotate around its bottom edge using the translateY sandwich trick:
-  //   1. translate up by needleLength/2 (moves rotation origin to bottom of bar)
-  //   2. rotate
-  //   3. translate back down by needleLength/2
+  // BALANCED BAR: total height = needleLength * 1.6, centered at gauge center.
+  // Rotation pivot = element center = gauge center. No translateY tricks needed.
+  const barTotalHeight = needleLength * 1.6;
   const needleStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: needleLength / 2 },
-      { rotate: `${needleRotation.value}deg` },
-      { translateY: -needleLength / 2 },
-    ],
+    transform: [{ rotate: `${needleRotation.value}deg` }],
   }));
 
-  // Build tick marks
+  // Build tick marks using correct angle mapping:
+  // needleAngle 0° = up = math 90°, so mathAngleDeg = 90 - needleAngle
   const ticks = Array.from({ length: TICK_COUNT }, (_, i) => {
     const t = i / (TICK_COUNT - 1); // 0..1
-    const angle = ARC_START + t * ARC_SPAN;
-    const rad = (angle * Math.PI) / 180;
+    const tickNeedleAngle = ARC_START + t * ARC_SPAN;
+    const mathAngleDeg = 90 - tickNeedleAngle;
+    const rad = (mathAngleDeg * Math.PI) / 180;
     const cx = halfSize + arcRadius * Math.cos(rad) - tickWidth / 2;
-    const cy = halfSize + arcRadius * Math.sin(rad) - tickLen / 2;
+    // Y axis is flipped in RN (positive = down), so subtract sin
+    const cy = halfSize - arcRadius * Math.sin(rad) - tickLen / 2;
     const tickRating = 1 + t * 9; // 1..10
     const tickColor = getRatingColor(Math.round(tickRating));
     const isActive = tickRating <= clampedRating + 0.5;
-    return { cx, cy, tickColor, isActive, angle };
+    return { cx, cy, tickColor, isActive, tickNeedleAngle };
   });
 
   const ratingFontSize = size * 0.26;
@@ -94,20 +92,20 @@ export default function StokeSpeedometer({ rating, size = 44 }: StokeSpeedometer
             height: tickLen,
             borderRadius: tickWidth / 2,
             backgroundColor: tick.isActive ? tick.tickColor : 'rgba(128,128,128,0.22)',
-            transform: [{ rotate: `${tick.angle + 90}deg` }],
+            transform: [{ rotate: `${tick.tickNeedleAngle}deg` }],
           }}
         />
       ))}
 
-      {/* Needle bar — bottom edge sits at gauge center, rotates around that point */}
+      {/* Needle — balanced bar centered at gauge center, rotates around its own center */}
       <Animated.View
         style={[
           {
             position: 'absolute',
             left: halfSize - needleWidth / 2,
-            top: halfSize - needleLength,
+            top: halfSize - barTotalHeight / 2,
             width: needleWidth,
-            height: needleLength,
+            height: barTotalHeight,
             borderRadius: needleWidth / 2,
             backgroundColor: color,
           },
