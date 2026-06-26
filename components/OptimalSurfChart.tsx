@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import { colors } from '@/styles/commonStyles';
 
 interface TideEntry {
@@ -145,20 +144,7 @@ interface TideTurningPoint {
   height: number;
 }
 
-function buildTideCurvePath(points: TidePoint[]): string {
-  if (points.length < 2) return '';
-  let d = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const cpx1 = prev.x + (curr.x - prev.x) / 3;
-    const cpy1 = prev.y;
-    const cpx2 = curr.x - (curr.x - prev.x) / 3;
-    const cpy2 = curr.y;
-    d += ` C ${cpx1} ${cpy1} ${cpx2} ${cpy2} ${curr.x} ${curr.y}`;
-  }
-  return d;
-}
+
 
 export default function OptimalSurfChart({
   waveHeight,
@@ -212,8 +198,6 @@ export default function OptimalSurfChart({
       })
       .filter((p): p is TideTurningPoint => p !== null);
   }, [tides, tideMin, tideMax]);
-
-  const tidePath = useMemo(() => buildTideCurvePath(tidePoints), [tidePoints]);
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
   const textSecondary = colors.textSecondary;
@@ -309,63 +293,88 @@ export default function OptimalSurfChart({
               })}
             </View>
 
-            {/* SVG tide curve overlay */}
+            {/* Tide curve overlay — pure RN Views */}
             {tidePoints.length > 1 && (
-              <Svg
-                width={TOTAL_CHART_WIDTH}
-                height={CHART_HEIGHT}
-                style={styles.tideSvg}
-                pointerEvents="none"
-              >
-                {/* Smooth tide curve */}
-                <Path
-                  d={tidePath}
-                  stroke="#60A5FA"
-                  strokeWidth={2}
-                  fill="none"
-                  opacity={0.7}
-                />
+              <View style={styles.tideSvg} pointerEvents="none">
+                {/* Connecting line segments between tide points */}
+                {tidePoints.slice(0, -1).map((pt, i) => {
+                  const next = tidePoints[i + 1];
+                  const dx = next.x - pt.x;
+                  const dy = next.y - pt.y;
+                  const length = Math.sqrt(dx * dx + dy * dy);
+                  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                  return (
+                    <View
+                      key={`seg-${i}`}
+                      style={{
+                        position: 'absolute',
+                        left: pt.x,
+                        top: pt.y - 1,
+                        width: length,
+                        height: 2,
+                        backgroundColor: 'rgba(96,165,250,0.7)',
+                        transformOrigin: '0 50%',
+                        transform: [{ rotate: `${angle}deg` }],
+                      }}
+                    />
+                  );
+                })}
 
                 {/* Turning point markers */}
                 {turningPoints.map((pt, i) => {
                   const isHigh = pt.type.toLowerCase().includes('high');
                   const label = isHigh ? 'H' : 'L';
-                  const labelY = isHigh ? pt.y - 8 : pt.y + 14;
                   const heightStr = `${pt.height.toFixed(1)}ft`;
+                  const labelTop = isHigh ? pt.y - 18 : pt.y + 6;
                   return (
-                    <React.Fragment key={i}>
-                      <Circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={3}
-                        fill="white"
-                        stroke="#60A5FA"
-                        strokeWidth={1.5}
+                    <React.Fragment key={`tp-${i}`}>
+                      {/* Dot */}
+                      <View
+                        style={{
+                          position: 'absolute',
+                          left: pt.x - 3,
+                          top: pt.y - 3,
+                          width: 6,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: 'white',
+                          borderWidth: 1.5,
+                          borderColor: '#60A5FA',
+                        }}
                       />
-                      <SvgText
-                        x={pt.x}
-                        y={labelY}
-                        textAnchor="middle"
-                        fontSize={8}
-                        fontWeight="700"
-                        fill="#60A5FA"
+                      {/* Label */}
+                      <Text
+                        style={{
+                          position: 'absolute',
+                          left: pt.x - 10,
+                          top: labelTop,
+                          width: 20,
+                          textAlign: 'center',
+                          fontSize: 8,
+                          fontWeight: '700',
+                          color: '#60A5FA',
+                        }}
                       >
                         {label}
-                      </SvgText>
-                      <SvgText
-                        x={pt.x}
-                        y={labelY + 8}
-                        textAnchor="middle"
-                        fontSize={7}
-                        fill="#60A5FA"
-                        opacity={0.8}
+                      </Text>
+                      <Text
+                        style={{
+                          position: 'absolute',
+                          left: pt.x - 12,
+                          top: labelTop + 9,
+                          width: 24,
+                          textAlign: 'center',
+                          fontSize: 7,
+                          color: '#60A5FA',
+                          opacity: 0.8,
+                        }}
                       >
                         {heightStr}
-                      </SvgText>
+                      </Text>
                     </React.Fragment>
                   );
                 })}
-              </Svg>
+              </View>
             )}
 
             {/* Baseline */}
