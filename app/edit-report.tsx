@@ -511,6 +511,7 @@ export default function EditReportScreen() {
               wind_direction: report.wind_direction,
               water_temp: report.water_temp,
               surf_height: (report as any).surf_height,
+              tide: (report as any).tide,
             },
             created_at: new Date().toISOString(),
           });
