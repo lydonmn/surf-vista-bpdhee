@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { openPaywall } from '@/utils/paywallHelper';
+import { trackPaywallShown } from '@/utils/usageTracking';
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
 
 const FEATURES = [
@@ -42,6 +43,13 @@ export default function PaywallScreen() {
   const { user } = useAuth();
   const [rcPackages, setRcPackages] = useState<PurchasesPackage[]>([]);
   const [restoring, setRestoring] = useState(false);
+
+  // Track paywall shown on mount
+  useEffect(() => {
+    console.log('[Paywall] Paywall screen mounted — tracking paywall_shown, user:', user?.id ?? 'anonymous');
+    trackPaywallShown(user?.id, 'paywall').catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // If already subscribed, go back to the app
   useEffect(() => {

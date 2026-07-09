@@ -48,6 +48,9 @@ function insertEvent(payload: {
   duration_seconds?: number;
   video_id?: string;
   video_title?: string;
+  spot_id?: string;
+  screen_name?: string;
+  properties?: Record<string, unknown>;
 }): void {
   console.log('[UsageTracking] Inserting event:', payload.event_type, payload);
   supabase
@@ -68,6 +71,34 @@ function insertEvent(payload: {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Call at app boot and post-login.
+ * Calls the Supabase RPC merge_anonymous_identity to link device to user,
+ * and also calls linkSessionToUser to backfill the current session.
+ */
+export async function identify(userId: string): Promise<void> {
+  try {
+    const deviceId = await getDeviceId();
+    console.log('[UsageTracking] identify — userId:', userId, 'deviceId:', deviceId);
+
+    // Merge anonymous device identity into the user account
+    const { error: rpcError } = await supabase.rpc('merge_anonymous_identity', {
+      anonymous_id: deviceId,
+      user_id: userId,
+    });
+    if (rpcError) {
+      console.warn('[UsageTracking] merge_anonymous_identity RPC error:', rpcError.message);
+    } else {
+      console.log('[UsageTracking] merge_anonymous_identity succeeded for user:', userId);
+    }
+
+    // Also backfill the current session rows
+    await linkSessionToUser(userId);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in identify:', err);
+  }
+}
 
 /**
  * Call on every app open (initial mount + returning from background).
@@ -248,5 +279,137 @@ export async function trackVideoWatch(
     insertEvent(payload);
   } catch (err) {
     console.warn('[UsageTracking] Error in trackVideoWatch:', err);
+  }
+}
+
+/**
+ * Call when a surf spot forecast page is viewed.
+ * Fires event_type: 'spot_viewed' with spot_id and screen_name: 'forecast'.
+ */
+export async function trackSpotViewed(userId?: string, spotId?: string, spotName?: string): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log(
+      '[UsageTracking] Spot viewed — spot_id:', spotId,
+      'spot_name:', spotName,
+      'user_id:', userId ?? 'anonymous'
+    );
+
+    const payload: Parameters<typeof insertEvent>[0] = {
+      event_type: 'spot_viewed',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+      screen_name: 'forecast',
+    };
+    if (spotId) payload.spot_id = spotId;
+
+    insertEvent(payload);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackSpotViewed:', err);
+  }
+}
+
+/**
+ * Call when a camera feed for a surf spot is viewed.
+ * Fires event_type: 'camera_feed_viewed' with spot_id.
+ */
+export async function trackCameraFeedViewed(userId?: string, spotId?: string, spotName?: string): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log(
+      '[UsageTracking] Camera feed viewed — spot_id:', spotId,
+      'spot_name:', spotName,
+      'user_id:', userId ?? 'anonymous'
+    );
+
+    const payload: Parameters<typeof insertEvent>[0] = {
+      event_type: 'camera_feed_viewed',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+    };
+    if (spotId) payload.spot_id = spotId;
+
+    insertEvent(payload);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackCameraFeedViewed:', err);
+  }
+}
+
+/**
+ * Call when the paywall screen is shown to the user.
+ * Fires event_type: 'paywall_shown' with screen_name set to paywallId.
+ */
+export async function trackPaywallShown(userId?: string, paywallId?: string): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log(
+      '[UsageTracking] Paywall shown — paywallId:', paywallId ?? 'default',
+      'user_id:', userId ?? 'anonymous'
+    );
+
+    const payload: Parameters<typeof insertEvent>[0] = {
+      event_type: 'paywall_shown',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+      screen_name: paywallId ?? 'paywall',
+    };
+
+    insertEvent(payload);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackPaywallShown:', err);
+  }
+}
+
+/**
+ * Call when a subscription purchase is confirmed.
+ * Fires event_type: 'subscription_started' with product_id and price in properties.
+ */
+export async function trackSubscriptionStarted(
+  userId?: string,
+  productId?: string,
+  price?: string
+): Promise<void> {
+  try {
+    const [sessionId, deviceId] = await Promise.all([
+      AsyncStorage.getItem(SESSION_ID_KEY),
+      getDeviceId(),
+    ]);
+
+    console.log(
+      '[UsageTracking] Subscription started — product_id:', productId,
+      'price:', price,
+      'user_id:', userId ?? 'anonymous'
+    );
+
+    const properties: Record<string, unknown> = {};
+    if (productId) properties.product_id = productId;
+    if (price) properties.price = price;
+
+    const payload: Parameters<typeof insertEvent>[0] = {
+      event_type: 'subscription_started',
+      session_id: sessionId ?? generateUUID(),
+      device_id: deviceId,
+      user_id: userId ?? null,
+      properties: Object.keys(properties).length > 0 ? properties : undefined,
+    };
+
+    insertEvent(payload);
+  } catch (err) {
+    console.warn('[UsageTracking] Error in trackSubscriptionStarted:', err);
   }
 }

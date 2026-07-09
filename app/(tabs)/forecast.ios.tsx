@@ -11,7 +11,7 @@ import { SurfReport, WeatherForecast, TideData } from '@/types';
 import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFormatter';
 import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
-import { trackForecastView } from '@/utils/usageTracking';
+import { trackForecastView, trackSpotViewed } from '@/utils/usageTracking';
 import StokeSpeedometer from '@/components/StokeSpeedometer';
 import OptimalSurfChart from '@/components/OptimalSurfChart';
 
@@ -182,6 +182,13 @@ export default function ForecastScreen() {
     trackForecastView(user?.id).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!currentLocation) return;
+    console.log('[ForecastScreen] Location changed — tracking spot_viewed, spot:', currentLocation, 'user:', user?.id ?? 'anonymous');
+    trackSpotViewed(user?.id, currentLocation, currentLocation).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLocation]);
 
   const handleRefresh = useCallback(async () => {
     console.log('[ForecastScreen] 🔄 Manual refresh triggered for location:', currentLocation);

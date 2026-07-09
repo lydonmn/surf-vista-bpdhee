@@ -13,7 +13,7 @@ import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SubscriptionProvider, useSubscription } from "@/contexts/SubscriptionContext";
 import { isOnboardingComplete, incrementAppOpenCount, getAppOpenCount, hasSurveyBeenShown, markSurveyShown, shouldShowNamePrompt, markNamePromptShown } from "@/utils/onboardingStorage";
 import { setupAndroidNotificationChannels, setupNotificationCategories, ensurePushTokenRegistered } from "@/utils/pushNotifications";
-import { trackAppOpen, trackAppBackground, linkSessionToUser, trackNotificationOpen } from "@/utils/usageTracking";
+import { trackAppOpen, trackAppBackground, trackNotificationOpen, identify } from "@/utils/usageTracking";
 
 // Register notification handler at module level so it fires before any notification arrives
 if (Platform.OS !== 'web') {
@@ -239,6 +239,10 @@ function AppLifecycleTracker() {
 
     console.log('[RootLayout] Auth resolved — tracking initial app_open, user:', user?.id ?? 'anonymous');
     trackAppOpen(user?.id).catch(() => {});
+    if (user?.id) {
+      console.log('[RootLayout] Auth resolved with user — calling identify:', user.id);
+      identify(user.id).catch(() => {});
+    }
     console.log('[RootLayout] Clearing badge count on initial app open');
     Notifications.setBadgeCountAsync(0).catch(() => {});
 
@@ -272,8 +276,8 @@ function AppLifecycleTracker() {
     const currentId = user?.id;
     if (!prevId && currentId) {
       // Transition from anonymous → logged-in
-      console.log('[RootLayout] User logged in after anonymous session — linking session to user:', currentId);
-      linkSessionToUser(currentId).catch(() => {});
+      console.log('[RootLayout] User logged in after anonymous session — calling identify:', currentId);
+      identify(currentId).catch(() => {});
     }
     prevUserIdRef.current = currentId;
   // eslint-disable-next-line react-hooks/exhaustive-deps

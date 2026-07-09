@@ -28,6 +28,7 @@ import Purchases, {
   PurchasesPackage,
 } from "react-native-purchases";
 import { configureRevenueCat } from "@/utils/revenueCatInit";
+import { trackSubscriptionStarted } from "@/utils/usageTracking";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { supabase } from "@/app/integrations/supabase/client";
@@ -291,6 +292,10 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       if (hasEntitlement) {
         await SecureStore.setItemAsync(NATIVE_PURCHASE_KEY, "true").catch(() => {});
         await markRevenueCatSubscription(user?.id);
+        const productId = pkg.product.identifier;
+        const price = pkg.product.priceString;
+        console.log("[RevenueCat] Subscription started — tracking event, product:", productId, "price:", price);
+        trackSubscriptionStarted(user?.id, productId, price).catch(() => {});
       }
       return hasEntitlement;
     } catch (error: any) {

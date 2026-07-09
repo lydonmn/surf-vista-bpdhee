@@ -82,7 +82,35 @@ interface UserStat {
   lastSeen: string;
 }
 
-type TabId = 'overview' | 'videos' | 'notifications' | 'users';
+interface FunnelStep {
+  step: string;
+  count: number;
+  pct_from_prev: number | null;
+}
+
+interface SpotBreakdown {
+  spot_id: string | null;
+  spot_name: string | null;
+  spot_views: number | null;
+  camera_views: number | null;
+  unique_visitors: number | null;
+  last_activity: string | null;
+}
+
+interface RetentionCohort {
+  cohort_week: string | null;
+  cohort_size: number | null;
+  w1_retained: number | null;
+  w2_retained: number | null;
+  w4_retained: number | null;
+}
+
+interface SubscriptionFunnel {
+  paywall_shown: number | null;
+  subscription_started: number | null;
+}
+
+type TabId = 'overview' | 'videos' | 'notifications' | 'users' | 'spots';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -177,6 +205,7 @@ const TAB_LABELS: Record<TabId, string> = {
   videos: 'Videos',
   notifications: 'Notifs',
   users: 'Users',
+  spots: 'Spots',
 };
 
 const TAB_ICONS: Record<TabId, { ios: string; android: string }> = {
@@ -184,9 +213,10 @@ const TAB_ICONS: Record<TabId, { ios: string; android: string }> = {
   videos: { ios: 'play.rectangle.fill', android: 'play_circle' },
   notifications: { ios: 'bell.fill', android: 'notifications' },
   users: { ios: 'person.3.fill', android: 'group' },
+  spots: { ios: 'map.fill', android: 'map' },
 };
 
-const ALL_TABS: TabId[] = ['overview', 'videos', 'notifications', 'users'];
+const ALL_TABS: TabId[] = ['overview', 'videos', 'notifications', 'users', 'spots'];
 
 // ---------------------------------------------------------------------------
 // Main screen
@@ -226,13 +256,19 @@ export default function AdminUsageScreen() {
   const [userStats, setUserStats] = useState<UserStat[]>([]);
   const [userSearch, setUserSearch] = useState('');
 
+  // New view-backed sections
+  const [funnelSteps, setFunnelSteps] = useState<FunnelStep[]>([]);
+  const [spotData, setSpotData] = useState<SpotBreakdown[]>([]);
+  const [cohortData, setCohortData] = useState<RetentionCohort[]>([]);
+
+
   const fetchData = useCallback(async () => {
     console.log('[AdminUsage] Fetching full analytics data');
     setIsLoading(true);
     setError(null);
 
     try {
-      const [eventsResult, profilesResult] = await Promise.all([
+      const [eventsResult, profilesResult, funnelResult, spotResult, cohortResult, subFunnelResult] = await Promise.all([
         supabase
           .from('app_usage_events')
           .select('user_id, device_id, event_type, session_id, duration_seconds, video_id, video_title, created_at')
@@ -240,6 +276,10 @@ export default function AdminUsageScreen() {
         supabase
           .from('profiles')
           .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height'),
+        supabase.from('engagement_funnel').select('*').single(),
+        supabase.from('spot_breakdown').select('*'),
+        supabase.from('retention_cohorts').select('*').limit(8),
+        supabase.from('subscription_funnel').select('*').single(),
       ]);
 
       if (eventsResult.error) {
@@ -254,6 +294,62 @@ export default function AdminUsageScreen() {
       const events: UsageEvent[] = eventsResult.data ?? [];
       const profiles: Profile[] = profilesResult.data ?? [];
       console.log('[AdminUsage] Loaded events:', events.length, 'profiles:', profiles.length);
+
+      // -----------------------------------------------------------------------
+      // New views — engagement funnel
+      // -----------------------------------------------------------------------
+      if (funnelResult.error) {
+        console.warn('[AdminUsage] engagement_funnel not available yet:', funnelResult.error.message);
+      } else if (funnelResult.data) {
+        const raw = funnelResult.data as Record<string, number | null>;
+        console.log('[AdminUsage] Engagement funnel data:', raw);
+        const stepKeys: { key: string; label: string }[] = [
+          { key: 'app_open', label: 'Opened App' },
+          { key: 'forecast_view', label: 'Viewed Forecast' },
+          { key: 'spot_viewed', label: 'Viewed Spot' },
+          { key: 'video_watch', label: 'Watched Video' },
+          { key: 'paywall_shown', label: 'Saw Paywall' },
+          { key: 'subscription_started', label: 'Subscribed' },
+        ];
+        const steps: FunnelStep[] = stepKeys.map((s, i) => {
+          const count = Number(raw[s.key] ?? 0);
+          const prevCount = i > 0 ? Number(raw[stepKeys[i - 1].key] ?? 0) : null;
+          const pct_from_prev = prevCount !== null && prevCount > 0
+            ? Math.round((count / prevCount) * 100)
+            : null;
+          return { step: s.label, count, pct_from_prev };
+        });
+        setFunnelSteps(steps);
+      }
+
+      // -----------------------------------------------------------------------
+      // New views — spot breakdown
+      // -----------------------------------------------------------------------
+      if (spotResult.error) {
+        console.warn('[AdminUsage] spot_breakdown not available yet:', spotResult.error.message);
+      } else {
+        console.log('[AdminUsage] Spot breakdown rows:', spotResult.data?.length ?? 0);
+        setSpotData((spotResult.data ?? []) as SpotBreakdown[]);
+      }
+
+      // -----------------------------------------------------------------------
+      // New views — retention cohorts
+      // -----------------------------------------------------------------------
+      if (cohortResult.error) {
+        console.warn('[AdminUsage] retention_cohorts not available yet:', cohortResult.error.message);
+      } else {
+        console.log('[AdminUsage] Retention cohort rows:', cohortResult.data?.length ?? 0);
+        setCohortData((cohortResult.data ?? []) as RetentionCohort[]);
+      }
+
+      // -----------------------------------------------------------------------
+      // New views — subscription funnel (for summary cards)
+      // -----------------------------------------------------------------------
+      if (subFunnelResult.error) {
+        console.warn('[AdminUsage] subscription_funnel not available yet:', subFunnelResult.error.message);
+      } else if (subFunnelResult.data) {
+        console.log('[AdminUsage] Subscription funnel data:', subFunnelResult.data);
+      }
 
       const profileMap = new Map<string, Profile>();
       for (const p of profiles) profileMap.set(p.id, p);
@@ -292,6 +388,14 @@ export default function AdminUsageScreen() {
         ? `${Math.round((dailyReportOptInCount / totalUsersCount) * 100)}%`
         : '0%';
 
+      // Subscription funnel cards — computed from subFunnelResult (may be null if view not ready)
+      const sfData = subFunnelResult.error ? null : (subFunnelResult.data as SubscriptionFunnel | null);
+      const paywallViews = Number(sfData?.paywall_shown ?? 0);
+      const conversions = Number(sfData?.subscription_started ?? 0);
+      const conversionPct = paywallViews > 0
+        ? ` (${Math.round((conversions / paywallViews) * 100)}%)`
+        : '';
+
       const cards: StatCard[] = [
         {
           label: 'Total Sessions',
@@ -327,6 +431,20 @@ export default function AdminUsageScreen() {
           icon_ios: 'bell.fill',
           icon_android: 'notifications',
           accent: '#8B5CF6',
+        },
+        {
+          label: 'Paywall Views',
+          value: sfData ? String(paywallViews) : '—',
+          icon_ios: 'creditcard.fill',
+          icon_android: 'credit_card',
+          accent: '#06B6D4',
+        },
+        {
+          label: 'Conversions',
+          value: sfData ? String(conversions) + conversionPct : '—',
+          icon_ios: 'checkmark.seal.fill',
+          icon_android: 'verified',
+          accent: '#22C55E',
         },
       ];
       setStatCards(cards);
@@ -667,6 +785,49 @@ export default function AdminUsageScreen() {
                   })
                 )}
               </View>
+
+              {/* Section — Engagement Funnel */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="arrow.down.forward.circle.fill"
+                  icon_android="filter_list"
+                  title="Engagement Funnel"
+                />
+                {funnelSteps.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>Funnel data not available yet</Text>
+                  </View>
+                ) : (
+                  funnelSteps.map((step, i) => {
+                    const dropPct = step.pct_from_prev;
+                    const dotColor = dropPct === null
+                      ? colors.primary
+                      : dropPct >= 50
+                        ? '#22C55E'
+                        : dropPct >= 20
+                          ? '#F59E0B'
+                          : '#EF4444';
+                    const dropLabel = dropPct !== null ? `${dropPct}%` : '';
+                    return (
+                      <View key={i} style={styles.funnelStep}>
+                        <View style={[styles.funnelDot, { backgroundColor: dotColor }]} />
+                        <View style={styles.funnelStepInfo}>
+                          <Text style={styles.funnelStepLabel}>{step.step}</Text>
+                          <Text style={styles.funnelStepCount}>{step.count.toLocaleString()}</Text>
+                        </View>
+                        {dropLabel.length > 0 && (
+                          <View style={[styles.funnelPctBadge, { backgroundColor: dotColor + '22' }]}>
+                            <Text style={[styles.funnelPctText, { color: dotColor }]}>{dropLabel}</Text>
+                          </View>
+                        )}
+                        {i < funnelSteps.length - 1 && (
+                          <View style={styles.funnelConnector} />
+                        )}
+                      </View>
+                    );
+                  })
+                )}
+              </View>
             </>
           )}
 
@@ -831,7 +992,7 @@ export default function AdminUsageScreen() {
           )}
 
           {/* ---------------------------------------------------------------- */}
-          {/* Users tab — Section 7                                            */}
+          {/* Users tab — Section 7 + Retention Cohorts                        */}
           {/* ---------------------------------------------------------------- */}
           {activeTab === 'users' && (
             <>
@@ -931,7 +1092,120 @@ export default function AdminUsageScreen() {
                   })
                 )}
               </View>
+
+              {/* Retention Cohorts */}
+              <View style={styles.section}>
+                <SectionHeader
+                  icon_ios="calendar.badge.clock"
+                  icon_android="event_repeat"
+                  title="Retention Cohorts"
+                  badge={cohortData.length}
+                />
+                {cohortData.length === 0 ? (
+                  <View style={styles.emptyInline}>
+                    <Text style={styles.emptyText}>Cohort data not available yet</Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Table header */}
+                    <View style={styles.cohortHeaderRow}>
+                      <Text style={[styles.cohortCell, styles.cohortCellWide, styles.cohortHeaderText]}>Cohort</Text>
+                      <Text style={[styles.cohortCell, styles.cohortHeaderText]}>Size</Text>
+                      <Text style={[styles.cohortCell, styles.cohortHeaderText]}>W1</Text>
+                      <Text style={[styles.cohortCell, styles.cohortHeaderText]}>W2</Text>
+                      <Text style={[styles.cohortCell, styles.cohortHeaderText]}>W4</Text>
+                    </View>
+                    {cohortData.map((row, i) => {
+                      const cohortLabel = row.cohort_week
+                        ? formatShortDate(row.cohort_week)
+                        : '—';
+                      const size = Number(row.cohort_size ?? 0);
+                      const w1 = size > 0 ? Math.round((Number(row.w1_retained ?? 0) / size) * 100) : null;
+                      const w2 = size > 0 ? Math.round((Number(row.w2_retained ?? 0) / size) * 100) : null;
+                      const w4 = size > 0 ? Math.round((Number(row.w4_retained ?? 0) / size) * 100) : null;
+                      const cohortWeekText = cohortLabel;
+                      const sizeText = String(size);
+                      const w1Text = w1 !== null ? `${w1}%` : '—';
+                      const w2Text = w2 !== null ? `${w2}%` : '—';
+                      const w4Text = w4 !== null ? `${w4}%` : '—';
+                      const w1Color = w1 === null ? '#6B7280' : w1 >= 40 ? '#22C55E' : w1 >= 20 ? '#F59E0B' : '#EF4444';
+                      const w2Color = w2 === null ? '#6B7280' : w2 >= 40 ? '#22C55E' : w2 >= 20 ? '#F59E0B' : '#EF4444';
+                      const w4Color = w4 === null ? '#6B7280' : w4 >= 40 ? '#22C55E' : w4 >= 20 ? '#F59E0B' : '#EF4444';
+                      return (
+                        <View key={i} style={[styles.cohortRow, i % 2 === 0 && styles.cohortRowAlt]}>
+                          <Text style={[styles.cohortCell, styles.cohortCellWide, styles.cohortCellText]}>{cohortWeekText}</Text>
+                          <Text style={[styles.cohortCell, styles.cohortCellText]}>{sizeText}</Text>
+                          <Text style={[styles.cohortCell, styles.cohortCellText, { color: w1Color }]}>{w1Text}</Text>
+                          <Text style={[styles.cohortCell, styles.cohortCellText, { color: w2Color }]}>{w2Text}</Text>
+                          <Text style={[styles.cohortCell, styles.cohortCellText, { color: w4Color }]}>{w4Text}</Text>
+                        </View>
+                      );
+                    })}
+                  </>
+                )}
+              </View>
             </>
+          )}
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Spots tab                                                         */}
+          {/* ---------------------------------------------------------------- */}
+          {activeTab === 'spots' && (
+            <View style={styles.section}>
+              <SectionHeader
+                icon_ios="map.fill"
+                icon_android="map"
+                title="Spot Breakdown"
+                badge={spotData.length}
+              />
+              {spotData.length === 0 ? (
+                <View style={styles.emptyInline}>
+                  <Text style={styles.emptyText}>Spot data not available yet</Text>
+                </View>
+              ) : (
+                spotData.map((spot, i) => {
+                  const spotName = spot.spot_name ?? spot.spot_id ?? 'Unknown Spot';
+                  const spotViews = Number(spot.spot_views ?? 0);
+                  const cameraViews = Number(spot.camera_views ?? 0);
+                  const uniqueVisitors = Number(spot.unique_visitors ?? 0);
+                  const lastActivity = spot.last_activity ? formatDate(spot.last_activity) : '—';
+                  return (
+                    <View key={i} style={styles.spotCard}>
+                      <View style={styles.spotCardHeader}>
+                        <View style={styles.spotIconCircle}>
+                          <IconSymbol
+                            ios_icon_name="mappin.circle.fill"
+                            android_material_icon_name="place"
+                            size={18}
+                            color={colors.primary}
+                          />
+                        </View>
+                        <View style={styles.spotCardInfo}>
+                          <Text style={styles.spotName} numberOfLines={1}>{spotName}</Text>
+                          <Text style={styles.spotLastActivity}>Last activity: {lastActivity}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.spotStatsRow}>
+                        <View style={styles.spotStat}>
+                          <Text style={styles.spotStatValue}>{spotViews}</Text>
+                          <Text style={styles.spotStatLabel}>Spot Views</Text>
+                        </View>
+                        <View style={styles.spotStatDivider} />
+                        <View style={styles.spotStat}>
+                          <Text style={styles.spotStatValue}>{cameraViews}</Text>
+                          <Text style={styles.spotStatLabel}>Camera Views</Text>
+                        </View>
+                        <View style={styles.spotStatDivider} />
+                        <View style={styles.spotStat}>
+                          <Text style={styles.spotStatValue}>{uniqueVisitors}</Text>
+                          <Text style={styles.spotStatLabel}>Unique Visitors</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
           )}
         </ScrollView>
       )}
@@ -1397,6 +1671,153 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   userStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#2a2a2a',
+  },
+  // Engagement funnel
+  funnelStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 12,
+    position: 'relative',
+  },
+  funnelDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+  funnelStepInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  funnelStepLabel: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  funnelStepCount: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  funnelPctBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  funnelPctText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  funnelConnector: {
+    position: 'absolute',
+    left: 5,
+    bottom: -2,
+    width: 2,
+    height: 10,
+    backgroundColor: '#2a2a2a',
+  },
+  // Retention cohorts table
+  cohortHeaderRow: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+    marginBottom: 4,
+  },
+  cohortRow: {
+    flexDirection: 'row',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  cohortRowAlt: {
+    backgroundColor: '#161616',
+    borderRadius: 4,
+  },
+  cohortCell: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  cohortCellWide: {
+    flex: 2,
+    textAlign: 'left',
+  },
+  cohortHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+  },
+  cohortCellText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Spot cards
+  spotCard: {
+    backgroundColor: '#111111',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+  },
+  spotCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  spotIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary + '22',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  spotCardInfo: {
+    flex: 1,
+  },
+  spotName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  spotLastActivity: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  spotStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    paddingVertical: 10,
+  },
+  spotStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  spotStatValue: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  spotStatLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  spotStatDivider: {
     width: 1,
     height: 28,
     backgroundColor: '#2a2a2a',
