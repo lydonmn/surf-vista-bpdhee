@@ -25,6 +25,10 @@ const NUM_BARS = 16;
 const TOTAL_CHART_WIDTH = NUM_BARS * BAR_WIDTH + (NUM_BARS - 1) * GAP; // 602px
 const CHART_HEIGHT = BAR_AREA_HEIGHT + 24;
 const TIDE_PADDING = 8;
+const LOW_LABEL_ZONE_HEIGHT = 28;
+const BADGE_HEIGHT = 34; // approx height of two-line badge
+const CONNECTOR_LENGTH = 10;
+const MIN_LABEL_SPACING = 40;
 
 const HOUR_LABELS = ['5a', '6a', '7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p'];
 
@@ -144,8 +148,6 @@ interface TideTurningPoint {
   height: number;
 }
 
-
-
 export default function OptimalSurfChart({
   waveHeight,
   wavePeriod,
@@ -182,29 +184,55 @@ export default function OptimalSurfChart({
     return { tidePoints: points, tideMin: min, tideMax: max };
   }, [tides]);
 
-  // Find turning points (highs and lows) within 5am–8pm window
+  // Find turning points with overlap suppression
   const turningPoints = useMemo((): TideTurningPoint[] => {
     if (!tides || tides.length === 0) return [];
     const range = tideMax - tideMin || 1;
-    return tides
+
+    const raw: TideTurningPoint[] = tides
       .map((entry) => {
         const decHour = tideTimeToDecimalHour(entry.time);
         if (decHour < 5 || decHour > 20) return null;
-        const barIndex = decHour - 5; // fractional index into HOURS array
+        const barIndex = decHour - 5;
         const x = barIndex * (BAR_WIDTH + GAP) + BAR_WIDTH / 2;
         const norm = (Number(entry.height) - tideMin) / range;
         const y = CHART_HEIGHT - TIDE_PADDING - norm * (CHART_HEIGHT - TIDE_PADDING * 2);
         return { x, y, type: entry.type, height: Number(entry.height) };
       })
       .filter((p): p is TideTurningPoint => p !== null);
+
+    // Overlap suppression: keep only the more significant point when two of the same type are too close
+    const result: TideTurningPoint[] = [];
+    for (const pt of raw) {
+      const isHigh = pt.type.toLowerCase().includes('high');
+      const existing = result.findIndex(
+        (r) =>
+          r.type.toLowerCase().includes('high') === isHigh &&
+          Math.abs(r.x - pt.x) < MIN_LABEL_SPACING
+      );
+      if (existing === -1) {
+        result.push(pt);
+      } else {
+        const prev = result[existing];
+        const keepNew = isHigh ? pt.height > prev.height : pt.height < prev.height;
+        if (keepNew) {
+          result[existing] = pt;
+        }
+      }
+    }
+    return result;
   }, [tides, tideMin, tideMax]);
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
   const textSecondary = colors.textSecondary;
   const baselineColor = isDarkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
 
-  const bestWindowLeft = bestWindowStart * (BAR_WIDTH + GAP);
-  const bestWindowWidth = 3 * BAR_WIDTH + 2 * GAP;
+  const bestWindowLabel = HOUR_LABELS[bestWindowStart] + '–' + HOUR_LABELS[bestWindowStart + 2];
+  const bestWindowText = '⭐ Best Window · ' + bestWindowLabel;
+
+  const tideSwing = tideMax - tideMin;
+  const tideSwingText = tideSwing.toFixed(1) + ' ft swing';
+  const showSwing = tideSwing > 0;
 
   const legendItems = [
     { color: '#22C55E', label: 'PRIME' },
@@ -213,9 +241,31 @@ export default function OptimalSurfChart({
     { color: '#6B7280', label: 'POOR' },
   ];
 
+  const highPoints = turningPoints.filter((pt) => pt.type.toLowerCase().includes('high'));
+  const lowPoints = turningPoints.filter((pt) => !pt.type.toLowerCase().includes('high'));
+
   return (
     <View style={[styles.container, { backgroundColor: containerBg }]}>
-      <Text style={[styles.title, { color: textSecondary }]}>BEST TIME TO SURF</Text>
+      {/* Header row: title + tide swing */}
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { color: '#FFFFFF' }]}>Best Time to Surf</Text>
+        {showSwing && (
+          <Text style={styles.tideSwingText}>{tideSwingText}</Text>
+        )}
+      </View>
+
+      {/* Best window pill — above chart */}
+      <View
+        style={[
+          styles.bestWindowPill,
+          {
+            backgroundColor: isDarkMode ? 'rgba(34,197,94,0.18)' : 'rgba(34,197,94,0.12)',
+            borderColor: '#22C55E',
+          },
+        ]}
+      >
+        <Text style={styles.bestWindowText}>{bestWindowText}</Text>
+      </View>
 
       {/* Horizontally scrollable chart area */}
       <ScrollView
@@ -227,21 +277,7 @@ export default function OptimalSurfChart({
       >
         <View style={{ width: TOTAL_CHART_WIDTH }}>
           {/* Chart area */}
-          <View style={styles.chartArea}>
-            {/* Best window pill */}
-            <View
-              style={[
-                styles.bestWindowPill,
-                {
-                  left: bestWindowLeft,
-                  width: bestWindowWidth,
-                  backgroundColor: isDarkMode ? 'rgba(34,197,94,0.18)' : 'rgba(34,197,94,0.12)',
-                  borderColor: '#22C55E',
-                },
-              ]}
-            >
-              <Text style={styles.bestWindowText}>⭐ Best Window</Text>
-            </View>
+          <View style={[styles.chartArea, { height: CHART_HEIGHT }]}>
 
             {/* NOW indicator */}
             {nowBarIndex >= 0 && (
@@ -296,7 +332,7 @@ export default function OptimalSurfChart({
             {/* Tide curve overlay — pure RN Views */}
             {tidePoints.length > 1 && (
               <View style={styles.tideSvg} pointerEvents="none">
-                {/* Connecting line segments between tide points */}
+                {/* Connecting line segments — de-emphasized */}
                 {tidePoints.slice(0, -1).map((pt, i) => {
                   const next = tidePoints[i + 1];
                   const dx = next.x - pt.x;
@@ -309,10 +345,10 @@ export default function OptimalSurfChart({
                       style={{
                         position: 'absolute',
                         left: pt.x,
-                        top: pt.y - 1,
+                        top: pt.y - 0.75,
                         width: length,
-                        height: 2,
-                        backgroundColor: 'rgba(96,165,250,0.7)',
+                        height: 1.5,
+                        backgroundColor: 'rgba(96,165,250,0.45)',
                         transformOrigin: '0 50%',
                         transform: [{ rotate: `${angle}deg` }],
                       }}
@@ -320,57 +356,100 @@ export default function OptimalSurfChart({
                   );
                 })}
 
-                {/* Turning point markers */}
-                {turningPoints.map((pt, i) => {
-                  const isHigh = pt.type.toLowerCase().includes('high');
-                  const label = isHigh ? 'H' : 'L';
-                  const heightStr = `${pt.height.toFixed(1)}ft`;
-                  const labelTop = isHigh ? pt.y - 18 : pt.y + 6;
+                {/* HIGH tide markers */}
+                {highPoints.map((pt, i) => {
+                  const badgeTop = pt.y - BADGE_HEIGHT - CONNECTOR_LENGTH;
+                  const connectorTop = badgeTop + BADGE_HEIGHT;
+                  const connectorHeight = pt.y - connectorTop;
+                  const heightStr = pt.height.toFixed(1) + 'ft';
                   return (
-                    <React.Fragment key={`tp-${i}`}>
+                    <React.Fragment key={`high-${i}`}>
+                      {/* Connector line from badge bottom to dot */}
+                      <View
+                        style={{
+                          position: 'absolute',
+                          left: pt.x - 0.5,
+                          top: connectorTop,
+                          width: 1,
+                          height: Math.max(connectorHeight, 0),
+                          backgroundColor: 'rgba(96,165,250,0.5)',
+                        }}
+                      />
                       {/* Dot */}
                       <View
                         style={{
                           position: 'absolute',
-                          left: pt.x - 3,
-                          top: pt.y - 3,
-                          width: 6,
-                          height: 6,
-                          borderRadius: 3,
+                          left: pt.x - 3.5,
+                          top: pt.y - 3.5,
+                          width: 7,
+                          height: 7,
+                          borderRadius: 3.5,
                           backgroundColor: 'white',
                           borderWidth: 1.5,
                           borderColor: '#60A5FA',
                         }}
                       />
-                      {/* Label */}
-                      <Text
+                      {/* Badge */}
+                      <View
                         style={{
                           position: 'absolute',
-                          left: pt.x - 10,
-                          top: labelTop,
-                          width: 20,
-                          textAlign: 'center',
-                          fontSize: 8,
-                          fontWeight: '700',
-                          color: '#60A5FA',
+                          left: pt.x - 18,
+                          top: badgeTop,
+                          width: 36,
+                          borderRadius: 6,
+                          backgroundColor: 'rgba(20,20,30,0.88)',
+                          paddingHorizontal: 6,
+                          paddingVertical: 3,
+                          alignItems: 'center',
                         }}
                       >
-                        {label}
-                      </Text>
-                      <Text
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF', lineHeight: 13 }}>H</Text>
+                        <Text style={{ fontSize: 9, color: '#60A5FA', lineHeight: 12 }}>{heightStr}</Text>
+                      </View>
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* LOW tide dots only (badges go in LOW_LABEL_ZONE below) */}
+                {lowPoints.map((pt, i) => {
+                  // Dashed connector from dot down to bottom of chartArea
+                  const dashStartY = pt.y + 4;
+                  const dashEndY = CHART_HEIGHT;
+                  const dashTotalHeight = dashEndY - dashStartY;
+                  const dashCount = Math.max(4, Math.floor(dashTotalHeight / 7));
+                  const dashSpacing = dashTotalHeight / dashCount;
+                  const dashes = Array.from({ length: dashCount });
+
+                  return (
+                    <React.Fragment key={`low-${i}`}>
+                      {/* Dot */}
+                      <View
                         style={{
                           position: 'absolute',
-                          left: pt.x - 12,
-                          top: labelTop + 9,
-                          width: 24,
-                          textAlign: 'center',
-                          fontSize: 7,
-                          color: '#60A5FA',
-                          opacity: 0.8,
+                          left: pt.x - 3.5,
+                          top: pt.y - 3.5,
+                          width: 7,
+                          height: 7,
+                          borderRadius: 3.5,
+                          backgroundColor: 'white',
+                          borderWidth: 1.5,
+                          borderColor: '#60A5FA',
                         }}
-                      >
-                        {heightStr}
-                      </Text>
+                      />
+                      {/* Dashed connector */}
+                      {dashes.map((_, di) => (
+                        <View
+                          key={`dash-${i}-${di}`}
+                          style={{
+                            position: 'absolute',
+                            left: pt.x - 1,
+                            top: dashStartY + di * dashSpacing,
+                            width: 2,
+                            height: 3,
+                            backgroundColor: 'rgba(96,165,250,0.4)',
+                          }}
+                        />
+                      ))}
                     </React.Fragment>
                   );
                 })}
@@ -379,6 +458,40 @@ export default function OptimalSurfChart({
 
             {/* Baseline */}
             <View style={[styles.baseline, { backgroundColor: baselineColor }]} />
+          </View>
+
+          {/* LOW LABEL ZONE — badges for low tide points */}
+          <View style={{ height: LOW_LABEL_ZONE_HEIGHT, position: 'relative' }}>
+            {lowPoints.map((pt, i) => {
+              const heightStr = pt.height.toFixed(1) + 'ft';
+              return (
+                <View
+                  key={`low-badge-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: pt.x - 28,
+                    top: (LOW_LABEL_ZONE_HEIGHT - BADGE_HEIGHT / 2) / 2 - 2,
+                    width: 56,
+                    alignItems: 'center',
+                  }}
+                >
+                  <View
+                    style={{
+                      borderRadius: 6,
+                      backgroundColor: 'rgba(20,20,30,0.88)',
+                      paddingHorizontal: 6,
+                      paddingVertical: 3,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF', lineHeight: 13 }}>L</Text>
+                    <Text style={{ fontSize: 9, color: '#60A5FA', lineHeight: 12 }}>{heightStr}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            {/* Suppress unused variable warning */}
+            {lowPoints.length === 0 && null}
           </View>
 
           {/* Time labels */}
@@ -414,12 +527,38 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   title: {
-    fontSize: 11,
+    fontSize: 18,
     fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 12,
+    letterSpacing: 0,
+  },
+  tideSwingText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#60A5FA',
+  },
+  bestWindowPill: {
+    alignSelf: 'flex-start',
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 10,
+    zIndex: 10,
+  },
+  bestWindowText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#22C55E',
+    letterSpacing: 0.3,
   },
   scrollView: {
     marginHorizontal: -14,
@@ -428,24 +567,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   chartArea: {
-    height: CHART_HEIGHT,
     position: 'relative',
-  },
-  bestWindowPill: {
-    position: 'absolute',
-    top: 0,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  bestWindowText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#22C55E',
-    letterSpacing: 0.3,
   },
   nowIndicator: {
     position: 'absolute',
@@ -487,6 +609,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+    right: 0,
+    bottom: 0,
   },
   baseline: {
     position: 'absolute',
