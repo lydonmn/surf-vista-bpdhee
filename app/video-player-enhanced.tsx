@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, ScrollView, AppState, AppStateStatus, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { colors } from '@/styles/commonStyles';
@@ -21,6 +21,7 @@ const MUX_HLS_PREFIX = 'https://stream.mux.com/';
 
 export default function EnhancedVideoPlayerScreen() {
   const insets = useSafeAreaInsets();
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
   const { videoId, locationId } = useLocalSearchParams();
   const { user } = useAuth();
   
@@ -725,16 +726,18 @@ export default function EnhancedVideoPlayerScreen() {
     ? `${video.resolution_width}x${video.resolution_height}` 
     : '4K';
   const videoSize = formatFileSize(video.file_size_bytes);
+  const isLandscapeVideo = !!(video?.resolution_width && video?.resolution_height && video.resolution_width > video.resolution_height);
 
   if (isFullscreen) {
+    console.log('[VideoPlayer] Fullscreen render — winWidth:', winWidth, 'winHeight:', winHeight, 'isLandscapeVideo:', isLandscapeVideo);
     return (
       <TouchableOpacity 
-        style={styles.fullscreenContainer}
+        style={[styles.fullscreenContainer, { width: winWidth, height: winHeight }]}
         activeOpacity={1}
         onPress={toggleControls}
       >
         <VideoView
-          style={styles.fullscreenVideo}
+          style={{ width: winWidth, height: winHeight, position: 'absolute', top: 0, left: 0 }}
           player={player}
           allowsFullscreen={false}
           allowsPictureInPicture
@@ -757,7 +760,7 @@ export default function EnhancedVideoPlayerScreen() {
         )}
         
         {controlsVisible && (
-          <View style={styles.fullscreenControls}>
+          <View style={[styles.fullscreenControls, { width: winWidth, height: winHeight }]}>
             <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 16) }]}>
               <TouchableOpacity
                 style={styles.iconButton}
