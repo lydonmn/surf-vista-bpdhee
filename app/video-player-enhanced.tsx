@@ -54,35 +54,40 @@ export default function EnhancedVideoPlayerScreen() {
     if (Platform.OS === 'web') return;
     const subscription = ScreenOrientation.addOrientationChangeListener(async (event) => {
       const orientation = event.orientationInfo.orientation;
-      console.log('[EnhancedVideoPlayer] Device orientation changed:', orientation);
+      const isLandscapeVideo = video && video.resolution_width && video.resolution_height
+        ? video.resolution_width > video.resolution_height
+        : false;
+      console.log('[EnhancedVideoPlayer] Device orientation changed:', orientation, '| isLandscapeVideo:', isLandscapeVideo);
+
       if (
         orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
         orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
       ) {
-        console.log('[EnhancedVideoPlayer] Auto-entering fullscreen (landscape)');
-        setIsFullscreen(true);
-        try {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-        } catch (e) {
-          console.error('[EnhancedVideoPlayer] Error locking to landscape:', e);
+        // Only auto-enter fullscreen if this is a landscape video
+        if (isLandscapeVideo && !isFullscreen) {
+          console.log('[EnhancedVideoPlayer] Auto-entering fullscreen (landscape video + landscape rotation)');
+          setIsFullscreen(true);
+          try {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          } catch (e) {}
         }
       } else if (
         orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
         orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
       ) {
-        console.log('[EnhancedVideoPlayer] Auto-exiting fullscreen (portrait)');
-        setIsFullscreen(false);
-        try {
-          await ScreenOrientation.unlockAsync();
-        } catch (e) {
-          console.error('[EnhancedVideoPlayer] Error unlocking orientation:', e);
+        if (isFullscreen && isLandscapeVideo) {
+          console.log('[EnhancedVideoPlayer] Auto-exiting fullscreen (portrait rotation, landscape video)');
+          setIsFullscreen(false);
+          try {
+            await ScreenOrientation.unlockAsync();
+          } catch (e) {}
         }
       }
     });
     return () => {
       ScreenOrientation.removeOrientationChangeListener(subscription);
     };
-  }, []);
+  }, [video, isFullscreen]);
 
   // Track video_watch on unmount (user closes player mid-video, 5s minimum)
   useEffect(() => {
@@ -564,17 +569,25 @@ export default function EnhancedVideoPlayerScreen() {
 
   const toggleFullscreen = useCallback(async () => {
     const newFullscreenState = !isFullscreen;
-    console.log('[EnhancedVideoPlayer] Toggle fullscreen:', newFullscreenState);
-    
+    const isLandscapeVideo = video && video.resolution_width && video.resolution_height
+      ? video.resolution_width > video.resolution_height
+      : false;
+    console.log('[EnhancedVideoPlayer] Toggle fullscreen:', newFullscreenState, '| isLandscapeVideo:', isLandscapeVideo);
+
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          console.log('[EnhancedVideoPlayer] ✅ Locked to landscape');
+          // Determine orientation from video metadata
+          if (isLandscapeVideo) {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+            console.log('[EnhancedVideoPlayer] ✅ Locked to landscape (landscape video)');
+          } else {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+            console.log('[EnhancedVideoPlayer] ✅ Locked to portrait (portrait video)');
+          }
         } else {
           await ScreenOrientation.unlockAsync();
           console.log('[EnhancedVideoPlayer] ✅ Unlocked orientation');
@@ -583,14 +596,12 @@ export default function EnhancedVideoPlayerScreen() {
         console.error('[EnhancedVideoPlayer] Error changing orientation:', e);
       }
     }
-    
     setIsFullscreen(newFullscreenState);
     setControlsVisible(true);
-    
     if (newFullscreenState && isPlaying) {
       startControlsTimeout();
     }
-  }, [isFullscreen, isPlaying, startControlsTimeout]);
+  }, [isFullscreen, isPlaying, video, startControlsTimeout]);
 
   const formatTime = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -697,6 +708,10 @@ export default function EnhancedVideoPlayerScreen() {
   // Get the best source (local or remote) - currently unused but available for future optimization
   // const videoSource = getSource(video.video_url);
   // const nextVideoSource = nextVideo ? getSource(nextVideo.video_url) : null;
+
+  const videoAspectRatio = video && video.resolution_width && video.resolution_height
+    ? video.resolution_width / video.resolution_height
+    : 9 / 16; // default portrait
 
   const currentTimeText = formatTime(currentTime);
   const durationText = formatTime(duration);
@@ -844,7 +859,7 @@ export default function EnhancedVideoPlayerScreen() {
       </TouchableOpacity>
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.videoContainer}>
+        <View style={[styles.videoContainer, { aspectRatio: videoAspectRatio }]}>
           <VideoView
             style={styles.video}
             player={player}
