@@ -271,7 +271,7 @@ export default function AdminUsageScreen() {
     setError(null);
 
     try {
-      const [eventsResult, profilesResult, funnelResult, spotResult, cohortResult, subFunnelResult] = await Promise.all([
+      const [eventsResult, profilesResult, funnelResult, spotResult, cohortResult, subFunnelResult, deviceUserMappings] = await Promise.all([
         supabase
           .from('app_usage_events')
           .select('user_id, device_id, event_type, session_id, duration_seconds, video_id, video_title, created_at')
@@ -283,6 +283,12 @@ export default function AdminUsageScreen() {
         supabase.from('spot_breakdown').select('*'),
         supabase.from('retention_cohorts').select('*').limit(8),
         supabase.from('subscription_funnel').select('*').single(),
+        supabase
+          .from('app_usage_events')
+          .select('device_id, user_id')
+          .not('device_id', 'is', null)
+          .not('user_id', 'is', null)
+          .limit(2000),
       ]);
 
       if (eventsResult.error) {
@@ -399,6 +405,18 @@ export default function AdminUsageScreen() {
         ? ` (${Math.round((conversions / paywallViews) * 100)}%)`
         : '';
 
+      // Paid users — use max of RC-synced flag vs subscription_started events
+      const rcSyncedPaid = profiles.filter(p => p.is_subscribed === true).length;
+      const eventPaid = new Set(
+        events.filter(e => e.event_type === 'subscription_started' && e.user_id).map(e => e.user_id)
+      ).size;
+      const paidUsersCount = Math.max(rcSyncedPaid, eventPaid);
+      const rcSubscribersCount = Math.max(
+        profiles.filter(p => p.subscription_source === 'revenuecat').length,
+        eventPaid
+      );
+      console.log('[AdminUsage] Paid users — rcSynced:', rcSyncedPaid, 'eventPaid:', eventPaid, 'max:', paidUsersCount);
+
       const cards: StatCard[] = [
         {
           label: 'Total Sessions',
@@ -451,14 +469,14 @@ export default function AdminUsageScreen() {
         },
         {
           label: 'Paid Users',
-          value: String(profiles.filter(p => p.is_subscribed === true).length),
+          value: String(paidUsersCount),
           icon_ios: 'star.fill',
           icon_android: 'star',
           accent: '#F59E0B',
         },
         {
-          label: 'RC Subscribers',
-          value: String(profiles.filter(p => p.subscription_source === 'revenuecat').length),
+          label: 'Subscribers',
+          value: String(rcSubscribersCount),
           icon_ios: 'creditcard.fill',
           icon_android: 'credit_card',
           accent: '#22C55E',
@@ -540,7 +558,7 @@ export default function AdminUsageScreen() {
         videoAlertsOptIn: profiles.filter(p => p.video_notifications === true).length,
         swellAlertsOptIn: profiles.filter(p => p.min_wave_height !== null && p.min_wave_height !== undefined).length,
         notificationOpens: notifOpenCount,
-        paidSubscribers: profiles.filter(p => p.is_subscribed === true).length,
+        paidSubscribers: paidUsersCount,
       });
 
       // -----------------------------------------------------------------------
@@ -563,6 +581,18 @@ export default function AdminUsageScreen() {
       const deviceToUserId = new Map<string, string>();
       for (const e of events) {
         if (e.device_id && e.user_id) deviceToUserId.set(e.device_id, e.user_id);
+      }
+
+      // Supplement with all known device→user mappings from the full events table
+      if (deviceUserMappings.error) {
+        console.warn('[AdminUsage] deviceUserMappings query failed (non-fatal):', deviceUserMappings.error.message);
+      } else {
+        for (const row of (deviceUserMappings.data ?? [])) {
+          if (row.device_id && row.user_id && !deviceToUserId.has(row.device_id)) {
+            deviceToUserId.set(row.device_id, row.user_id);
+          }
+        }
+        console.log('[AdminUsage] deviceToUserId size after supplement:', deviceToUserId.size);
       }
 
       const userMap = new Map<string, {
