@@ -49,6 +49,41 @@ export default function EnhancedVideoPlayerScreen() {
   const videoWatchTrackedRef = useRef(false);
   const videoTitleRef = useRef<string | undefined>(undefined);
 
+  // Auto-respond to device orientation changes
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const subscription = ScreenOrientation.addOrientationChangeListener(async (event) => {
+      const orientation = event.orientationInfo.orientation;
+      console.log('[EnhancedVideoPlayer] Device orientation changed:', orientation);
+      if (
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+      ) {
+        console.log('[EnhancedVideoPlayer] Auto-entering fullscreen (landscape)');
+        setIsFullscreen(true);
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        } catch (e) {
+          console.error('[EnhancedVideoPlayer] Error locking to landscape:', e);
+        }
+      } else if (
+        orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
+        orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
+      ) {
+        console.log('[EnhancedVideoPlayer] Auto-exiting fullscreen (portrait)');
+        setIsFullscreen(false);
+        try {
+          await ScreenOrientation.unlockAsync();
+        } catch (e) {
+          console.error('[EnhancedVideoPlayer] Error unlocking orientation:', e);
+        }
+      }
+    });
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(subscription);
+    };
+  }, []);
+
   // Track video_watch on unmount (user closes player mid-video, 5s minimum)
   useEffect(() => {
     return () => {
@@ -538,10 +573,8 @@ export default function EnhancedVideoPlayerScreen() {
     if (Platform.OS !== 'web') {
       try {
         if (newFullscreenState) {
-          await ScreenOrientation.unlockAsync();
-          await new Promise(resolve => setTimeout(resolve, 200));
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          console.log('[EnhancedVideoPlayer] ✅ Locked to portrait');
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          console.log('[EnhancedVideoPlayer] ✅ Locked to landscape');
         } else {
           await ScreenOrientation.unlockAsync();
           console.log('[EnhancedVideoPlayer] ✅ Unlocked orientation');

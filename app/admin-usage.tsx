@@ -36,6 +36,8 @@ interface Profile {
   daily_report_notifications: boolean | null;
   video_notifications: boolean | null;
   min_wave_height: number | null;
+  is_subscribed: boolean | null;
+  subscription_source: string | null;
 }
 
 interface StatCard {
@@ -247,6 +249,7 @@ export default function AdminUsageScreen() {
     videoAlertsOptIn: number;
     swellAlertsOptIn: number;
     notificationOpens: number;
+    paidSubscribers: number;
   } | null>(null);
 
   // Section 6 — Forecast usage (last 14 days)
@@ -275,7 +278,7 @@ export default function AdminUsageScreen() {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height'),
+          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height, is_subscribed, subscription_source'),
         supabase.from('engagement_funnel').select('*').single(),
         supabase.from('spot_breakdown').select('*'),
         supabase.from('retention_cohorts').select('*').limit(8),
@@ -383,7 +386,7 @@ export default function AdminUsageScreen() {
       const activeUsers = recentIdentities.size;
 
       const totalUsersCount = profiles.length;
-      const dailyReportOptInCount = profiles.filter(p => p.daily_report_notifications === true).length;
+      const dailyReportOptInCount = profiles.filter(p => p.daily_report_notifications !== false).length;
       const notifOptInRate = totalUsersCount > 0
         ? `${Math.round((dailyReportOptInCount / totalUsersCount) * 100)}%`
         : '0%';
@@ -444,6 +447,20 @@ export default function AdminUsageScreen() {
           value: sfData ? String(conversions) + conversionPct : '—',
           icon_ios: 'checkmark.seal.fill',
           icon_android: 'verified',
+          accent: '#22C55E',
+        },
+        {
+          label: 'Paid Users',
+          value: String(profiles.filter(p => p.is_subscribed === true).length),
+          icon_ios: 'star.fill',
+          icon_android: 'star',
+          accent: '#F59E0B',
+        },
+        {
+          label: 'RC Subscribers',
+          value: String(profiles.filter(p => p.subscription_source === 'revenuecat').length),
+          icon_ios: 'creditcard.fill',
+          icon_android: 'credit_card',
           accent: '#22C55E',
         },
       ];
@@ -523,6 +540,7 @@ export default function AdminUsageScreen() {
         videoAlertsOptIn: profiles.filter(p => p.video_notifications === true).length,
         swellAlertsOptIn: profiles.filter(p => p.min_wave_height !== null && p.min_wave_height !== undefined).length,
         notificationOpens: notifOpenCount,
+        paidSubscribers: profiles.filter(p => p.is_subscribed === true).length,
       });
 
       // -----------------------------------------------------------------------
@@ -957,6 +975,13 @@ export default function AdminUsageScreen() {
                       <View style={styles.notifValueRow}>
                         <Text style={styles.notifValue}>{notifStats.swellAlertsOptIn}</Text>
                         <Text style={styles.notifPct}>{pct(notifStats.swellAlertsOptIn, notifStats.totalUsers)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.notifRow}>
+                      <Text style={styles.notifLabel}>Paid Subscribers</Text>
+                      <View style={styles.notifValueRow}>
+                        <Text style={styles.notifValue}>{notifStats.paidSubscribers}</Text>
+                        <Text style={styles.notifPct}>{pct(notifStats.paidSubscribers, notifStats.totalUsers)}</Text>
                       </View>
                     </View>
                     <View style={[styles.notifRow, styles.notifRowLast]}>
