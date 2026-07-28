@@ -732,7 +732,7 @@ export default function EnhancedVideoPlayerScreen() {
     console.log('[VideoPlayer] Fullscreen render — winWidth:', winWidth, 'winHeight:', winHeight, 'isLandscapeVideo:', isLandscapeVideo);
     return (
       <TouchableOpacity 
-        style={[styles.fullscreenContainer, { width: winWidth, height: winHeight }]}
+        style={{ position: 'absolute', top: 0, left: 0, width: winWidth, height: winHeight, backgroundColor: '#000000' }}
         activeOpacity={1}
         onPress={toggleControls}
       >
