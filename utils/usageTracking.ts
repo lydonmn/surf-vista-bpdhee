@@ -314,6 +314,7 @@ export async function trackSpotViewed(userId?: string, spotId?: string, spotName
   }
 }
 
+// NOTE: No camera feed UI exists yet. Call this when a live camera feed component mounts.
 /**
  * Call when a camera feed for a surf spot is viewed.
  * Fires event_type: 'camera_feed_viewed' with spot_id.

@@ -185,8 +185,9 @@ export default function ForecastScreen() {
 
   useEffect(() => {
     if (!currentLocation) return;
-    console.log('[ForecastScreen] Location changed — tracking spot_viewed, spot:', currentLocation, 'user:', user?.id ?? 'anonymous');
-    trackSpotViewed(user?.id, currentLocation, currentLocation).catch(() => {});
+    const spotName = locationData?.displayName ?? currentLocation;
+    console.log('[ForecastScreen] Location changed — tracking spot_viewed, spot:', currentLocation, 'name:', spotName, 'user:', user?.id ?? 'anonymous');
+    trackSpotViewed(user?.id, currentLocation, spotName).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLocation]);
 

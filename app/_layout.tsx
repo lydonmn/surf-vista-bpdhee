@@ -290,6 +290,58 @@ function AppLifecycleTracker() {
     ensurePushTokenRegistered(user.id).catch(() => {});
   }, [user?.id]);
 
+  // Notification listeners — moved here so userIdRef.current is always available
+  const router = useRouter();
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+      console.log('[AppLifecycleTracker] Notification response received:', response.notification.request.identifier);
+      const data = response.notification.request.content.data as any;
+      if (!data) return;
+
+      const notifType: string | undefined = data.type;
+      console.log('[AppLifecycleTracker] Tracking notification_open — type:', notifType, 'user_id:', userIdRef.current ?? 'anonymous');
+      trackNotificationOpen(userIdRef.current, notifType).catch(() => {});
+
+      if (data.type === 'daily_report' || data.type === 'swell_alert') {
+        router.replace('/(tabs)/(home)');
+      } else if (data.type === 'new_video') {
+        router.replace('/(tabs)/videos');
+      } else if (data.type === 'custom_notification') {
+        router.replace('/(tabs)/(home)');
+      }
+    };
+
+    const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[AppLifecycleTracker] Foreground notification received:', notification.request.identifier);
+      console.log('[AppLifecycleTracker] Notification title:', notification.request.content.title);
+      console.log('[AppLifecycleTracker] Notification body:', notification.request.content.body);
+    });
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
+
+    // Cold-start: notification tapped while app was fully closed
+    const timer = setTimeout(async () => {
+      try {
+        const response = await Notifications.getLastNotificationResponseAsync();
+        if (response) {
+          console.log('[AppLifecycleTracker] Cold-start notification response found, handling...');
+          handleNotificationResponse(response);
+        }
+      } catch (err) {
+        console.warn('[AppLifecycleTracker] Cold-start notification check failed:', err);
+      }
+    }, 500);
+
+    return () => {
+      foregroundSub.remove();
+      responseSub.remove();
+      clearTimeout(timer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return null;
 }
 
@@ -297,71 +349,10 @@ export default function RootLayout() {
   console.log('[RootLayout] ===== COMPONENT MOUNTING =====');
 
   const colorScheme = useColorScheme();
-  const router = useRouter();
-  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
 
   const [loaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-
-  // Shared handler — defined outside effects so both can reference it
-  const handleNotificationResponse = React.useCallback((response: Notifications.NotificationResponse) => {
-    console.log('[RootLayout] Notification response received:', response.notification.request.identifier);
-    const data = response.notification.request.content.data as any;
-    if (!data) return;
-
-    const notifType: string | undefined = data.type;
-    trackNotificationOpen(undefined, notifType).catch(() => {});
-
-    if (data.type === 'daily_report' || data.type === 'swell_alert') {
-      router.replace('/(tabs)/(home)');
-    } else if (data.type === 'new_video') {
-      router.replace('/(tabs)/videos');
-    } else if (data.type === 'custom_notification') {
-      router.replace('/(tabs)/(home)');
-    }
-  }, [router]);
-
-  // Cold-start handler: notification tapped while app was fully closed
-  // Delay ensures the router is mounted before we attempt navigation
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    const timer = setTimeout(async () => {
-      try {
-        const response = await Notifications.getLastNotificationResponseAsync();
-        if (response) {
-          console.log('[RootLayout] Cold-start notification response found, handling...');
-          handleNotificationResponse(response);
-        }
-      } catch (err) {
-        console.warn('[RootLayout] Cold-start notification check failed:', err);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Live listener: notification tapped while app is backgrounded or foregrounded
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-
-    // Foreground notification received (display only — no navigation)
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('[RootLayout] Foreground notification received:', notification.request.identifier);
-      console.log('[RootLayout] Notification title:', notification.request.content.title);
-      console.log('[RootLayout] Notification body:', notification.request.content.body);
-    });
-
-    // Response listener (user tapped notification)
-    const responseSub = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
-
-    return () => {
-      if (notificationListener.current) {
-        notificationListener.current.remove();
-      }
-      responseSub.remove();
-    };
-  }, [handleNotificationResponse]);
 
   // Register Android channels + iOS categories at startup
   useEffect(() => {

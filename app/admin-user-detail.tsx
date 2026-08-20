@@ -290,8 +290,8 @@ export default function AdminUserDetailScreen() {
   const subscriptionSource = profile?.subscription_source || '—';
   const subscriptionEndDate = profile?.subscription_end_date ? formatDate(profile.subscription_end_date) : '—';
   const minWaveHeight = profile?.min_wave_height != null ? `${profile.min_wave_height} ft` : 'Not set';
-  const videoNotifs = profile?.video_notifications ? 'On' : 'Off';
-  const dailyReportNotifs = profile?.daily_report_notifications ? 'On' : 'Off';
+  const videoNotifs = profile?.video_notifications === true ? 'On' : profile?.video_notifications === false ? 'Off' : 'Default (On)';
+  const dailyReportNotifs = profile?.daily_report_notifications === true ? 'On' : profile?.daily_report_notifications === false ? 'Off' : 'Default (On)';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -512,8 +512,8 @@ export default function AdminUserDetailScreen() {
             <InfoRow label="End Date" value={subscriptionEndDate} />
             <InfoRow label="Source" value={subscriptionSource} />
             <InfoRow label="Min Wave Height" value={minWaveHeight} />
-            <InfoRow label="Video Notifications" value={videoNotifs} accent={profile?.video_notifications ? '#10B981' : '#6B7280'} />
-            <InfoRow label="Daily Reports" value={dailyReportNotifs} accent={profile?.daily_report_notifications ? '#10B981' : '#6B7280'} />
+            <InfoRow label="Video Notifications" value={videoNotifs} accent={profile?.video_notifications === false ? '#6B7280' : '#10B981'} />
+            <InfoRow label="Daily Reports" value={dailyReportNotifs} accent={profile?.daily_report_notifications === false ? '#6B7280' : '#10B981'} />
           </SectionCard>
         </>
       )}
