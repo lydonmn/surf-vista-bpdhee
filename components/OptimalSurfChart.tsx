@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,14 @@ import {
   Animated as RNAnimated,
   LayoutChangeEvent,
 } from 'react-native';
-import {
+import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  withRepeat,
   runOnJS,
+  useAnimatedStyle,
+  Easing,
 } from 'react-native-reanimated';
 import { colors } from '@/styles/commonStyles';
 
@@ -48,7 +51,7 @@ const LOW_LABEL_ZONE_HEIGHT = 28;
 const BADGE_HEIGHT = 34;
 const CONNECTOR_LENGTH = 10;
 const MIN_LABEL_SPACING = 40;
-const FIGURE_CANVAS_HEIGHT = 80;
+const SCENE_PANEL_HEIGHT = 140;
 
 const HOUR_LABELS = ['5a', '6a', '7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p'];
 
@@ -167,209 +170,135 @@ function findBestWindow(scores: number[]): number {
   return bestStart;
 }
 
-// ─── Stick Figure Component ───────────────────────────────────────────────────
+// ─── Wave height → fraction helper ───────────────────────────────────────────
 
-interface StickFigureProps {
-  score: number;
-  windSpeed: number;
-  windDirection: string;
-  waveHeight: number;
-  wavePeriod: number;
-  isScrubbing: boolean;
+function waveHeightToFraction(h: number): number {
+  if (h <= 1) return 0.25 + (h / 1) * 0.10;
+  if (h <= 2.5) return 0.35 + ((h - 1) / 1.5) * 0.10;
+  if (h <= 3.5) return 0.45 + ((h - 2.5) / 1.0) * 0.10;
+  if (h <= 4.5) return 0.55 + ((h - 3.5) / 1.0) * 0.10;
+  return Math.min(0.65 + ((h - 4.5) / 2.0) * 0.05, 0.70);
 }
 
-function StickFigure({ score, windSpeed, windDirection, waveHeight, wavePeriod, isScrubbing }: StickFigureProps) {
-  const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
+// ─── Weather Icon ─────────────────────────────────────────────────────────────
 
-  // Pose parameters
-  const lean = score >= 7 ? 20 : score >= 5 ? 8 : score >= 3 ? 4 : 0;
-  const crouchFactor = score >= 7 ? 0.6 : score >= 5 ? 0.8 : score >= 3 ? 0.9 : 1.0;
-  const armAngle = score >= 7 ? -30 : score >= 5 ? -15 : score >= 3 ? -5 : 20;
-  const jitter = isOffshore ? 0 : windSpeed / 30;
+interface WeatherIconProps {
+  windSpeed: number;
+  isOffshore: boolean;
+}
 
-  const bodyHeight = 20 * crouchFactor;
-  const figureX = 40;
-  const figureBaseY = 58;
-  const headY = figureBaseY - bodyHeight - 10;
+function WeatherIcon({ windSpeed, isOffshore }: WeatherIconProps) {
+  const isSunny = windSpeed < 8 && isOffshore;
+  const isRainy = windSpeed >= 15 && !isOffshore;
 
-  // Wave segments
-  const amplitude = clamp(waveHeight * 0.5 + (score / 10) * 0.3, 0.05, 0.4) * 12;
-  const waveSegments = 8;
-  const waveWidth = 80;
-  const waveStartX = figureX - waveWidth / 2;
-  const waveBaseY = figureBaseY + 4;
+  // Rain animation
+  const rain1 = useRef(new RNAnimated.Value(0)).current;
+  const rain2 = useRef(new RNAnimated.Value(0)).current;
+  const rain3 = useRef(new RNAnimated.Value(0)).current;
 
-  const windArrowAngle = isOffshore ? 180 : 0;
+  useEffect(() => {
+    if (isRainy) {
+      const makeLoop = (val: RNAnimated.Value, delay: number) =>
+        RNAnimated.loop(
+          RNAnimated.sequence([
+            RNAnimated.delay(delay),
+            RNAnimated.timing(val, { toValue: 12, duration: 600, useNativeDriver: true }),
+            RNAnimated.timing(val, { toValue: 0, duration: 0, useNativeDriver: true }),
+          ])
+        );
+      const a1 = makeLoop(rain1, 0);
+      const a2 = makeLoop(rain2, 200);
+      const a3 = makeLoop(rain3, 400);
+      a1.start();
+      a2.start();
+      a3.start();
+      return () => { a1.stop(); a2.stop(); a3.stop(); };
+    }
+  }, [isRainy, rain1, rain2, rain3]);
 
-  return (
-    <View style={{ width: '100%', height: FIGURE_CANVAS_HEIGHT, position: 'relative' }}>
-      {/* Wave segments under figure */}
-      {Array.from({ length: waveSegments }).map((_, i) => {
-        const t = i / (waveSegments - 1);
-        const x = waveStartX + t * waveWidth;
-        const y = waveBaseY + Math.sin(t * Math.PI * 2) * amplitude;
-        const nextT = (i + 1) / (waveSegments - 1);
-        const nextX = waveStartX + nextT * waveWidth;
-        const nextY = waveBaseY + Math.sin(nextT * Math.PI * 2) * amplitude;
-        const dx = nextX - x;
-        const dy = nextY - y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        return (
+  if (isSunny) {
+    return (
+      <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+        {/* Sun circle */}
+        <View style={{
+          width: 10, height: 10, borderRadius: 5,
+          backgroundColor: '#FFD700',
+          position: 'absolute',
+        }} />
+        {/* Rays */}
+        {[0, 60, 120, 180, 240, 300].map((angle) => (
           <View
-            key={`wave-${i}`}
+            key={angle}
             style={{
               position: 'absolute',
-              left: x,
-              top: y,
-              width: len,
-              height: 2,
-              backgroundColor: 'rgba(96,165,250,0.5)',
+              width: 4,
+              height: 1.5,
+              backgroundColor: '#FFD700',
+              left: 10,
+              top: 11.25,
               transformOrigin: '0 50%',
-              transform: [{ rotate: `${angle}deg` }],
+              transform: [{ rotate: `${angle}deg` }, { translateX: 6 }],
             }}
           />
-        );
-      })}
-
-      {/* Head */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX - 5,
-          top: headY,
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.85)',
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.4)',
-        }}
-      />
-
-      {/* Body */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX - 1,
-          top: headY + 10,
-          width: 2,
-          height: bodyHeight,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.85)',
-          transformOrigin: '50% 0%',
-          transform: [{ rotate: `${lean}deg` }],
-        }}
-      />
-
-      {/* Left arm */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX - 1,
-          top: headY + 12,
-          width: 14,
-          height: 2,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-          transformOrigin: '0% 50%',
-          transform: [{ rotate: `${armAngle + jitter * 15}deg` }],
-        }}
-      />
-
-      {/* Right arm */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX - 13,
-          top: headY + 12,
-          width: 14,
-          height: 2,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-          transformOrigin: '100% 50%',
-          transform: [{ rotate: `${-(armAngle + jitter * 15)}deg` }],
-        }}
-      />
-
-      {/* Left leg */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX,
-          top: headY + 10 + bodyHeight,
-          width: 2,
-          height: 14,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-          transformOrigin: '50% 0%',
-          transform: [{ rotate: `${score >= 7 ? 25 : score >= 5 ? 15 : 5}deg` }],
-        }}
-      />
-
-      {/* Right leg */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX - 2,
-          top: headY + 10 + bodyHeight,
-          width: 2,
-          height: 14,
-          backgroundColor: isScrubbing ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-          transformOrigin: '50% 0%',
-          transform: [{ rotate: `${score >= 7 ? -25 : score >= 5 ? -15 : -5}deg` }],
-        }}
-      />
-
-      {/* Wind direction arrow */}
-      <View
-        style={{
-          position: 'absolute',
-          left: figureX + 20,
-          top: headY + 5,
-          width: 12,
-          height: 2,
-          backgroundColor: 'rgba(251,191,36,0.8)',
-          transformOrigin: '50% 50%',
-          transform: [{ rotate: `${windArrowAngle}deg` }],
-        }}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          left: isOffshore ? figureX + 20 : figureX + 28,
-          top: headY + 2,
-          width: 0,
-          height: 0,
-          borderTopWidth: 4,
-          borderBottomWidth: 4,
-          borderLeftWidth: 6,
-          borderTopColor: 'transparent',
-          borderBottomColor: 'transparent',
-          borderLeftColor: 'rgba(251,191,36,0.8)',
-          transform: [{ rotate: `${isOffshore ? 180 : 0}deg` }],
-        }}
-      />
-
-      {/* Pose label */}
-      <View
-        style={{
-          position: 'absolute',
-          right: 8,
-          top: 8,
-          backgroundColor: 'rgba(0,0,0,0.4)',
-          borderRadius: 6,
-          paddingHorizontal: 6,
-          paddingVertical: 2,
-        }}
-      >
-        <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>
-          {score >= 7 ? 'CARVING' : score >= 5 ? 'STANDING' : score >= 3 ? 'CROUCHING' : 'PADDLING'}
-        </Text>
+        ))}
       </View>
+    );
+  }
+
+  if (isRainy) {
+    return (
+      <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+        {/* Cloud body */}
+        <View style={{
+          width: 18, height: 9, borderRadius: 4.5,
+          backgroundColor: '#9CA3AF',
+          position: 'absolute', top: 2, left: 5,
+        }} />
+        <View style={{
+          width: 12, height: 8, borderRadius: 4,
+          backgroundColor: '#9CA3AF',
+          position: 'absolute', top: 0, left: 3,
+        }} />
+        {/* Rain drops */}
+        {[{ x: 8, anim: rain1 }, { x: 14, anim: rain2 }, { x: 20, anim: rain3 }].map((drop, i) => (
+          <RNAnimated.View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: drop.x,
+              top: 13,
+              width: 1.5,
+              height: 5,
+              backgroundColor: '#60A5FA',
+              borderRadius: 1,
+              transform: [{ translateY: drop.anim }],
+            }}
+          />
+        ))}
+      </View>
+    );
+  }
+
+  // Cloudy
+  return (
+    <View style={{ width: 24, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{
+        width: 16, height: 9, borderRadius: 4.5,
+        backgroundColor: 'rgba(255,255,255,0.55)',
+        position: 'absolute', top: 5, left: 4,
+      }} />
+      <View style={{
+        width: 12, height: 8, borderRadius: 4,
+        backgroundColor: 'rgba(255,255,255,0.45)',
+        position: 'absolute', top: 2, left: 2,
+      }} />
     </View>
   );
 }
 
-// ─── Scrub Readout Panel ──────────────────────────────────────────────────────
+// ─── SurfScene Component ──────────────────────────────────────────────────────
 
-interface ReadoutPanelProps {
+interface SurfSceneProps {
   hourIndex: number;
   score: number;
   waveHeight: number;
@@ -377,140 +306,389 @@ interface ReadoutPanelProps {
   windSpeed: number;
   windDirection: string;
   tides: TideEntry[];
+  isScrubbing: boolean;
 }
 
-function ReadoutPanel({ hourIndex, score, waveHeight, wavePeriod, windSpeed, windDirection, tides }: ReadoutPanelProps) {
+function SurfScene({
+  hourIndex,
+  score,
+  waveHeight,
+  wavePeriod,
+  windSpeed,
+  windDirection,
+  tides,
+  isScrubbing,
+}: SurfSceneProps) {
+  const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
+
+  // ── Derived display values ──
   const hour = HOURS[hourIndex] ?? 5;
   const displayHour = hour > 12 ? `${hour - 12} PM` : hour === 12 ? '12 PM' : `${hour} AM`;
+  const ratingKey = getRatingKey(score);
+  const ratingColor = COLORS[ratingKey];
 
   const waveEst = waveHeight * 0.8 + (score / 10) * 0.4;
   const waveEstStr = Number(waveEst).toFixed(1);
 
-  // Tide state
   const tideNow = interpolateTideHeight(hour, tides);
   const tidePrev = interpolateTideHeight(hour - 0.5, tides);
   const tideNext = interpolateTideHeight(hour + 0.5, tides);
   let tideState = 'Steady';
+  let tideArrow = '→';
   if (tideNow !== null && tidePrev !== null && tideNext !== null) {
     const slope = tideNext - tidePrev;
-    if (slope > 0.05) tideState = 'Rising';
-    else if (slope < -0.05) tideState = 'Falling';
-    else if (tideNow > 3) tideState = 'High';
-    else tideState = 'Low';
+    if (slope > 0.05) { tideState = 'Rising'; tideArrow = '↑'; }
+    else if (slope < -0.05) { tideState = 'Falling'; tideArrow = '↓'; }
+    else if (tideNow > 3) { tideState = 'High'; tideArrow = '—'; }
+    else { tideState = 'Low'; tideArrow = '—'; }
   }
+  const tideLabel = `${tideState} ${tideArrow}`;
 
-  const barColor = getBarColor(score);
+  // ── Wave geometry ──
+  const panelH = SCENE_PANEL_HEIGHT;
+  const waveFraction = waveHeightToFraction(waveHeight);
+  const waveTopY = panelH * (1 - waveFraction);
+
+  // Figure position: 60% across panel width
+  // We'll use a fixed panel width reference of 300 for positioning
+  const PANEL_W = 300;
+  const figureX = PANEL_W * 0.60;
+  const feetY = waveTopY; // feet sit on wave surface
+
+  // Figure sizing based on wave height
+  const crouchFactor = waveHeight >= 5 ? 0.75 : waveHeight >= 3.5 ? 0.85 : waveHeight <= 1 ? 0.70 : 1.0;
+  const bodyH = 18 * crouchFactor;
+  const legH = 12 * crouchFactor;
+  const headSize = 10;
+
+  // Body lean based on score
+  const baseLean = score >= 7 ? 15 : score >= 5 ? 10 : 5;
+  // Board tilt based on wave steepness
+  const boardTilt = waveHeight >= 3.5 ? -12 : waveHeight >= 2 ? -10 : -8;
+
+  // ── Reanimated ride loop ──
+  const rideProgress = useSharedValue(0);
+  const rideDuration = 1200 + wavePeriod * 120;
+
+  useEffect(() => {
+    rideProgress.value = withRepeat(
+      withTiming(1, { duration: rideDuration, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+  }, [rideDuration, rideProgress]);
+
+  const bodyAnimStyle = useAnimatedStyle(() => {
+    const leanOscillation = (rideProgress.value - 0.5) * 6; // ±3deg
+    const xShift = (rideProgress.value - 0.5) * 8; // ±4px
+    return {
+      transform: [
+        { translateX: xShift },
+        { rotate: `${baseLean + leanOscillation}deg` },
+      ],
+    };
+  });
+
+  const frontArmAnimStyle = useAnimatedStyle(() => {
+    const armOscillation = (rideProgress.value - 0.5) * 10; // ±5deg
+    return {
+      transform: [{ rotate: `${-30 + armOscillation}deg` }],
+    };
+  });
+
+  const figureOpacity = isScrubbing ? 1.0 : 0.92;
+
+  // ── Wave segments ──
+  const waveSegmentCount = 14;
+  const waveSegments = useMemo(() => {
+    const segs = [];
+    const choppy = !isOffshore && windSpeed >= 12;
+    const glassy = isOffshore && wavePeriod >= 10;
+    for (let i = 0; i < waveSegmentCount; i++) {
+      const t = i / (waveSegmentCount - 1);
+      const nextT = (i + 1) / (waveSegmentCount - 1);
+      const amplitude = glassy ? 4 : choppy ? 6 : 5;
+      const jitter = choppy ? Math.sin(i * 2.3) * 2 : 0;
+      const nextJitter = choppy ? Math.sin((i + 1) * 2.3) * 2 : 0;
+      const x = t * PANEL_W;
+      const y = waveTopY + Math.sin(t * Math.PI * 1.5) * amplitude + jitter;
+      const nx = nextT * PANEL_W;
+      const ny = waveTopY + Math.sin(nextT * Math.PI * 1.5) * amplitude + nextJitter;
+      const dx = nx - x;
+      const dy = ny - y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      segs.push({ x, y, len, angle });
+    }
+    return segs;
+  }, [waveTopY, isOffshore, windSpeed, wavePeriod]);
+
+  // ── Wind arrow ──
+  const windArrowFacingRight = isOffshore;
 
   return (
-    <View style={readoutStyles.card}>
-      {/* Left: hour */}
-      <View style={readoutStyles.col}>
-        <Text style={readoutStyles.hourText}>{displayHour}</Text>
-        <View style={[readoutStyles.scorePill, { backgroundColor: barColor + '33', borderColor: barColor }]}>
-          <Text style={[readoutStyles.scoreText, { color: barColor }]}>{score.toFixed(1)}/10</Text>
+    <View style={sceneStyles.panel}>
+      {/* ── Background gradient layers ── */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0A1628' }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0D2B4E', opacity: 0.7 }]} />
+      <View style={[StyleSheet.absoluteFill, { top: panelH * 0.4, backgroundColor: '#1A4A7A', opacity: 0.4 }]} />
+
+      {/* ── Wave water body (below wave top) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: waveTopY + 4,
+          bottom: 0,
+          backgroundColor: 'rgba(20,120,140,0.6)',
+        }}
+      />
+
+      {/* ── Wave face segments ── */}
+      {waveSegments.map((seg, i) => (
+        <View
+          key={`ws-${i}`}
+          style={{
+            position: 'absolute',
+            left: seg.x,
+            top: seg.y,
+            width: seg.len,
+            height: 3,
+            backgroundColor: 'rgba(32,178,170,0.85)',
+            transformOrigin: '0 50%',
+            transform: [{ rotate: `${seg.angle}deg` }],
+          }}
+        />
+      ))}
+
+      {/* ── Wave foam highlight ── */}
+      {waveSegments.map((seg, i) => (
+        <View
+          key={`wf-${i}`}
+          style={{
+            position: 'absolute',
+            left: seg.x,
+            top: seg.y - 2,
+            width: seg.len,
+            height: 1.5,
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            transformOrigin: '0 50%',
+            transform: [{ rotate: `${seg.angle}deg` }],
+          }}
+        />
+      ))}
+
+      {/* ── Stick figure + board (positioned at figureX, feetY) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: figureX - 20,
+          top: feetY - legH - bodyH - headSize - 2,
+          width: 44,
+          height: legH + bodyH + headSize + 4,
+          opacity: figureOpacity,
+        }}
+      >
+        {/* Head */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 17,
+            top: 0,
+            width: headSize,
+            height: headSize,
+            borderRadius: headSize / 2,
+            backgroundColor: '#FFFFFF',
+          }}
+        />
+
+        {/* Body (animated lean) */}
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              left: 21,
+              top: headSize + 1,
+              width: 2,
+              height: bodyH,
+              backgroundColor: '#FFFFFF',
+              transformOrigin: '50% 0%',
+            },
+            bodyAnimStyle,
+          ]}
+        />
+
+        {/* Front arm (toward wave, animated) */}
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              left: 22,
+              top: headSize + 5,
+              width: 12,
+              height: 2,
+              backgroundColor: 'rgba(255,255,255,0.85)',
+              transformOrigin: '0% 50%',
+            },
+            frontArmAnimStyle,
+          ]}
+        />
+
+        {/* Back arm (balance) */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 10,
+            top: headSize + 5,
+            width: 12,
+            height: 2,
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            transformOrigin: '100% 50%',
+            transform: [{ rotate: '20deg' }],
+          }}
+        />
+
+        {/* Front leg */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 23,
+            top: headSize + bodyH + 1,
+            width: 2,
+            height: legH,
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            transformOrigin: '50% 0%',
+            transform: [{ rotate: '20deg' }],
+          }}
+        />
+
+        {/* Back leg */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 19,
+            top: headSize + bodyH + 1,
+            width: 2,
+            height: legH,
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            transformOrigin: '50% 0%',
+            transform: [{ rotate: '-15deg' }],
+          }}
+        />
+
+        {/* Surfboard */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 2,
+            top: headSize + bodyH + legH - 2,
+            width: 40,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: 'rgba(200,230,255,0.9)',
+            transformOrigin: '50% 50%',
+            transform: [{ rotate: `${boardTilt}deg` }],
+          }}
+        />
+
+        {/* Wind direction arrow shaft */}
+        <View
+          style={{
+            position: 'absolute',
+            left: windArrowFacingRight ? 30 : 2,
+            top: headSize + 3,
+            width: 12,
+            height: 2,
+            backgroundColor: 'rgba(251,191,36,0.9)',
+          }}
+        />
+        {/* Wind arrow head */}
+        <View
+          style={{
+            position: 'absolute',
+            left: windArrowFacingRight ? 40 : 2,
+            top: headSize + 0,
+            width: 0,
+            height: 0,
+            borderTopWidth: 4,
+            borderBottomWidth: 4,
+            borderLeftWidth: windArrowFacingRight ? 6 : 0,
+            borderRightWidth: windArrowFacingRight ? 0 : 6,
+            borderTopColor: 'transparent',
+            borderBottomColor: 'transparent',
+            borderLeftColor: windArrowFacingRight ? 'rgba(251,191,36,0.9)' : 'transparent',
+            borderRightColor: windArrowFacingRight ? 'transparent' : 'rgba(251,191,36,0.9)',
+          }}
+        />
+      </View>
+
+      {/* ── Weather icon (top-center) ── */}
+      <View style={{ position: 'absolute', top: 8, left: PANEL_W / 2 - 12, width: 24, height: 24 }}>
+        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} />
+      </View>
+
+      {/* ── Top-left overlay: hour + rating ── */}
+      <View style={sceneStyles.topLeft}>
+        <Text style={sceneStyles.hourText}>{displayHour}</Text>
+        <View style={[sceneStyles.ratingPill, { backgroundColor: ratingColor + '33', borderColor: ratingColor }]}>
+          <Text style={[sceneStyles.ratingText, { color: ratingColor }]}>{ratingKey}</Text>
         </View>
       </View>
 
-      {/* Divider */}
-      <View style={readoutStyles.divider} />
-
-      {/* Center: wave */}
-      <View style={readoutStyles.col}>
-        <Text style={readoutStyles.dataLabel}>WAVE</Text>
-        <Text style={readoutStyles.dataValue}>{waveEstStr} ft</Text>
-        <Text style={readoutStyles.dataSub}>{wavePeriod}s period</Text>
-      </View>
-
-      {/* Divider */}
-      <View style={readoutStyles.divider} />
-
-      {/* Right: wind + tide */}
-      <View style={readoutStyles.col}>
-        <Text style={readoutStyles.dataLabel}>WIND</Text>
-        <Text style={readoutStyles.dataValue}>{windSpeed} mph</Text>
-        <Text style={readoutStyles.dataSub}>{windDirection}</Text>
-        <View style={readoutStyles.tideStateRow}>
-          <View style={[readoutStyles.tideStateDot, {
-            backgroundColor: tideState === 'Rising' ? '#22C55E' : tideState === 'Falling' ? '#F59E0B' : '#60A5FA'
-          }]} />
-          <Text style={readoutStyles.tideStateText}>{tideState}</Text>
-        </View>
+      {/* ── Top-right overlay: wave / wind / tide ── */}
+      <View style={sceneStyles.topRight}>
+        <Text style={sceneStyles.statLine}>{waveEstStr} ft</Text>
+        <Text style={sceneStyles.statLine}>{windSpeed} mph {windDirection}</Text>
+        <Text style={sceneStyles.statLine}>{tideLabel}</Text>
       </View>
     </View>
   );
 }
 
-const readoutStyles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+const sceneStyles = StyleSheet.create({
+  panel: {
+    height: SCENE_PANEL_HEIGHT,
+    borderRadius: 12,
+    overflow: 'hidden',
     marginBottom: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    position: 'relative',
   },
-  col: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  divider: {
-    width: 1,
-    height: 44,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginHorizontal: 4,
+  topLeft: {
+    position: 'absolute',
+    top: 8,
+    left: 10,
   },
   hourText: {
-    fontSize: 22,
+    fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
-    lineHeight: 26,
+    lineHeight: 18,
   },
-  scorePill: {
-    borderRadius: 8,
+  ratingPill: {
+    borderRadius: 6,
     borderWidth: 1,
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
-    marginTop: 4,
+    marginTop: 3,
+    alignSelf: 'flex-start',
   },
-  scoreText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  dataLabel: {
+  ratingText: {
     fontSize: 9,
     fontWeight: '700',
-    color: 'rgba(255,255,255,0.45)',
-    letterSpacing: 0.8,
-    marginBottom: 2,
+    letterSpacing: 0.5,
   },
-  dataValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  topRight: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    alignItems: 'flex-end',
   },
-  dataSub: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: 1,
-  },
-  tideStateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-    gap: 3,
-  },
-  tideStateDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  tideStateText: {
+  statLine: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: '600',
+    color: 'rgba(255,255,255,0.82)',
+    lineHeight: 15,
+    fontWeight: '500',
   },
 });
 
@@ -561,7 +739,7 @@ export default function OptimalSurfChart({
   const chartContainerWidth = useRef(TOTAL_CHART_WIDTH);
   const scrollOffsetRef = useRef(0);
 
-  // Reanimated shared values for figure
+  // Reanimated shared values
   const scrubProgress = useSharedValue(0);
 
   const updateSelectedIndex = useCallback((idx: number) => {
@@ -727,8 +905,8 @@ export default function OptimalSurfChart({
         <Text style={styles.bestWindowText}>{bestWindowText}</Text>
       </View>
 
-      {/* Scrub readout panel */}
-      <ReadoutPanel
+      {/* Unified scene panel */}
+      <SurfScene
         hourIndex={selectedIndex}
         score={selectedScore}
         waveHeight={waveHeight}
@@ -736,19 +914,8 @@ export default function OptimalSurfChart({
         windSpeed={windSpeed}
         windDirection={windDirection}
         tides={tides}
+        isScrubbing={isScrubbing}
       />
-
-      {/* Stick figure canvas */}
-      <View style={styles.figureCanvas}>
-        <StickFigure
-          score={selectedScore}
-          windSpeed={windSpeed}
-          windDirection={windDirection}
-          waveHeight={waveHeight}
-          wavePeriod={wavePeriod}
-          isScrubbing={isScrubbing}
-        />
-      </View>
 
       {/* Scrollable chart */}
       <ScrollView
@@ -1171,13 +1338,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.PRIME,
     letterSpacing: 0.3,
-  },
-  figureCanvas: {
-    height: FIGURE_CANVAS_HEIGHT,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 8,
-    marginBottom: 8,
-    overflow: 'hidden',
   },
   scrollView: {
     marginHorizontal: -14,
