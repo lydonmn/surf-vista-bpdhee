@@ -51,7 +51,7 @@ const LOW_LABEL_ZONE_HEIGHT = 28;
 const BADGE_HEIGHT = 34;
 const CONNECTOR_LENGTH = 10;
 const MIN_LABEL_SPACING = 40;
-const SCENE_PANEL_HEIGHT = 140;
+const SCENE_PANEL_HEIGHT = 160;
 
 const HOUR_LABELS = ['5a', '6a', '7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p'];
 
@@ -309,6 +309,9 @@ interface SurfSceneProps {
   isScrubbing: boolean;
 }
 
+// lerp helper
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
 function SurfScene({
   hourIndex,
   score,
@@ -344,27 +347,39 @@ function SurfScene({
   }
   const tideLabel = `${tideState} ${tideArrow}`;
 
-  // ── Wave geometry ──
+  // ── Panel / wave geometry ──
   const panelH = SCENE_PANEL_HEIGHT;
-  const waveFraction = waveHeightToFraction(waveHeight);
-  const waveTopY = panelH * (1 - waveFraction);
-
-  // Figure position: 60% across panel width
-  // We'll use a fixed panel width reference of 300 for positioning
   const PANEL_W = 300;
-  const figureX = PANEL_W * 0.60;
-  const feetY = waveTopY; // feet sit on wave surface
 
-  // Figure sizing based on wave height
-  const crouchFactor = waveHeight >= 5 ? 0.75 : waveHeight >= 3.5 ? 0.85 : waveHeight <= 1 ? 0.70 : 1.0;
-  const bodyH = 18 * crouchFactor;
-  const legH = 12 * crouchFactor;
+  const waveBaseY = panelH * 0.58;
+  const rawWaveH = waveHeightToFraction(waveHeight) * panelH * 0.72;
+  const waveHeight_px = clamp(rawWaveH, 18, 100);
+
+  // Wave face endpoints
+  const toeX = PANEL_W * 0.82;
+  const peakX = PANEL_W * 0.38;
+  const peakY = waveBaseY - waveHeight_px;
+
+  // Face angle in degrees (negative = rising left)
+  const faceAngleDeg = Math.atan2(-(waveHeight_px), toeX - peakX) * (180 / Math.PI);
+
+  // ── Surfer position on wave face ──
+  const surferX = PANEL_W * 0.38 + (PANEL_W * 0.82 - PANEL_W * 0.38) * 0.45; // ~PANEL_W * 0.57
+  const surferFeetY = waveBaseY - waveHeight_px * 0.55;
+
+  // ── Stance from wave height ──
+  const stanceH = lerp(1.0, 0.62, clamp((waveHeight - 1) / 4, 0, 1));
+  const bodyH = 20 * stanceH;
+  const legH = 14 * stanceH;
   const headSize = 10;
 
-  // Body lean based on score
+  // Body lean: score-based + face angle contribution
   const baseLean = score >= 7 ? 15 : score >= 5 ? 10 : 5;
-  // Board tilt based on wave steepness
-  const boardTilt = waveHeight >= 3.5 ? -12 : waveHeight >= 2 ? -10 : -8;
+  const totalBodyLean = baseLean + faceAngleDeg * 0.5;
+  // Board tilt follows wave face
+  const boardTilt = faceAngleDeg * 0.7;
+  // Surfer leans into wave face
+  const figureLean = -(faceAngleDeg * 0.6);
 
   // ── Reanimated ride loop ──
   const rideProgress = useSharedValue(0);
@@ -379,18 +394,18 @@ function SurfScene({
   }, [rideDuration, rideProgress]);
 
   const bodyAnimStyle = useAnimatedStyle(() => {
-    const leanOscillation = (rideProgress.value - 0.5) * 6; // ±3deg
-    const xShift = (rideProgress.value - 0.5) * 8; // ±4px
+    const leanOscillation = (rideProgress.value - 0.5) * 6;
+    const xShift = (rideProgress.value - 0.5) * 8;
     return {
       transform: [
         { translateX: xShift },
-        { rotate: `${baseLean + leanOscillation}deg` },
+        { rotate: `${totalBodyLean + leanOscillation}deg` },
       ],
     };
   });
 
   const frontArmAnimStyle = useAnimatedStyle(() => {
-    const armOscillation = (rideProgress.value - 0.5) * 10; // ±5deg
+    const armOscillation = (rideProgress.value - 0.5) * 10;
     return {
       transform: [{ rotate: `${-30 + armOscillation}deg` }],
     };
@@ -398,96 +413,271 @@ function SurfScene({
 
   const figureOpacity = isScrubbing ? 1.0 : 0.92;
 
-  // ── Wave segments ──
-  const waveSegmentCount = 14;
-  const waveSegments = useMemo(() => {
-    const segs = [];
-    const choppy = !isOffshore && windSpeed >= 12;
-    const glassy = isOffshore && wavePeriod >= 10;
-    for (let i = 0; i < waveSegmentCount; i++) {
-      const t = i / (waveSegmentCount - 1);
-      const nextT = (i + 1) / (waveSegmentCount - 1);
-      const amplitude = glassy ? 4 : choppy ? 6 : 5;
-      const jitter = choppy ? Math.sin(i * 2.3) * 2 : 0;
-      const nextJitter = choppy ? Math.sin((i + 1) * 2.3) * 2 : 0;
-      const x = t * PANEL_W;
-      const y = waveTopY + Math.sin(t * Math.PI * 1.5) * amplitude + jitter;
-      const nx = nextT * PANEL_W;
-      const ny = waveTopY + Math.sin(nextT * Math.PI * 1.5) * amplitude + nextJitter;
-      const dx = nx - x;
-      const dy = ny - y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-      segs.push({ x, y, len, angle });
-    }
-    return segs;
-  }, [waveTopY, isOffshore, windSpeed, wavePeriod]);
+  // ── Sky colors based on time of day ──
+  const skyBase = useMemo(() => {
+    if (hour >= 5 && hour <= 7) return '#0D1B2A';
+    if (hour >= 8 && hour <= 16) return '#1A6FA8';
+    if (hour >= 17 && hour <= 18) return '#C2603A';
+    return '#060D1A';
+  }, [hour]);
 
-  // ── Wind arrow ──
+  const horizonTint = useMemo(() => {
+    if (hour >= 5 && hour <= 7) return '#C2603A';
+    if (hour >= 8 && hour <= 16) return '#4BA3D4';
+    if (hour >= 17 && hour <= 18) return '#2D1B4E';
+    return '#0D1B2A';
+  }, [hour]);
+
+  // ── Wave face diagonal strips ──
+  const choppy = !isOffshore && windSpeed >= 12;
+  const glassy = isOffshore && wavePeriod >= 10;
+  const NUM_FACE_STRIPS = 8;
+  const faceStrips = useMemo(() => {
+    const strips = [];
+    for (let i = 0; i < NUM_FACE_STRIPS; i++) {
+      const t = i / NUM_FACE_STRIPS;
+      const stripY = waveBaseY - waveHeight_px * t;
+      const stripX = peakX + (toeX - peakX) * t;
+      const faceWidth = toeX - peakX;
+      const color = i % 2 === 0 ? 'rgba(20,140,160,0.9)' : 'rgba(32,178,170,0.75)';
+      strips.push({ x: stripX, y: stripY, width: faceWidth * (1 - t * 0.3), color });
+    }
+    return strips;
+  }, [waveBaseY, waveHeight_px, peakX, toeX]);
+
+  // ── Choppy extra strips ──
+  const choppyStrips = useMemo(() => {
+    if (!choppy) return [];
+    const strips = [];
+    for (let i = 0; i < 5; i++) {
+      const t = 0.2 + (i / 5) * 0.6;
+      const stripY = waveBaseY - waveHeight_px * t;
+      const stripX = peakX + (toeX - peakX) * t;
+      const angleOffset = (i * 17) % 10 - 5;
+      strips.push({ x: stripX, y: stripY, angleOffset });
+    }
+    return strips;
+  }, [choppy, waveBaseY, waveHeight_px, peakX, toeX]);
+
+  // ── Height ruler ticks ──
+  const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
+  const rulerTop = waveBaseY - 100;
+  const rulerHeight = 100;
+
+  // Wind arrow position (outside figure container)
   const windArrowFacingRight = isOffshore;
+  const windArrowLeft = surferX + 18;
+  const windArrowTop = surferFeetY - legH - bodyH - headSize - 16;
 
   return (
     <View style={sceneStyles.panel}>
-      {/* ── Background gradient layers ── */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0A1628' }]} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0D2B4E', opacity: 0.7 }]} />
-      <View style={[StyleSheet.absoluteFill, { top: panelH * 0.4, backgroundColor: '#1A4A7A', opacity: 0.4 }]} />
+      {/* ── Sky background ── */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: skyBase }]} />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            top: panelH * 0.3,
+            backgroundColor: horizonTint,
+            opacity: 0.55,
+          },
+        ]}
+      />
 
-      {/* ── Wave water body (below wave top) ── */}
+      {/* ── Ocean body ── */}
       <View
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
-          top: waveTopY + 4,
+          top: waveBaseY,
           bottom: 0,
-          backgroundColor: 'rgba(20,120,140,0.6)',
+          backgroundColor: 'rgba(8,60,90,0.95)',
         }}
       />
 
-      {/* ── Wave face segments ── */}
-      {waveSegments.map((seg, i) => (
+      {/* ── Wave face diagonal strips ── */}
+      {faceStrips.map((strip, i) => (
         <View
-          key={`ws-${i}`}
+          key={`face-${i}`}
           style={{
             position: 'absolute',
-            left: seg.x,
-            top: seg.y,
-            width: seg.len,
+            left: strip.x,
+            top: strip.y,
+            width: strip.width,
             height: 3,
-            backgroundColor: 'rgba(32,178,170,0.85)',
+            backgroundColor: strip.color,
             transformOrigin: '0 50%',
-            transform: [{ rotate: `${seg.angle}deg` }],
+            transform: [{ rotate: `${faceAngleDeg}deg` }],
           }}
         />
       ))}
 
-      {/* ── Wave foam highlight ── */}
-      {waveSegments.map((seg, i) => (
+      {/* ── Glassy sheen ── */}
+      {glassy && (
         <View
-          key={`wf-${i}`}
           style={{
             position: 'absolute',
-            left: seg.x,
-            top: seg.y - 2,
-            width: seg.len,
-            height: 1.5,
-            backgroundColor: 'rgba(255,255,255,0.25)',
+            left: peakX,
+            top: peakY + waveHeight_px * 0.1,
+            width: toeX - peakX,
+            height: 4,
+            backgroundColor: 'rgba(255,255,255,0.18)',
             transformOrigin: '0 50%',
-            transform: [{ rotate: `${seg.angle}deg` }],
+            transform: [{ rotate: `${faceAngleDeg}deg` }],
+          }}
+        />
+      )}
+
+      {/* ── Choppy extra strips ── */}
+      {choppyStrips.map((strip, i) => (
+        <View
+          key={`choppy-${i}`}
+          style={{
+            position: 'absolute',
+            left: strip.x,
+            top: strip.y,
+            width: 8,
+            height: 2,
+            backgroundColor: 'rgba(32,178,170,0.6)',
+            transformOrigin: '0 50%',
+            transform: [{ rotate: `${faceAngleDeg + strip.angleOffset}deg` }],
           }}
         />
       ))}
 
-      {/* ── Stick figure + board (positioned at figureX, feetY) ── */}
+      {/* ── Curl / lip foam at peak ── */}
       <View
         style={{
           position: 'absolute',
-          left: figureX - 20,
-          top: feetY - legH - bodyH - headSize - 2,
+          left: peakX - 9,
+          top: peakY - 4,
+          width: 18,
+          height: 10,
+          borderRadius: 5,
+          backgroundColor: 'rgba(255,255,255,0.85)',
+        }}
+      />
+
+      {/* ── Whitewash foam at base ── */}
+      {[
+        { x: PANEL_W * 0.55, w: 20 },
+        { x: PANEL_W * 0.65, w: 24 },
+        { x: PANEL_W * 0.72, w: 28 },
+      ].map((foam, i) => (
+        <View
+          key={`foam-${i}`}
+          style={{
+            position: 'absolute',
+            left: foam.x,
+            top: waveBaseY - 4 + i * 2,
+            width: foam.w,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: 'rgba(255,255,255,0.35)',
+          }}
+        />
+      ))}
+
+      {/* ── Height ruler (right edge) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          right: 8,
+          top: rulerTop,
+          height: rulerHeight,
+          width: 20,
+        }}
+      >
+        {rulerLabels.map((label, i) => {
+          const pct = i / (rulerLabels.length - 1);
+          const tickY = rulerHeight - pct * rulerHeight;
+          const isHighlighted = Math.abs(waveHeight_px - pct * 100) < 15;
+          return (
+            <View
+              key={`tick-${i}`}
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: tickY - 0.5,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 7,
+                  color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
+                  opacity: isHighlighted ? 1.0 : 0.4,
+                  marginRight: 2,
+                }}
+              >
+                {label}
+              </Text>
+              <View
+                style={{
+                  width: 6,
+                  height: 1,
+                  backgroundColor: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
+                  opacity: isHighlighted ? 1.0 : 0.4,
+                }}
+              />
+            </View>
+          );
+        })}
+      </View>
+
+      {/* ── Wind arrow (absolutely positioned, outside figure) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: windArrowLeft,
+          top: windArrowTop,
+          width: 18,
+          height: 8,
+        }}
+      >
+        {/* Shaft */}
+        <View
+          style={{
+            position: 'absolute',
+            left: windArrowFacingRight ? 0 : 6,
+            top: 3,
+            width: 12,
+            height: 2,
+            backgroundColor: 'rgba(251,191,36,0.9)',
+          }}
+        />
+        {/* Arrowhead */}
+        <View
+          style={{
+            position: 'absolute',
+            left: windArrowFacingRight ? 12 : 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            borderTopWidth: 4,
+            borderBottomWidth: 4,
+            borderLeftWidth: windArrowFacingRight ? 6 : 0,
+            borderRightWidth: windArrowFacingRight ? 0 : 6,
+            borderTopColor: 'transparent',
+            borderBottomColor: 'transparent',
+            borderLeftColor: windArrowFacingRight ? 'rgba(251,191,36,0.9)' : 'transparent',
+            borderRightColor: windArrowFacingRight ? 'transparent' : 'rgba(251,191,36,0.9)',
+          }}
+        />
+      </View>
+
+      {/* ── Stick figure (positioned at surferX, surferFeetY) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: surferX - 20,
+          top: surferFeetY - legH - bodyH - headSize - 2,
           width: 44,
           height: legH + bodyH + headSize + 4,
           opacity: figureOpacity,
+          transform: [{ rotate: `${figureLean}deg` }],
         }}
       >
         {/* Head */}
@@ -591,40 +781,10 @@ function SurfScene({
             transform: [{ rotate: `${boardTilt}deg` }],
           }}
         />
-
-        {/* Wind direction arrow shaft */}
-        <View
-          style={{
-            position: 'absolute',
-            left: windArrowFacingRight ? 30 : 2,
-            top: headSize + 3,
-            width: 12,
-            height: 2,
-            backgroundColor: 'rgba(251,191,36,0.9)',
-          }}
-        />
-        {/* Wind arrow head */}
-        <View
-          style={{
-            position: 'absolute',
-            left: windArrowFacingRight ? 40 : 2,
-            top: headSize + 0,
-            width: 0,
-            height: 0,
-            borderTopWidth: 4,
-            borderBottomWidth: 4,
-            borderLeftWidth: windArrowFacingRight ? 6 : 0,
-            borderRightWidth: windArrowFacingRight ? 0 : 6,
-            borderTopColor: 'transparent',
-            borderBottomColor: 'transparent',
-            borderLeftColor: windArrowFacingRight ? 'rgba(251,191,36,0.9)' : 'transparent',
-            borderRightColor: windArrowFacingRight ? 'transparent' : 'rgba(251,191,36,0.9)',
-          }}
-        />
       </View>
 
-      {/* ── Weather icon (top-center) ── */}
-      <View style={{ position: 'absolute', top: 8, left: PANEL_W / 2 - 12, width: 24, height: 24 }}>
+      {/* ── Weather icon (top-right corner) ── */}
+      <View style={{ position: 'absolute', top: 10, right: 10, width: 24, height: 24 }}>
         <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} />
       </View>
 
@@ -636,7 +796,7 @@ function SurfScene({
         </View>
       </View>
 
-      {/* ── Top-right overlay: wave / wind / tide ── */}
+      {/* ── Top-right overlay: wave / wind / tide (shifted left to avoid weather icon) ── */}
       <View style={sceneStyles.topRight}>
         <Text style={sceneStyles.statLine}>{waveEstStr} ft</Text>
         <Text style={sceneStyles.statLine}>{windSpeed} mph {windDirection}</Text>
@@ -664,6 +824,9 @@ const sceneStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   ratingPill: {
     borderRadius: 6,
@@ -681,7 +844,7 @@ const sceneStyles = StyleSheet.create({
   topRight: {
     position: 'absolute',
     top: 8,
-    right: 10,
+    right: 44,
     alignItems: 'flex-end',
   },
   statLine: {
@@ -689,6 +852,9 @@ const sceneStyles = StyleSheet.create({
     color: 'rgba(255,255,255,0.82)',
     lineHeight: 15,
     fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });
 
@@ -843,17 +1009,7 @@ export default function OptimalSurfChart({
     return best;
   }, [scores]);
 
-  // Swell trend line points
-  const swellPoints = useMemo(() => {
-    return scores.map((score, i) => {
-      const h = waveHeight * (0.7 + (score / 10) * 0.3);
-      const maxH = waveHeight * 1.0 || 1;
-      const norm = clamp(h / maxH, 0, 1);
-      const x = i * (BAR_WIDTH + GAP) + BAR_WIDTH / 2;
-      const y = CHART_HEIGHT - TIDE_PADDING - norm * (CHART_HEIGHT - TIDE_PADDING * 2);
-      return { x, y };
-    });
-  }, [scores, waveHeight]);
+
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
   const textSecondary = colors.textSecondary;
@@ -957,33 +1113,28 @@ export default function OptimalSurfChart({
               </View>
             )}
 
-            {/* Swell trend line (amber, behind tide curve) */}
-            {swellPoints.length > 1 && (
-              <View style={[styles.tideSvg, { zIndex: 1 }]} pointerEvents="none">
-                {swellPoints.slice(0, -1).map((pt, i) => {
-                  const next = swellPoints[i + 1];
-                  const dx = next.x - pt.x;
-                  const dy = next.y - pt.y;
-                  const length = Math.sqrt(dx * dx + dy * dy);
-                  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                  return (
-                    <View
-                      key={`swell-${i}`}
-                      style={{
-                        position: 'absolute',
-                        left: pt.x,
-                        top: pt.y - 0.5,
-                        width: length,
-                        height: 1,
-                        backgroundColor: COLORS.AMBER,
-                        transformOrigin: '0 50%',
-                        transform: [{ rotate: `${angle}deg` }],
-                      }}
-                    />
-                  );
-                })}
-              </View>
-            )}
+            {/* Best window green band */}
+            {Array.from({ length: 3 }).map((_, i) => {
+              const bandIdx = bestWindowStart + i;
+              const bandX = bandIdx * (BAR_WIDTH + GAP);
+              return (
+                <View
+                  key={`bw-band-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: bandX,
+                    top: 0,
+                    width: BAR_WIDTH,
+                    bottom: 0,
+                    backgroundColor: 'rgba(34,197,94,0.10)',
+                    borderLeftWidth: i === 0 ? 1 : 0,
+                    borderRightWidth: i === 2 ? 1 : 0,
+                    borderColor: 'rgba(34,197,94,0.35)',
+                    zIndex: 0,
+                  }}
+                />
+              );
+            })}
 
             {/* Bars */}
             <View style={styles.barsRow}>
@@ -1146,8 +1297,8 @@ export default function OptimalSurfChart({
                           alignItems: 'center',
                         }}
                       >
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF', lineHeight: 13 }}>H</Text>
-                        <Text style={{ fontSize: 9, color: COLORS.TIDE, lineHeight: 12 }}>{heightStr}</Text>
+                        <Text style={{ fontSize: 8, fontWeight: '700', color: COLORS.TIDE, lineHeight: 11 }}>High</Text>
+                        <Text style={{ fontSize: 9, fontWeight: '600', color: '#FFFFFF', lineHeight: 12 }}>{heightStr}</Text>
                       </View>
                     </React.Fragment>
                   );
@@ -1223,8 +1374,8 @@ export default function OptimalSurfChart({
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF', lineHeight: 13 }}>L</Text>
-                    <Text style={{ fontSize: 9, color: COLORS.TIDE, lineHeight: 12 }}>{heightStr}</Text>
+                    <Text style={{ fontSize: 8, fontWeight: '700', color: COLORS.TIDE, lineHeight: 11 }}>Low</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '600', color: '#FFFFFF', lineHeight: 12 }}>{heightStr}</Text>
                   </View>
                 </View>
               );
