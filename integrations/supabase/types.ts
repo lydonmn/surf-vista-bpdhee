@@ -104,6 +104,15 @@ export type Database = {
           // ALTER TABLE profiles ADD COLUMN IF NOT EXISTS survey_completed boolean DEFAULT false;
           survey_completed: boolean | null
           subscription_source: string | null
+          subscription_status: string | null
+          trial_started_at: string | null
+          trial_converted_at: string | null
+          trial_expired_at: string | null
+          subscription_started_at: string | null
+          subscription_cancelled_at: string | null
+          subscription_expires_at: string | null
+          rc_customer_id: string | null
+          rc_product_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -121,6 +130,15 @@ export type Database = {
           video_notifications?: boolean | null
           survey_completed?: boolean | null
           subscription_source?: string | null
+          subscription_status?: string | null
+          trial_started_at?: string | null
+          trial_converted_at?: string | null
+          trial_expired_at?: string | null
+          subscription_started_at?: string | null
+          subscription_cancelled_at?: string | null
+          subscription_expires_at?: string | null
+          rc_customer_id?: string | null
+          rc_product_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -138,6 +156,15 @@ export type Database = {
           video_notifications?: boolean | null
           survey_completed?: boolean | null
           subscription_source?: string | null
+          subscription_status?: string | null
+          trial_started_at?: string | null
+          trial_converted_at?: string | null
+          trial_expired_at?: string | null
+          subscription_started_at?: string | null
+          subscription_cancelled_at?: string | null
+          subscription_expires_at?: string | null
+          rc_customer_id?: string | null
+          rc_product_id?: string | null
         }
         Relationships: []
       }

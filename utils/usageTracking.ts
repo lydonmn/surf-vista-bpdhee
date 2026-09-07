@@ -77,10 +77,10 @@ function insertEvent(payload: {
  * Calls the Supabase RPC merge_anonymous_identity to link device to user,
  * and also calls linkSessionToUser to backfill the current session.
  */
-export async function identify(userId: string): Promise<void> {
+export async function identify(userId: string, email?: string, displayName?: string): Promise<void> {
   try {
     const deviceId = await getDeviceId();
-    console.log('[UsageTracking] identify — userId:', userId, 'deviceId:', deviceId);
+    console.log('[UsageTracking] identify — userId:', userId, 'email:', email ?? 'none', 'displayName:', displayName ?? 'none', 'deviceId:', deviceId);
 
     // Merge anonymous device identity into the user account
     const { error: rpcError } = await supabase.rpc('merge_anonymous_identity', {
@@ -91,6 +91,27 @@ export async function identify(userId: string): Promise<void> {
       console.warn('[UsageTracking] merge_anonymous_identity RPC error:', rpcError.message);
     } else {
       console.log('[UsageTracking] merge_anonymous_identity succeeded for user:', userId);
+
+      // Upsert identity info (email + display name) into user_identities table
+      try {
+        const { error: upsertError } = await supabase.from('user_identities').upsert({
+          user_id: userId,
+          email: email ?? null,
+          display_name: displayName ?? null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+        if (upsertError) {
+          if (upsertError.message?.includes('relation') && upsertError.message?.includes('does not exist')) {
+            console.warn('[UsageTracking] user_identities table does not exist yet — skipping upsert');
+          } else {
+            console.warn('[UsageTracking] user_identities upsert error:', upsertError.message);
+          }
+        } else {
+          console.log('[UsageTracking] user_identities upserted for user:', userId);
+        }
+      } catch (upsertErr) {
+        console.warn('[UsageTracking] Unexpected error upserting user_identities:', upsertErr);
+      }
     }
 
     // Also backfill the current session rows

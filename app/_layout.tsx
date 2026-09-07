@@ -216,7 +216,7 @@ function SubscriptionRedirect() {
 }
 
 function AppLifecycleTracker() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   // Keep a ref to the latest user id so AppState listeners always read the current value
   // even if they were registered before the user logged in.
@@ -241,7 +241,7 @@ function AppLifecycleTracker() {
     trackAppOpen(user?.id).catch(() => {});
     if (user?.id) {
       console.log('[RootLayout] Auth resolved with user — calling identify:', user.id);
-      identify(user.id).catch(() => {});
+      identify(user.id, profile?.email ?? undefined, profile?.full_name ?? undefined).catch(() => {});
     }
     console.log('[RootLayout] Clearing badge count on initial app open');
     Notifications.setBadgeCountAsync(0).catch(() => {});
@@ -277,7 +277,7 @@ function AppLifecycleTracker() {
     if (!prevId && currentId) {
       // Transition from anonymous → logged-in
       console.log('[RootLayout] User logged in after anonymous session — calling identify:', currentId);
-      identify(currentId).catch(() => {});
+      identify(currentId, profile?.email ?? undefined, profile?.full_name ?? undefined).catch(() => {});
     }
     prevUserIdRef.current = currentId;
   // eslint-disable-next-line react-hooks/exhaustive-deps

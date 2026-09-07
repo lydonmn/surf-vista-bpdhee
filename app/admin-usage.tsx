@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,7 @@ interface Profile {
   min_wave_height: number | null;
   is_subscribed: boolean | null;
   subscription_source: string | null;
+  subscription_status: string | null;
 }
 
 interface StatCard {
@@ -82,6 +83,11 @@ interface UserStat {
   totalTimeSeconds: number;
   videosWatched: number;
   lastSeen: string;
+  firstSeen: string;
+  subscriptionStatus: string | null;
+  subscriptionStatusColor: string;
+  subscriptionStatusBg: string;
+  subscriptionStatusLabel: string;
 }
 
 interface FunnelStep {
@@ -117,6 +123,21 @@ type TabId = 'overview' | 'videos' | 'notifications' | 'users' | 'spots';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function getSubscriptionBadge(profile: {
+  subscription_status?: string | null;
+  is_subscribed?: boolean | null;
+  subscription_source?: string | null;
+}): { label: string; color: string; bg: string } {
+  const status = profile.subscription_status;
+  if (status === 'trial_active')    return { label: 'Trial Active',  color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' };
+  if (status === 'trial_converted') return { label: 'Trial → Paid',  color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  if (status === 'trial_expired')   return { label: 'Trial Expired', color: '#EF4444', bg: 'rgba(239,68,68,0.15)' };
+  if (status === 'paid')            return { label: 'Paid',          color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  if (status === 'cancelled')       return { label: 'Cancelled',     color: '#6B7280', bg: 'rgba(107,114,128,0.15)' };
+  if (profile.is_subscribed)        return { label: 'Paid',          color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  return                                   { label: 'Free',          color: '#6B7280', bg: 'rgba(107,114,128,0.12)' };
+}
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -258,6 +279,7 @@ export default function AdminUsageScreen() {
   // Section 7 — Per-user breakdown
   const [userStats, setUserStats] = useState<UserStat[]>([]);
   const [userSearch, setUserSearch] = useState('');
+  const [userSort, setUserSort] = useState<'lastActive' | 'firstSeen' | 'sessions' | 'subscription'>('lastActive');
 
   // New view-backed sections
   const [funnelSteps, setFunnelSteps] = useState<FunnelStep[]>([]);
@@ -278,7 +300,7 @@ export default function AdminUsageScreen() {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height, is_subscribed, subscription_source'),
+          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height, is_subscribed, subscription_source, subscription_status'),
         supabase.from('engagement_funnel').select('*').single(),
         supabase.from('spot_breakdown').select('*'),
         supabase.from('retention_cohorts').select('*').limit(8),
@@ -600,6 +622,7 @@ export default function AdminUsageScreen() {
         bgDurations: number[];
         videos: number;
         lastSeen: string;
+        firstSeen: string;
       }>();
 
       for (const e of events) {
@@ -613,7 +636,7 @@ export default function AdminUsageScreen() {
         }
 
         if (!userMap.has(uid)) {
-          userMap.set(uid, { sessions: 0, bgDurations: [], videos: 0, lastSeen: e.created_at });
+          userMap.set(uid, { sessions: 0, bgDurations: [], videos: 0, lastSeen: e.created_at, firstSeen: e.created_at });
         }
         const u = userMap.get(uid)!;
         if (e.event_type === 'app_open') u.sessions += 1;
@@ -622,6 +645,7 @@ export default function AdminUsageScreen() {
         }
         if (e.event_type === 'video_watch') u.videos += 1;
         if (e.created_at > u.lastSeen) u.lastSeen = e.created_at;
+        if (e.created_at < u.firstSeen) u.firstSeen = e.created_at;
       }
 
       const userStatsList: UserStat[] = [];
@@ -632,6 +656,7 @@ export default function AdminUsageScreen() {
         const totalTime = data.bgDurations.reduce((a, b) => a + b, 0);
         // Resolve the raw device_id for this entry (strip 'device:' prefix if anonymous)
         const rawDeviceId = isDevice ? uid.replace('device:', '') : null;
+        const badge = getSubscriptionBadge(profile ?? {});
         userStatsList.push({
           userId: uid,
           deviceId: rawDeviceId,
@@ -640,6 +665,11 @@ export default function AdminUsageScreen() {
           totalTimeSeconds: totalTime,
           videosWatched: data.videos,
           lastSeen: data.lastSeen,
+          firstSeen: data.firstSeen,
+          subscriptionStatus: profile?.subscription_status ?? null,
+          subscriptionStatusLabel: badge.label,
+          subscriptionStatusColor: badge.color,
+          subscriptionStatusBg: badge.bg,
         });
       }
       userStatsList.sort((a, b) => (b.lastSeen > a.lastSeen ? 1 : -1));
@@ -664,6 +694,16 @@ export default function AdminUsageScreen() {
   const filteredUserStats = userSearchLower.length === 0
     ? userStats
     : userStats.filter(u => u.name.toLowerCase().includes(userSearchLower));
+
+  const sortedUserStats = useMemo(() => {
+    return [...filteredUserStats].sort((a, b) => {
+      if (userSort === 'lastActive') return b.lastSeen > a.lastSeen ? 1 : -1;
+      if (userSort === 'firstSeen') return a.firstSeen > b.firstSeen ? 1 : -1;
+      if (userSort === 'sessions') return b.sessions - a.sessions;
+      if (userSort === 'subscription') return a.subscriptionStatusLabel.localeCompare(b.subscriptionStatusLabel);
+      return 0;
+    });
+  }, [filteredUserStats, userSort]);
 
   return (
     <View style={styles.container}>
@@ -1081,19 +1121,48 @@ export default function AdminUsageScreen() {
                     clearButtonMode="while-editing"
                   />
                 </View>
+                {/* Sort pills */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+                    {(['lastActive', 'firstSeen', 'sessions', 'subscription'] as const).map(s => {
+                      const isActive = userSort === s;
+                      const sortLabel = s === 'lastActive' ? 'Last Active' : s === 'firstSeen' ? 'Signup Date' : s === 'sessions' ? 'Sessions' : 'Subscription';
+                      return (
+                        <TouchableOpacity
+                          key={s}
+                          onPress={() => {
+                            console.log('[AdminUsage] Sort changed to:', s);
+                            setUserSort(s);
+                          }}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+                            backgroundColor: isActive ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)',
+                            borderWidth: 1,
+                            borderColor: isActive ? '#60A5FA' : 'rgba(255,255,255,0.1)',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: isActive ? '#60A5FA' : '#9CA3AF' }}>
+                            {sortLabel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
                 {userStats.length === 0 ? (
                   <View style={styles.emptyInline}>
                     <Text style={styles.emptyText}>
                       No usage data yet — data will appear after users open the app
                     </Text>
                   </View>
-                ) : filteredUserStats.length === 0 ? (
+                ) : sortedUserStats.length === 0 ? (
                   <View style={styles.emptyInline}>
                     <Text style={styles.emptyText}>No users match "{userSearch}"</Text>
                   </View>
                 ) : (
-                  filteredUserStats.map((u, i) => {
+                  sortedUserStats.map((u, i) => {
                     const lastSeenDisplay = formatDate(u.lastSeen);
+                    const firstSeenDisplay = formatDate(u.firstSeen);
                     const totalTimeDisplay = u.totalTimeSeconds > 0
                       ? formatDuration(u.totalTimeSeconds)
                       : '—';
@@ -1125,6 +1194,17 @@ export default function AdminUsageScreen() {
                             size={16}
                             color="#4B5563"
                           />
+                        </View>
+                        {/* Subscription badge + signup date */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 2 }}>
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: u.subscriptionStatusBg }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: u.subscriptionStatusColor }}>
+                              {u.subscriptionStatusLabel}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 11, color: '#6B7280' }}>
+                            Joined {firstSeenDisplay}
+                          </Text>
                         </View>
                         <View style={styles.userStatsRow}>
                           <View style={styles.userStat}>

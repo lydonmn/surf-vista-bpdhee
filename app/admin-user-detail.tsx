@@ -37,6 +37,15 @@ interface UserProfile {
   is_subscribed: boolean | null;
   subscription_end_date: string | null;
   subscription_source: string | null;
+  subscription_status: string | null;
+  trial_started_at: string | null;
+  trial_converted_at: string | null;
+  trial_expired_at: string | null;
+  subscription_started_at: string | null;
+  subscription_cancelled_at: string | null;
+  subscription_expires_at: string | null;
+  rc_customer_id: string | null;
+  rc_product_id: string | null;
   min_wave_height: number | null;
   video_notifications: boolean | null;
   daily_report_notifications: boolean | null;
@@ -99,6 +108,21 @@ function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}m ${secs}s`;
+}
+
+function getSubscriptionBadge(profile: {
+  subscription_status?: string | null;
+  is_subscribed?: boolean | null;
+  subscription_source?: string | null;
+}): { label: string; color: string; bg: string } {
+  const status = profile.subscription_status;
+  if (status === 'trial_active')    return { label: 'Trial Active',  color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' };
+  if (status === 'trial_converted') return { label: 'Trial → Paid',  color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  if (status === 'trial_expired')   return { label: 'Trial Expired', color: '#EF4444', bg: 'rgba(239,68,68,0.15)' };
+  if (status === 'paid')            return { label: 'Paid',          color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  if (status === 'cancelled')       return { label: 'Cancelled',     color: '#6B7280', bg: 'rgba(107,114,128,0.15)' };
+  if (profile.is_subscribed)        return { label: 'Paid',          color: '#22C55E', bg: 'rgba(34,197,94,0.15)' };
+  return                                   { label: 'Free',          color: '#6B7280', bg: 'rgba(107,114,128,0.12)' };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +229,7 @@ export default function AdminUserDetailScreen() {
         realUserId
           ? supabase
               .from('profiles')
-              .select('id, email, full_name, created_at, is_subscribed, subscription_end_date, subscription_source, min_wave_height, video_notifications, daily_report_notifications')
+              .select('id, email, full_name, created_at, is_subscribed, subscription_end_date, subscription_source, subscription_status, trial_started_at, trial_converted_at, trial_expired_at, subscription_started_at, subscription_cancelled_at, subscription_expires_at, rc_customer_id, rc_product_id, min_wave_height, video_notifications, daily_report_notifications')
               .eq('id', realUserId)
               .single()
           : Promise.resolve({ data: null, error: null }),
@@ -291,7 +315,7 @@ export default function AdminUserDetailScreen() {
   const subscriptionEndDate = profile?.subscription_end_date ? formatDate(profile.subscription_end_date) : '—';
   const minWaveHeight = profile?.min_wave_height != null ? `${profile.min_wave_height} ft` : 'Not set';
   const videoNotifs = profile?.video_notifications === true ? 'On' : profile?.video_notifications === false ? 'Off' : 'Default (On)';
-  const dailyReportNotifs = profile?.daily_report_notifications === true ? 'On' : profile?.daily_report_notifications === false ? 'Off' : 'Default (On)';
+  const dailyReportNotifs = profile?.daily_report_notifications === false ? 'Off' : profile?.daily_report_notifications === true ? 'On' : 'Default (On)';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -506,11 +530,73 @@ export default function AdminUserDetailScreen() {
           <SectionCard
             icon_ios="creditcard.fill"
             icon_android="credit_card"
-            title="Subscription Info"
+            title="Subscription"
           >
-            <InfoRow label="Status" value={subscriptionStatus} accent={profile?.is_subscribed ? '#10B981' : '#6B7280'} />
-            <InfoRow label="End Date" value={subscriptionEndDate} />
-            <InfoRow label="Source" value={subscriptionSource} />
+            {(() => {
+              const badge = getSubscriptionBadge(profile ?? {});
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, backgroundColor: badge.bg }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: badge.color }}>{badge.label}</Text>
+                    </View>
+                    {profile?.rc_product_id ? (
+                      <Text style={{ fontSize: 12, color: '#6B7280' }}>{profile.rc_product_id}</Text>
+                    ) : null}
+                  </View>
+                  {profile?.trial_started_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Trial started</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.trial_started_at)}</Text>
+                    </View>
+                  ) : null}
+                  {profile?.trial_converted_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Converted to paid</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.trial_converted_at)}</Text>
+                    </View>
+                  ) : null}
+                  {profile?.trial_expired_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Trial expired</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.trial_expired_at)}</Text>
+                    </View>
+                  ) : null}
+                  {profile?.subscription_started_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Subscribed</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.subscription_started_at)}</Text>
+                    </View>
+                  ) : null}
+                  {profile?.subscription_expires_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Expires / Renews</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.subscription_expires_at)}</Text>
+                    </View>
+                  ) : null}
+                  {profile?.subscription_cancelled_at ? (
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Cancelled</Text>
+                      <Text style={styles.infoValue}>{formatDate(profile.subscription_cancelled_at)}</Text>
+                    </View>
+                  ) : null}
+                  {!profile?.trial_started_at && !profile?.subscription_started_at && (
+                    <InfoRow label="End Date" value={subscriptionEndDate} />
+                  )}
+                  <InfoRow label="Source" value={subscriptionSource} />
+                </>
+              );
+            })()}
+          </SectionCard>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Section 7 — Preferences                                          */}
+          {/* ---------------------------------------------------------------- */}
+          <SectionCard
+            icon_ios="slider.horizontal.3"
+            icon_android="tune"
+            title="Preferences"
+          >
             <InfoRow label="Min Wave Height" value={minWaveHeight} />
             <InfoRow label="Video Notifications" value={videoNotifs} accent={profile?.video_notifications === false ? '#6B7280' : '#10B981'} />
             <InfoRow label="Daily Reports" value={dailyReportNotifs} accent={profile?.daily_report_notifications === false ? '#6B7280' : '#10B981'} />
