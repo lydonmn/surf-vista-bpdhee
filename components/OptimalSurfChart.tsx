@@ -324,58 +324,76 @@ function buildWaveSvgHtml(
   isGlassy: boolean,
   isChoppy: boolean,
 ): string {
-  const baseY = waveBaseY;
-  const lipX  = peakX - 10;
-  const lipY  = peakY - 8;
-  const backX = peakX - 40;
-  const backY = baseY - waveHeight_px * 0.35;
+  // Asymmetric wave geometry:
+  // - Back (left): short steep rise from baseY up to the peak
+  // - Peak: rounded curl, not a sharp point
+  // - Face (right): long gradual concave curve down to the toe
+  // - Foam: scalloped bottom edge integrated into the wave path
 
+  const backX = Math.max(peakX - waveHeight_px * 0.55, 4);   // steep back, close to peak
+  const backY = waveBaseY;
+
+  // Curl: the lip overhangs slightly to the right of peakX
+  const curlX = peakX + waveHeight_px * 0.18;
+  const curlY = peakY + waveHeight_px * 0.08;
+
+  // Face control points for a concave hollow face
+  const faceCP1x = peakX + (toeX - peakX) * 0.25;
+  const faceCP1y = peakY + waveHeight_px * 0.15;
+  const faceCP2x = peakX + (toeX - peakX) * 0.65;
+  const faceCP2y = waveBaseY - waveHeight_px * 0.12;
+
+  // Foam scallops: 5 bumps along the base from toeX back to backX
   const foamCount = 5;
-  const foamStep = (toeX - peakX) / foamCount;
-  const foamAmplitude = Math.min(8, waveHeight_px * 0.12);
+  const foamW = (toeX - backX) / foamCount;
+  const foamH = Math.min(7, waveHeight_px * 0.10);
+  const foamScallops = Array.from({ length: foamCount }, (_, i) => {
+    const fx0 = toeX - i * foamW;
+    const fx1 = toeX - (i + 1) * foamW;
+    const fmid = (fx0 + fx1) / 2;
+    return `Q ${fmid} ${waveBaseY + foamH} ${fx1} ${waveBaseY}`;
+  }).join(' ');
 
+  // Main wave path: back → peak (rounded curl) → face → toe → foam scallops → close
   const wavePath = [
-    `M 0 ${baseY}`,
-    `C ${backX - 20} ${baseY} ${backX} ${backY} ${lipX} ${lipY}`,
-    `Q ${lipX + 14} ${lipY - 10} ${peakX + 18} ${peakY - 2}`,
-    `C ${peakX + 30} ${peakY + waveHeight_px * 0.25} ${toeX - 20} ${baseY - waveHeight_px * 0.15} ${toeX} ${baseY}`,
-    `L ${toeX} ${baseY + foamAmplitude}`,
-    ...Array.from({ length: foamCount }, (_, i) => {
-      const fi = foamCount - i;
-      const fx = peakX + fi * foamStep;
-      const fx_prev = peakX + (fi - 1) * foamStep;
-      const fy = baseY + foamAmplitude * (fi % 2 === 0 ? 1 : 0.3);
-      const fy_prev = baseY + foamAmplitude * ((fi - 1) % 2 === 0 ? 1 : 0.3);
-      return `Q ${(fx + fx_prev) / 2} ${Math.max(fy, fy_prev) + 3} ${fx_prev} ${fy_prev}`;
-    }),
-    `L 0 ${baseY}`,
+    `M ${backX} ${backY}`,
+    // Steep back: cubic up to just left of peak
+    `C ${backX + 4} ${backY - waveHeight_px * 0.4} ${peakX - waveHeight_px * 0.12} ${peakY + waveHeight_px * 0.18} ${peakX} ${peakY}`,
+    // Rounded curl: quadratic arc over the lip (no sharp point)
+    `Q ${peakX + waveHeight_px * 0.10} ${peakY - waveHeight_px * 0.12} ${curlX} ${curlY}`,
+    // Concave face: cubic down to toe
+    `C ${faceCP1x} ${faceCP1y} ${faceCP2x} ${faceCP2y} ${toeX} ${waveBaseY}`,
+    // Foam scallops along the base (right to left)
+    foamScallops,
+    // Close back to start
+    `L ${backX} ${backY}`,
     'Z',
   ].join(' ');
 
+  // Face highlight: thin lighter strip on the upper face
   const highlightPath = [
-    `M ${lipX + 5} ${lipY + 4}`,
-    `C ${peakX + 20} ${peakY + waveHeight_px * 0.15} ${toeX - 40} ${baseY - waveHeight_px * 0.2} ${toeX - 20} ${baseY - 4}`,
-    `C ${toeX - 35} ${baseY - waveHeight_px * 0.1} ${peakX + 15} ${peakY + waveHeight_px * 0.3} ${lipX + 2} ${lipY + 10}`,
+    `M ${curlX - 4} ${curlY + 4}`,
+    `C ${faceCP1x - 4} ${faceCP1y + 6} ${faceCP2x - 8} ${faceCP2y + 4} ${toeX - 18} ${waveBaseY - 5}`,
+    `C ${faceCP2x - 12} ${faceCP2y} ${faceCP1x - 2} ${faceCP1y + 2} ${curlX - 6} ${curlY + 8}`,
     'Z',
   ].join(' ');
 
   const sheenPath = isGlassy
-    ? `<path d="M ${lipX + 8} ${lipY + 6} C ${peakX + 15} ${peakY + waveHeight_px * 0.1} ${toeX - 50} ${baseY - waveHeight_px * 0.25} ${toeX - 30} ${baseY - 8}" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
+    ? `<path d="M ${curlX} ${curlY + 3} C ${faceCP1x} ${faceCP1y + 4} ${faceCP2x - 10} ${faceCP2y + 2} ${toeX - 25} ${waveBaseY - 6}" stroke="rgba(255,255,255,0.20)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
     : '';
 
   const choppyLines = isChoppy
     ? [
-        { x1: peakX + 20, y1: peakY + waveHeight_px * 0.3, x2: peakX + 32, y2: peakY + waveHeight_px * 0.28 },
-        { x1: peakX + 40, y1: peakY + waveHeight_px * 0.5, x2: peakX + 54, y2: peakY + waveHeight_px * 0.47 },
-        { x1: peakX + 60, y1: peakY + waveHeight_px * 0.62, x2: peakX + 70, y2: peakY + waveHeight_px * 0.60 },
+        { x1: faceCP1x, y1: faceCP1y + 8, x2: faceCP1x + 14, y2: faceCP1y + 6 },
+        { x1: faceCP1x + 22, y1: faceCP1y + 18, x2: faceCP1x + 36, y2: faceCP1y + 15 },
+        { x1: faceCP2x - 20, y1: faceCP2y + 4, x2: faceCP2x - 6, y2: faceCP2y + 2 },
       ]
-        .map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" stroke-linecap="round"/>`)
+        .map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="rgba(255,255,255,0.16)" stroke-width="1.5" stroke-linecap="round"/>`)
         .join('')
     : '';
 
-  const lipFoam = `<ellipse cx="${lipX + 6}" cy="${lipY - 2}" rx="10" ry="5" fill="rgba(255,255,255,0.82)"/>`;
-
-  const ripple = `<path d="M ${toeX + 5} ${baseY} Q ${toeX + 20} ${baseY - 3} ${toeX + 40} ${baseY} Q ${toeX + 60} ${baseY + 3} ${W} ${baseY}" stroke="rgba(96,165,250,0.25)" stroke-width="1.5" fill="none"/>`;
+  // Ripple on the flat water past the toe
+  const ripple = `<path d="M ${toeX + 6} ${waveBaseY - 1} Q ${toeX + 22} ${waveBaseY - 4} ${toeX + 44} ${waveBaseY - 1} Q ${toeX + 66} ${waveBaseY + 2} ${W} ${waveBaseY - 1}" stroke="rgba(96,165,250,0.22)" stroke-width="1.5" fill="none"/>`;
 
   return `<!DOCTYPE html>
 <html>
@@ -390,10 +408,9 @@ function buildWaveSvgHtml(
 <body>
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
   <path d="${wavePath}" fill="#0e4d6e"/>
-  <path d="${highlightPath}" fill="rgba(30,120,180,0.45)"/>
+  <path d="${highlightPath}" fill="rgba(30,120,180,0.40)"/>
   ${sheenPath}
   ${choppyLines}
-  ${lipFoam}
   ${ripple}
 </svg>
 </body>
@@ -448,17 +465,44 @@ function SurfScene({
   const peakX = PANEL_W * 0.38;
   const peakY = waveBaseY - waveHeight_px;
 
-  // ── Surfer position on wave face (curved face, not linear) ──
-  const surferFaceT = 0.45;
-  const surferX = peakX + (toeX - peakX) * surferFaceT;
-  const surferFeetY = peakY + (waveBaseY - peakY) * Math.pow(surferFaceT, 0.7);
+  // ── Surfer position on the asymmetric concave face ──
+  // Face runs from (curlX, curlY) → (toeX, waveBaseY) via cubic bezier
+  // with control points faceCP1 and faceCP2 (same as wavePath)
+  const curlX_s = peakX + waveHeight_px * 0.18;
+  const curlY_s = peakY + waveHeight_px * 0.08;
+  const faceCP1x_s = peakX + (toeX - peakX) * 0.25;
+  const faceCP1y_s = peakY + waveHeight_px * 0.15;
+  const faceCP2x_s = peakX + (toeX - peakX) * 0.65;
+  const faceCP2y_s = waveBaseY - waveHeight_px * 0.12;
 
-  // Face angle at surfer position (tangent of curved face)
-  const t1 = 0.35;
-  const t2 = 0.55;
-  const y1 = peakY + (waveBaseY - peakY) * Math.pow(t1, 0.7);
-  const y2 = peakY + (waveBaseY - peakY) * Math.pow(t2, 0.7);
-  const faceAngleDeg = Math.atan2(y2 - y1, (toeX - peakX) * (t2 - t1)) * (180 / Math.PI);
+  // Evaluate cubic bezier at t=0.38 (mid-face, slightly above center)
+  const surferT = 0.38;
+  const mt = 1 - surferT;
+  const surferX =
+    mt * mt * mt * curlX_s +
+    3 * mt * mt * surferT * faceCP1x_s +
+    3 * mt * surferT * surferT * faceCP2x_s +
+    surferT * surferT * surferT * toeX;
+  const surferFeetY =
+    mt * mt * mt * curlY_s +
+    3 * mt * mt * surferT * faceCP1y_s +
+    3 * mt * surferT * surferT * faceCP2y_s +
+    surferT * surferT * surferT * waveBaseY;
+
+  // Tangent at t=0.38 for board/figure lean
+  const dt = 0.01;
+  const mt2 = 1 - (surferT + dt);
+  const tx2 =
+    mt2 * mt2 * mt2 * curlX_s +
+    3 * mt2 * mt2 * (surferT + dt) * faceCP1x_s +
+    3 * mt2 * (surferT + dt) * (surferT + dt) * faceCP2x_s +
+    (surferT + dt) * (surferT + dt) * (surferT + dt) * toeX;
+  const ty2 =
+    mt2 * mt2 * mt2 * curlY_s +
+    3 * mt2 * mt2 * (surferT + dt) * faceCP1y_s +
+    3 * mt2 * (surferT + dt) * (surferT + dt) * faceCP2y_s +
+    (surferT + dt) * (surferT + dt) * (surferT + dt) * waveBaseY;
+  const faceAngleDeg = Math.atan2(ty2 - surferFeetY, tx2 - surferX) * (180 / Math.PI);
 
   // ── Stance from wave height ──
   const stanceH = lerp(1.0, 0.62, clamp((waveHeight - 1) / 4, 0, 1));
@@ -516,8 +560,8 @@ function SurfScene({
 
   // ── Height ruler ticks ──
   const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
-  const rulerTop = waveBaseY - 100;
-  const rulerHeight = 100;
+  const rulerTop = Math.max(waveBaseY - 100, 52);  // never starts above 52px (clears rating pill)
+  const rulerHeight = waveBaseY - rulerTop - 4;     // dynamic height so bottom tick is at waterline
 
   // Wind arrow position (outside figure container)
   const windArrowFacingRight = isOffshore;
@@ -621,6 +665,7 @@ function SurfScene({
           top: rulerTop,
           height: rulerHeight,
           width: 32,
+          overflow: 'hidden',
         }}
       >
         {rulerLabels.map((label, i) => {
@@ -702,23 +747,23 @@ function SurfScene({
         />
       </View>
 
-      {/* ── Stick figure — feet sit on wave face surface ── */}
+      {/* ── Stick figure — feet on wave face, one connected figure ── */}
       <View
         style={{
           position: 'absolute',
           left: surferX - 20,
           top: surferFeetY - legH - bodyH - headSize - 2,
-          width: 44,
+          width: 40,
           height: legH + bodyH + headSize + 4,
           opacity: figureOpacity,
           transform: [{ rotate: `${figureLean}deg` }],
         }}
       >
-        {/* Head */}
+        {/* Head — centered over torso center (x=20) */}
         <View
           style={{
             position: 'absolute',
-            left: 17,
+            left: 20 - headSize / 2,
             top: 0,
             width: headSize,
             height: headSize,
@@ -727,13 +772,13 @@ function SurfScene({
           }}
         />
 
-        {/* Body (animated lean) */}
+        {/* Torso — centered at x=20 */}
         <Animated.View
           style={[
             {
               position: 'absolute',
-              left: 21,
-              top: headSize + 1,
+              left: 19,
+              top: headSize,
               width: 2,
               height: bodyH,
               backgroundColor: '#FFFFFF',
@@ -743,74 +788,74 @@ function SurfScene({
           ]}
         />
 
-        {/* Front arm (toward wave, animated) */}
+        {/* Front arm — starts at shoulder (top of torso), angles down-forward */}
         <Animated.View
           style={[
             {
               position: 'absolute',
-              left: 22,
-              top: headSize + 5,
-              width: 12,
+              left: 20,
+              top: headSize + 3,
+              width: 11,
               height: 2,
-              backgroundColor: 'rgba(255,255,255,0.85)',
+              backgroundColor: 'rgba(255,255,255,0.88)',
               transformOrigin: '0% 50%',
             },
             frontArmAnimStyle,
           ]}
         />
 
-        {/* Back arm (balance) */}
+        {/* Back arm — starts at shoulder, angles back for balance */}
         <View
           style={{
             position: 'absolute',
-            left: 10,
-            top: headSize + 5,
-            width: 12,
+            left: 9,
+            top: headSize + 3,
+            width: 11,
             height: 2,
-            backgroundColor: 'rgba(255,255,255,0.85)',
+            backgroundColor: 'rgba(255,255,255,0.88)',
             transformOrigin: '100% 50%',
-            transform: [{ rotate: '20deg' }],
+            transform: [{ rotate: '25deg' }],
           }}
         />
 
-        {/* Front leg */}
+        {/* Front leg — from hip, angled forward (bent knee) */}
         <View
           style={{
             position: 'absolute',
-            left: 23,
-            top: headSize + bodyH + 1,
+            left: 21,
+            top: headSize + bodyH,
             width: 2,
             height: legH,
-            backgroundColor: 'rgba(255,255,255,0.85)',
+            backgroundColor: 'rgba(255,255,255,0.88)',
             transformOrigin: '50% 0%',
-            transform: [{ rotate: '20deg' }],
+            transform: [{ rotate: '18deg' }],
           }}
         />
 
-        {/* Back leg */}
+        {/* Back leg — from hip, angled back */}
         <View
           style={{
             position: 'absolute',
-            left: 19,
-            top: headSize + bodyH + 1,
+            left: 17,
+            top: headSize + bodyH,
             width: 2,
             height: legH,
-            backgroundColor: 'rgba(255,255,255,0.85)',
+            backgroundColor: 'rgba(255,255,255,0.88)',
             transformOrigin: '50% 0%',
-            transform: [{ rotate: '-15deg' }],
+            transform: [{ rotate: '-12deg' }],
           }}
         />
 
-        {/* Surfboard — bottom edge aligns with surferFeetY, tilts with face */}
+        {/* Surfboard — flush under feet, tilts with face angle */}
         <View
           style={{
             position: 'absolute',
             left: 2,
-            top: headSize + bodyH + legH - 2,
-            width: 40,
+            top: headSize + bodyH + legH - 1,
+            width: 36,
             height: 4,
             borderRadius: 2,
-            backgroundColor: 'rgba(200,230,255,0.9)',
+            backgroundColor: 'rgba(200,230,255,0.92)',
             transformOrigin: '50% 50%',
             transform: [{ rotate: `${boardTilt}deg` }],
           }}
@@ -818,7 +863,7 @@ function SurfScene({
       </View>
 
       {/* ── Weather icon (top-right corner) ── */}
-      <View style={{ position: 'absolute', top: 10, right: 10, width: 24, height: 24 }}>
+      <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
         <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} />
       </View>
 
@@ -1152,20 +1197,21 @@ export default function OptimalSurfChart({
 
             {/* Best window green band — single rounded rect spanning all 3 columns */}
             {(() => {
-              const bandLeft = bestWindowStart * (BAR_WIDTH + GAP);
-              const bandRight = (bestWindowStart + 2) * (BAR_WIDTH + GAP) + BAR_WIDTH;
+              const bandLeft = bestWindowStart * (BAR_WIDTH + GAP) - 3;
+              const bandRight = (bestWindowStart + 2) * (BAR_WIDTH + GAP) + BAR_WIDTH + 3;
+              const bandWidth = bandRight - bandLeft;
               return (
                 <View
                   style={{
                     position: 'absolute',
                     left: bandLeft,
-                    top: 4,
-                    width: bandRight - bandLeft,
-                    bottom: 4,
-                    backgroundColor: 'rgba(34,197,94,0.08)',
-                    borderRadius: 6,
+                    bottom: 1,
+                    width: bandWidth,
+                    height: BAR_AREA_HEIGHT + 6,
+                    backgroundColor: 'rgba(34,197,94,0.07)',
+                    borderRadius: 8,
                     borderWidth: 1,
-                    borderColor: 'rgba(34,197,94,0.28)',
+                    borderColor: 'rgba(34,197,94,0.22)',
                     zIndex: 0,
                   }}
                 />
