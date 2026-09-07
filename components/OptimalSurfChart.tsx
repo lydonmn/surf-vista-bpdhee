@@ -9,6 +9,7 @@ import {
   Animated as RNAnimated,
   LayoutChangeEvent,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import Animated, {
   useSharedValue,
   withSpring,
@@ -312,6 +313,93 @@ interface SurfSceneProps {
 // lerp helper
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+function buildWaveSvgHtml(
+  W: number,
+  H: number,
+  peakX: number,
+  peakY: number,
+  toeX: number,
+  waveBaseY: number,
+  waveHeight_px: number,
+  isGlassy: boolean,
+  isChoppy: boolean,
+): string {
+  const baseY = waveBaseY;
+  const lipX  = peakX - 10;
+  const lipY  = peakY - 8;
+  const backX = peakX - 40;
+  const backY = baseY - waveHeight_px * 0.35;
+
+  const foamCount = 5;
+  const foamStep = (toeX - peakX) / foamCount;
+  const foamAmplitude = Math.min(8, waveHeight_px * 0.12);
+
+  const wavePath = [
+    `M 0 ${baseY}`,
+    `C ${backX - 20} ${baseY} ${backX} ${backY} ${lipX} ${lipY}`,
+    `Q ${lipX + 14} ${lipY - 10} ${peakX + 18} ${peakY - 2}`,
+    `C ${peakX + 30} ${peakY + waveHeight_px * 0.25} ${toeX - 20} ${baseY - waveHeight_px * 0.15} ${toeX} ${baseY}`,
+    `L ${toeX} ${baseY + foamAmplitude}`,
+    ...Array.from({ length: foamCount }, (_, i) => {
+      const fi = foamCount - i;
+      const fx = peakX + fi * foamStep;
+      const fx_prev = peakX + (fi - 1) * foamStep;
+      const fy = baseY + foamAmplitude * (fi % 2 === 0 ? 1 : 0.3);
+      const fy_prev = baseY + foamAmplitude * ((fi - 1) % 2 === 0 ? 1 : 0.3);
+      return `Q ${(fx + fx_prev) / 2} ${Math.max(fy, fy_prev) + 3} ${fx_prev} ${fy_prev}`;
+    }),
+    `L 0 ${baseY}`,
+    'Z',
+  ].join(' ');
+
+  const highlightPath = [
+    `M ${lipX + 5} ${lipY + 4}`,
+    `C ${peakX + 20} ${peakY + waveHeight_px * 0.15} ${toeX - 40} ${baseY - waveHeight_px * 0.2} ${toeX - 20} ${baseY - 4}`,
+    `C ${toeX - 35} ${baseY - waveHeight_px * 0.1} ${peakX + 15} ${peakY + waveHeight_px * 0.3} ${lipX + 2} ${lipY + 10}`,
+    'Z',
+  ].join(' ');
+
+  const sheenPath = isGlassy
+    ? `<path d="M ${lipX + 8} ${lipY + 6} C ${peakX + 15} ${peakY + waveHeight_px * 0.1} ${toeX - 50} ${baseY - waveHeight_px * 0.25} ${toeX - 30} ${baseY - 8}" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
+    : '';
+
+  const choppyLines = isChoppy
+    ? [
+        { x1: peakX + 20, y1: peakY + waveHeight_px * 0.3, x2: peakX + 32, y2: peakY + waveHeight_px * 0.28 },
+        { x1: peakX + 40, y1: peakY + waveHeight_px * 0.5, x2: peakX + 54, y2: peakY + waveHeight_px * 0.47 },
+        { x1: peakX + 60, y1: peakY + waveHeight_px * 0.62, x2: peakX + 70, y2: peakY + waveHeight_px * 0.60 },
+      ]
+        .map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" stroke-linecap="round"/>`)
+        .join('')
+    : '';
+
+  const lipFoam = `<ellipse cx="${lipX + 6}" cy="${lipY - 2}" rx="10" ry="5" fill="rgba(255,255,255,0.82)"/>`;
+
+  const ripple = `<path d="M ${toeX + 5} ${baseY} Q ${toeX + 20} ${baseY - 3} ${toeX + 40} ${baseY} Q ${toeX + 60} ${baseY + 3} ${W} ${baseY}" stroke="rgba(96,165,250,0.25)" stroke-width="1.5" fill="none"/>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+  <path d="${wavePath}" fill="#0e4d6e"/>
+  <path d="${highlightPath}" fill="rgba(30,120,180,0.45)"/>
+  ${sheenPath}
+  ${choppyLines}
+  ${lipFoam}
+  ${ripple}
+</svg>
+</body>
+</html>`;
+}
+
 function SurfScene({
   hourIndex,
   score,
@@ -359,10 +447,6 @@ function SurfScene({
   const toeX = PANEL_W * 0.82;
   const peakX = PANEL_W * 0.38;
   const peakY = waveBaseY - waveHeight_px;
-
-  // Wave body dimensions
-  const waveBodyWidth = toeX - peakX;
-  const waveBodyHeight = waveBaseY - peakY;
 
   // ── Surfer position on wave face (curved face, not linear) ──
   const surferFaceT = 0.45;
@@ -429,17 +513,6 @@ function SurfScene({
   // ── Surface conditions ──
   const choppy = !isOffshore && windSpeed >= 12;
   const glassy = isOffshore && wavePeriod >= 10;
-
-  // ── Choppy texture patches on wave face ──
-  const choppyPatches = useMemo(() => {
-    if (!choppy) return [];
-    return [
-      { x: peakX + waveBodyWidth * 0.15, y: peakY + waveBodyHeight * 0.35, w: 8, rot: -8 },
-      { x: peakX + waveBodyWidth * 0.30, y: peakY + waveBodyHeight * 0.55, w: 10, rot: 5 },
-      { x: peakX + waveBodyWidth * 0.50, y: peakY + waveBodyHeight * 0.45, w: 7, rot: -12 },
-      { x: peakX + waveBodyWidth * 0.65, y: peakY + waveBodyHeight * 0.65, w: 9, rot: 8 },
-    ];
-  }, [choppy, peakX, peakY, waveBodyWidth, waveBodyHeight]);
 
   // ── Height ruler ticks ──
   const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
@@ -520,114 +593,24 @@ function SurfScene({
         }}
       />
 
-      {/* ── Wave body — main filled mass ── */}
-      <View
+      {/* ── Wave SVG (single continuous path via WebView) ── */}
+      <WebView
+        source={{ html: buildWaveSvgHtml(PANEL_W, panelH, peakX, peakY, toeX, waveBaseY, waveHeight_px, glassy, choppy) }}
         style={{
           position: 'absolute',
-          left: peakX,
-          top: peakY,
-          width: waveBodyWidth,
-          height: waveBodyHeight,
-          backgroundColor: '#0e4d6e',
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 8,
-          borderBottomLeftRadius: 0,
-          borderBottomRightRadius: 0,
+          left: 0,
+          top: 0,
+          width: PANEL_W,
+          height: panelH,
+          backgroundColor: 'transparent',
         }}
-      />
-
-      {/* ── Wave face highlight — lighter strip on upper-left face ── */}
-      <View
-        style={{
-          position: 'absolute',
-          left: peakX,
-          top: peakY,
-          width: waveBodyWidth * 0.55,
-          height: waveBodyHeight * 0.65,
-          backgroundColor: 'rgba(30,120,180,0.5)',
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 4,
-          borderBottomLeftRadius: 0,
-          borderBottomRightRadius: 0,
-        }}
-      />
-
-      {/* ── Glassy sheen (thin bright line along upper face) ── */}
-      {glassy && (
-        <View
-          style={{
-            position: 'absolute',
-            left: peakX + 4,
-            top: peakY + waveBodyHeight * 0.08,
-            width: waveBodyWidth * 0.45,
-            height: 2,
-            backgroundColor: 'rgba(255,255,255,0.15)',
-            borderRadius: 1,
-          }}
-        />
-      )}
-
-      {/* ── Choppy texture patches on wave face ── */}
-      {choppyPatches.map((patch, i) => (
-        <View
-          key={`choppy-${i}`}
-          style={{
-            position: 'absolute',
-            left: patch.x,
-            top: patch.y,
-            width: patch.w,
-            height: 2,
-            backgroundColor: 'rgba(255,255,255,0.12)',
-            borderRadius: 1,
-            transform: [{ rotate: `${patch.rot}deg` }],
-          }}
-        />
-      ))}
-
-      {/* ── Curl / lip foam at peak ── */}
-      <View
-        style={{
-          position: 'absolute',
-          left: peakX - 6,
-          top: peakY - 5,
-          width: 20,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: 'rgba(255,255,255,0.88)',
-        }}
-      />
-
-      {/* ── Whitewash foam at base ── */}
-      {[
-        { x: peakX + waveBodyWidth * 0.08, w: 16, h: 5 },
-        { x: peakX + waveBodyWidth * 0.28, w: 22, h: 7 },
-        { x: peakX + waveBodyWidth * 0.52, w: 28, h: 6 },
-        { x: peakX + waveBodyWidth * 0.72, w: 18, h: 5 },
-      ].map((foam, i) => (
-        <View
-          key={`foam-${i}`}
-          style={{
-            position: 'absolute',
-            left: foam.x,
-            top: waveBaseY - 3,
-            width: foam.w,
-            height: foam.h,
-            borderRadius: 3,
-            backgroundColor: 'rgba(255,255,255,0.30)',
-          }}
-        />
-      ))}
-
-      {/* ── Ocean surface line to the right of the wave toe ── */}
-      <View
-        style={{
-          position: 'absolute',
-          left: toeX,
-          top: waveBaseY,
-          width: PANEL_W - toeX,
-          height: 2,
-          backgroundColor: 'rgba(96,165,250,0.25)',
-        }}
+        scrollEnabled={false}
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+        androidLayerType="hardware"
+        originWhitelist={['*']}
       />
 
       {/* ── Height ruler (LEFT edge, clear of weather icon) ── */}
