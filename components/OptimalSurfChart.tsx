@@ -360,12 +360,21 @@ function SurfScene({
   const peakX = PANEL_W * 0.38;
   const peakY = waveBaseY - waveHeight_px;
 
-  // Face angle in degrees (negative = rising left)
-  const faceAngleDeg = Math.atan2(-(waveHeight_px), toeX - peakX) * (180 / Math.PI);
+  // Wave body dimensions
+  const waveBodyWidth = toeX - peakX;
+  const waveBodyHeight = waveBaseY - peakY;
 
-  // ── Surfer position on wave face ──
-  const surferX = PANEL_W * 0.38 + (PANEL_W * 0.82 - PANEL_W * 0.38) * 0.45; // ~PANEL_W * 0.57
-  const surferFeetY = waveBaseY - waveHeight_px * 0.55;
+  // ── Surfer position on wave face (curved face, not linear) ──
+  const surferFaceT = 0.45;
+  const surferX = peakX + (toeX - peakX) * surferFaceT;
+  const surferFeetY = peakY + (waveBaseY - peakY) * Math.pow(surferFaceT, 0.7);
+
+  // Face angle at surfer position (tangent of curved face)
+  const t1 = 0.35;
+  const t2 = 0.55;
+  const y1 = peakY + (waveBaseY - peakY) * Math.pow(t1, 0.7);
+  const y2 = peakY + (waveBaseY - peakY) * Math.pow(t2, 0.7);
+  const faceAngleDeg = Math.atan2(y2 - y1, (toeX - peakX) * (t2 - t1)) * (180 / Math.PI);
 
   // ── Stance from wave height ──
   const stanceH = lerp(1.0, 0.62, clamp((waveHeight - 1) / 4, 0, 1));
@@ -413,51 +422,24 @@ function SurfScene({
 
   const figureOpacity = isScrubbing ? 1.0 : 0.92;
 
-  // ── Sky colors based on time of day ──
-  const skyBase = useMemo(() => {
-    if (hour >= 5 && hour <= 7) return '#0D1B2A';
-    if (hour >= 8 && hour <= 16) return '#1A6FA8';
-    if (hour >= 17 && hour <= 18) return '#C2603A';
-    return '#060D1A';
-  }, [hour]);
+  // ── Time-of-day sky tint (subtle overlays only, zinc-900 base) ──
+  const dawnOverlay = hour >= 5 && hour <= 7;
+  const duskOverlay = hour >= 17 && hour <= 18;
 
-  const horizonTint = useMemo(() => {
-    if (hour >= 5 && hour <= 7) return '#C2603A';
-    if (hour >= 8 && hour <= 16) return '#4BA3D4';
-    if (hour >= 17 && hour <= 18) return '#2D1B4E';
-    return '#0D1B2A';
-  }, [hour]);
-
-  // ── Wave face diagonal strips ──
+  // ── Surface conditions ──
   const choppy = !isOffshore && windSpeed >= 12;
   const glassy = isOffshore && wavePeriod >= 10;
-  const NUM_FACE_STRIPS = 8;
-  const faceStrips = useMemo(() => {
-    const strips = [];
-    for (let i = 0; i < NUM_FACE_STRIPS; i++) {
-      const t = i / NUM_FACE_STRIPS;
-      const stripY = waveBaseY - waveHeight_px * t;
-      const stripX = peakX + (toeX - peakX) * t;
-      const faceWidth = toeX - peakX;
-      const color = i % 2 === 0 ? 'rgba(20,140,160,0.9)' : 'rgba(32,178,170,0.75)';
-      strips.push({ x: stripX, y: stripY, width: faceWidth * (1 - t * 0.3), color });
-    }
-    return strips;
-  }, [waveBaseY, waveHeight_px, peakX, toeX]);
 
-  // ── Choppy extra strips ──
-  const choppyStrips = useMemo(() => {
+  // ── Choppy texture patches on wave face ──
+  const choppyPatches = useMemo(() => {
     if (!choppy) return [];
-    const strips = [];
-    for (let i = 0; i < 5; i++) {
-      const t = 0.2 + (i / 5) * 0.6;
-      const stripY = waveBaseY - waveHeight_px * t;
-      const stripX = peakX + (toeX - peakX) * t;
-      const angleOffset = (i * 17) % 10 - 5;
-      strips.push({ x: stripX, y: stripY, angleOffset });
-    }
-    return strips;
-  }, [choppy, waveBaseY, waveHeight_px, peakX, toeX]);
+    return [
+      { x: peakX + waveBodyWidth * 0.15, y: peakY + waveBodyHeight * 0.35, w: 8, rot: -8 },
+      { x: peakX + waveBodyWidth * 0.30, y: peakY + waveBodyHeight * 0.55, w: 10, rot: 5 },
+      { x: peakX + waveBodyWidth * 0.50, y: peakY + waveBodyHeight * 0.45, w: 7, rot: -12 },
+      { x: peakX + waveBodyWidth * 0.65, y: peakY + waveBodyHeight * 0.65, w: 9, rot: 8 },
+    ];
+  }, [choppy, peakX, peakY, waveBodyWidth, waveBodyHeight]);
 
   // ── Height ruler ticks ──
   const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
@@ -471,20 +453,62 @@ function SurfScene({
 
   return (
     <View style={sceneStyles.panel}>
-      {/* ── Sky background ── */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: skyBase }]} />
+      {/* ── Base sky: zinc-900 ── */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#18181b' }]} />
+
+      {/* ── Sky gradient: slightly blue-tinted dark at top, fades to zinc at horizon ── */}
       <View
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            top: panelH * 0.3,
-            backgroundColor: horizonTint,
-            opacity: 0.55,
-          },
-        ]}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          height: panelH * 0.45,
+          backgroundColor: '#1c2333',
+          opacity: 0.7,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: panelH * 0.25,
+          height: panelH * 0.2,
+          backgroundColor: '#18181b',
+          opacity: 0.8,
+        }}
       />
 
-      {/* ── Ocean body ── */}
+      {/* ── Dawn tint (faint warm overlay) ── */}
+      {dawnOverlay && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: panelH * 0.45,
+            backgroundColor: 'rgba(180,80,20,0.15)',
+          }}
+        />
+      )}
+
+      {/* ── Dusk tint (faint warm overlay) ── */}
+      {duskOverlay && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: panelH * 0.45,
+            backgroundColor: 'rgba(120,60,20,0.12)',
+          }}
+        />
+      )}
+
+      {/* ── Ocean body (below waterline) ── */}
       <View
         style={{
           position: 'absolute',
@@ -492,56 +516,70 @@ function SurfScene({
           right: 0,
           top: waveBaseY,
           bottom: 0,
-          backgroundColor: 'rgba(8,60,90,0.95)',
+          backgroundColor: '#0f1f2e',
         }}
       />
 
-      {/* ── Wave face diagonal strips ── */}
-      {faceStrips.map((strip, i) => (
-        <View
-          key={`face-${i}`}
-          style={{
-            position: 'absolute',
-            left: strip.x,
-            top: strip.y,
-            width: strip.width,
-            height: 3,
-            backgroundColor: strip.color,
-            transformOrigin: '0 50%',
-            transform: [{ rotate: `${faceAngleDeg}deg` }],
-          }}
-        />
-      ))}
+      {/* ── Wave body — main filled mass ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: peakX,
+          top: peakY,
+          width: waveBodyWidth,
+          height: waveBodyHeight,
+          backgroundColor: '#0e4d6e',
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 8,
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+        }}
+      />
 
-      {/* ── Glassy sheen ── */}
+      {/* ── Wave face highlight — lighter strip on upper-left face ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: peakX,
+          top: peakY,
+          width: waveBodyWidth * 0.55,
+          height: waveBodyHeight * 0.65,
+          backgroundColor: 'rgba(30,120,180,0.5)',
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 4,
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+        }}
+      />
+
+      {/* ── Glassy sheen (thin bright line along upper face) ── */}
       {glassy && (
         <View
           style={{
             position: 'absolute',
-            left: peakX,
-            top: peakY + waveHeight_px * 0.1,
-            width: toeX - peakX,
-            height: 4,
-            backgroundColor: 'rgba(255,255,255,0.18)',
-            transformOrigin: '0 50%',
-            transform: [{ rotate: `${faceAngleDeg}deg` }],
+            left: peakX + 4,
+            top: peakY + waveBodyHeight * 0.08,
+            width: waveBodyWidth * 0.45,
+            height: 2,
+            backgroundColor: 'rgba(255,255,255,0.15)',
+            borderRadius: 1,
           }}
         />
       )}
 
-      {/* ── Choppy extra strips ── */}
-      {choppyStrips.map((strip, i) => (
+      {/* ── Choppy texture patches on wave face ── */}
+      {choppyPatches.map((patch, i) => (
         <View
           key={`choppy-${i}`}
           style={{
             position: 'absolute',
-            left: strip.x,
-            top: strip.y,
-            width: 8,
+            left: patch.x,
+            top: patch.y,
+            width: patch.w,
             height: 2,
-            backgroundColor: 'rgba(32,178,170,0.6)',
-            transformOrigin: '0 50%',
-            transform: [{ rotate: `${faceAngleDeg + strip.angleOffset}deg` }],
+            backgroundColor: 'rgba(255,255,255,0.12)',
+            borderRadius: 1,
+            transform: [{ rotate: `${patch.rot}deg` }],
           }}
         />
       ))}
@@ -550,43 +588,56 @@ function SurfScene({
       <View
         style={{
           position: 'absolute',
-          left: peakX - 9,
-          top: peakY - 4,
-          width: 18,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: 'rgba(255,255,255,0.85)',
+          left: peakX - 6,
+          top: peakY - 5,
+          width: 20,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: 'rgba(255,255,255,0.88)',
         }}
       />
 
       {/* ── Whitewash foam at base ── */}
       {[
-        { x: PANEL_W * 0.55, w: 20 },
-        { x: PANEL_W * 0.65, w: 24 },
-        { x: PANEL_W * 0.72, w: 28 },
+        { x: peakX + waveBodyWidth * 0.08, w: 16, h: 5 },
+        { x: peakX + waveBodyWidth * 0.28, w: 22, h: 7 },
+        { x: peakX + waveBodyWidth * 0.52, w: 28, h: 6 },
+        { x: peakX + waveBodyWidth * 0.72, w: 18, h: 5 },
       ].map((foam, i) => (
         <View
           key={`foam-${i}`}
           style={{
             position: 'absolute',
             left: foam.x,
-            top: waveBaseY - 4 + i * 2,
+            top: waveBaseY - 3,
             width: foam.w,
-            height: 6,
+            height: foam.h,
             borderRadius: 3,
-            backgroundColor: 'rgba(255,255,255,0.35)',
+            backgroundColor: 'rgba(255,255,255,0.30)',
           }}
         />
       ))}
 
-      {/* ── Height ruler (right edge) ── */}
+      {/* ── Ocean surface line to the right of the wave toe ── */}
       <View
         style={{
           position: 'absolute',
-          right: 8,
+          left: toeX,
+          top: waveBaseY,
+          width: PANEL_W - toeX,
+          height: 2,
+          backgroundColor: 'rgba(96,165,250,0.25)',
+        }}
+      />
+
+      {/* ── Height ruler (LEFT edge, clear of weather icon) ── */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 6,
           top: rulerTop,
           height: rulerHeight,
-          width: 20,
+          width: 32,
         }}
       >
         {rulerLabels.map((label, i) => {
@@ -598,30 +649,30 @@ function SurfScene({
               key={`tick-${i}`}
               style={{
                 position: 'absolute',
-                right: 0,
+                left: 0,
                 top: tickY - 0.5,
                 flexDirection: 'row',
                 alignItems: 'center',
               }}
             >
-              <Text
-                style={{
-                  fontSize: 7,
-                  color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
-                  opacity: isHighlighted ? 1.0 : 0.4,
-                  marginRight: 2,
-                }}
-              >
-                {label}
-              </Text>
               <View
                 style={{
                   width: 6,
                   height: 1,
                   backgroundColor: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
                   opacity: isHighlighted ? 1.0 : 0.4,
+                  marginRight: 2,
                 }}
               />
+              <Text
+                style={{
+                  fontSize: 7,
+                  color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
+                  opacity: isHighlighted ? 1.0 : 0.4,
+                }}
+              >
+                {label}
+              </Text>
             </View>
           );
         })}
@@ -668,7 +719,7 @@ function SurfScene({
         />
       </View>
 
-      {/* ── Stick figure (positioned at surferX, surferFeetY) ── */}
+      {/* ── Stick figure — feet sit on wave face surface ── */}
       <View
         style={{
           position: 'absolute',
@@ -767,7 +818,7 @@ function SurfScene({
           }}
         />
 
-        {/* Surfboard */}
+        {/* Surfboard — bottom edge aligns with surferFeetY, tilts with face */}
         <View
           style={{
             position: 'absolute',
@@ -796,7 +847,7 @@ function SurfScene({
         </View>
       </View>
 
-      {/* ── Top-right overlay: wave / wind / tide (shifted left to avoid weather icon) ── */}
+      {/* ── Top-right overlay: wave / wind / tide ── */}
       <View style={sceneStyles.topRight}>
         <Text style={sceneStyles.statLine}>{waveEstStr} ft</Text>
         <Text style={sceneStyles.statLine}>{windSpeed} mph {windDirection}</Text>
@@ -813,20 +864,22 @@ const sceneStyles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 10,
     position: 'relative',
+    backgroundColor: '#18181b',
   },
   topLeft: {
     position: 'absolute',
     top: 8,
     left: 10,
+    zIndex: 20,
   },
   hourText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
     lineHeight: 18,
-    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowColor: 'rgba(0,0,0,0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
   },
   ratingPill: {
     borderRadius: 6,
@@ -844,17 +897,18 @@ const sceneStyles = StyleSheet.create({
   topRight: {
     position: 'absolute',
     top: 8,
-    right: 44,
+    right: 36,
     alignItems: 'flex-end',
+    zIndex: 20,
   },
   statLine: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.82)',
+    color: 'rgba(255,255,255,0.85)',
     lineHeight: 15,
     fontWeight: '500',
-    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowColor: 'rgba(0,0,0,0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
   },
 });
 
@@ -1113,28 +1167,27 @@ export default function OptimalSurfChart({
               </View>
             )}
 
-            {/* Best window green band */}
-            {Array.from({ length: 3 }).map((_, i) => {
-              const bandIdx = bestWindowStart + i;
-              const bandX = bandIdx * (BAR_WIDTH + GAP);
+            {/* Best window green band — single rounded rect spanning all 3 columns */}
+            {(() => {
+              const bandLeft = bestWindowStart * (BAR_WIDTH + GAP);
+              const bandRight = (bestWindowStart + 2) * (BAR_WIDTH + GAP) + BAR_WIDTH;
               return (
                 <View
-                  key={`bw-band-${i}`}
                   style={{
                     position: 'absolute',
-                    left: bandX,
-                    top: 0,
-                    width: BAR_WIDTH,
-                    bottom: 0,
-                    backgroundColor: 'rgba(34,197,94,0.10)',
-                    borderLeftWidth: i === 0 ? 1 : 0,
-                    borderRightWidth: i === 2 ? 1 : 0,
-                    borderColor: 'rgba(34,197,94,0.35)',
+                    left: bandLeft,
+                    top: 4,
+                    width: bandRight - bandLeft,
+                    bottom: 4,
+                    backgroundColor: 'rgba(34,197,94,0.08)',
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: 'rgba(34,197,94,0.28)',
                     zIndex: 0,
                   }}
                 />
               );
-            })}
+            })()}
 
             {/* Bars */}
             <View style={styles.barsRow}>
