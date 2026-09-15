@@ -553,45 +553,24 @@ export default function ForecastScreen() {
 
                 {isExpanded && (
                   <View style={styles.dayDetails}>
+                    {isToday && (
+                      <LiveSurfScene
+                        waveHeight={parseNumeric(surfConditions?.wave_height || (surfConditions as any)?.surf_height || '0')}
+                        wavePeriod={parseNumeric(surfConditions?.wave_period || '8')}
+                        windSpeed={parseNumeric(surfConditions?.wind_speed || '0')}
+                        windDirection={surfConditions?.wind_direction || 'N'}
+                        condition={weatherData?.conditions || day.weatherForecast?.conditions || ''}
+                        tides={day.tides}
+                        updatedAt={surfConditions?.updated_at || undefined}
+                        isDarkMode={theme.dark}
+                      />
+                    )}
                     {hasSurfData && (() => {
                       const chartWaveHeight = parseNumeric(displayHeight);
                       const chartWavePeriod = parseFloat(String(day.surfReport?.wave_period || '')) || 8;
                       const chartWindSpeed = Number(day.weatherForecast?.wind_speed) || parseNumeric(String(day.surfReport?.wind_speed || '')) || 5;
                       const chartWindDir = day.weatherForecast?.wind_direction || day.surfReport?.wind_direction || 'N';
                       console.log('[ForecastScreen] Rendering expanded section for', day.date, ':', { isToday, chartWaveHeight, chartWavePeriod, chartWindSpeed, chartWindDir });
-
-                      if (isToday) {
-                        const liveWaveHeight = parseNumeric(surfConditions?.wave_height || (surfConditions as any)?.surf_height || '0');
-                        const liveWavePeriod = parseNumeric(surfConditions?.wave_period || '8');
-                        const liveWindSpeed = parseNumeric(surfConditions?.wind_speed || '0');
-                        const liveWindDir = surfConditions?.wind_direction || 'N';
-                        const liveCondition = weatherData?.conditions || day.weatherForecast?.conditions || '';
-                        const liveUpdatedAt = surfConditions?.updated_at || undefined;
-                        console.log('[ForecastScreen] LiveSurfScene data for today:', { liveWaveHeight, liveWavePeriod, liveWindSpeed, liveWindDir, liveCondition, liveUpdatedAt });
-                        return (
-                          <>
-                            <LiveSurfScene
-                              waveHeight={liveWaveHeight}
-                              wavePeriod={liveWavePeriod}
-                              windSpeed={liveWindSpeed}
-                              windDirection={liveWindDir}
-                              condition={liveCondition}
-                              tides={day.tides}
-                              updatedAt={liveUpdatedAt}
-                              isDarkMode={theme.dark}
-                            />
-                            <OptimalSurfChart
-                              waveHeight={chartWaveHeight}
-                              wavePeriod={chartWavePeriod}
-                              windSpeed={chartWindSpeed}
-                              windDirection={chartWindDir}
-                              tides={day.tides}
-                              isDarkMode={theme.dark}
-                              condition={day.weatherForecast?.conditions || ''}
-                            />
-                          </>
-                        );
-                      }
 
                       return (
                         <OptimalSurfChart

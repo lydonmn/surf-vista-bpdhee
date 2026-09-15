@@ -49,7 +49,7 @@ const COLORS = {
   PRIME: '#22C55E',
   GOOD: '#3B82F6',
   FAIR: '#F59E0B',
-  POOR: '#6B7280',
+  POOR: '#EF4444',
   GOLD: '#FFD700',
   TIDE: '#60A5FA',
   AMBER: 'rgba(251,191,36,0.5)',
