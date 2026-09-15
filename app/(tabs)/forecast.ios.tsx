@@ -14,6 +14,20 @@ import { mockWeatherForecast } from '@/data/mockData';
 import { trackForecastView, trackSpotViewed } from '@/utils/usageTracking';
 import StokeSpeedometer from '@/components/StokeSpeedometer';
 import OptimalSurfChart from '@/components/OptimalSurfChart';
+import LiveSurfScene from '@/components/LiveSurfScene';
+
+function parseNumeric(str: string): number {
+  if (!str) return 0;
+  const s = String(str).trim();
+  if (s.includes('-')) {
+    const parts = s.split('-');
+    const lo = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
+    const hi = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
+    return isNaN(lo) || isNaN(hi) ? 0 : (lo + hi) / 2;
+  }
+  const v = parseFloat(s.replace(/[^0-9.]/g, ''));
+  return isNaN(v) ? 0 : v;
+}
 
 interface DayForecast {
   date: string;
@@ -173,7 +187,7 @@ export default function ForecastScreen() {
   const theme = useTheme();
   const { isLoading: authLoading, isInitialized, user } = useAuth();
   const { currentLocation, locationData } = useLocation();
-  const { surfReports, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData(currentLocation);
+  const { surfReports, surfConditions, weatherData, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
@@ -512,23 +526,46 @@ export default function ForecastScreen() {
                 {isExpanded && (
                   <View style={styles.dayDetails}>
                     {hasSurfData && (() => {
-                      const parseAvg = (str: string): number => {
-                        const s = String(str || '').trim();
-                        if (!s || s === 'N/A') return 0;
-                        if (s.includes('-')) {
-                          const parts = s.split('-');
-                          const lo = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
-                          const hi = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
-                          return isNaN(lo) || isNaN(hi) ? 0 : (lo + hi) / 2;
-                        }
-                        const v = parseFloat(s.replace(/[^0-9.]/g, ''));
-                        return isNaN(v) ? 0 : v;
-                      };
-                      const chartWaveHeight = parseAvg(displayHeight);
+                      const chartWaveHeight = parseNumeric(displayHeight);
                       const chartWavePeriod = parseFloat(String(day.surfReport?.wave_period || '')) || 8;
-                      const chartWindSpeed = Number(day.weatherForecast?.wind_speed) || parseAvg(String(day.surfReport?.wind_speed || '')) || 5;
+                      const chartWindSpeed = Number(day.weatherForecast?.wind_speed) || parseNumeric(String(day.surfReport?.wind_speed || '')) || 5;
                       const chartWindDir = day.weatherForecast?.wind_direction || day.surfReport?.wind_direction || 'N';
-                      console.log('[ForecastScreen iOS] OptimalSurfChart rendered for', day.date, ':', { chartWaveHeight, chartWavePeriod, chartWindSpeed, chartWindDir });
+                      const isToday = day.date === getTodayDateString();
+                      console.log('[ForecastScreen iOS] Rendering expanded section for', day.date, ':', { isToday, chartWaveHeight, chartWavePeriod, chartWindSpeed, chartWindDir });
+
+                      if (isToday) {
+                        const liveWaveHeight = parseNumeric(surfConditions?.wave_height || (surfConditions as any)?.surf_height || '0');
+                        const liveWavePeriod = parseNumeric(surfConditions?.wave_period || '8');
+                        const liveWindSpeed = parseNumeric(surfConditions?.wind_speed || '0');
+                        const liveWindDir = surfConditions?.wind_direction || 'N';
+                        const liveCondition = weatherData?.conditions || day.weatherForecast?.conditions || '';
+                        const liveUpdatedAt = surfConditions?.updated_at || undefined;
+                        console.log('[ForecastScreen iOS] LiveSurfScene data for today:', { liveWaveHeight, liveWavePeriod, liveWindSpeed, liveWindDir, liveCondition, liveUpdatedAt });
+                        return (
+                          <>
+                            <LiveSurfScene
+                              waveHeight={liveWaveHeight}
+                              wavePeriod={liveWavePeriod}
+                              windSpeed={liveWindSpeed}
+                              windDirection={liveWindDir}
+                              condition={liveCondition}
+                              tides={day.tides}
+                              updatedAt={liveUpdatedAt}
+                              isDarkMode={theme.dark}
+                            />
+                            <OptimalSurfChart
+                              waveHeight={chartWaveHeight}
+                              wavePeriod={chartWavePeriod}
+                              windSpeed={chartWindSpeed}
+                              windDirection={chartWindDir}
+                              tides={day.tides}
+                              isDarkMode={theme.dark}
+                              condition={day.weatherForecast?.conditions || ''}
+                            />
+                          </>
+                        );
+                      }
+
                       return (
                         <OptimalSurfChart
                           waveHeight={chartWaveHeight}
@@ -537,6 +574,7 @@ export default function ForecastScreen() {
                           windDirection={chartWindDir}
                           tides={day.tides}
                           isDarkMode={theme.dark}
+                          condition={day.weatherForecast?.conditions || ''}
                         />
                       );
                     })()}
