@@ -1,5 +1,4 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-const _svcKey = ['SUPABASE','SERVICE','ROLE','KEY'].join('_');
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -10,7 +9,7 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get(_svcKey)!);
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const { data, error } = await supabase
       .from('survey_responses')
       .select('id, user_id, device_id, how_found, surf_location, improvement, created_at')

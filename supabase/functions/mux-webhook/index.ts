@@ -1,11 +1,10 @@
 
-const _svcKey = ['SUPABASE','SERVICE','ROLE','KEY'].join('_');
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const MUX_WEBHOOK_SECRET = Deno.env.get('MUX_WEBHOOK_SECRET');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SVC_KEY = Deno.env.get(_svcKey)!;
+const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 // 🎬 Mux HLS URL prefix
 const MUX_HLS_PREFIX = 'https://stream.mux.com/';

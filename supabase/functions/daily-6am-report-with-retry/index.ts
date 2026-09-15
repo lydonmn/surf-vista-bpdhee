@@ -1,5 +1,4 @@
 
-const _svcKey = ['SUPABASE','SERVICE','ROLE','KEY'].join('_');
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -564,7 +563,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get(_svcKey);
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Daily Report] Missing environment variables');
