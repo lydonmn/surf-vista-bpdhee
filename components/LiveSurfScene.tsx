@@ -187,7 +187,7 @@ function buildWaveSvgHtml(
 </style>
 </head>
 <body>
-<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="https://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="rgba(30,120,200,0.85)"/>

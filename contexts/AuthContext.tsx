@@ -387,11 +387,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const userId = user.id;
+      // Call the server-side Edge Function — admin.deleteUser() must never run on the client
+      const { error } = await supabase.functions.invoke('delete-account', {
+        method: 'POST',
+      });
 
-      await supabase.from('profiles').delete().eq('id', userId);
-      await supabase.auth.admin.deleteUser(userId);
+      if (error) {
+        throw error;
+      }
 
+      // Clear local auth state after successful server-side deletion
       setUser(null);
       setProfile(null);
       setSession(null);
@@ -399,7 +404,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, message: 'Your account has been permanently deleted' };
     } catch (error: any) {
-      await signOut();
       return { success: false, message: error.message || 'An unexpected error occurred' };
     }
   };
