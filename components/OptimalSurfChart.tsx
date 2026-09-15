@@ -36,6 +36,7 @@ interface OptimalSurfChartProps {
   windDirection: string;
   tides: TideEntry[];
   isDarkMode?: boolean;
+  condition?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -186,11 +187,20 @@ function waveHeightToFraction(h: number): number {
 interface WeatherIconProps {
   windSpeed: number;
   isOffshore: boolean;
+  condition?: string;
 }
 
-function WeatherIcon({ windSpeed, isOffshore }: WeatherIconProps) {
-  const isSunny = windSpeed < 8 && isOffshore;
-  const isRainy = windSpeed >= 15 && !isOffshore;
+function WeatherIcon({ windSpeed, isOffshore, condition }: WeatherIconProps) {
+  const condLower = (condition || '').toLowerCase();
+
+  // Condition string takes priority over wind inference
+  const isSunny = condLower.includes('clear') || condLower.includes('sunny') || condLower.includes('fair')
+    ? true
+    : condLower === '' && windSpeed < 8 && isOffshore;
+
+  const isRainy = condLower.includes('rain') || condLower.includes('storm') || condLower.includes('thunder') || condLower.includes('shower')
+    ? true
+    : condLower === '' && windSpeed >= 15 && !isOffshore;
 
   // Rain animation
   const rain1 = useRef(new RNAnimated.Value(0)).current;
@@ -308,6 +318,7 @@ interface SurfSceneProps {
   windDirection: string;
   tides: TideEntry[];
   isScrubbing: boolean;
+  condition?: string;
 }
 
 // lerp helper
@@ -426,6 +437,7 @@ function SurfScene({
   windDirection,
   tides,
   isScrubbing,
+  condition,
 }: SurfSceneProps) {
   const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
 
@@ -435,8 +447,7 @@ function SurfScene({
   const ratingKey = getRatingKey(score);
   const ratingColor = COLORS[ratingKey];
 
-  const waveEst = waveHeight * 0.8 + (score / 10) * 0.4;
-  const waveEstStr = Number(waveEst).toFixed(1);
+  const waveEstStr = Number(waveHeight).toFixed(1);
 
   const tideNow = interpolateTideHeight(hour, tides);
   const tidePrev = interpolateTideHeight(hour - 0.5, tides);
@@ -864,7 +875,7 @@ function SurfScene({
 
       {/* ── Weather icon (top-right corner) ── */}
       <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
-        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} />
+        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} />
       </View>
 
       {/* ── Top-left overlay: hour + rating ── */}
@@ -961,6 +972,7 @@ export default function OptimalSurfChart({
   windDirection,
   tides,
   isDarkMode = false,
+  condition,
 }: OptimalSurfChartProps) {
   const scores = useMemo(
     () => computeScores(waveHeight, wavePeriod, windSpeed, windDirection, tides),
@@ -969,7 +981,10 @@ export default function OptimalSurfChart({
 
   const bestWindowStart = useMemo(() => findBestWindow(scores), [scores]);
 
-  const currentHour = new Date().getHours();
+  const currentHour = parseInt(
+    new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }),
+    10
+  );
   const nowBarIndex = currentHour >= 5 && currentHour <= 20 ? currentHour - 5 : -1;
 
   // Default selected index
@@ -1145,6 +1160,7 @@ export default function OptimalSurfChart({
 
       {/* Unified scene panel */}
       <SurfScene
+        key={selectedIndex}
         hourIndex={selectedIndex}
         score={selectedScore}
         waveHeight={waveHeight}
@@ -1153,6 +1169,7 @@ export default function OptimalSurfChart({
         windDirection={windDirection}
         tides={tides}
         isScrubbing={isScrubbing}
+        condition={condition}
       />
 
       {/* Scrollable chart */}

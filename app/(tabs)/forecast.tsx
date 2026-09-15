@@ -565,6 +565,7 @@ export default function ForecastScreen() {
                           windDirection={chartWindDir}
                           tides={day.tides}
                           isDarkMode={theme.dark}
+                          condition={day.weatherForecast?.conditions || ''}
                         />
                       );
                     })()}
