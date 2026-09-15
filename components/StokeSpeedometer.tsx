@@ -12,11 +12,10 @@ interface StokeSpeedometerProps {
 }
 
 function getRatingColor(rating: number): string {
-  if (rating >= 9) return '#22C55E';
-  if (rating >= 7) return '#84CC16';
-  if (rating >= 5) return '#EAB308';
-  if (rating >= 3) return '#F97316';
-  return '#EF4444';
+  if (rating > 7) return '#F59E0B';   // gold (matches StokeOMeter 8–11 band)
+  if (rating > 3) return '#22C55E';   // green (matches StokeOMeter 4–7 band)
+  if (rating > 2) return '#EAB308';   // yellow (matches StokeOMeter band-3)
+  return '#EF4444';                   // red (matches StokeOMeter 1–2 band)
 }
 
 // Needle convention: bar is vertical, top points UP (12 o'clock) at 0deg.
