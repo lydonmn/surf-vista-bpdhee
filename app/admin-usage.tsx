@@ -39,6 +39,8 @@ interface Profile {
   is_subscribed: boolean | null;
   subscription_source: string | null;
   subscription_status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface StatCard {
@@ -300,7 +302,7 @@ export default function AdminUsageScreen() {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height, is_subscribed, subscription_source, subscription_status'),
+          .select('id, email, full_name, daily_report_notifications, video_notifications, min_wave_height, is_subscribed, subscription_source, subscription_status, created_at, updated_at'),
         supabase.from('engagement_funnel').select('*').single(),
         supabase.from('spot_breakdown').select('*'),
         supabase.from('retention_cohorts').select('*').limit(8),
@@ -648,12 +650,29 @@ export default function AdminUsageScreen() {
         if (e.created_at < u.firstSeen) u.firstSeen = e.created_at;
       }
 
+      // Add subscribed users who have no usage events
+      for (const profile of profiles) {
+        if (!profile.id) continue;
+        const isSubscribed = profile.is_subscribed ||
+          (profile.subscription_status && !['free', 'inactive', 'expired'].includes(profile.subscription_status));
+        if (isSubscribed && !userMap.has(profile.id)) {
+          console.log('[AdminUsage] Adding subscribed user with no events:', profile.id, profile.email);
+          userMap.set(profile.id, {
+            sessions: 0,
+            bgDurations: [],
+            videos: 0,
+            lastSeen: profile.updated_at || profile.created_at || new Date().toISOString(),
+            firstSeen: profile.created_at || new Date().toISOString(),
+          });
+        }
+      }
+
       const userStatsList: UserStat[] = [];
       for (const [uid, data] of userMap.entries()) {
         const isDevice = uid.startsWith('device:');
         const profile = isDevice ? null : profileMap.get(uid);
         const name = profile?.full_name || profile?.email || (isDevice ? uid : `User ${uid.slice(0, 8)}`);
-        const totalTime = data.bgDurations.reduce((a, b) => a + b, 0);
+        const totalTime = data.bgDurations.length > 0 ? data.bgDurations.reduce((a, b) => a + b, 0) : 0;
         // Resolve the raw device_id for this entry (strip 'device:' prefix if anonymous)
         const rawDeviceId = isDevice ? uid.replace('device:', '') : null;
         const badge = getSubscriptionBadge(profile ?? {});

@@ -110,6 +110,15 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
+function formatProductId(rcProductId: string | null | undefined): string {
+  if (!rcProductId) return '';
+  const lower = rcProductId.toLowerCase();
+  if (lower.includes('annual') || lower.includes('yearly') || lower.includes('year')) return 'Annual';
+  if (lower.includes('monthly') || lower.includes('month')) return 'Monthly';
+  if (lower.includes('weekly') || lower.includes('week')) return 'Weekly';
+  return rcProductId;
+}
+
 function getSubscriptionBadge(profile: {
   subscription_status?: string | null;
   is_subscribed?: boolean | null;
@@ -541,7 +550,7 @@ export default function AdminUserDetailScreen() {
                       <Text style={{ fontSize: 13, fontWeight: '700', color: badge.color }}>{badge.label}</Text>
                     </View>
                     {profile?.rc_product_id ? (
-                      <Text style={{ fontSize: 12, color: '#6B7280' }}>{profile.rc_product_id}</Text>
+                      <Text style={{ fontSize: 12, color: '#6B7280' }}>{formatProductId(profile.rc_product_id)}</Text>
                     ) : null}
                   </View>
                   {profile?.trial_started_at ? (
