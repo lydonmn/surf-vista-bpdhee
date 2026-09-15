@@ -14,6 +14,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import StokeOMeter from '@/components/StokeOMeter';
+import { computeStokeScore } from '@/utils/surfScoring';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,10 +136,20 @@ function buildWaveSvgHtml(
   const wavePath = [
     `M ${backX} ${backY}`,
     `C ${backX + 4} ${backY - waveHeight_px * 0.4} ${peakX - waveHeight_px * 0.12} ${peakY + waveHeight_px * 0.18} ${peakX} ${peakY}`,
-    `Q ${peakX + waveHeight_px * 0.10} ${peakY - waveHeight_px * 0.12} ${curlX} ${curlY}`,
+    `Q ${peakX + waveHeight_px * 0.10} ${peakY - waveHeight_px * 0.22} ${curlX} ${curlY}`,
     `C ${faceCP1x} ${faceCP1y} ${faceCP2x} ${faceCP2y} ${toeX} ${waveBaseY}`,
     foamScallops,
     `L ${backX} ${backY}`,
+    'Z',
+  ].join(' ');
+
+  // Shadow/depth layer — offset down+right, darker semi-transparent
+  const shadowPath = [
+    `M ${backX + 4} ${backY + 6}`,
+    `C ${backX + 8} ${backY - waveHeight_px * 0.4 + 6} ${peakX - waveHeight_px * 0.12 + 4} ${peakY + waveHeight_px * 0.18 + 6} ${peakX + 4} ${peakY + 6}`,
+    `Q ${peakX + waveHeight_px * 0.10 + 4} ${peakY - waveHeight_px * 0.22 + 6} ${curlX + 4} ${curlY + 6}`,
+    `C ${faceCP1x + 4} ${faceCP1y + 6} ${faceCP2x + 4} ${faceCP2y + 6} ${toeX + 4} ${waveBaseY + 6}`,
+    `L ${backX + 4} ${backY + 6}`,
     'Z',
   ].join(' ');
 
@@ -177,8 +188,15 @@ function buildWaveSvgHtml(
 </head>
 <body>
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-  <path d="${wavePath}" fill="#0e4d6e"/>
-  <path d="${highlightPath}" fill="rgba(30,120,180,0.40)"/>
+  <defs>
+    <linearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(30,120,200,0.85)"/>
+      <stop offset="100%" stop-color="rgba(10,60,120,0.95)"/>
+    </linearGradient>
+  </defs>
+  <path d="${shadowPath}" fill="rgba(0,40,80,0.35)"/>
+  <path d="${wavePath}" fill="url(#waveGrad)"/>
+  <path d="${highlightPath}" fill="rgba(30,120,180,0.55)" stroke="rgba(100,180,255,0.3)" stroke-width="1.5"/>
   ${sheenPath}
   ${choppyLines}
   ${ripple}
@@ -401,7 +419,7 @@ export default function LiveSurfScene({
   const faceCP2x_s = peakX + (toeX - peakX) * 0.65;
   const faceCP2y_s = waveBaseY - waveHeight_px * 0.12;
 
-  const surferT = 0.38;
+  const surferT = 0.42;
   const mt = 1 - surferT;
   const surferX =
     mt * mt * mt * curlX_s +
@@ -531,12 +549,7 @@ export default function LiveSurfScene({
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
 
   // ─── Stoke score (current conditions → 1–11) ──────────────────────────────
-  const waveScore = waveHeight >= 6 ? 4 : waveHeight >= 4 ? 3 : waveHeight >= 2 ? 2 : waveHeight >= 1 ? 1 : 0;
-  const periodBonus = wavePeriod >= 12 ? 1 : wavePeriod >= 9 ? 0.5 : 0;
-  const isOff = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
-  const windScore = isOff ? (windSpeed < 10 ? 3 : windSpeed < 15 ? 2 : 1) : (windSpeed < 8 ? 1 : 0);
-  const stokeRaw = waveScore + periodBonus + windScore;
-  const stokeScore = 1 + (stokeRaw / 8) * 10;
+  const stokeScore = computeStokeScore(waveHeight, wavePeriod, windSpeed, windDirection);
 
   // ─── Shared sky/ocean background layers ───────────────────────────────────
 

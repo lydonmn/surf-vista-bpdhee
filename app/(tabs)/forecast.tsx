@@ -555,7 +555,7 @@ export default function ForecastScreen() {
                   <View style={styles.dayDetails}>
                     {isToday && (
                       <LiveSurfScene
-                        waveHeight={parseNumeric(surfConditions?.wave_height || (surfConditions as any)?.surf_height || '0')}
+                        waveHeight={parseNumeric((surfConditions as any)?.surf_height || surfConditions?.wave_height || '0')}
                         wavePeriod={parseNumeric(surfConditions?.wave_period || '8')}
                         windSpeed={parseNumeric(surfConditions?.wind_speed || '0')}
                         windDirection={surfConditions?.wind_direction || 'N'}

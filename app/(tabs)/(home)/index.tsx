@@ -19,19 +19,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { openPaywall } from "@/utils/paywallHelper";
 import StokeOMeter from '@/components/StokeOMeter';
+import { computeStokeScoreFromConditions } from '@/utils/surfScoring';
 
-function parseNum(v: unknown): number {
-  if (!v) return 0;
-  const s = String(v).trim();
-  if (s.includes('-')) {
-    const parts = s.split('-');
-    const lo = parseFloat(parts[0].replace(/[^0-9.]/g, ''));
-    const hi = parseFloat(parts[1].replace(/[^0-9.]/g, ''));
-    return isNaN(lo) || isNaN(hi) ? 0 : (lo + hi) / 2;
-  }
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return isNaN(n) ? 0 : n;
-}
 
 function calculateSurfRating(surfData: any): number {
   if (!surfData) return 5;
@@ -203,19 +192,11 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  // Compute 1–11 stokeScore for StokeOMeter (same formula as LiveSurfScene)
-  const stokeScore = useMemo(() => {
-    const wh = parseNum(surfConditions?.surf_height ?? surfConditions?.wave_height);
-    const wp = parseNum(surfConditions?.wave_period) || 8;
-    const ws = parseNum(surfConditions?.wind_speed ?? weatherData?.wind_speed);
-    const wd = String(surfConditions?.wind_direction ?? weatherData?.wind_direction ?? 'N').toUpperCase();
-    const waveScore = wh >= 6 ? 4 : wh >= 4 ? 3 : wh >= 2 ? 2 : wh >= 1 ? 1 : 0;
-    const periodBonus = wp >= 12 ? 1 : wp >= 9 ? 0.5 : 0;
-    const isOff = wd.includes('W') || wd.includes('N');
-    const windScore = isOff ? (ws < 10 ? 3 : ws < 15 ? 2 : 1) : (ws < 8 ? 1 : 0);
-    const raw = waveScore + periodBonus + windScore;
-    return Math.max(1, Math.min(11, 1 + (raw / 8) * 10));
-  }, [surfConditions, weatherData]);
+  // Compute 1–11 stokeScore for StokeOMeter — shared formula
+  const stokeScore = useMemo(
+    () => computeStokeScoreFromConditions(surfConditions),
+    [surfConditions],
+  );
 
   const loadLatestVideo = useCallback(async () => {
     try {

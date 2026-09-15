@@ -15,10 +15,10 @@ interface StokeOMeterProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CARD_WIDTH = 320;
+const CARD_WIDTH = 260;
 const CX = CARD_WIDTH / 2;
-const CY = 140;
-const RADIUS = 100;
+const CY = 110;
+const RADIUS = 78;
 const ARC_START_DEG = -110;
 const NUM_SEGMENTS = 120;
 const NEEDLE_LENGTH = RADIUS * 0.85;
@@ -313,7 +313,7 @@ export default function StokeOMeter({ score, isDarkMode = false }: StokeOMeterPr
 const gaugeStyles = StyleSheet.create({
   card: {
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
     marginBottom: 12,
   },
   header: {
@@ -326,7 +326,7 @@ const gaugeStyles = StyleSheet.create({
   },
   canvas: {
     width: CARD_WIDTH,
-    height: 200,
+    height: 155,
     position: 'relative',
     alignSelf: 'center',
   },
