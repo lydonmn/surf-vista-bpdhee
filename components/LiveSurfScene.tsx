@@ -13,6 +13,7 @@ import Animated, {
   useAnimatedStyle,
   Easing,
 } from 'react-native-reanimated';
+import StokeOMeter from '@/components/StokeOMeter';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -529,6 +530,14 @@ export default function LiveSurfScene({
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
 
+  // ─── Stoke score (current conditions → 1–11) ──────────────────────────────
+  const waveScore = waveHeight >= 6 ? 4 : waveHeight >= 4 ? 3 : waveHeight >= 2 ? 2 : waveHeight >= 1 ? 1 : 0;
+  const periodBonus = wavePeriod >= 12 ? 1 : wavePeriod >= 9 ? 0.5 : 0;
+  const isOff = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
+  const windScore = isOff ? (windSpeed < 10 ? 3 : windSpeed < 15 ? 2 : 1) : (windSpeed < 8 ? 1 : 0);
+  const stokeRaw = waveScore + periodBonus + windScore;
+  const stokeScore = 1 + (stokeRaw / 8) * 10;
+
   // ─── Shared sky/ocean background layers ───────────────────────────────────
 
   const skyLayers = (
@@ -640,6 +649,9 @@ export default function LiveSurfScene({
           <Text style={sceneStyles.updatedText}>{updatedLabel}</Text>
         )}
       </View>
+
+      {/* Stoke-O-Meter gauge */}
+      <StokeOMeter score={stokeScore} isDarkMode={isDarkMode} />
 
       {/* Scene panel */}
       <View style={sceneStyles.panel}>

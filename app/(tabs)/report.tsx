@@ -14,6 +14,7 @@ import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from
 import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import OptimalSurfChart from "@/components/OptimalSurfChart";
+import LiveSurfScene from '@/components/LiveSurfScene';
 
 
 // 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
@@ -1217,7 +1218,7 @@ export default function ReportScreen() {
           })()}
         </View>
 
-        {(hasValidWaveData || reportTides.length > 0) && (() => {
+        {(() => {
           const parseAvg = (str: string): number => {
             const s = String(str || '').trim();
             if (!s || s === 'N/A') return 0;
@@ -1230,20 +1231,37 @@ export default function ReportScreen() {
             const v = parseFloat(s.replace(/[^0-9.]/g, ''));
             return isNaN(v) ? 0 : v;
           };
-          const chartWaveHeight = parseAvg(surfHeightDisplay);
-          const chartWavePeriod = parseAvg(wavePeriodDisplay) || 8;
-          const chartWindSpeed = parseAvg(windSpeedDisplay) || 5;
-          const chartWindDir = windDirectionDisplay !== 'N/A' ? windDirectionDisplay : 'N';
-          console.log('[ReportScreen] OptimalSurfChart rendered with:', { chartWaveHeight, chartWavePeriod, chartWindSpeed, chartWindDir, tideCount: reportTides.length });
+          const liveWaveHeight = parseAvg(surfHeightDisplay);
+          const liveWavePeriod = parseAvg(wavePeriodDisplay) || 8;
+          const liveWindSpeed = parseAvg(windSpeedDisplay) || 0;
+          const liveWindDir = windDirectionDisplay !== 'N/A' ? windDirectionDisplay : 'N';
+          const liveCondition = weatherData?.conditions || '';
+          const liveUpdatedAt = surfConditions?.updated_at || undefined;
+          console.log('[ReportScreen] LiveSurfScene rendered with:', { liveWaveHeight, liveWavePeriod, liveWindSpeed, liveWindDir, liveCondition, tideCount: reportTides.length });
           return (
-            <OptimalSurfChart
-              waveHeight={chartWaveHeight}
-              wavePeriod={chartWavePeriod}
-              windSpeed={chartWindSpeed}
-              windDirection={chartWindDir}
-              tides={reportTides}
-              isDarkMode={isDarkMode}
-            />
+            <>
+              <LiveSurfScene
+                waveHeight={liveWaveHeight}
+                wavePeriod={liveWavePeriod}
+                windSpeed={liveWindSpeed}
+                windDirection={liveWindDir}
+                condition={liveCondition}
+                tides={reportTides}
+                updatedAt={liveUpdatedAt}
+                isDarkMode={isDarkMode}
+              />
+              {(hasValidWaveData || reportTides.length > 0) && (
+                <OptimalSurfChart
+                  waveHeight={parseAvg(surfHeightDisplay)}
+                  wavePeriod={parseAvg(wavePeriodDisplay) || 8}
+                  windSpeed={parseAvg(windSpeedDisplay) || 5}
+                  windDirection={windDirectionDisplay !== 'N/A' ? windDirectionDisplay : 'N'}
+                  tides={reportTides}
+                  isDarkMode={isDarkMode}
+                  condition={weatherData?.conditions || ''}
+                />
+              )}
+            </>
           );
         })()}
 
