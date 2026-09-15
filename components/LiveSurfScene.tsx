@@ -336,6 +336,12 @@ export default function LiveSurfScene({
 }: LiveSurfSceneProps) {
   const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
 
+  // Scene state flags
+  const condLower = (condition || '').toLowerCase();
+  const isRainy = condLower.includes('rain') || condLower.includes('storm') ||
+                  condLower.includes('thunder') || condLower.includes('shower');
+  const isFlat = waveHeight < 1;
+
   // Current EST hour for "now" display
   const currentHour = parseInt(
     new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }),
@@ -433,7 +439,7 @@ export default function LiveSurfScene({
   const boardTilt = faceAngleDeg * 0.7;
   const figureLean = -(faceAngleDeg * 0.6);
 
-  // Ride loop animation
+  // Ride loop animation — always unconditional
   const rideProgress = useSharedValue(0);
   const rideDuration = 1200 + wavePeriod * 120;
 
@@ -444,6 +450,34 @@ export default function LiveSurfScene({
       true
     );
   }, [rideDuration, rideProgress]);
+
+  // Rain animation refs — always unconditional
+  const rainAnims = useRef(
+    Array.from({ length: 6 }, () => new RNAnimated.Value(0))
+  ).current;
+
+  useEffect(() => {
+    if (!isRainy) {
+      rainAnims.forEach(a => a.setValue(0));
+      return;
+    }
+    const loops = rainAnims.map((anim, i) =>
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.delay(i * 100),
+          RNAnimated.timing(anim, { toValue: 18, duration: 500, useNativeDriver: true }),
+          RNAnimated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ])
+      )
+    );
+    loops.forEach(l => l.start());
+    return () => loops.forEach(l => l.stop());
+  }, [isRainy, rainAnims]);
+
+  const rainPositions = [
+    { x: 30, y: 20 }, { x: 80, y: 45 }, { x: 140, y: 25 },
+    { x: 195, y: 60 }, { x: 248, y: 35 }, { x: 285, y: 55 },
+  ];
 
   // Animated surfer position (smooth on data update)
   const surferAnimStyle = useAnimatedStyle(() => {
@@ -495,6 +529,108 @@ export default function LiveSurfScene({
 
   const containerBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,122,255,0.04)';
 
+  // ─── Shared sky/ocean background layers ───────────────────────────────────
+
+  const skyLayers = (
+    <>
+      {/* Base sky: zinc-900 */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#18181b' }]} />
+
+      {/* Sky gradient */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          height: panelH * 0.45,
+          backgroundColor: '#1c2333',
+          opacity: 0.7,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: panelH * 0.25,
+          height: panelH * 0.2,
+          backgroundColor: '#18181b',
+          opacity: 0.8,
+        }}
+      />
+
+      {/* Dawn tint */}
+      {dawnOverlay && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: panelH * 0.45,
+            backgroundColor: 'rgba(180,80,20,0.15)',
+          }}
+        />
+      )}
+
+      {/* Dusk tint */}
+      {duskOverlay && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: panelH * 0.45,
+            backgroundColor: 'rgba(120,60,20,0.12)',
+          }}
+        />
+      )}
+    </>
+  );
+
+  // ─── Shared stats overlay ──────────────────────────────────────────────────
+
+  const statsOverlay = (
+    <>
+      {/* Weather icon */}
+      <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
+        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} />
+      </View>
+
+      {/* Top-left: current time */}
+      <View style={sceneStyles.topLeft}>
+        <Text style={sceneStyles.hourText}>{displayHour}</Text>
+      </View>
+
+      {/* Top-right: wave / wind / tide stats */}
+      <View style={sceneStyles.topRight}>
+        <Text style={sceneStyles.statLine}>{waveEstStr} ft</Text>
+        <Text style={sceneStyles.statLine}>{windSpeed} mph {windDirection}</Text>
+        <Text style={sceneStyles.statLine}>{tideLabel}</Text>
+      </View>
+    </>
+  );
+
+  // ─── Rain streaks (shared between rainy riding and rainy chair) ────────────
+
+  const rainStreaks = isRainy ? rainPositions.map((pos, i) => (
+    <RNAnimated.View
+      key={`rain-${i}`}
+      style={{
+        position: 'absolute',
+        left: pos.x,
+        top: pos.y,
+        width: 1.5,
+        height: 12,
+        backgroundColor: 'rgba(147,197,253,0.55)',
+        borderRadius: 1,
+        transform: [{ rotate: '15deg' }, { translateY: rainAnims[i] }],
+      }}
+    />
+  )) : null;
+
   return (
     <View style={[sceneStyles.card, { backgroundColor: containerBg }]}>
       {/* Card header */}
@@ -507,315 +643,632 @@ export default function LiveSurfScene({
 
       {/* Scene panel */}
       <View style={sceneStyles.panel}>
-        {/* Base sky: zinc-900 */}
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#18181b' }]} />
+        {isFlat ? (
+          // ── FLAT SCENE (beach chair) ────────────────────────────────────────
+          <>
+            {skyLayers}
 
-        {/* Sky gradient */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            height: panelH * 0.45,
-            backgroundColor: '#1c2333',
-            opacity: 0.7,
-          }}
-        />
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: panelH * 0.25,
-            height: panelH * 0.2,
-            backgroundColor: '#18181b',
-            opacity: 0.8,
-          }}
-        />
+            {/* Calm ocean fill */}
+            <View
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: panelH * 0.42,
+                height: panelH * 0.18,
+                backgroundColor: '#0f1f2e',
+                opacity: 0.7,
+              }}
+            />
 
-        {/* Dawn tint */}
-        {dawnOverlay && (
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              height: panelH * 0.45,
-              backgroundColor: 'rgba(180,80,20,0.15)',
-            }}
-          />
-        )}
+            {/* Flat water horizon line */}
+            <View
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: panelH * 0.58,
+                height: 2,
+                backgroundColor: 'rgba(14,77,110,0.6)',
+              }}
+            />
 
-        {/* Dusk tint */}
-        {duskOverlay && (
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              height: panelH * 0.45,
-              backgroundColor: 'rgba(120,60,20,0.12)',
-            }}
-          />
-        )}
-
-        {/* Ocean body */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: waveBaseY,
-            bottom: 0,
-            backgroundColor: '#0f1f2e',
-          }}
-        />
-
-        {/* Wave SVG */}
-        <WebView
-          source={{ html: buildWaveSvgHtml(PANEL_W, panelH, peakX, peakY, toeX, waveBaseY, waveHeight_px, glassy, choppy) }}
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: PANEL_W,
-            height: panelH,
-            backgroundColor: 'transparent',
-          }}
-          scrollEnabled={false}
-          bounces={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          overScrollMode="never"
-          androidLayerType="hardware"
-          originWhitelist={['*']}
-        />
-
-        {/* Height ruler */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 6,
-            top: rulerTop,
-            height: rulerHeight,
-            width: 32,
-            overflow: 'hidden',
-          }}
-        >
-          {rulerLabels.map((label, i) => {
-            const pct = i / (rulerLabels.length - 1);
-            const tickY = rulerHeight - pct * rulerHeight;
-            const isHighlighted = Math.abs(waveHeight_px - pct * 100) < 15;
-            return (
+            {/* Sand strip */}
+            <View
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: panelH * 0.38,
+                backgroundColor: '#c2a96e',
+              }}
+            >
+              {/* Lighter top edge */}
               <View
-                key={`tick-${i}`}
                 style={{
                   position: 'absolute',
+                  top: 0,
                   left: 0,
-                  top: tickY - 0.5,
-                  flexDirection: 'row',
-                  alignItems: 'center',
+                  right: 0,
+                  height: 3,
+                  backgroundColor: '#d4bc82',
                 }}
-              >
+              />
+            </View>
+
+            {/* Rain streaks (behind figure) */}
+            {rainStreaks}
+
+            {/* Surfboard planted in sand */}
+            <View
+              style={{
+                position: 'absolute',
+                left: PANEL_W * 0.42 + 42,
+                top: panelH * 0.38,
+                width: 5,
+                height: panelH * 0.32,
+                borderRadius: 3,
+                backgroundColor: 'rgba(200,230,255,0.88)',
+                transform: [{ rotate: '5deg' }],
+              }}
+            />
+
+            {/* Beach chair */}
+            <View
+              style={{
+                position: 'absolute',
+                left: PANEL_W * 0.42,
+                top: panelH * 0.52,
+                width: 60,
+                height: 50,
+              }}
+            >
+              {/* Back rest left post */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 0,
+                  width: 3,
+                  height: 28,
+                  backgroundColor: '#8B6914',
+                }}
+              />
+              {/* Back rest right post */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 22,
+                  top: 0,
+                  width: 3,
+                  height: 28,
+                  backgroundColor: '#8B6914',
+                }}
+              />
+              {/* Seat slat 1 */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 28,
+                  width: 28,
+                  height: 2.5,
+                  backgroundColor: '#A0782A',
+                }}
+              />
+              {/* Seat slat 2 */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 32,
+                  width: 28,
+                  height: 2.5,
+                  backgroundColor: '#A0782A',
+                }}
+              />
+              {/* Seat slat 3 */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 36,
+                  width: 28,
+                  height: 2.5,
+                  backgroundColor: '#A0782A',
+                }}
+              />
+              {/* Left leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 36,
+                  width: 2.5,
+                  height: 14,
+                  backgroundColor: '#8B6914',
+                  transform: [{ rotate: '15deg' }],
+                }}
+              />
+              {/* Right leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 22,
+                  top: 36,
+                  width: 2.5,
+                  height: 14,
+                  backgroundColor: '#8B6914',
+                  transform: [{ rotate: '-15deg' }],
+                }}
+              />
+              {/* Cross brace */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 6,
+                  top: 42,
+                  width: 22,
+                  height: 2,
+                  backgroundColor: '#8B6914',
+                }}
+              />
+            </View>
+
+            {/* Seated stick figure */}
+            <View
+              style={{
+                position: 'absolute',
+                left: PANEL_W * 0.42 + 6,
+                top: panelH * 0.52 - 22,
+              }}
+            >
+              {/* Head */}
+              <View
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 5,
+                  backgroundColor: '#FFFFFF',
+                }}
+              />
+              {/* Torso */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 4,
+                  top: 10,
+                  width: 2,
+                  height: 14,
+                  backgroundColor: '#FFFFFF',
+                }}
+              />
+              {/* Left arm — rainy: raised with newspaper; normal: resting */}
+              {isRainy ? (
+                <>
+                  {/* Raised arm stub */}
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: 5,
+                      top: 10,
+                      width: 2,
+                      height: 12,
+                      backgroundColor: '#FFFFFF',
+                      transform: [{ rotate: '-70deg' }],
+                    }}
+                  />
+                  {/* Newspaper */}
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: -4,
+                      top: -2,
+                      width: 18,
+                      height: 12,
+                      borderRadius: 1,
+                      backgroundColor: 'rgba(255,255,230,0.90)',
+                    }}
+                  >
+                    <View
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 3,
+                        right: 2,
+                        height: 1,
+                        backgroundColor: 'rgba(0,0,0,0.25)',
+                      }}
+                    />
+                    <View
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 7,
+                        right: 2,
+                        height: 1,
+                        backgroundColor: 'rgba(0,0,0,0.25)',
+                      }}
+                    />
+                  </View>
+                </>
+              ) : (
                 <View
                   style={{
-                    width: 6,
-                    height: 1,
-                    backgroundColor: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
-                    opacity: isHighlighted ? 1.0 : 0.4,
-                    marginRight: 2,
+                    position: 'absolute',
+                    left: 5,
+                    top: 12,
+                    width: 10,
+                    height: 2,
+                    backgroundColor: 'rgba(255,255,255,0.88)',
+                    transform: [{ rotate: '30deg' }],
                   }}
                 />
-                <Text
-                  style={{
-                    fontSize: 7,
-                    color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
-                    opacity: isHighlighted ? 1.0 : 0.4,
-                  }}
-                >
-                  {label}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+              )}
+              {/* Right arm */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: -5,
+                  top: 12,
+                  width: 10,
+                  height: 2,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transform: [{ rotate: '-30deg' }],
+                }}
+              />
+              {/* Left upper leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 5,
+                  top: 22,
+                  width: 2,
+                  height: 10,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transform: [{ rotate: '80deg' }],
+                }}
+              />
+              {/* Left lower leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: 26,
+                  width: 2,
+                  height: 10,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transform: [{ rotate: '-20deg' }],
+                }}
+              />
+              {/* Right upper leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 1,
+                  top: 22,
+                  width: 2,
+                  height: 10,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transform: [{ rotate: '80deg' }],
+                }}
+              />
+              {/* Right lower leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  top: 26,
+                  width: 2,
+                  height: 10,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transform: [{ rotate: '-20deg' }],
+                }}
+              />
+            </View>
 
-        {/* Wind arrow */}
-        <View
-          style={{
-            position: 'absolute',
-            left: windArrowLeft,
-            top: windArrowTop,
-            width: 18,
-            height: 8,
-          }}
-        >
-          <View
-            style={{
-              position: 'absolute',
-              left: windArrowFacingRight ? 0 : 6,
-              top: 3,
-              width: 12,
-              height: 2,
-              backgroundColor: 'rgba(251,191,36,0.9)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              left: windArrowFacingRight ? 12 : 0,
-              top: 0,
-              width: 0,
-              height: 0,
-              borderTopWidth: 4,
-              borderBottomWidth: 4,
-              borderLeftWidth: windArrowFacingRight ? 6 : 0,
-              borderRightWidth: windArrowFacingRight ? 0 : 6,
-              borderTopColor: 'transparent',
-              borderBottomColor: 'transparent',
-              borderLeftColor: windArrowFacingRight ? 'rgba(251,191,36,0.9)' : 'transparent',
-              borderRightColor: windArrowFacingRight ? 'transparent' : 'rgba(251,191,36,0.9)',
-            }}
-          />
-        </View>
+            {statsOverlay}
+          </>
+        ) : (
+          // ── RIDING SCENE ────────────────────────────────────────────────────
+          <>
+            {skyLayers}
 
-        {/* Stick figure */}
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              left: surferX - 20,
-              top: surferFeetY - legH - bodyH - headSize - 2,
-              width: 40,
-              height: legH + bodyH + headSize + 4,
-              opacity: 0.92,
-              transform: [{ rotate: `${figureLean}deg` }],
-            },
-            surferAnimStyle,
-          ]}
-        >
-          {/* Head */}
-          <View
-            style={{
-              position: 'absolute',
-              left: 20 - headSize / 2,
-              top: 0,
-              width: headSize,
-              height: headSize,
-              borderRadius: headSize / 2,
-              backgroundColor: '#FFFFFF',
-            }}
-          />
-
-          {/* Torso */}
-          <Animated.View
-            style={[
-              {
+            {/* Ocean body */}
+            <View
+              style={{
                 position: 'absolute',
-                left: 19,
-                top: headSize,
-                width: 2,
-                height: bodyH,
-                backgroundColor: '#FFFFFF',
-                transformOrigin: '50% 0%',
-              },
-              bodyAnimStyle,
-            ]}
-          />
+                left: 0,
+                right: 0,
+                top: waveBaseY,
+                bottom: 0,
+                backgroundColor: '#0f1f2e',
+              }}
+            />
 
-          {/* Front arm */}
-          <Animated.View
-            style={[
-              {
+            {/* Wave SVG */}
+            <WebView
+              source={{ html: buildWaveSvgHtml(PANEL_W, panelH, peakX, peakY, toeX, waveBaseY, waveHeight_px, glassy, choppy) }}
+              style={{
                 position: 'absolute',
-                left: 20,
-                top: headSize + 3,
-                width: 11,
-                height: 2,
-                backgroundColor: 'rgba(255,255,255,0.88)',
-                transformOrigin: '0% 50%',
-              },
-              frontArmAnimStyle,
-            ]}
-          />
+                left: 0,
+                top: 0,
+                width: PANEL_W,
+                height: panelH,
+                backgroundColor: 'transparent',
+              }}
+              scrollEnabled={false}
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              overScrollMode="never"
+              androidLayerType="hardware"
+              originWhitelist={['*']}
+            />
 
-          {/* Back arm */}
-          <View
-            style={{
-              position: 'absolute',
-              left: 9,
-              top: headSize + 3,
-              width: 11,
-              height: 2,
-              backgroundColor: 'rgba(255,255,255,0.88)',
-              transformOrigin: '100% 50%',
-              transform: [{ rotate: '25deg' }],
-            }}
-          />
+            {/* Height ruler */}
+            <View
+              style={{
+                position: 'absolute',
+                left: 6,
+                top: rulerTop,
+                height: rulerHeight,
+                width: 32,
+                overflow: 'hidden',
+              }}
+            >
+              {rulerLabels.map((label, i) => {
+                const pct = i / (rulerLabels.length - 1);
+                const tickY = rulerHeight - pct * rulerHeight;
+                const isHighlighted = Math.abs(waveHeight_px - pct * 100) < 15;
+                return (
+                  <View
+                    key={`tick-${i}`}
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: tickY - 0.5,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 6,
+                        height: 1,
+                        backgroundColor: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
+                        opacity: isHighlighted ? 1.0 : 0.4,
+                        marginRight: 2,
+                      }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 7,
+                        color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
+                        opacity: isHighlighted ? 1.0 : 0.4,
+                      }}
+                    >
+                      {label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
 
-          {/* Front leg */}
-          <View
-            style={{
-              position: 'absolute',
-              left: 21,
-              top: headSize + bodyH,
-              width: 2,
-              height: legH,
-              backgroundColor: 'rgba(255,255,255,0.88)',
-              transformOrigin: '50% 0%',
-              transform: [{ rotate: '18deg' }],
-            }}
-          />
+            {/* Wind arrow */}
+            <View
+              style={{
+                position: 'absolute',
+                left: windArrowLeft,
+                top: windArrowTop,
+                width: 18,
+                height: 8,
+              }}
+            >
+              <View
+                style={{
+                  position: 'absolute',
+                  left: windArrowFacingRight ? 0 : 6,
+                  top: 3,
+                  width: 12,
+                  height: 2,
+                  backgroundColor: 'rgba(251,191,36,0.9)',
+                }}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  left: windArrowFacingRight ? 12 : 0,
+                  top: 0,
+                  width: 0,
+                  height: 0,
+                  borderTopWidth: 4,
+                  borderBottomWidth: 4,
+                  borderLeftWidth: windArrowFacingRight ? 6 : 0,
+                  borderRightWidth: windArrowFacingRight ? 0 : 6,
+                  borderTopColor: 'transparent',
+                  borderBottomColor: 'transparent',
+                  borderLeftColor: windArrowFacingRight ? 'rgba(251,191,36,0.9)' : 'transparent',
+                  borderRightColor: windArrowFacingRight ? 'transparent' : 'rgba(251,191,36,0.9)',
+                }}
+              />
+            </View>
 
-          {/* Back leg */}
-          <View
-            style={{
-              position: 'absolute',
-              left: 17,
-              top: headSize + bodyH,
-              width: 2,
-              height: legH,
-              backgroundColor: 'rgba(255,255,255,0.88)',
-              transformOrigin: '50% 0%',
-              transform: [{ rotate: '-12deg' }],
-            }}
-          />
+            {/* Rain streaks (behind figure) */}
+            {rainStreaks}
 
-          {/* Surfboard */}
-          <View
-            style={{
-              position: 'absolute',
-              left: 2,
-              top: headSize + bodyH + legH - 1,
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: 'rgba(200,230,255,0.92)',
-              transformOrigin: '50% 50%',
-              transform: [{ rotate: `${boardTilt}deg` }],
-            }}
-          />
-        </Animated.View>
+            {/* Stick figure */}
+            <Animated.View
+              style={[
+                {
+                  position: 'absolute',
+                  left: surferX - 20,
+                  top: surferFeetY - legH - bodyH - headSize - 2,
+                  width: 40,
+                  height: legH + bodyH + headSize + 4,
+                  opacity: 0.92,
+                  transform: [{ rotate: `${figureLean}deg` }],
+                },
+                surferAnimStyle,
+              ]}
+            >
+              {/* Head */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 20 - headSize / 2,
+                  top: 0,
+                  width: headSize,
+                  height: headSize,
+                  borderRadius: headSize / 2,
+                  backgroundColor: '#FFFFFF',
+                }}
+              />
 
-        {/* Weather icon */}
-        <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
-          <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} />
-        </View>
+              {/* Torso */}
+              <Animated.View
+                style={[
+                  {
+                    position: 'absolute',
+                    left: 19,
+                    top: headSize,
+                    width: 2,
+                    height: bodyH,
+                    backgroundColor: '#FFFFFF',
+                    transformOrigin: '50% 0%',
+                  },
+                  bodyAnimStyle,
+                ]}
+              />
 
-        {/* Top-left: current time */}
-        <View style={sceneStyles.topLeft}>
-          <Text style={sceneStyles.hourText}>{displayHour}</Text>
-        </View>
+              {/* Front arm — rainy: newspaper arm; normal: animated */}
+              {isRainy ? (
+                <>
+                  {/* Arm stub raised upward */}
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: 20,
+                      top: headSize + 2,
+                      width: 2,
+                      height: 10,
+                      backgroundColor: 'rgba(255,255,255,0.88)',
+                      transform: [{ rotate: '-70deg' }],
+                    }}
+                  />
+                  {/* Newspaper */}
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      top: headSize - 8,
+                      width: 16,
+                      height: 10,
+                      borderRadius: 1,
+                      backgroundColor: 'rgba(255,255,230,0.90)',
+                    }}
+                  >
+                    <View
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 2,
+                        right: 2,
+                        height: 1,
+                        backgroundColor: 'rgba(0,0,0,0.3)',
+                      }}
+                    />
+                    <View
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 6,
+                        right: 2,
+                        height: 1,
+                        backgroundColor: 'rgba(0,0,0,0.3)',
+                      }}
+                    />
+                  </View>
+                </>
+              ) : (
+                <Animated.View
+                  style={[
+                    {
+                      position: 'absolute',
+                      left: 20,
+                      top: headSize + 3,
+                      width: 11,
+                      height: 2,
+                      backgroundColor: 'rgba(255,255,255,0.88)',
+                      transformOrigin: '0% 50%',
+                    },
+                    frontArmAnimStyle,
+                  ]}
+                />
+              )}
 
-        {/* Top-right: wave / wind / tide stats */}
-        <View style={sceneStyles.topRight}>
-          <Text style={sceneStyles.statLine}>{waveEstStr} ft</Text>
-          <Text style={sceneStyles.statLine}>{windSpeed} mph {windDirection}</Text>
-          <Text style={sceneStyles.statLine}>{tideLabel}</Text>
-        </View>
+              {/* Back arm */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 9,
+                  top: headSize + 3,
+                  width: 11,
+                  height: 2,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transformOrigin: '100% 50%',
+                  transform: [{ rotate: '25deg' }],
+                }}
+              />
+
+              {/* Front leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 21,
+                  top: headSize + bodyH,
+                  width: 2,
+                  height: legH,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transformOrigin: '50% 0%',
+                  transform: [{ rotate: '18deg' }],
+                }}
+              />
+
+              {/* Back leg */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 17,
+                  top: headSize + bodyH,
+                  width: 2,
+                  height: legH,
+                  backgroundColor: 'rgba(255,255,255,0.88)',
+                  transformOrigin: '50% 0%',
+                  transform: [{ rotate: '-12deg' }],
+                }}
+              />
+
+              {/* Surfboard */}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 2,
+                  top: headSize + bodyH + legH - 1,
+                  width: 36,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: 'rgba(200,230,255,0.92)',
+                  transformOrigin: '50% 50%',
+                  transform: [{ rotate: `${boardTilt}deg` }],
+                }}
+              />
+            </Animated.View>
+
+            {statsOverlay}
+          </>
+        )}
       </View>
     </View>
   );
