@@ -189,7 +189,7 @@ export default function ForecastScreen() {
   const { currentLocation, locationData } = useLocation();
   const { surfReports, surfConditions, weatherData, weatherForecast, tideData, refreshData, isLoading, error } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [expandedDay, setExpandedDay] = useState<string | null>(getTodayDateString());
 
   useEffect(() => {
     console.log('[ForecastScreen] Forecast tab mounted — tracking forecast_view, user:', user?.id ?? 'anonymous');
