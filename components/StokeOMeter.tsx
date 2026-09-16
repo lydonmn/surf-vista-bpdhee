@@ -15,15 +15,15 @@ interface StokeOMeterProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CARD_WIDTH = 260;
+const CARD_WIDTH = 180;
 const CX = CARD_WIDTH / 2;
-const CY = 110;
-const RADIUS = 78;
+const CY = 82;
+const RADIUS = 48;
 const ARC_START_DEG = -110;
 const NUM_SEGMENTS = 120;
 const NEEDLE_LENGTH = RADIUS * 0.85;
-const NEEDLE_WIDTH = 4;
-const HUB_SIZE = 16;
+const NEEDLE_WIDTH = 3;
+const HUB_SIZE = 11;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ function buildTicks() {
     const tickAngleDeg = ARC_START_DEG + tickFraction * 220;
     const tickAngleRad = ((tickAngleDeg - 90) * Math.PI) / 180;
     const outerR = RADIUS + 4;
-    const labelR = RADIUS - 22;
+    const labelR = RADIUS - 16;
     const x = CX + outerR * Math.cos(tickAngleRad);
     const y = CY + outerR * Math.sin(tickAngleRad);
     const labelX = CX + labelR * Math.cos(tickAngleRad);
@@ -205,7 +205,7 @@ export default function StokeOMeter({ score, isDarkMode = false }: StokeOMeterPr
         {/* Major tick marks */}
         {MAJOR_TICKS.map((tick) => {
           const angleRad = ((tick.angleDeg - 90) * Math.PI) / 180;
-          const innerR = RADIUS - 10;
+          const innerR = RADIUS - 8;
           const ix = CX + innerR * Math.cos(angleRad);
           const iy = CY + innerR * Math.sin(angleRad);
           const dx = tick.x - ix;
@@ -317,7 +317,7 @@ const gaugeStyles = StyleSheet.create({
     marginBottom: 12,
   },
   header: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -326,7 +326,7 @@ const gaugeStyles = StyleSheet.create({
   },
   canvas: {
     width: CARD_WIDTH,
-    height: 155,
+    height: 95,
     position: 'relative',
     alignSelf: 'center',
   },
@@ -341,7 +341,7 @@ const gaugeStyles = StyleSheet.create({
     alignItems: 'center',
   },
   readoutText: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '700',
   },
 });

@@ -10,7 +10,6 @@ import Animated, {
   useSharedValue,
   withTiming,
   withRepeat,
-  useAnimatedStyle,
   Easing,
 } from 'react-native-reanimated';
 import StokeOMeter from '@/components/StokeOMeter';
@@ -419,7 +418,7 @@ export default function LiveSurfScene({
   const faceCP2x_s = peakX + (toeX - peakX) * 0.65;
   const faceCP2y_s = waveBaseY - waveHeight_px * 0.12;
 
-  const surferT = 0.42;
+  const surferT = 0.62;
   const mt = 1 - surferT;
   const surferX =
     mt * mt * mt * curlX_s +
@@ -498,32 +497,7 @@ export default function LiveSurfScene({
     { x: 195, y: 60 }, { x: 248, y: 35 }, { x: 285, y: 55 },
   ];
 
-  // Animated surfer position (smooth on data update)
-  const surferAnimStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateY: withTiming(0, { duration: 600 }) },
-      ],
-    };
-  });
-
-  const bodyAnimStyle = useAnimatedStyle(() => {
-    const leanOscillation = (rideProgress.value - 0.5) * 6;
-    const xShift = (rideProgress.value - 0.5) * 8;
-    return {
-      transform: [
-        { translateX: xShift },
-        { rotate: `${totalBodyLean + leanOscillation}deg` },
-      ],
-    };
-  });
-
-  const frontArmAnimStyle = useAnimatedStyle(() => {
-    const armOscillation = (rideProgress.value - 0.5) * 10;
-    return {
-      transform: [{ rotate: `${-30 + armOscillation}deg` }],
-    };
-  });
+  // (per-limb animated styles removed — figure group rotates as one rigid unit)
 
   // Time-of-day sky tint
   const dawnOverlay = currentHour >= 5 && currentHour <= 7;
@@ -1125,18 +1099,15 @@ export default function LiveSurfScene({
 
             {/* Stick figure */}
             <Animated.View
-              style={[
-                {
-                  position: 'absolute',
-                  left: surferX - 20,
-                  top: surferFeetY - legH - bodyH - headSize - 2,
-                  width: 40,
-                  height: legH + bodyH + headSize + 4,
-                  opacity: 0.92,
-                  transform: [{ rotate: `${figureLean}deg` }],
-                },
-                surferAnimStyle,
-              ]}
+              style={{
+                position: 'absolute',
+                left: surferX - 20,
+                top: surferFeetY - legH - bodyH - headSize - 2,
+                width: 40,
+                height: legH + bodyH + headSize + 4,
+                opacity: 0.92,
+                transform: [{ rotate: `${figureLean}deg` }],
+              }}
             >
               {/* Head */}
               <View
@@ -1152,19 +1123,16 @@ export default function LiveSurfScene({
               />
 
               {/* Torso */}
-              <Animated.View
-                style={[
-                  {
-                    position: 'absolute',
-                    left: 19,
-                    top: headSize,
-                    width: 2,
-                    height: bodyH,
-                    backgroundColor: '#FFFFFF',
-                    transformOrigin: '50% 0%',
-                  },
-                  bodyAnimStyle,
-                ]}
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 19,
+                  top: headSize,
+                  width: 2,
+                  height: bodyH,
+                  backgroundColor: '#FFFFFF',
+                  transformOrigin: '50% 0%',
+                }}
               />
 
               {/* Front arm — rainy: newspaper arm; normal: animated */}
@@ -1217,19 +1185,17 @@ export default function LiveSurfScene({
                   </View>
                 </>
               ) : (
-                <Animated.View
-                  style={[
-                    {
-                      position: 'absolute',
-                      left: 20,
-                      top: headSize + 3,
-                      width: 11,
-                      height: 2,
-                      backgroundColor: 'rgba(255,255,255,0.88)',
-                      transformOrigin: '0% 50%',
-                    },
-                    frontArmAnimStyle,
-                  ]}
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 20,
+                    top: headSize + 3,
+                    width: 11,
+                    height: 2,
+                    backgroundColor: 'rgba(255,255,255,0.88)',
+                    transformOrigin: '0% 50%',
+                    transform: [{ rotate: '-30deg' }],
+                  }}
                 />
               )}
 
