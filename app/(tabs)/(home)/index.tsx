@@ -613,7 +613,7 @@ export default function HomeScreen() {
                     </View>
                   </View>
 
-                  <StokeOMeter score={stokeScore} isDarkMode={theme.dark} />
+                  <StokeOMeter score={stokeScore} isDarkMode={theme.dark} size="compact" />
                 </View>
               </View>
             </View>

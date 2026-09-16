@@ -507,9 +507,11 @@ export default function LiveSurfScene({
   const choppy = !isOffshore && windSpeed >= 12;
   const glassy = isOffshore && wavePeriod >= 10;
 
-  // Height ruler ticks
+  // Height ruler ticks — proportional spacing based on real foot heights
   const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
-  const rulerTop = Math.max(waveBaseY - 100, 52);
+  const rulerLabelFt = [1.5, 3, 4.5, 6, 8]; // feet for each label
+  const rulerMaxFt = 8; // OH = top of ruler
+  const rulerTop = Math.max(waveBaseY - 140, 40);
   const rulerHeight = waveBaseY - rulerTop - 4;
 
   // Wind arrow position
@@ -1013,14 +1015,17 @@ export default function LiveSurfScene({
                 left: 6,
                 top: rulerTop,
                 height: rulerHeight,
-                width: 32,
+                width: 40,
                 overflow: 'hidden',
               }}
             >
               {rulerLabels.map((label, i) => {
-                const pct = i / (rulerLabels.length - 1);
-                const tickY = rulerHeight - pct * rulerHeight;
-                const isHighlighted = Math.abs(waveHeight_px - pct * 100) < 15;
+                const labelFt = rulerLabelFt[i];
+                const tickY = rulerHeight * (1 - labelFt / rulerMaxFt);
+                // Highlight the label closest to the current wave height in pixels
+                // waveHeight_px maps to rulerMaxFt at full scale
+                const waveHeightFt = (waveHeight_px / 100) * rulerMaxFt;
+                const isHighlighted = Math.abs(waveHeightFt - labelFt) < 1.2;
                 return (
                   <View
                     key={`tick-${i}`}
@@ -1043,7 +1048,7 @@ export default function LiveSurfScene({
                     />
                     <Text
                       style={{
-                        fontSize: 7,
+                        fontSize: 8,
                         color: isHighlighted ? '#FFD700' : 'rgba(255,255,255,0.55)',
                         opacity: isHighlighted ? 1.0 : 0.4,
                       }}

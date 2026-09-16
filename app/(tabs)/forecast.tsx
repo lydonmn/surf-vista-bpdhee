@@ -602,12 +602,7 @@ export default function ForecastScreen() {
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>{day.surfReport.wind_speed || 'N/A'}</Text>
                             <Text style={[styles.detailSubvalue, { color: colors.textSecondary }]}>{day.surfReport.wind_direction || ''}</Text>
                           </View>
-                          {dayRating && (
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>STOKE</Text>
-                              <StokeSpeedometer rating={dayRating} size={52} />
-                            </View>
-                          )}
+                          <View style={styles.detailItem} />
                         </View>
                       </View>
                     )}
@@ -645,15 +640,7 @@ export default function ForecastScreen() {
                       </View>
                     )}
 
-                    {!day.surfReport && dayRating !== null && (
-                      <View style={styles.detailRow}>
-                        <View style={styles.detailItem}>
-                          <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>PROJECTED STOKE</Text>
-                          <StokeSpeedometer rating={dayRating} size={52} />
-                        </View>
-                        <View style={styles.detailItem} />
-                      </View>
-                    )}
+
 
                     {day.tides.length > 0 && (
                       <View style={styles.tidesSection}>

@@ -15,6 +15,8 @@ import { useLocation } from "@/contexts/LocationContext";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import OptimalSurfChart from "@/components/OptimalSurfChart";
 import LiveSurfScene from '@/components/LiveSurfScene';
+import StokeOMeter from '@/components/StokeOMeter';
+import { computeStokeScoreFromConditions } from '@/utils/surfScoring';
 
 
 // 🚨 CRITICAL FIX: More conservative stoke meter calculation matching backend
@@ -541,6 +543,8 @@ export default function ReportScreen() {
   const renderReportCard = (report: any, index: number) => {
     // 🚨 CRITICAL FIX: Use current rating calculated from surf_conditions
     const displayRating = currentRating;
+    // Stoke score for badge gauge (1–11 scale)
+    const stokeScore = computeStokeScoreFromConditions(surfConditions);
     
     // 🚨 CRITICAL FIX: Always prioritize surf_conditions for display (most current data)
     const displayData = surfConditions || report;
@@ -808,9 +812,7 @@ export default function ReportScreen() {
               </View>
             )}
           </View>
-          <View style={[styles.ratingBadge, { backgroundColor: getRatingColor(displayRating) }]}>
-            <Text style={styles.ratingText}>{displayRating}/{displayRating >= 11 ? '11' : '10'}</Text>
-          </View>
+          <StokeOMeter score={stokeScore} isDarkMode={isDarkMode} size="badge" />
         </View>
         
         {/* 🚨 NUCLEAR STOKE ANIMATION: Mushroom cloud GIF when rating is 11 */}
@@ -1757,16 +1759,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
-  ratingBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
