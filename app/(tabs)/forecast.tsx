@@ -12,7 +12,7 @@ import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFo
 import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
 import { trackForecastView, trackSpotViewed } from '@/utils/usageTracking';
-import StokeSpeedometer from '@/components/StokeSpeedometer';
+import StokeOMeter from '@/components/StokeOMeter';
 import OptimalSurfChart from '@/components/OptimalSurfChart';
 import LiveSurfScene from '@/components/LiveSurfScene';
 
@@ -526,8 +526,8 @@ export default function ForecastScreen() {
                         <Text style={[styles.surfBadgeText, { color: colors.primary }]}>{displayHeight}</Text>
                       </View>
                     )}
-                    {dayRating !== null && (
-                      <StokeSpeedometer rating={dayRating} size={44} />
+                    {dayRating != null && (
+                      <StokeOMeter score={dayRating} size="badge" />
                     )}
                     <View style={styles.tempContainer}>
                       <Text style={[styles.highTemp, { color: theme.colors.text }]}>{highTempText}</Text>
@@ -563,6 +563,7 @@ export default function ForecastScreen() {
                         tides={day.tides}
                         updatedAt={surfConditions?.updated_at || undefined}
                         isDarkMode={theme.dark}
+                        showGauge={false}
                       />
                     )}
                     {hasSurfData && (() => {
