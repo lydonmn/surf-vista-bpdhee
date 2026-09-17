@@ -354,6 +354,13 @@ export default function HomeScreen() {
   
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
+
+  const wavePeriodDisplay = surfConditions?.wave_period
+    ? `${Math.round(Number(surfConditions.wave_period))}s`
+    : 'N/A';
+  const swellDirDisplay = surfConditions?.swell_direction
+    ? String(surfConditions.swell_direction).trim()
+    : 'N/A';
   
   const ratingColorValue = getRatingColor(ratingValue);
 
@@ -594,7 +601,6 @@ export default function HomeScreen() {
                     backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                     borderWidth: 1,
                     borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)',
-                    flex: 1,
                   }]}>
                     <IconSymbol
                       ios_icon_name="drop.fill"
@@ -608,6 +614,46 @@ export default function HomeScreen() {
                       </Text>
                       <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
                         {waterTempDisplay}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)',
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="timer"
+                      android_material_icon_name="timer"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Period
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {wavePeriodDisplay}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)',
+                  }]}>
+                    <IconSymbol
+                      ios_icon_name="arrow.up.circle"
+                      android_material_icon_name="explore"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.conditionTextContainer}>
+                      <Text style={[styles.conditionLabel, { color: colors.textSecondary }]}>
+                        Swell Dir
+                      </Text>
+                      <Text style={[styles.conditionValue, { color: theme.colors.text }]}>
+                        {swellDirDisplay}
                       </Text>
                     </View>
                   </View>

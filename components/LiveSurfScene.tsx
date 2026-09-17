@@ -211,9 +211,10 @@ interface WeatherIconProps {
   windSpeed: number;
   isOffshore: boolean;
   condition?: string;
+  isDarkMode?: boolean;
 }
 
-function WeatherIcon({ windSpeed, isOffshore, condition }: WeatherIconProps) {
+function WeatherIcon({ windSpeed, isOffshore, condition, isDarkMode = false }: WeatherIconProps) {
   const condLower = (condition || '').toLowerCase();
 
   const isSunny = condLower.includes('clear') || condLower.includes('sunny') || condLower.includes('fair')
@@ -223,6 +224,12 @@ function WeatherIcon({ windSpeed, isOffshore, condition }: WeatherIconProps) {
   const isRainy = condLower.includes('rain') || condLower.includes('storm') || condLower.includes('thunder') || condLower.includes('shower')
     ? true
     : condLower === '' && windSpeed >= 15 && !isOffshore;
+
+  const estHour = parseInt(
+    new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }),
+    10
+  );
+  const isNight = estHour < 6 || estHour >= 20;
 
   const rain1 = useRef(new RNAnimated.Value(0)).current;
   const rain2 = useRef(new RNAnimated.Value(0)).current;
@@ -247,6 +254,25 @@ function WeatherIcon({ windSpeed, isOffshore, condition }: WeatherIconProps) {
       return () => { a1.stop(); a2.stop(); a3.stop(); };
     }
   }, [isRainy, rain1, rain2, rain3]);
+
+  if (isSunny && isNight) {
+    return (
+      <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{
+          width: 14, height: 14, borderRadius: 7,
+          backgroundColor: '#E2E8F0',
+          position: 'absolute',
+        }} />
+        <View style={{
+          width: 11, height: 11, borderRadius: 5.5,
+          backgroundColor: isDarkMode ? '#1a1a2e' : '#4A5568',
+          position: 'absolute',
+          top: 2,
+          left: 7,
+        }} />
+      </View>
+    );
+  }
 
   if (isSunny) {
     return (
@@ -596,7 +622,7 @@ export default function LiveSurfScene({
     <>
       {/* Weather icon */}
       <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
-        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} />
+        <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} isDarkMode={isDarkMode} />
       </View>
 
       {/* Top-left: current time */}

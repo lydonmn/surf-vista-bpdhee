@@ -13,11 +13,15 @@ export default function LiveCam() {
   return (
     <View style={[styles.container, { backgroundColor: dark ? '#0a0a0a' : '#000' }]}>
       {loading && !error && showFinOverlay && (
-        <View style={styles.loadingOverlay}>
-          <Svg width={48} height={56} viewBox="0 0 48 56">
+        <View style={[styles.loadingOverlay, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
+          <Svg width={40} height={52} viewBox="0 0 40 52">
             <Path
-              d="M 24 4 C 24 4 8 20 6 36 C 4 48 14 52 24 52 C 34 52 44 48 42 36 C 40 20 24 4 24 4 Z"
-              fill="#60A5FA"
+              d="M 18 2 C 14 8 8 18 6 28 C 4 38 6 48 8 50 L 32 50 C 34 46 34 38 30 28 C 26 18 22 8 18 2 Z"
+              fill="none"
+              stroke="white"
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
           </Svg>
           <Text style={[styles.loadingText, { color: dark ? '#aaa' : '#ccc' }]}>
