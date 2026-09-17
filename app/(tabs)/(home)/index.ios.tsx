@@ -493,9 +493,12 @@ export default function HomeScreen() {
             }
           ]}>
             <View style={styles.conditionsSection}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Current Conditions
-              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 0 }]}>
+                  Current Conditions
+                </Text>
+                <StokeOMeter score={stokeScore} isDarkMode={theme.dark} size="badge" />
+              </View>
               
               <View style={styles.conditionsGrid}>
                 <View style={styles.conditionRow}>
@@ -590,7 +593,8 @@ export default function HomeScreen() {
                   <View style={[styles.conditionItem, {
                     backgroundColor: theme.dark ? 'rgba(0, 122, 255, 0.12)' : 'rgba(0, 122, 255, 0.08)',
                     borderWidth: 1,
-                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)'
+                    borderColor: theme.dark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.15)',
+                    flex: 1,
                   }]}>
                     <IconSymbol
                       ios_icon_name="drop.fill"
@@ -606,16 +610,6 @@ export default function HomeScreen() {
                         {waterTempDisplay}
                       </Text>
                     </View>
-                  </View>
-
-                  <View style={[styles.conditionItem, {
-                    backgroundColor: theme.dark ? 'rgba(255, 149, 0, 0.12)' : 'rgba(255, 149, 0, 0.08)',
-                    borderWidth: 1,
-                    borderColor: theme.dark ? 'rgba(255, 149, 0, 0.2)' : 'rgba(255, 149, 0, 0.15)',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }]}>
-                    <StokeOMeter score={stokeScore} isDarkMode={theme.dark} size="compact" />
                   </View>
                 </View>
               </View>

@@ -513,7 +513,7 @@ export default function LiveSurfScene({
   const rulerLabels = ['knee', 'waist', 'chest', 'head', 'OH'];
   const rulerLabelFt = [1.5, 3, 4.5, 6, 8]; // feet for each label
   const rulerMaxFt = 8; // OH = top of ruler
-  const rulerTop = Math.max(waveBaseY - 140, 40);
+  const rulerTop = 8;
   const rulerHeight = waveBaseY - rulerTop - 4;
 
   // Wind arrow position
@@ -1017,7 +1017,7 @@ export default function LiveSurfScene({
                 left: 6,
                 top: rulerTop,
                 height: rulerHeight,
-                width: 40,
+                width: 44,
                 overflow: 'hidden',
               }}
             >

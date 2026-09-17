@@ -1,19 +1,25 @@
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useState } from 'react';
 import { useTheme } from '@react-navigation/native';
-import { colors } from '@/styles/commonStyles';
+import Svg, { Path } from 'react-native-svg';
 
 export default function LiveCam() {
   const { dark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showFinOverlay, setShowFinOverlay] = useState(true);
 
   return (
     <View style={[styles.container, { backgroundColor: dark ? '#0a0a0a' : '#000' }]}>
-      {loading && !error && (
+      {loading && !error && showFinOverlay && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <Svg width={48} height={56} viewBox="0 0 48 56">
+            <Path
+              d="M 24 4 C 24 4 8 20 6 36 C 4 48 14 52 24 52 C 34 52 44 48 42 36 C 40 20 24 4 24 4 Z"
+              fill="#60A5FA"
+            />
+          </Svg>
           <Text style={[styles.loadingText, { color: dark ? '#aaa' : '#ccc' }]}>
             Loading live feed…
           </Text>
@@ -36,15 +42,18 @@ export default function LiveCam() {
           onLoadEnd={() => {
             console.log('[LiveCam] Feed loaded successfully');
             setLoading(false);
+            setShowFinOverlay(false);
           }}
           onError={() => {
             console.log('[LiveCam] Feed load error');
             setLoading(false);
+            setShowFinOverlay(false);
             setError(true);
           }}
           onHttpError={() => {
             console.log('[LiveCam] Feed HTTP error');
             setLoading(false);
+            setShowFinOverlay(false);
             setError(true);
           }}
           javaScriptEnabled
