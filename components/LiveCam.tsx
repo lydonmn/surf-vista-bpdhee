@@ -36,7 +36,7 @@ export default function LiveCam() {
         <Svg width={44} height={56} viewBox="0 0 44 56">
           {/* Longboard single-fin silhouette — outline only, white stroke */}
           <Path
-            d="M 4 52 C 4 40, 10 20, 22 4 C 26 8, 36 28, 40 52 Z"
+            d="M 6 52 C 2 30, 6 14, 14 4 C 20 18, 34 36, 38 52 Z"
             fill="none"
             stroke="white"
             strokeWidth={2.5}

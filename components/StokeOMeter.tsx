@@ -352,6 +352,21 @@ export default function StokeOMeter({ score, isDarkMode = false, size = 'normal'
           );
         })}
 
+        {/* Pivot hub — outer ring (rendered before needle so needle draws on top) */}
+        <View
+          style={{
+            position: 'absolute',
+            left: cfg.CX - cfg.HUB_SIZE / 2,
+            top: cfg.CY - cfg.HUB_SIZE / 2,
+            width: cfg.HUB_SIZE,
+            height: cfg.HUB_SIZE,
+            borderRadius: cfg.HUB_SIZE / 2,
+            borderWidth: 2,
+            borderColor: needleColor,
+            backgroundColor: cardBg,
+          }}
+        />
+
         {/* Needle */}
         <Animated.View
           style={[
@@ -369,18 +384,16 @@ export default function StokeOMeter({ score, isDarkMode = false, size = 'normal'
           ]}
         />
 
-        {/* Pivot hub — outer ring */}
+        {/* Pivot center dot — drawn on top of needle base */}
         <View
           style={{
             position: 'absolute',
-            left: cfg.CX - cfg.HUB_SIZE / 2,
-            top: cfg.CY - cfg.HUB_SIZE / 2,
-            width: cfg.HUB_SIZE,
-            height: cfg.HUB_SIZE,
-            borderRadius: cfg.HUB_SIZE / 2,
-            borderWidth: 2,
-            borderColor: needleColor,
-            backgroundColor: cardBg,
+            left: cfg.CX - 3,
+            top: cfg.CY - 3,
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: needleColor,
           }}
         />
 
