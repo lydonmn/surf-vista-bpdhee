@@ -20,6 +20,7 @@ import { useSubscription } from "@/contexts/SubscriptionContext";
 import { openPaywall } from "@/utils/paywallHelper";
 import StokeOMeter from '@/components/StokeOMeter';
 import { computeStokeScoreFromConditions } from '@/utils/surfScoring';
+import LiveCam from '@/components/LiveCam';
 
 
 function calculateSurfRating(surfData: any): number {
@@ -612,6 +613,15 @@ export default function HomeScreen() {
               </View>
             </View>
 
+            {currentLocation === 'folly-beach' && isSubscribed && (
+              <View style={styles.liveCamSection}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Washout Live Feed
+                </Text>
+                <LiveCam />
+              </View>
+            )}
+
             {narrativeText && (
               <View style={[
                 styles.reportNarrativeSection, 
@@ -958,6 +968,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   conditionsSection: {
+    marginBottom: 20,
+  },
+  liveCamSection: {
     marginBottom: 20,
   },
   sectionTitle: {

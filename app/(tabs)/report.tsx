@@ -12,6 +12,8 @@ import { supabase } from "@/app/integrations/supabase/client";
 import { Video } from "@/types";
 import { formatWaterTemp, formatLastUpdated, getESTDate, formatDateString } from "@/utils/surfDataFormatter";
 import { useLocation } from "@/contexts/LocationContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import LiveCam from "@/components/LiveCam";
 import { selectNarrativeText, isCustomNarrative } from "@/utils/reportNarrativeSelector";
 import OptimalSurfChart from "@/components/OptimalSurfChart";
 import LiveSurfScene from '@/components/LiveSurfScene';
@@ -132,6 +134,7 @@ export default function ReportScreen() {
   const theme = useTheme();
   const { profile, isLoading: authLoading, isInitialized } = useAuth();
   const { currentLocation, locationData } = useLocation();
+  const { isSubscribed } = useSubscription();
   const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
@@ -1009,6 +1012,15 @@ export default function ReportScreen() {
             </View>
           </View>
 
+          {currentLocation === 'folly-beach' && isSubscribed && (
+            <View style={styles.liveCamSection}>
+              <Text style={[styles.liveCamTitle, { color: isDarkMode ? '#fff' : '#000' }]}>
+                Washout Live Feed
+              </Text>
+              <LiveCam />
+            </View>
+          )}
+
           {(() => {
             // --- Tide schedule computed values ---
             const now = new Date();
@@ -1572,6 +1584,15 @@ function getRatingColor(rating: number): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  liveCamSection: {
+    marginTop: 20,
+    marginBottom: 4,
+  },
+  liveCamTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
   },
   scrollContent: {
     paddingTop: 48,
