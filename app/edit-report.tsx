@@ -426,7 +426,7 @@ export default function EditReportScreen() {
   const handleSave = async () => {
     if (!report || !user) return;
 
-    const ratingNum = parseInt(rating);
+    const ratingNum = parseFloat(rating);
     const ratingValue = ratingNum;
     
     // 🚨 ADMIN OVERRIDE: Allow ratings up to 11 for "nuclear stoke" moments
@@ -610,7 +610,7 @@ export default function EditReportScreen() {
     return '#F44336';
   };
 
-  const ratingNum = parseInt(rating) || 5;
+  const ratingNum = parseFloat(rating) || 5;
   const ratingColor = getRatingColor(ratingNum);
 
   if (!profile?.is_admin) {
@@ -956,8 +956,8 @@ export default function EditReportScreen() {
               ]}
               value={rating}
               onChangeText={setRating}
-              keyboardType="number-pad"
-              maxLength={2}
+              keyboardType="decimal-pad"
+              maxLength={4}
               placeholder={ratingPlaceholder}
               placeholderTextColor={colors.textSecondary}
             />

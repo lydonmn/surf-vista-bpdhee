@@ -33,16 +33,10 @@ export default function LiveCam() {
         }}
         activeOpacity={0.8}
       >
-        <Svg width={48} height={62} viewBox="0 0 48 62">
+        <Svg width={44} height={56} viewBox="0 0 44 56">
           {/* Longboard single-fin silhouette — outline only, white stroke */}
           <Path
-            d="M 24 4
-               C 20 10 13 22 10 34
-               C 7 44 8 54 10 58
-               L 38 58
-               C 40 54 41 44 38 34
-               C 35 22 28 10 24 4
-               Z"
+            d="M 4 52 C 4 40, 10 20, 22 4 C 26 8, 36 28, 40 52 Z"
             fill="none"
             stroke="white"
             strokeWidth={2.5}
@@ -51,7 +45,7 @@ export default function LiveCam() {
           />
           {/* Base tab */}
           <Path
-            d="M 14 58 C 14 58 16 62 24 62 C 32 62 34 58 34 58"
+            d="M 4 52 C 10 58, 34 58, 40 52"
             fill="none"
             stroke="white"
             strokeWidth={2.5}
