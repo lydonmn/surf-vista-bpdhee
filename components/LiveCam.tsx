@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useState } from 'react';
 import { useTheme } from '@react-navigation/native';
@@ -6,30 +6,12 @@ import Svg, { Path } from 'react-native-svg';
 
 export default function LiveCam() {
   const { dark } = useTheme();
-  const [loading, setLoading] = useState(true);
+  const [started, setStarted] = useState(false);
   const [error, setError] = useState(false);
-  const [showFinOverlay, setShowFinOverlay] = useState(true);
 
-  return (
-    <View style={[styles.container, { backgroundColor: dark ? '#0a0a0a' : '#000' }]}>
-      {loading && !error && showFinOverlay && (
-        <View style={[styles.loadingOverlay, { backgroundColor: 'rgba(0,0,0,0.85)' }]}>
-          <Svg width={40} height={52} viewBox="0 0 40 52">
-            <Path
-              d="M 18 2 C 14 8 8 18 6 28 C 4 38 6 48 8 50 L 32 50 C 34 46 34 38 30 28 C 26 18 22 8 18 2 Z"
-              fill="none"
-              stroke="white"
-              strokeWidth={2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          </Svg>
-          <Text style={[styles.loadingText, { color: dark ? '#aaa' : '#ccc' }]}>
-            Loading live feed…
-          </Text>
-        </View>
-      )}
-      {error ? (
+  if (error) {
+    return (
+      <View style={[styles.container, { backgroundColor: dark ? '#0a0a0a' : '#000' }]}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorIcon}>📷</Text>
           <Text style={[styles.errorTitle, { color: dark ? '#fff' : '#eee' }]}>Feed Unavailable</Text>
@@ -37,34 +19,69 @@ export default function LiveCam() {
             The live cam feed is temporarily offline. Check back soon.
           </Text>
         </View>
-      ) : (
-        <WebView
-          source={{ uri: 'https://coastalcameranetwork.com/webcams/surf-vista/webcam-app.php' }}
-          style={styles.webview}
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          onLoadEnd={() => {
-            console.log('[LiveCam] Feed loaded successfully');
-            setLoading(false);
-            setShowFinOverlay(false);
-          }}
-          onError={() => {
-            console.log('[LiveCam] Feed load error');
-            setLoading(false);
-            setShowFinOverlay(false);
-            setError(true);
-          }}
-          onHttpError={() => {
-            console.log('[LiveCam] Feed HTTP error');
-            setLoading(false);
-            setShowFinOverlay(false);
-            setError(true);
-          }}
-          javaScriptEnabled
-          domStorageEnabled
-          startInLoadingState={false}
-        />
-      )}
+      </View>
+    );
+  }
+
+  if (!started) {
+    return (
+      <TouchableOpacity
+        style={[styles.container, styles.overlayContainer, { backgroundColor: 'rgba(0,0,0,0.85)' }]}
+        onPress={() => {
+          console.log('[LiveCam] User tapped to start live feed');
+          setStarted(true);
+        }}
+        activeOpacity={0.8}
+      >
+        <Svg width={48} height={62} viewBox="0 0 48 62">
+          {/* Longboard single-fin silhouette — outline only, white stroke */}
+          <Path
+            d="M 24 4
+               C 20 10 13 22 10 34
+               C 7 44 8 54 10 58
+               L 38 58
+               C 40 54 41 44 38 34
+               C 35 22 28 10 24 4
+               Z"
+            fill="none"
+            stroke="white"
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+          {/* Base tab */}
+          <Path
+            d="M 14 58 C 14 58 16 62 24 62 C 32 62 34 58 34 58"
+            fill="none"
+            stroke="white"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+          />
+        </Svg>
+        <Text style={styles.tapText}>Tap to watch live</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: dark ? '#0a0a0a' : '#000' }]}>
+      <WebView
+        source={{ uri: 'https://coastalcameranetwork.com/webcams/surf-vista/webcam-app.php' }}
+        style={styles.webview}
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        onError={() => {
+          console.log('[LiveCam] Feed load error');
+          setError(true);
+        }}
+        onHttpError={() => {
+          console.log('[LiveCam] Feed HTTP error');
+          setError(true);
+        }}
+        javaScriptEnabled
+        domStorageEnabled
+        startInLoadingState={false}
+      />
     </View>
   );
 }
@@ -74,22 +91,21 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 12,
     overflow: 'hidden',
-    position: 'relative',
+  },
+  overlayContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
   },
   webview: {
     flex: 1,
     backgroundColor: '#000',
   },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 10,
-  },
-  loadingText: {
-    fontSize: 13,
-    fontWeight: '500',
+  tapText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   errorContainer: {
     flex: 1,

@@ -1397,7 +1397,7 @@ export default function ReportScreen() {
             </Text>
           </TouchableOpacity>
           
-          {todaysReport && (
+          {displayReport && (
             <TouchableOpacity
               style={[styles.editReportButton, { backgroundColor: colors.accent }]}
               onPress={handleEditReport}

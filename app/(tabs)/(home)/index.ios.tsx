@@ -355,9 +355,13 @@ export default function HomeScreen() {
   const waterTempValue = surfConditions?.water_temp || todaysReport?.water_temp;
   const waterTempDisplay = formatWaterTemp(waterTempValue);
 
-  const wavePeriodDisplay = surfConditions?.wave_period
-    ? `${Math.round(Number(surfConditions.wave_period))}s`
-    : 'N/A';
+  const wavePeriodDisplay = (() => {
+    const raw = surfConditions?.wave_period;
+    if (!raw) return 'N/A';
+    const cleaned = String(raw).replace(/[^0-9.-]/g, '');
+    const n = parseFloat(cleaned);
+    return isNaN(n) ? 'N/A' : `${Math.round(n)}s`;
+  })();
   const swellDirDisplay = surfConditions?.swell_direction
     ? String(surfConditions.swell_direction).trim()
     : 'N/A';
