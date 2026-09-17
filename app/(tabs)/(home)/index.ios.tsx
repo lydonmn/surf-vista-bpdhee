@@ -621,7 +621,7 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {currentLocation === 'folly-beach' && (isSubscribed || isWeb) && (
+            {currentLocation === 'folly-beach' && (isSubscribed || profile?.is_admin) && (
               <View style={styles.liveCamSection}>
                 <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                   Washout Live Feed
