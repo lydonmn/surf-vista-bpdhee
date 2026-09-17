@@ -134,7 +134,7 @@ export default function ReportScreen() {
   const theme = useTheme();
   const { profile, isLoading: authLoading, isInitialized } = useAuth();
   const { currentLocation, locationData } = useLocation();
-  const { isSubscribed } = useSubscription();
+  const { isSubscribed, isWeb } = useSubscription();
   const { surfReports, surfConditions, weatherData, weatherForecast, tideData, isLoading, error, refreshData, updateAllData, lastUpdated } = useSurfData(currentLocation);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestVideo, setLatestVideo] = useState<Video | null>(null);
@@ -1012,7 +1012,7 @@ export default function ReportScreen() {
             </View>
           </View>
 
-          {currentLocation === 'folly-beach' && isSubscribed && (
+          {currentLocation === 'folly-beach' && (isSubscribed || isWeb) && (
             <View style={styles.liveCamSection}>
               <Text style={[styles.liveCamTitle, { color: isDarkMode ? '#fff' : '#000' }]}>
                 Washout Live Feed
@@ -1263,6 +1263,7 @@ export default function ReportScreen() {
                 tides={reportTides}
                 updatedAt={liveUpdatedAt}
                 isDarkMode={isDarkMode}
+                showGauge={false}
               />
               {(hasValidWaveData || reportTides.length > 0) && (
                 <OptimalSurfChart

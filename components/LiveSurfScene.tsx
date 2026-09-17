@@ -32,6 +32,7 @@ export interface LiveSurfSceneProps {
   tides: TideEntry[];
   updatedAt?: string;
   isDarkMode?: boolean;
+  showGauge?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -351,6 +352,7 @@ export default function LiveSurfScene({
   tides,
   updatedAt,
   isDarkMode = false,
+  showGauge = true,
 }: LiveSurfSceneProps) {
   const isOffshore = windDirection.toUpperCase().includes('W') || windDirection.toUpperCase().includes('N');
 
@@ -640,7 +642,7 @@ export default function LiveSurfScene({
       </View>
 
       {/* Stoke-O-Meter gauge */}
-      <StokeOMeter score={stokeScore} isDarkMode={isDarkMode} />
+      {showGauge !== false && <StokeOMeter score={stokeScore} isDarkMode={isDarkMode} />}
 
       {/* Scene panel */}
       <View style={sceneStyles.panel}>
