@@ -614,12 +614,20 @@ export default function HomeScreen() {
                     </View>
                   </View>
 
-                  <StokeOMeter score={stokeScore} isDarkMode={theme.dark} size="compact" />
+                  <View style={[styles.conditionItem, {
+                    backgroundColor: theme.dark ? 'rgba(255, 149, 0, 0.12)' : 'rgba(255, 149, 0, 0.08)',
+                    borderWidth: 1,
+                    borderColor: theme.dark ? 'rgba(255, 149, 0, 0.2)' : 'rgba(255, 149, 0, 0.15)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }]}>
+                    <StokeOMeter score={stokeScore} isDarkMode={theme.dark} size="compact" />
+                  </View>
                 </View>
               </View>
             </View>
 
-            {currentLocation === 'folly-beach' && isSubscribed && (
+            {currentLocation === 'folly-beach' && (isSubscribed || isWeb) && (
               <View style={styles.liveCamSection}>
                 <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                   Washout Live Feed
