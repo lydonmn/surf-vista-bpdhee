@@ -502,7 +502,7 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     {dayRating != null && (
-                      <View style={{ width: 52, height: 30 }}>
+                      <View style={{ width: 64, height: 38 }}>
                         <StokeOMeter score={dayRating} size="mini" />
                       </View>
                     )}
