@@ -92,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: authUser.email,
             is_admin: false,
             is_subscribed: false,
+            trial_started_at: new Date().toISOString(),
           })
           .select()
           .single();

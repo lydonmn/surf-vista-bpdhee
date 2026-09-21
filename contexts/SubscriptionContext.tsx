@@ -90,6 +90,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const session = auth?.session as Record<string, unknown> | undefined;
   const user = (auth?.user ?? session?.user ?? null) as { id?: string } | null;
   const authLoading = (auth?.isLoading ?? false) as boolean;
+  const profile = (auth?.profile ?? null) as { trial_started_at?: string | null } | null;
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [offerings, setOfferings] = useState<PurchasesOfferings | null>(null);
@@ -221,7 +222,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     };
 
     updateUser();
-  }, [user?.id, isConfigured, authLoading]);
+  }, [user?.id, isConfigured, authLoading, profile?.trial_started_at]);
 
   const fetchOfferings = async () => {
     if (isWeb) return;
@@ -239,6 +240,16 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
 
   const checkSubscription = async () => {
+    // Check 14-day free trial first (works on all platforms, no auto-renew)
+    const trialStarted = profile?.trial_started_at;
+    if (trialStarted) {
+      const trialExpiry = new Date(trialStarted).getTime() + 14 * 24 * 60 * 60 * 1000;
+      if (Date.now() < trialExpiry) {
+        console.log("[SubscriptionContext] Free trial active — granting access");
+        setIsSubscribed(true);
+        return;
+      }
+    }
     if (isWeb) return;
     try {
       const customerInfo = await Purchases.getCustomerInfo();
