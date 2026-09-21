@@ -621,7 +621,7 @@ export default function LiveSurfScene({
   const statsOverlay = (
     <>
       {/* Weather icon */}
-      <View style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28 }}>
+      <View style={{ position: 'absolute', top: 8, left: 55, width: 28, height: 28 }}>
         <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} isDarkMode={isDarkMode} />
       </View>
 
@@ -671,7 +671,7 @@ export default function LiveSurfScene({
       {showGauge !== false && <StokeOMeter score={stokeScore} isDarkMode={isDarkMode} />}
 
       {/* Scene panel */}
-      <View style={sceneStyles.panel}>
+      <View style={sceneStyles.panel} pointerEvents="box-none">
         {isFlat ? (
           // ── FLAT SCENE (beach chair) ────────────────────────────────────────
           <>
@@ -1034,6 +1034,7 @@ export default function LiveSurfScene({
               overScrollMode="never"
               androidLayerType="hardware"
               originWhitelist={['*']}
+              pointerEvents="none"
             />
 
             {/* Height ruler */}
