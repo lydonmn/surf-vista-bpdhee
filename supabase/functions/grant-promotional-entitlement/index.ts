@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,6 +6,8 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
+  console.log('BOOT', req.method);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -25,7 +27,6 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // Verify the JWT and get the calling user
     const { data: { user: callerUser }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !callerUser) {
       return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
@@ -33,7 +34,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check is_admin on the caller's profile
     const { data: callerProfile, error: profileError } = await supabase
       .from('profiles')
       .select('is_admin')
@@ -64,33 +64,53 @@ Deno.serve(async (req) => {
     }
 
     // ── 3. Call RevenueCat Grant Promotional Entitlement API ─────────────────
-    // RC app_user_id = Supabase user ID (confirmed from SubscriptionContext: Purchases.logIn(user.id))
-    // Entitlement ID = "pro" (from app.json revenueCatEntitlementId)
-    // Use end_time_ms only — the non-deprecated field that accepts arbitrary expiry timestamps
-    const rcSecretKey = Deno.env.get('REVENUECAT_SECRET_KEY');
+    // Entitlement ID: "pro" (from app.json revenueCatEntitlementId)
+    // Secret name in Supabase Edge Function Secrets: "Extender V1" (case-sensitive, includes space)
+    // Uses end_time_ms only — no X-Platform header (server-to-server call, not SDK)
+    const rcSecretKey = Deno.env.get('Extender V1');
+    console.log('RC key present:', !!rcSecretKey, 'length:', rcSecretKey?.length);
     if (!rcSecretKey) {
-      return new Response(JSON.stringify({ error: 'Server misconfiguration: missing RC secret key' }), {
+      return new Response(JSON.stringify({ error: 'Server misconfiguration: missing RC secret key (Extender V1)' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const endTimeMs = Date.now() + days * 24 * 60 * 60 * 1000;
-    const rcUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(target_user_id)}/entitlements/pro/promotional`;
-
-    const rcResponse = await fetch(rcUrl, {
-      method: 'POST',
+    // Ensure subscriber exists in RC (GET auto-creates if not found)
+    const rcGetUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(target_user_id)}`;
+    console.log('GET RC subscriber:', rcGetUrl);
+    const rcGetResponse = await fetch(rcGetUrl, {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${rcSecretKey}`,
         'Content-Type': 'application/json',
-        'X-Platform': 'ios',
       },
-      body: JSON.stringify({ end_time_ms: endTimeMs }),
+    });
+    console.log('RC GET status:', rcGetResponse.status);
+
+    const endTimeMs = Date.now() + days * 24 * 60 * 60 * 1000;
+    const rcUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(target_user_id)}/entitlements/pro/promotional`;
+
+    // Server-to-server request — NO X-Platform header (causes RC 403 client-detection error)
+    const rcHeaders = {
+      'Authorization': `Bearer ${rcSecretKey}`,
+      'Content-Type': 'application/json',
+    };
+    const rcRequestBody = JSON.stringify({ end_time_ms: endTimeMs });
+
+    console.log('POST RC grant URL:', rcUrl);
+    console.log('RC request headers:', JSON.stringify(rcHeaders));
+    console.log('RC request body:', rcRequestBody);
+
+    const rcResponse = await fetch(rcUrl, {
+      method: 'POST',
+      headers: rcHeaders,
+      body: rcRequestBody,
     });
 
     const rcBody = await rcResponse.json();
+    console.log('RC response status:', rcResponse.status, 'body:', JSON.stringify(rcBody));
 
     if (!rcResponse.ok) {
-      console.error('[grant-promotional-entitlement] RC API error:', rcResponse.status, rcBody);
       return new Response(
         JSON.stringify({ error: `RevenueCat API error (${rcResponse.status}): ${rcBody?.message || JSON.stringify(rcBody)}` }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -109,7 +129,7 @@ Deno.serve(async (req) => {
       .eq('id', target_user_id);
 
     if (dbError) {
-      console.error('[grant-promotional-entitlement] DB update failed after RC success:', dbError);
+      console.error('DB update failed after RC success:', dbError);
       return new Response(
         JSON.stringify({
           error: `RC grant succeeded but DB update failed: ${dbError.message}`,
@@ -133,7 +153,7 @@ Deno.serve(async (req) => {
     );
 
   } catch (err) {
-    console.error('[grant-promotional-entitlement] Unexpected error:', err);
+    console.error('Unexpected error:', err instanceof Error ? err.message : String(err));
     return new Response(
       JSON.stringify({ error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
