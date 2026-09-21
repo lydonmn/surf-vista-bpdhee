@@ -12,7 +12,7 @@ import { getESTDate, getESTDateOffset, parseLocalDate } from '@/utils/surfDataFo
 import { useLocation } from '@/contexts/LocationContext';
 import { mockWeatherForecast } from '@/data/mockData';
 import { trackForecastView, trackSpotViewed } from '@/utils/usageTracking';
-import StokeSpeedometer from '@/components/StokeSpeedometer';
+import StokeOMeter from '@/components/StokeOMeter';
 import OptimalSurfChart from '@/components/OptimalSurfChart';
 import LiveSurfScene from '@/components/LiveSurfScene';
 
@@ -473,7 +473,9 @@ export default function ForecastScreen() {
             
             const isToday = day.date === getTodayDateString();
             const hasSurfData = displayHeight !== 'N/A';
-            const dayRating = calculateProjectedStokeRating(day);
+            const dayRating = (isToday && day.surfReport?.rating != null)
+              ? Number(day.surfReport.rating)
+              : calculateProjectedStokeRating(day);
             const ratingColor = getStokeColor(dayRating ?? null);
             console.log(`[ForecastScreen] Projected stoke for ${day.date}:`, { dayRating, ratingColor });
             
@@ -499,8 +501,8 @@ export default function ForecastScreen() {
                         <Text style={[styles.surfBadgeText, { color: colors.primary }]}>{displayHeight}</Text>
                       </View>
                     )}
-                    {dayRating !== null && (
-                      <StokeSpeedometer rating={dayRating} size={44} />
+                    {dayRating != null && (
+                      <StokeOMeter score={dayRating} size="badge" />
                     )}
                     <View style={styles.tempContainer}>
                       <Text style={[styles.highTemp, { color: theme.colors.text }]}>{highTempText}</Text>
@@ -536,6 +538,7 @@ export default function ForecastScreen() {
                         tides={day.tides}
                         updatedAt={surfConditions?.updated_at || undefined}
                         isDarkMode={theme.dark}
+                        showGauge={false}
                       />
                     )}
                     {hasSurfData && (() => {
@@ -575,12 +578,7 @@ export default function ForecastScreen() {
                             <Text style={[styles.detailValue, { color: theme.colors.text }]}>{day.surfReport.wind_speed || 'N/A'}</Text>
                             <Text style={[styles.detailSubvalue, { color: colors.textSecondary }]}>{day.surfReport.wind_direction || ''}</Text>
                           </View>
-                          {dayRating && (
-                            <View style={styles.detailItem}>
-                              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>STOKE</Text>
-                              <StokeSpeedometer rating={dayRating} size={52} />
-                            </View>
-                          )}
+
                         </View>
                       </View>
                     )}
@@ -618,15 +616,7 @@ export default function ForecastScreen() {
                       </View>
                     )}
 
-                    {!day.surfReport && dayRating !== null && (
-                      <View style={styles.detailRow}>
-                        <View style={styles.detailItem}>
-                          <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>PROJECTED STOKE</Text>
-                          <StokeSpeedometer rating={dayRating} size={52} />
-                        </View>
-                        <View style={styles.detailItem} />
-                      </View>
-                    )}
+
 
                     {day.tides.length > 0 && (
                       <View style={styles.tidesSection}>

@@ -500,7 +500,9 @@ export default function ForecastScreen() {
             });
             
             const hasSurfData = displayHeight !== 'N/A';
-            const dayRating = calculateProjectedStokeRating(day);
+            const dayRating = (isToday && day.surfReport?.rating != null)
+              ? Number(day.surfReport.rating)
+              : calculateProjectedStokeRating(day);
             const ratingColor = getStokeColor(dayRating ?? null);
             console.log(`[ForecastScreen] Projected stoke for ${day.date}:`, { dayRating, ratingColor });
             

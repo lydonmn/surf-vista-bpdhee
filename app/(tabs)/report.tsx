@@ -546,8 +546,8 @@ export default function ReportScreen() {
   const renderReportCard = (report: any, index: number) => {
     // 🚨 CRITICAL FIX: Use current rating calculated from surf_conditions
     const displayRating = currentRating;
-    // Stoke score for badge gauge (1–11 scale)
-    const stokeScore = computeStokeScoreFromConditions(surfConditions);
+    // Stoke score for badge gauge (1–11 scale) — manual rating takes priority
+    const stokeScore = (todaysReport?.rating != null ? Number(todaysReport.rating) : null) ?? computeStokeScoreFromConditions(surfConditions);
     
     // 🚨 CRITICAL FIX: Always prioritize surf_conditions for display (most current data)
     const displayData = surfConditions || report;

@@ -189,10 +189,10 @@ export default function HomeScreen() {
     return 5;
   }, [surfConditions, todaysReport]);
 
-  // Compute 1–11 stokeScore for StokeOMeter — shared formula
+  // Compute 1–11 stokeScore for StokeOMeter — manual rating takes priority
   const stokeScore = useMemo(
-    () => computeStokeScoreFromConditions(surfConditions),
-    [surfConditions],
+    () => (todaysReport?.rating != null ? Number(todaysReport.rating) : computeStokeScoreFromConditions(surfConditions)),
+    [surfConditions, todaysReport],
   );
 
   const loadLatestVideo = useCallback(async () => {
