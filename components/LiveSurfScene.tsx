@@ -303,26 +303,41 @@ function WeatherIcon({ windSpeed, isOffshore, condition, isDarkMode = false }: W
 
   if (isRainy) {
     return (
-      <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 44, height: 44, position: 'relative' }}>
+        {/* Cloud base */}
         <View style={{
-          width: 18, height: 9, borderRadius: 4.5,
+          position: 'absolute', top: 8, left: 4, right: 4, height: 14,
+          borderRadius: 7,
           backgroundColor: '#9CA3AF',
-          position: 'absolute', top: 2, left: 5,
         }} />
+        {/* Left bump */}
         <View style={{
-          width: 12, height: 8, borderRadius: 4,
+          position: 'absolute', top: 2, left: 4,
+          width: 18, height: 18, borderRadius: 9,
           backgroundColor: '#9CA3AF',
-          position: 'absolute', top: 0, left: 3,
         }} />
-        {[{ x: 8, anim: rain1 }, { x: 14, anim: rain2 }, { x: 20, anim: rain3 }].map((drop, i) => (
+        {/* Center bump */}
+        <View style={{
+          position: 'absolute', top: 0, left: 13,
+          width: 22, height: 22, borderRadius: 11,
+          backgroundColor: '#9CA3AF',
+        }} />
+        {/* Right bump */}
+        <View style={{
+          position: 'absolute', top: 4, right: 4,
+          width: 16, height: 16, borderRadius: 8,
+          backgroundColor: '#9CA3AF',
+        }} />
+        {/* Rain drops */}
+        {[{ x: 10, anim: rain1 }, { x: 20, anim: rain2 }, { x: 30, anim: rain3 }].map((drop, i) => (
           <RNAnimated.View
             key={i}
             style={{
               position: 'absolute',
               left: drop.x,
-              top: 13,
-              width: 1.5,
-              height: 5,
+              top: 26,
+              width: 2,
+              height: 6,
               backgroundColor: '#60A5FA',
               borderRadius: 1,
               transform: [{ translateY: drop.anim }],
@@ -334,16 +349,30 @@ function WeatherIcon({ windSpeed, isOffshore, condition, isDarkMode = false }: W
   }
 
   return (
-    <View style={{ width: 24, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: 44, height: 28, position: 'relative' }}>
+      {/* Cloud base — wide flat bottom */}
       <View style={{
-        width: 16, height: 9, borderRadius: 4.5,
-        backgroundColor: 'rgba(255,255,255,0.55)',
-        position: 'absolute', top: 5, left: 4,
+        position: 'absolute', bottom: 0, left: 4, right: 4, height: 14,
+        borderRadius: 7,
+        backgroundColor: 'rgba(255,255,255,0.75)',
       }} />
+      {/* Left bump */}
       <View style={{
-        width: 12, height: 8, borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.45)',
-        position: 'absolute', top: 2, left: 2,
+        position: 'absolute', bottom: 8, left: 4,
+        width: 18, height: 18, borderRadius: 9,
+        backgroundColor: 'rgba(255,255,255,0.75)',
+      }} />
+      {/* Center bump — tallest */}
+      <View style={{
+        position: 'absolute', bottom: 10, left: 13,
+        width: 22, height: 22, borderRadius: 11,
+        backgroundColor: 'rgba(255,255,255,0.85)',
+      }} />
+      {/* Right bump */}
+      <View style={{
+        position: 'absolute', bottom: 6, right: 4,
+        width: 16, height: 16, borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.75)',
       }} />
     </View>
   );
@@ -621,7 +650,7 @@ export default function LiveSurfScene({
   const statsOverlay = (
     <>
       {/* Weather icon */}
-      <View style={{ position: 'absolute', top: 8, left: 55, width: 28, height: 28 }}>
+      <View style={{ position: 'absolute', top: 6, left: 6, width: 44, height: 32 }}>
         <WeatherIcon windSpeed={windSpeed} isOffshore={isOffshore} condition={condition} isDarkMode={isDarkMode} />
       </View>
 

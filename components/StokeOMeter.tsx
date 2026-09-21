@@ -8,7 +8,7 @@ import Animated, {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
-export type StokeOMeterSize = 'normal' | 'compact' | 'badge';
+export type StokeOMeterSize = 'normal' | 'compact' | 'badge' | 'mini';
 
 interface StokeOMeterProps {
   score: number;   // 0–10 float, clamped to 1–11 internally
@@ -82,9 +82,26 @@ const BADGE_CONFIG: SizeConfig = {
   cardBgTransparent: true,
 };
 
+const MINI_CONFIG: SizeConfig = {
+  CARD_WIDTH: 72,
+  CX: 36,
+  CY: 32,
+  RADIUS: 18,
+  NEEDLE_LENGTH: 18 * 0.85,
+  HUB_SIZE: 5,
+  labelR: 18 - 7,
+  canvasHeight: 42,
+  readoutWidth: 32,
+  readoutFontSize: 7,
+  cardPadding: 4,
+  showHeader: false,
+  cardBgTransparent: true,
+};
+
 function getSizeConfig(size: StokeOMeterSize): SizeConfig {
   if (size === 'compact') return COMPACT_CONFIG;
   if (size === 'badge') return BADGE_CONFIG;
+  if (size === 'mini') return MINI_CONFIG;
   return NORMAL_CONFIG;
 }
 
@@ -190,9 +207,14 @@ const BADGE_ARC = buildArcSegments(BADGE_CONFIG);
 const BADGE_MAJOR = buildTicks(BADGE_CONFIG);
 const BADGE_MINOR = buildMinorTicks(BADGE_CONFIG);
 
+const MINI_ARC = buildArcSegments(MINI_CONFIG);
+const MINI_MAJOR = buildTicks(MINI_CONFIG);
+const MINI_MINOR = buildMinorTicks(MINI_CONFIG);
+
 function getPrebuilt(size: StokeOMeterSize) {
   if (size === 'compact') return { arc: COMPACT_ARC, major: COMPACT_MAJOR, minor: COMPACT_MINOR };
   if (size === 'badge') return { arc: BADGE_ARC, major: BADGE_MAJOR, minor: BADGE_MINOR };
+  if (size === 'mini') return { arc: MINI_ARC, major: MINI_MAJOR, minor: MINI_MINOR };
   return { arc: NORMAL_ARC, major: NORMAL_MAJOR, minor: NORMAL_MINOR };
 }
 
@@ -234,8 +256,8 @@ export default function StokeOMeter({ score, isDarkMode = false, size = 'normal'
     };
   });
 
-  const dotSize = size === 'badge' ? 4 : size === 'compact' ? 5 : 6;
-  const labelFontSize = size === 'badge' ? 7 : size === 'compact' ? 8 : 9;
+  const dotSize = size === 'mini' ? 3 : size === 'badge' ? 4 : size === 'compact' ? 5 : 6;
+  const labelFontSize = size === 'mini' ? 6 : size === 'badge' ? 7 : size === 'compact' ? 8 : 9;
 
   return (
     <View style={[

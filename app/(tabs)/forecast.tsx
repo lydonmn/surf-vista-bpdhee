@@ -517,7 +517,7 @@ export default function ForecastScreen() {
               <View key={day.date} style={[styles.dayCard, { backgroundColor: theme.colors.card }]}>
                 <TouchableOpacity style={styles.dayHeader} onPress={() => toggleDay(day.date)} activeOpacity={0.7}>
                   <View style={styles.dayHeaderLeft}>
-                    <Text style={[styles.dayName, { color: theme.colors.text }]}>{day.dayName}</Text>
+                    <Text style={[styles.dayName, { color: theme.colors.text }]} numberOfLines={1}>{day.dayName}</Text>
                     <Text style={[styles.dayDate, { color: colors.textSecondary }]}>{formatDate(day.date)}</Text>
                   </View>
 
@@ -529,7 +529,7 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     {dayRating != null && (
-                      <StokeOMeter score={dayRating} size="badge" />
+                      <StokeOMeter score={dayRating} size="mini" />
                     )}
                     <View style={styles.tempContainer}>
                       <Text style={[styles.highTemp, { color: theme.colors.text }]}>{highTempText}</Text>
@@ -797,7 +797,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dayName: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: 'bold',
     marginBottom: 4,
   },
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
   dayHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 8,
   },
   surfBadge: {
     flexDirection: 'row',
@@ -828,14 +828,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   highTemp: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   tempSlash: {
-    fontSize: 18,
+    fontSize: 15,
   },
   lowTemp: {
-    fontSize: 18,
+    fontSize: 15,
   },
   dayDetails: {
     paddingHorizontal: 18,
