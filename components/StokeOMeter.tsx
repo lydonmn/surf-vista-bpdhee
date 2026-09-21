@@ -83,17 +83,17 @@ const BADGE_CONFIG: SizeConfig = {
 };
 
 const MINI_CONFIG: SizeConfig = {
-  CARD_WIDTH: 72,
-  CX: 36,
-  CY: 32,
-  RADIUS: 18,
-  NEEDLE_LENGTH: 18 * 0.85,
-  HUB_SIZE: 5,
-  labelR: 18 - 7,
-  canvasHeight: 42,
-  readoutWidth: 32,
-  readoutFontSize: 7,
-  cardPadding: 4,
+  CARD_WIDTH: 52,
+  CX: 26,
+  CY: 23,
+  RADIUS: 13,
+  labelR: 13 - 5,
+  canvasHeight: 30,
+  NEEDLE_LENGTH: 13 * 0.85,
+  HUB_SIZE: 4,
+  readoutWidth: 24,
+  readoutFontSize: 6,
+  cardPadding: 2,
   showHeader: false,
   cardBgTransparent: true,
 };

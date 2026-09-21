@@ -502,7 +502,9 @@ export default function ForecastScreen() {
                       </View>
                     )}
                     {dayRating != null && (
-                      <StokeOMeter score={dayRating} size="mini" />
+                      <View style={{ width: 52, height: 30 }}>
+                        <StokeOMeter score={dayRating} size="mini" />
+                      </View>
                     )}
                     <View style={styles.tempContainer}>
                       <Text style={[styles.highTemp, { color: theme.colors.text }]}>{highTempText}</Text>
