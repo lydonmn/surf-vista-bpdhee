@@ -217,51 +217,54 @@ export default function ManageAllUsersScreen() {
       return;
     }
 
-    const maxAmount = isWeeks ? 520 : 120;
+    const maxAmount = isWeeks ? 52 : 12;
     if (amount > maxAmount) {
       showError('Invalid Input', `Maximum ${maxAmount} ${durationUnit} allowed`);
       return;
     }
 
+    const durationDays = isWeeks ? amount * 7 : amount * 30;
+    if (durationDays > 365) {
+      showError('Invalid Input', 'Maximum 365 days (about 12 months) per grant — use multiple grants for longer periods.');
+      return;
+    }
+
     try {
-      console.log('[ManageAllUsersScreen] Granting', amount, durationUnit, 'to:', selectedUserEmail);
+      console.log('[ManageAllUsersScreen] Granting', amount, durationUnit, `(${durationDays} days) to:`, selectedUserEmail);
       setFreeMonthsModalVisible(false);
 
-      const targetUser = users.find(u => u.id === selectedUserId);
-      let currentEndDate = new Date();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (targetUser?.subscription_end_date) {
-        const existingEndDate = new Date(targetUser.subscription_end_date);
-        if (existingEndDate > currentEndDate) {
-          currentEndDate = existingEndDate;
+      console.log('[ManageAllUsersScreen] Calling grant-promotional-entitlement edge function for user:', selectedUserId);
+      const response = await fetch(
+        'https://ucbilksfpnmltrkwvzft.supabase.co/functions/v1/grant-promotional-entitlement',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            target_user_id: selectedUserId,
+            duration_days: durationDays,
+          }),
         }
-      }
+      );
 
-      const newEndDate = new Date(currentEndDate);
-      if (isWeeks) {
-        newEndDate.setDate(newEndDate.getDate() + amount * 7);
-      } else {
-        newEndDate.setMonth(newEndDate.getMonth() + amount);
-      }
+      const result = await response.json();
+      console.log('[ManageAllUsersScreen] Edge function response:', response.status, result);
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_subscribed: true,
-          subscription_end_date: newEndDate.toISOString(),
-        })
-        .eq('id', selectedUserId);
-
-      if (error) {
-        console.error('[ManageAllUsersScreen] Error granting free time:', error);
-        showError('Error', `Failed to grant free ${durationUnit}: ${error.message}`);
+      if (!response.ok) {
+        console.error('[ManageAllUsersScreen] Edge function error:', result);
+        showError('Error', result.error || `Failed to grant access (HTTP ${response.status})`);
         return;
       }
 
       const unitLabel = amount === 1 ? durationUnit.slice(0, -1) : durationUnit;
+      const expiresDate = new Date(result.expires_at).toLocaleDateString();
       showSuccess(
-        `Free ${durationUnit.charAt(0).toUpperCase() + durationUnit.slice(1)} Granted`,
-        `Successfully granted ${amount} free ${unitLabel} to ${selectedUserEmail}.\n\nNew subscription end date: ${newEndDate.toLocaleDateString()}`
+        'Access Granted',
+        `Successfully granted ${amount} free ${unitLabel} to ${selectedUserEmail} via RevenueCat.\n\nAccess expires: ${expiresDate}`
       );
       await fetchUsers();
     } catch (error) {
@@ -1055,7 +1058,7 @@ export default function ManageAllUsersScreen() {
                 backgroundColor: colors.background,
                 borderColor: colors.border,
               }]}
-              placeholder={durationUnit === 'weeks' ? 'Enter number (1-520)' : 'Enter number (1-120)'}
+              placeholder={durationUnit === 'weeks' ? 'Enter number (1-52)' : 'Enter number (1-12)'}
               placeholderTextColor={colors.textSecondary}
               value={freeMonthsInput}
               onChangeText={setFreeMonthsInput}
@@ -1065,8 +1068,8 @@ export default function ManageAllUsersScreen() {
 
             <Text style={[styles.freeMonthsHelperText, { color: colors.textSecondary }]}>
               {durationUnit === 'weeks'
-                ? 'This will extend their subscription by the specified number of weeks (7 days each). If they already have an active subscription, the time will be added to their current end date.'
-                : 'This will extend their subscription by the specified number of months. If they already have an active subscription, the time will be added to their current end date.'}
+                ? 'Grants free access for the specified number of weeks via RevenueCat. Works for all users including free trial and lapsed subscribers. Max 52 weeks per grant.'
+                : 'Grants free access for the specified number of months via RevenueCat. Works for all users including free trial and lapsed subscribers. Max 12 months per grant.'}
             </Text>
 
             <View style={styles.freeMonthsActions}>
