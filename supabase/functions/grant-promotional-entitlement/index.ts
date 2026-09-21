@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     }
 
     // ── 3. Call RevenueCat Grant Promotional Entitlement API ─────────────────
-    // Entitlement ID: "pro" (from app.json revenueCatEntitlementId)
+    // Entitlement ID: "SurfVista" (from app.json revenueCatEntitlementId)
     // Secret name in Supabase Edge Function Secrets: "Extender V1" (case-sensitive, includes space)
     // Uses end_time_ms only — no X-Platform header (server-to-server call, not SDK)
     const rcSecretKey = Deno.env.get('Extender V1');
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
     console.log('RC GET status:', rcGetResponse.status);
 
     const endTimeMs = Date.now() + days * 24 * 60 * 60 * 1000;
-    const rcUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(target_user_id)}/entitlements/pro/promotional`;
+    const rcUrl = `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(target_user_id)}/entitlements/SurfVista/promotional`;
 
     // Server-to-server request — NO X-Platform header (causes RC 403 client-detection error)
     const rcHeaders = {
@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        entitlement: 'pro',
+        entitlement: 'SurfVista',
         expires_at: expiresAt,
         duration_days: days,
         rc_response: rcBody,
